@@ -13,3 +13,7 @@ docker_logs/
 
 # Ignore Env
 .env
+
+# Ignore large archives
+*.zip
+*.tar.gz

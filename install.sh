@@ -1,5 +1,5 @@
 #!/bin/bash
-# Kịch bản cài đặt tự động 1-Click trên VPS Linux (Ubuntu/Debian)
+# Kịch bản cài đặt tự động 1-Click trên VPS Linux (Ubuntu/Debian) - Version Pro
 
 echo "============================================="
 echo "   TIẾN TRÌNH CÀI ĐẶT FACEBOOK AUTOMATION    "
@@ -12,8 +12,21 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-# 2. Cài đặt Docker và các gói thiết yếu nếu chưa có
-echo "-> Kểm tra hoặc Cài đặt Docker & Docker Compose..."
+# 2. Thu thập thông tin từ người dùng
+read -p "Nhập Tên Miền của bạn (VD: facebook.com) hoặc để trống nếu dùng IP: " DOMAIN_NAME
+read -p "Nhập GitHub Personal Access Token của bạn (Để nhân bản kho Private): " GIT_TOKEN
+echo ""
+
+if [ -z "$GIT_TOKEN" ]; then
+    echo "Lỗi: Bạn bắt buộc phải nhập GitHub Token để tải code!"
+    exit 1
+fi
+
+# Link repo cố định của bạn (thay token vào URL)
+GIT_REPO="https://${GIT_TOKEN}@github.com/azatemplate/cong-cu-facebook.git"
+
+# 3. Cài đặt Docker và các gói thiết yếu nếu chưa có
+echo "-> Kểm tra hoặc Cài đặt Docker..."
 if ! command -v docker &> /dev/null; then
     apt-get update
     apt-get install -y ca-certificates curl gnupg git nano
@@ -29,41 +42,79 @@ if ! command -v docker-compose &> /dev/null; then
     }
 fi
 
-# 3. Yêu cầu nhập link kho Git
-echo ""
-echo "Vui lòng nhập Link GitHub Repository chứa code của bạn"
-echo "Ví dụ: https://github.com/ban/cong-cu-facebook.git"
-read -p "Link Git: " GIT_REPO
-
-if [ -z "$GIT_REPO" ]; then
-    echo "Bạn chưa nhập link Git. Hủy bỏ!"
-    exit 1
-fi
-
 # 4. Kéo code về VPS
 APP_DIR="/opt/facebook-automation"
 echo "-> Kéo code mới nhất từ kho lưu trữ về thư mục $APP_DIR..."
 if [ -d "$APP_DIR" ]; then
-    echo "Thư mục $APP_DIR đã tồn tại. Đang backup dữ liệu thành $APP_DIR.bak..."
-    mv "$APP_DIR" "$APP_DIR.bak-$(date +%s)"
+    echo "Thư mục $APP_DIR đã tồn tại. Xóa cache cài đè..."
+    rm -rf "$APP_DIR"
 fi
 
 git clone "$GIT_REPO" "$APP_DIR"
 cd "$APP_DIR"
 
-# 5. Phân quyền và Tạo thư mục thiếu (nếu Git ignore)
-mkdir -p uploads
+# 5. Phân quyền và Tạo thư mục thiếu
+mkdir -p uploads db_data
 chmod -R 777 uploads
 
-# 6. Khởi chạy Hệ thống
+# 6. Thiết lập Caddy & Domain nếu có
+if [ -n "$DOMAIN_NAME" ]; then
+    echo "-> Cấu hình Tên Miền ($DOMAIN_NAME) với giao thức SSL..."
+    
+    # Sinh file Caddyfile để tự động cấp phát SSL miễn phí
+    cat <<EOF > Caddyfile
+$DOMAIN_NAME {
+    reverse_proxy web:80
+}
+EOF
+    
+    # Sửa lại docker-compose.yml để thay Caddy làm router chính
+    cat <<EOF > docker-compose-override.yml
+version: '3.8'
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+  
+  web:
+    ports:
+      - "80" # Bỏ map port 80 trực tiếp ra ngoài máy chủ, để caddy đứng ra hứng
+
+volumes:
+  caddy_data:
+  caddy_config:
+EOF
+else
+    # Không dùng domain
+    echo "-> Đang chạy chế độ IP Trực tiếp (Port 80)..."
+fi
+
+# 7. Khởi chạy Hệ thống
 echo "-> Khởi động các Container và Hệ thống tự động mồi Database..."
-docker-compose up -d --build
+if [ -n "$DOMAIN_NAME" ]; then
+    docker-compose -f docker-compose.yml -f docker-compose-override.yml up -d --build
+else
+    docker-compose up -d --build
+fi
 
 echo ""
 echo "================================================="
 echo " CÀI ĐẶT HOÀN TẤT & HỆ THỐNG ĐÃ SẴN SÀNG CHẠY! "
 echo "================================================="
-echo " - Link Truy cập: http://$(curl -s ifconfig.me)"
+if [ -n "$DOMAIN_NAME" ]; then
+    echo " - Link Truy cập: https://$DOMAIN_NAME"
+else
+    echo " - Link Truy cập: http://$(curl -s ifconfig.me)"
+fi
 echo " - Admin Default: admin / admin123"
-echo " - Bạn có thể xem trạng thái log qua lệnh: docker-compose logs -f"
+echo "================================================="
 echo ""
