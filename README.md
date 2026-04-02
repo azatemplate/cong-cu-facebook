@@ -51,10 +51,15 @@ Hệ thống sẽ kéo Git tự động và Restart trơn tru cực nhanh mà kh
 
 ## ⚙️ Cấu Hình (Setup Tool) Cơ Bản Bên Trong
 
-Sau khi vào được Tool ở đường dẫn Web, hãy tinh chỉnh:
+Sau khi vào được Tool ở đường dẫn Web, để hệ thống có thể liên kết mượt mà với các mạng xã hội, bạn phải tinh chỉnh:
 1. **Thiết lập Nhóm quyền (App ID Facebook):** Tại trang cài đặt (Settings), hãy nhập `FB App ID` và `App Secret`.
-2. **Cấu hình AI OpenAI / Gemini:** Nếu cần dùng tính năng tạo Caption (Spinner) ngẫu nhiên, hãy nhập API Key vào Cấu Hình AI trên Admin Dashboard.
-3. Các tiến trình Background Worker (CronJob lặp mỗi 1 phút để test bài mới) chạy ngầm hoàn toàn bên trong Docker. Bạn không cần làm gì thêm ở ngoài Server Ubuntu!
+2. **Khai báo Callback URL (OAuth):** Nếu bạn đăng ký App qua Facebook Developers hoặc Google Cloud Console, bắt buộc phải sao chép chính xác 3 đường dẫn này điền vào ô "Valid OAuth Redirect URIs" tương ứng trên cổng Dev:
+   - Facebook Login Callback: `https://domain_cua_ban/redirect_callback.php`
+   - Google Drive Callback: `https://domain_cua_ban/google_callback.php`
+   - YouTube Chage Callback: `https://domain_cua_ban/youtube_callback.php`
+   > *(Nếu chạy IP localhost, thay `https://domain_cua_ban` bằng IP)*
+3. **Cấu hình AI OpenAI / Gemini:** Nếu cần dùng tính năng tạo Caption (Spinner) ngẫu nhiên, hãy nhập API Key vào Cấu Hình AI trên Admin Dashboard.
+4. Các tiến trình Background Worker (CronJob lặp mỗi 1 phút để test bài mới) chạy ngầm hoàn toàn bên trong Docker. Bạn không cần làm gì thêm ở ngoài Server Ubuntu!
 
 ---
 
