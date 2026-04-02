@@ -13,31 +13,24 @@ Công cụ tự động hóa toàn diện giúp quản lý và tối ưu hóa qu
 ---
 
 ## Yêu cầu Hệ thống cài đặt
-- 1 Server / VPS chạy **Ubuntu 20.04/22.04** hoặc **Debian 11/12** (Khuyến khích VPS trống mới mua để tránh xung đột).
-- Ram tối thiểu 2GB.
-- Đã cài đặt Git (Hệ thống sẽ hỗ trợ cài đặt các nền tảng khác nếu thiếu).
+- 1 Server / VPS chạy **Ubuntu 20.04/22.04** hoặc **Debian 11/12** (Khuyến khích VPS trống mới mua để tránh xung đột mạng/ cổng 80).
+- Trỏ sẵn Tên miền (Domain) của bạn về IP của VPS nếu bạn muốn chạy qua tên miền (sẽ được tự động cài bảo mật SSL/HTTPS).
+- Một đoạn mã **GitHub Personal Access Token** để VPS có tải code từ Repo ẩn (Private) của bạn.
 
 ---
 
-## 🚀 Hướng Dẫn Cài Đặt Lần Đầu Mới (1-Click Install)
+## 🚀 Hướng Dẫn Cài Đặt (1 Lệnh Duy Nhất)
 
-Bằng công nghệ Docker, quá trình setup trên máy chủ VPS Ubuntu đều được tự động hóa. MySQL, Web Server, PHP 8.1 và hẹn giờ Cron Job sẽ tự động bật và liên kết với nhau.
-
-**Bước 1:** SSH vào VPS của bạn với quyền User Root (hoặc dùng `sudo su`).
-
-**Bước 2:** Chạy tuần tự bộ khối lệnh sau:
+Vào máy chủ (VPS) của bạn bằng tài khoản `root`, copy và dán nguyên xi dòng lệnh sau (Hãy thay chỗ **YOUR_GITHUB_TOKEN** bằng Token của bạn).
 
 ```bash
-# 1. Kéo Code về thư mục cài đặt (/opt/facebook-automation)
-git clone https://github.com/azatemplate/cong-cu-facebook.git /opt/facebook-automation
-
-# 2. Di chuyển vào thư mục code
-cd /opt/facebook-automation
-
-# 3. Chạy quá trình Cài Đặt Tự Động
-bash install.sh
+wget https://raw.githubusercontent.com/azatemplate/cong-cu-facebook/main/install.sh --header "Authorization: token YOUR_GITHUB_TOKEN" && bash install.sh
 ```
-Hệ thống sẽ chạy khoảng 2 - 3 phút để Build cấu trúc. Khi màn hình báo chữ **CÀI ĐẶT HOÀN TẤT**, bạn mở Trình Duyệt và truy cập thẳng vào `http://IP_VPS_CUA_BAN` để tải trang.
+
+**Quá trình tương tác khi cấu hình (Interactive Console):**
+1. Màn hình sẽ nhắc bạn nhập **Tên miền (Domain)**: Bạn có thể điền (Ví dụ: tool.domain.com). Nếu có điền, tool sẽ tải Caddy Reverse Proxy & thiết lập tự động chững chỉ xanh SSL. Nếu không muốn xài tên miền, nhấn Enter bỏ trống.
+2. Nhắc nhập lại **GitHub Token**: Chép dán mã token nhằm tải toàn bộ lõi code về máy tự động.
+3. Chờ 3-4 phút cho tới khi màn hình hiển thị lời chào **CÀI ĐẶT HOÀN TẤT & HỆ THỐNG ĐÃ SẴN SÀNG CHẠY!**.
 
 > **Tài khoản Đăng nhập Hệ Thống mặc định ban đầu:**
 > Username: `admin` \
@@ -45,31 +38,28 @@ Hệ thống sẽ chạy khoảng 2 - 3 phút để Build cấu trúc. Khi màn 
 
 ---
 
-## 🔄 Hướng Dẫn Cập Nhật Code Lên Bản Mới
+## 🔄 Cập Nhật Hệ Thống
 
-Mỗi khi bạn có Update hay Sửa lỗi code trên kho `cong-cu-facebook` này của Github, bạn chỉ cần gõ đúng 1 dòng lệnh dưới đây để Update Code cho VPS tự động:
+Bất cứ lúc nào bạn sửa code (trên local / Github) và muốn Server áp dụng bản mới theo nhánh Main, trên VPS chỉ việc gõ gõ:
 
 ```bash
 bash /opt/facebook-automation/update.sh
 ```
 
-Hệ thống Update.sh sẽ tự động:
-1. `git pull` nháy tải bản code thay đổi từ Github.
-2. Build và khởi động làm mới lại toàn bộ Service WebServer `docker-compose up -d --build web` mà hoàn toàn KHÔNG là ảnh hưởng hay làm mất kết nối Database mysql của bạn.
+Hệ thống sẽ kéo Git tự động và Restart trơn tru cực nhanh mà không làm hỏng Database đang có.
 
 ---
 
-## ⚙️ Cấu Hình (Setup Tool) Cơ Bản
+## ⚙️ Cấu Hình (Setup Tool) Cơ Bản Bên Trong
 
-Sau khi cài đặt xong bạn vô Tool và thiết lập:
-1. **Liên kết App ID Facebook:** Tại trang cài đặt (Settings), hãy nhập `FB App ID` và `App Secret` để có thể nhận quyền lấy mã Fanpage. 
-2. **Cấu hình AI OpenAI / Gemini:** Nếu cần dùng tính năng Spinner Text tự tạo tiêu đề, hãy nhập API Key vào mục Cấu Hình AI trên Admin Dashboard theo nhu cầu riêng biệt.
-3. Các Cron Job đã được dựng **Tất Cả Thành Tự Động**, tool sẽ gọi bài liên tục cứ sau mỗi 1 phút mà không cần thiết lập thủ công Cron Job cho AaPanel/Linux nữa.
+Sau khi vào được Tool ở đường dẫn Web, hãy tinh chỉnh:
+1. **Thiết lập Nhóm quyền (App ID Facebook):** Tại trang cài đặt (Settings), hãy nhập `FB App ID` và `App Secret`.
+2. **Cấu hình AI OpenAI / Gemini:** Nếu cần dùng tính năng tạo Caption (Spinner) ngẫu nhiên, hãy nhập API Key vào Cấu Hình AI trên Admin Dashboard.
+3. Các tiến trình Background Worker (CronJob lặp mỗi 1 phút để test bài mới) chạy ngầm hoàn toàn bên trong Docker. Bạn không cần làm gì thêm ở ngoài Server Ubuntu!
 
 ---
 
-## 📝 Quản Lý Docker
-Nơi chứa toàn bộ dữ liệu MySQL là do Container quản lý. Nếu bạn muốn Backup Database:
-* Database lưu gốc vào bộ nhớ đệm Volume Docker trực tiếp qua phân quyền của Docker. Thư mục Mapping vật lý là `./db_data/`. Bất kỳ lúc nào bạn cũng có thể Copy thư mục đó phòng trừ rủi ro.
-* Folder chứa file ảnh / Reels là `/uploads/`.
-* Xem màn hình Log thời gian thực hệ thống đang chạy ngầm: `docker-compose logs -f`
+## 📝 Quản Lý Docker Root
+* Dữ liệu MySQL Database: Mapping tại `/opt/facebook-automation/db_data/`. Backup thư mục này là đảm bảo an toàn tuyệt đối.
+* Media (Ảnh/Video gốc tải lên máy hoặc TikTok lưu trữ): Mapping tại `/opt/facebook-automation/uploads/`.
+* Xem màn hình theo dõi Log để Debug: Gõ `cd /opt/facebook-automation && docker-compose logs -f`
