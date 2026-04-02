@@ -15,22 +15,21 @@ Công cụ tự động hóa toàn diện giúp quản lý và tối ưu hóa qu
 ## Yêu cầu Hệ thống cài đặt
 - 1 Server / VPS chạy **Ubuntu 20.04/22.04** hoặc **Debian 11/12** (Khuyến khích VPS trống mới mua để tránh xung đột mạng/ cổng 80).
 - Trỏ sẵn Tên miền (Domain) của bạn về IP của VPS nếu bạn muốn chạy qua tên miền (sẽ được tự động cài bảo mật SSL/HTTPS).
-- Một đoạn mã **GitHub Personal Access Token** để VPS có tải code từ Repo ẩn (Private) của bạn.
+- Kho GitHub của bạn phải đang ở chế độ Public để tải về trong bước cài đặt.
 
 ---
 
 ## 🚀 Hướng Dẫn Cài Đặt (1 Lệnh Duy Nhất)
 
-Vào máy chủ (VPS) của bạn bằng tài khoản `root`, copy và dán nguyên xi dòng lệnh sau (Hãy thay chỗ **YOUR_GITHUB_TOKEN** bằng Token của bạn).
+Vào máy chủ (VPS) của bạn bằng tài khoản `root` (hoặc có sudo), copy và dán nguyên xi dòng lệnh sau:
 
 ```bash
-wget https://raw.githubusercontent.com/azatemplate/cong-cu-facebook/main/install.sh --header "Authorization: token YOUR_GITHUB_TOKEN" && bash install.sh
+wget -O install.sh https://raw.githubusercontent.com/azatemplate/cong-cu-facebook/main/install.sh && bash install.sh
 ```
 
 **Quá trình tương tác khi cấu hình (Interactive Console):**
-1. Màn hình sẽ nhắc bạn nhập **Tên miền (Domain)**: Bạn có thể điền (Ví dụ: tool.domain.com). Nếu có điền, tool sẽ tải Caddy Reverse Proxy & thiết lập tự động chững chỉ xanh SSL. Nếu không muốn xài tên miền, nhấn Enter bỏ trống.
-2. Nhắc nhập lại **GitHub Token**: Chép dán mã token nhằm tải toàn bộ lõi code về máy tự động.
-3. Chờ 3-4 phút cho tới khi màn hình hiển thị lời chào **CÀI ĐẶT HOÀN TẤT & HỆ THỐNG ĐÃ SẴN SÀNG CHẠY!**.
+1. Màn hình sẽ nhắc bạn nhập **Tên miền (Domain)**: Bạn có thể điền (Ví dụ: tool.domain.com). Nếu có điền, tool sẽ tải Caddy Reverse Proxy & thiết lập tự động chững chỉ xanh SSL. Nếu không muốn xài tên miền, nhấn Enter bỏ trống để chạy trực tiếp IP qua cổng 80.
+2. Chờ 3-4 phút cho tới khi màn hình hiển thị lời chào **CÀI ĐẶT HOÀN TẤT & HỆ THỐNG ĐÃ SẴN SÀNG CHẠY!**.
 
 > **Tài khoản Đăng nhập Hệ Thống mặc định ban đầu:**
 > Username: `admin` \

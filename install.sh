@@ -14,16 +14,10 @@ fi
 
 # 2. Thu thập thông tin từ người dùng
 read -p "Nhập Tên Miền của bạn (VD: facebook.com) hoặc để trống nếu dùng IP: " DOMAIN_NAME
-read -p "Nhập GitHub Personal Access Token của bạn (Để nhân bản kho Private): " GIT_TOKEN
 echo ""
 
-if [ -z "$GIT_TOKEN" ]; then
-    echo "Lỗi: Bạn bắt buộc phải nhập GitHub Token để tải code!"
-    exit 1
-fi
-
-# Link repo cố định của bạn (thay token vào URL)
-GIT_REPO="https://${GIT_TOKEN}@github.com/azatemplate/cong-cu-facebook.git"
+# Link repo cố định của bạn
+GIT_REPO="https://github.com/azatemplate/cong-cu-facebook.git"
 
 # 3. Cài đặt Docker và các gói thiết yếu nếu chưa có
 echo "-> Kểm tra hoặc Cài đặt Docker..."
