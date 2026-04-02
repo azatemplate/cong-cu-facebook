@@ -1,0 +1,215 @@
+<!-- includes/drive_browser.php -->
+<div id="driveModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: #fff; width: 90%; max-width: 600px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; max-height: 80vh;">
+        <div style="padding: 15px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: #f8fafc;">
+            <h4 style="margin: 0; color: #334155; display: flex; align-items: center; gap: 8px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                Chọn file từ Google Drive
+            </h4>
+            <button type="button" onclick="closeDriveModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #64748b;">&times;</button>
+        </div>
+        
+        <div style="padding: 10px 15px; border-bottom: 1px solid var(--border-color); background: #f1f5f9; display: flex; gap: 10px; align-items: center;">
+            <button type="button" id="driveBtnBack" onclick="driveNavigateUp()" class="btn btn-secondary" style="padding: 5px 10px; font-size: 13px;" disabled>&#8592; Quay lại</button>
+            <span id="driveCurrentPath" style="font-size: 13px; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">/ Root</span>
+        </div>
+
+        <div id="driveFileList" style="padding: 15px; overflow-y: auto; flex-grow: 1; min-height: 200px;">
+            <div style="text-align: center; color: #64748b; padding: 20px;">Đang tải danh sách...</div>
+        </div>
+        
+        <div style="padding: 15px; border-top: 1px solid var(--border-color); background: #f8fafc; display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" class="btn btn-secondary" onclick="closeDriveModal()" style="background: #fff; border: 1px solid var(--border-color); color: #334155;">Thoát</button>
+            <button type="button" id="btnConfirmDriveSelection" class="btn btn-primary" onclick="confirmDriveSelection()" disabled>Xác nhận chọn (0)</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.drive-item {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    border-bottom: 1px solid #e2e8f0;
+    cursor: pointer;
+    transition: background 0.2s;
+    border-radius: 4px;
+}
+.drive-item:hover {
+    background: #f1f5f9;
+}
+.drive-icon {
+    width: 32px;
+    height: 32px;
+    margin-right: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.drive-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.drive-info {
+    flex-grow: 1;
+    overflow: hidden;
+}
+.drive-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.drive-size {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 2px;
+}
+</style>
+
+<script>
+let currentFolderId = 'root';
+let folderHistory = [];
+let folderPathNames = ['Root'];
+let driveSelectedFiles = [];
+
+function formatBytes(bytes, decimals = 2) {
+    if (!+bytes) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+}
+
+function openDriveModal() {
+    driveSelectedFiles = [];
+    updateDriveSelectionUI();
+    document.getElementById('driveModal').style.display = 'flex';
+    if (currentFolderId === 'root' && document.getElementById('driveFileList').innerHTML.includes('Đang tải')) {
+        loadDriveFiles('root', 'Root');
+    }
+}
+
+function closeDriveModal() {
+    document.getElementById('driveModal').style.display = 'none';
+}
+
+function updateDriveBreadcrumb() {
+    document.getElementById('driveCurrentPath').innerText = '/ ' + folderPathNames.join(' / ');
+    document.getElementById('driveBtnBack').disabled = folderHistory.length === 0;
+}
+
+function loadDriveFiles(folderId, folderName) {
+    const listContainer = document.getElementById('driveFileList');
+    listContainer.innerHTML = '<div style="text-align: center; color: #64748b; padding: 20px;">Đang tải danh sách...</div>';
+    
+    fetch(`actions/drive_proxy.php?action=list_files&parent_id=${folderId}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                listContainer.innerHTML = '';
+                
+                if (data.files.length === 0) {
+                    listContainer.innerHTML = '<div style="text-align: center; color: #64748b; padding: 20px;">Thư mục trống.</div>';
+                    return;
+                }
+                
+                data.files.forEach(file => {
+                    const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+                    
+                    let iconHtml = '';
+                    if (isFolder) {
+                        iconHtml = '<svg width="20" height="20" viewBox="0 0 24 24" fill="#fbbf24" stroke="#d97706" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>';
+                    } else if (file.thumbnailLink) {
+                        iconHtml = `<img src="${file.thumbnailLink}" alt="thumb">`;
+                    } else if (file.mimeType.includes('video/')) {
+                        iconHtml = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>';
+                    } else {
+                        iconHtml = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>';
+                    }
+
+                    const div = document.createElement('div');
+                    div.className = 'drive-item';
+                    
+                    if (!isFolder && driveSelectedFiles.some(f => f.id === file.id)) {
+                        div.style.background = '#e0f2fe';
+                    }
+                    
+                    div.onclick = function() {
+                        if (isFolder) {
+                            folderHistory.push(currentFolderId);
+                            folderPathNames.push(file.name);
+                            currentFolderId = file.id;
+                            updateDriveBreadcrumb();
+                            loadDriveFiles(file.id, file.name);
+                        } else {
+                            toggleDriveFileSelection(file, div);
+                        }
+                    };
+
+                    div.innerHTML = `
+                        <div class="drive-icon">${iconHtml}</div>
+                        <div class="drive-info">
+                            <div class="drive-name">${file.name}</div>
+                            <div class="drive-size">${isFolder ? 'Thư mục' : formatBytes(file.size)}</div>
+                        </div>
+                    `;
+                    listContainer.appendChild(div);
+                });
+            } else {
+                listContainer.innerHTML = `<div style="text-align: center; color: red; padding: 20px;">${data.msg}</div>`;
+            }
+        })
+        .catch(err => {
+            listContainer.innerHTML = '<div style="text-align: center; color: red; padding: 20px;">Lỗi kết nối.</div>';
+        });
+}
+
+function driveNavigateUp() {
+    if (folderHistory.length > 0) {
+        currentFolderId = folderHistory.pop();
+        folderPathNames.pop();
+        updateDriveBreadcrumb();
+        loadDriveFiles(currentFolderId, folderPathNames[folderPathNames.length - 1]);
+    }
+}
+
+function toggleDriveFileSelection(file, element) {
+    const idx = driveSelectedFiles.findIndex(f => f.id === file.id);
+    if (idx > -1) {
+        driveSelectedFiles.splice(idx, 1);
+        element.style.background = '';
+    } else {
+        driveSelectedFiles.push({id: file.id, name: file.name});
+        element.style.background = '#e0f2fe';
+    }
+    updateDriveSelectionUI();
+}
+
+function updateDriveSelectionUI() {
+    const btn = document.getElementById('btnConfirmDriveSelection');
+    if (btn) {
+        btn.innerText = `Xác nhận chọn (${driveSelectedFiles.length})`;
+        btn.disabled = driveSelectedFiles.length === 0;
+    }
+}
+
+function confirmDriveSelection() {
+    if (driveSelectedFiles.length === 0) return;
+    
+    // Support backward compatibility for components expecting 1 file
+    if (typeof onDriveFilesSelected === 'function') {
+        onDriveFilesSelected(driveSelectedFiles);
+    } else if (typeof onDriveFileSelected === 'function') {
+        onDriveFileSelected(driveSelectedFiles[0].id, driveSelectedFiles[0].name);
+    }
+    closeDriveModal();
+}
+</script>

@@ -1,0 +1,15 @@
+# Ignore data folders
+uploads/
+db_data/
+
+# Ignore Logs and lock files
+*.log
+*.lock
+docker_logs/
+
+# IDE
+.idea/
+.vscode/
+
+# Ignore Env
+.env

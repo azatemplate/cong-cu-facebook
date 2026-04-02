@@ -1,0 +1,47 @@
+<?php
+require_once __DIR__ . '/includes/db.php';
+session_start();
+
+if (!isset($_SESSION['account_id'])) {
+    header("Location: login.php");
+    exit;
+}
+
+$account_id = $_SESSION['account_id'];
+
+// Lấy Client ID từ Database
+$stmt = $pdo->prepare("SELECT gg_client_id FROM system_accounts WHERE id = ?");
+$stmt->execute([$account_id]);
+$account = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$account || empty($account['gg_client_id'])) {
+    $stmt_admin = $pdo->query("SELECT gg_client_id FROM system_accounts WHERE id = 1");
+    $admin_account = $stmt_admin->fetch(PDO::FETCH_ASSOC);
+    if (!$admin_account || empty($admin_account['gg_client_id'])) {
+        die("Vui lòng cấu hình Google Client ID trong mục Cài Đặt trước (hoặc liên hệ Admin).");
+    }
+    $client_id = $admin_account['gg_client_id'];
+} else {
+    $client_id = $account['gg_client_id'];
+}
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
+$base_dir = rtrim(dirname($_SERVER['PHP_SELF']), '/\\');
+$redirect_uri = $protocol . $_SERVER['HTTP_HOST'] . $base_dir . "/google_callback.php";
+
+// Scopes cần thiết để đọc danh sách file và tải nội dung từ Google Drive
+$scopes = [
+    'https://www.googleapis.com/auth/drive.readonly'
+];
+
+$auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" . http_build_query([
+    'client_id' => $client_id,
+    'redirect_uri' => $redirect_uri,
+    'response_type' => 'code',
+    'scope' => implode(' ', $scopes),
+    'access_type' => 'offline',
+    'prompt' => 'consent' // Ép trả về refresh_token mỗi lần đăng nhập
+]);
+
+header("Location: $auth_url");
+exit;
+?>

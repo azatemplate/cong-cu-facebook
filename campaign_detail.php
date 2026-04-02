@@ -1,0 +1,397 @@
+<?php
+// ── Actions MUST be processed before ANY output (before header.php) ────────
+require_once __DIR__ . '/includes/db.php';
+
+$campaign_id = intval($_GET['id'] ?? 0);
+
+if ($campaign_id) {
+    // Single row actions (GET)
+    if (isset($_GET['action'], $_GET['post_id'])) {
+        $act     = $_GET['action'];
+        $post_id = intval($_GET['post_id']);
+        try {
+            if ($act === 'delete') {
+                $pdo->prepare("DELETE FROM scheduled_posts WHERE id = ? AND campaign_id = ? AND status IN ('pending','failed')")->execute([$post_id, $campaign_id]);
+            } elseif ($act === 'retry') {
+                $pdo->prepare("UPDATE scheduled_posts SET status='pending', error_msg=NULL WHERE id = ? AND campaign_id = ? AND status='failed'")->execute([$post_id, $campaign_id]);
+            }
+        } catch (PDOException $e) { /* ignore */ }
+        header("Location: campaign_detail.php?id=$campaign_id" . (isset($_GET['filter']) ? '&filter='.$_GET['filter'] : ''));
+        exit;
+    }
+
+    // Retry all (GET)
+    if (isset($_GET['action']) && $_GET['action'] === 'retry_all') {
+        try {
+            $pdo->prepare("UPDATE scheduled_posts SET status='pending', error_msg=NULL WHERE campaign_id = ? AND status='failed'")->execute([$campaign_id]);
+        } catch (PDOException $e) { /* ignore */ }
+        header("Location: campaign_detail.php?id=$campaign_id");
+        exit;
+    }
+
+    // Bulk delete (POST)
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'], $_POST['post_ids'])) {
+        $ids = array_map('intval', (array)$_POST['post_ids']);
+        if (!empty($ids) && $_POST['bulk_action'] === 'delete') {
+            $in = implode(',', array_fill(0, count($ids), '?'));
+            try {
+                $params = array_merge($ids, [$campaign_id]);
+                $pdo->prepare("DELETE FROM scheduled_posts WHERE id IN ($in) AND campaign_id = ? AND status IN ('pending','failed')")->execute($params);
+            } catch (PDOException $e) { /* ignore */ }
+        }
+        header("Location: campaign_detail.php?id=$campaign_id");
+        exit;
+    }
+}
+
+// ── Now load the page ──────────────────────────────────────────────────────
+$current_page = 'manage_posts';
+require_once __DIR__ . '/includes/header.php';
+
+$account_id  = $_SESSION['account_id'];
+$is_admin    = ($_SESSION['role'] === 'admin');
+$campaign_id = intval($_GET['id'] ?? 0);
+
+if (!$campaign_id) {
+    header('Location: manage_posts.php');
+    exit;
+}
+
+// Load campaign info
+$campaign = null;
+try {
+    $auth_where  = ' AND account_id = ?';
+    $auth_params = [$campaign_id, $account_id];
+    $c_stmt = $pdo->prepare("SELECT * FROM post_campaigns WHERE id = ? $auth_where");
+    $c_stmt->execute($auth_params);
+    $campaign = $c_stmt->fetch(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {}
+
+if (!$campaign) {
+    echo "<div class='page-title'>Không tìm thấy chiến dịch</div>";
+    echo "<div class='card' style='text-align:center;padding:40px;'>Chiến dịch không tồn tại. <a href='manage_posts.php'>← Quay lại</a></div>";
+    include 'includes/footer.php';
+    exit;
+}
+
+// Filter
+$filter = $_GET['filter'] ?? 'all';
+if ($filter === 'published')     $filter_sql = "AND sp.status = 'published'";
+elseif ($filter === 'pending')   $filter_sql = "AND sp.status IN ('pending','processing')";
+elseif ($filter === 'failed')    $filter_sql = "AND sp.status = 'failed'";
+else                             $filter_sql = '';
+
+// Pagination
+$per_page = 50;
+$current_pg = max(1, intval($_GET['pg'] ?? 1));
+$offset = ($current_pg - 1) * $per_page;
+
+// Count total for pagination
+$total_filtered = 0;
+try {
+    $cnt_stmt = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts sp WHERE sp.campaign_id = ? $filter_sql");
+    $cnt_stmt->execute([$campaign_id]);
+    $total_filtered = (int)$cnt_stmt->fetchColumn();
+} catch (PDOException $e) {}
+$total_pgs = max(1, ceil($total_filtered / $per_page));
+
+// Posts
+$posts = [];
+try {
+    $posts_stmt = $pdo->prepare("
+        SELECT sp.*, 
+               p.name AS page_name,
+               yt.channel_title AS yt_channel_name
+        FROM scheduled_posts sp
+        LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type != 'YouTube'
+        LEFT JOIN youtube_channels yt ON sp.page_id = yt.id AND sp.post_type = 'YouTube'
+        WHERE sp.campaign_id = ? $filter_sql
+        ORDER BY sp.scheduled_time ASC, sp.id ASC
+        LIMIT $per_page OFFSET $offset
+    ");
+    $posts_stmt->execute([$campaign_id]);
+    $posts = $posts_stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {}
+
+// Detect if comment_status column exists (fault-tolerant)
+$has_comment_status_col = false;
+try {
+    $col_q = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME='comment_status'");
+    $has_comment_status_col = ($col_q && $col_q->fetchColumn() > 0);
+} catch (Exception $e) {}
+
+
+$stats = ['pub' => 0, 'pend' => 0, 'proc' => 0, 'fail' => 0, 'total' => 0];
+try {
+    $st = $pdo->prepare("SELECT
+        SUM(CASE WHEN status='published'  THEN 1 ELSE 0 END) AS pub,
+        SUM(CASE WHEN status='pending'    THEN 1 ELSE 0 END) AS pend,
+        SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS proc,
+        SUM(CASE WHEN status='failed'     THEN 1 ELSE 0 END) AS fail,
+        COUNT(*) AS total
+        FROM scheduled_posts WHERE campaign_id = ?");
+    $st->execute([$campaign_id]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if ($row) $stats = $row;
+} catch (PDOException $e) {}
+
+$progress = $stats['total'] > 0 ? round($stats['pub'] / $stats['total'] * 100) : 0;
+
+function status_bg($s) {
+    if ($s === 'published')  return '#d1fae5';
+    if ($s === 'pending')    return '#fef3c7';
+    if ($s === 'processing') return '#e0f2fe';
+    if ($s === 'failed')     return '#fee2e2';
+    return '#f3f4f6';
+}
+function status_tc($s) {
+    if ($s === 'published')  return '#065f46';
+    if ($s === 'pending')    return '#d97706';
+    if ($s === 'processing') return '#0369a1';
+    if ($s === 'failed')     return '#dc2626';
+    return '#6b7280';
+}
+function status_label($s) {
+    if ($s === 'published')  return '✅ Đã đăng';
+    if ($s === 'pending')    return '⏳ Chờ';
+    if ($s === 'processing') return '🔄 Đang đăng';
+    if ($s === 'failed')     return '❌ Lỗi';
+    return htmlspecialchars($s);
+}
+?>
+
+<div class="page-title">
+    <a href="manage_posts.php" style="color:var(--text-muted);text-decoration:none;font-size:14px;font-weight:400;">← Campaigns</a>
+    <span style="margin:0 8px;color:var(--text-muted);">/</span>
+    <?php echo htmlspecialchars($campaign['name']); ?>
+</div>
+
+<!-- Campaign Summary Card -->
+<div class="card" style="margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">
+        <div style="flex:1;min-width:220px;">
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:4px;">Tạo lúc <?php echo date('H:i d/m/Y', strtotime($campaign['created_at'])); ?></div>
+            <?php if (!empty($campaign['scheduled_time'])): ?>
+            <div style="font-size:13px;color:var(--text-muted);">Hẹn giờ: <?php echo date('H:i d/m/Y', strtotime($campaign['scheduled_time'])); ?></div>
+            <?php endif; ?>
+            <div style="margin-top:14px;">
+                <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">
+                    <span>Tiến độ đăng bài</span>
+                    <strong><?php echo (int)$stats['pub']; ?>/<?php echo (int)$stats['total']; ?></strong>
+                </div>
+                <div style="height:10px;background:#f3f4f6;border-radius:99px;overflow:hidden;">
+                    <div style="height:100%;width:<?php echo $progress; ?>%;background:<?php echo $progress==100?'#10b981':'var(--primary-color)'; ?>;border-radius:99px;"></div>
+                </div>
+            </div>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            <?php foreach ([
+                ['Đã đăng',  (int)$stats['pub'],  '#d1fae5','#065f46'],
+                ['Đang chờ', (int)$stats['pend']+(int)$stats['proc'], '#fef3c7','#d97706'],
+                ['Thất bại', (int)$stats['fail'], '#fee2e2','#dc2626'],
+            ] as $item):
+                list($lbl, $cnt, $bg, $tc) = $item; ?>
+            <div style="background:<?php echo $bg; ?>;padding:12px 20px;border-radius:8px;text-align:center;min-width:80px;">
+                <div style="font-size:22px;font-weight:700;color:<?php echo $tc; ?>;"><?php echo $cnt; ?></div>
+                <div style="font-size:11px;color:<?php echo $tc; ?>;margin-top:2px;"><?php echo $lbl; ?></div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
+        <?php if ((int)$stats['fail'] > 0): ?>
+        <a href="campaign_detail.php?id=<?php echo $campaign_id; ?>&action=retry_all" onclick="return confirm('Thử lại tất cả bài lỗi?')" style="padding:8px 16px;background:#10b981;color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;">🔄 Retry tất cả lỗi (<?php echo (int)$stats['fail']; ?>)</a>
+        <?php endif; ?>
+        <?php if ((int)$stats['pend'] > 0 || (int)$stats['fail'] > 0): ?>
+        <a href="manage_posts.php?action=delete_campaign&id=<?php echo $campaign_id; ?>" onclick="return confirm('Xóa toàn bộ bài pending & lỗi?')" style="padding:8px 16px;background:#fee2e2;color:#dc2626;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;">🗑 Xóa bài chưa/lỗi</a>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- Filter Tabs -->
+<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+    <?php foreach ([
+        ['all',       'Tất cả',     (int)$stats['total']],
+        ['published', '✅ Đã đăng', (int)$stats['pub']],
+        ['pending',   '⏳ Đang chờ',(int)$stats['pend']+(int)$stats['proc']],
+        ['failed',    '❌ Lỗi',     (int)$stats['fail']],
+    ] as $tab):
+        list($val, $lbl, $cnt) = $tab;
+        $active = ($filter === $val); ?>
+    <a href="campaign_detail.php?id=<?php echo $campaign_id; ?>&filter=<?php echo $val; ?>"
+       style="padding:7px 14px;border-radius:6px;text-decoration:none;font-size:13px;
+              border:1px solid <?php echo $active ? 'var(--primary-color)' : 'var(--border-color)'; ?>;
+              color:<?php echo $active ? 'var(--primary-color)' : 'var(--text-muted)'; ?>;
+              font-weight:<?php echo $active ? '600' : '400'; ?>;
+              background:<?php echo $active ? 'var(--card-bg)' : 'transparent'; ?>;">
+        <?php echo $lbl; ?>
+        <span style="background:<?php echo $active ? 'var(--primary-color)' : '#e5e7eb'; ?>;
+                     color:<?php echo $active ? 'white' : '#374151'; ?>;
+                     padding:1px 7px;border-radius:99px;font-size:11px;"><?php echo $cnt; ?></span>
+    </a>
+    <?php endforeach; ?>
+</div>
+
+<!-- Posts Table with Bulk Delete -->
+<div class="card" style="padding:0;overflow-x:auto;">
+    <?php if (empty($posts)): ?>
+    <div style="text-align:center;padding:40px;color:var(--text-muted);">Không có bài viết nào với bộ lọc này.</div>
+    <?php else: ?>
+    <form method="POST" action="campaign_detail.php?id=<?php echo $campaign_id; ?>">
+        <input type="hidden" name="bulk_action" value="delete">
+        <!-- Bulk toolbar -->
+        <div style="padding:10px 16px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;gap:10px;background:#fafafa;">
+            <label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;">
+                <input type="checkbox" id="selectAll" onchange="toggleAll(this)"> Chọn tất cả
+            </label>
+            <button type="submit" onclick="return confirmBulk()"
+                    style="padding:5px 14px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;font-size:12px;">
+                🗑 Xóa đã chọn
+            </button>
+        </div>
+        <table style="width:100%;border-collapse:collapse;min-width:750px;">
+            <thead>
+                <tr style="background:var(--card-bg);border-bottom:2px solid var(--border-color);">
+                    <th style="width:36px;padding:10px 12px;"></th>
+                    <th style="text-align:left;padding:10px 16px;font-size:13px;color:var(--text-muted);font-weight:500;">Fanpage</th>
+                    <th style="text-align:left;padding:10px 16px;font-size:13px;color:var(--text-muted);font-weight:500;">Loại</th>
+                    <th style="text-align:left;padding:10px 16px;font-size:13px;color:var(--text-muted);font-weight:500;">Thời gian hẹn</th>
+                    <th style="text-align:left;padding:10px 16px;font-size:13px;color:var(--text-muted);font-weight:500;">Trạng thái</th>
+                    <?php if ($has_comment_status_col): ?>
+                    <th style="text-align:left;padding:10px 16px;font-size:13px;color:var(--text-muted);font-weight:500;">💬 Bình luận</th>
+                    <?php endif; ?>
+                    <th style="text-align:left;padding:10px 16px;font-size:13px;color:var(--text-muted);font-weight:500;">Hành động</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($posts as $post):
+                $s = $post['status'];
+                $content_data = @json_decode($post['content'], true);
+                $desc = is_array($content_data) ? ($content_data['description'] ?? '') : $post['content'];
+                $desc_short = mb_strimwidth($desc, 0, 80, '…');
+            ?>
+            <tr style="border-bottom:1px solid var(--border-color);">
+                <td style="padding:10px 12px;text-align:center;">
+                    <?php if (in_array($s, ['pending','failed'])): ?>
+                    <input type="checkbox" name="post_ids[]" value="<?php echo $post['id']; ?>" class="row-check">
+                    <?php endif; ?>
+                </td>
+                <td style="padding:10px 16px;">
+                    <div style="font-weight:500;font-size:13px;"><?php 
+                        if ($post['post_type'] === 'YouTube') {
+                            echo htmlspecialchars($post['yt_channel_name'] ?? '—');
+                        } else {
+                            echo htmlspecialchars($post['page_name'] ?? '—');
+                        }
+                    ?></div>
+                    <div style="font-size:12px;color:var(--text-muted);margin-top:2px;"><?php echo htmlspecialchars($desc_short); ?></div>
+                    <?php if ($s === 'failed' && !empty($post['error_msg'])): ?>
+                    <div style="font-size:11px;color:#dc2626;margin-top:4px;background:#fee2e2;padding:2px 6px;border-radius:4px;"><?php echo htmlspecialchars(mb_strimwidth($post['error_msg'], 0, 120, '…')); ?></div>
+                    <?php endif; ?>
+                    <?php if ($s === 'published' && !empty($post['error_msg'])): ?>
+                    <!-- Moved view link to action column -->
+                    <?php endif; ?>
+                </td>
+                <td style="padding:10px 16px;"><span style="background:#f3f4f6;color:#374151;font-size:12px;padding:2px 8px;border-radius:4px;"><?php echo htmlspecialchars($post['post_type']); ?></span></td>
+                <td style="padding:10px 16px;font-size:12px;color:var(--text-muted);white-space:nowrap;"><?php echo date('H:i d/m/Y', strtotime($post['scheduled_time'])); ?></td>
+                <td style="padding:10px 16px;">
+                    <span style="background:<?php echo status_bg($s); ?>;color:<?php echo status_tc($s); ?>;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:500;"><?php echo status_label($s); ?></span>
+                    <?php if (!empty($post['retry_count'])): ?>
+                    <span style="font-size:11px;color:#9ca3af;"> ×<?php echo (int)$post['retry_count']; ?></span>
+                    <?php endif; ?>
+                </td>
+                <?php if ($has_comment_status_col):
+                    $cs = $post['comment_status'] ?? null;
+                    if (!isset($post['comment_lines']) || empty($post['comment_lines'])) {
+                        $cs_bg = '#f3f4f6'; $cs_tc = '#6b7280'; $cs_label = '—';
+                    } elseif ($cs === 'done') {
+                        $cs_bg = '#d1fae5'; $cs_tc = '#065f46'; $cs_label = '✅ Đã BL';
+                    } elseif ($cs === 'error') {
+                        $cs_bg = '#fee2e2'; $cs_tc = '#dc2626'; $cs_label = '❌ Lỗi BL';
+                    } elseif ($cs === 'pending') {
+                        $cs_bg = '#fef3c7'; $cs_tc = '#d97706'; $cs_label = '⏳ Chờ BL';
+                    } else {
+                        // comment_lines set but not yet processed (post still pending/failed)
+                        $cs_bg = '#e0f2fe'; $cs_tc = '#0369a1'; $cs_label = '💬 Đã cài';
+                    }
+                ?>
+                <td style="padding:10px 16px;">
+                    <span style="background:<?php echo $cs_bg; ?>;color:<?php echo $cs_tc; ?>;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:500;"><?php echo $cs_label; ?></span>
+                </td>
+                <?php endif; ?>
+                <td style="padding:10px 16px;">
+                    <div style="display:flex;gap:6px;">
+                    <?php 
+                        $view_id = !empty($post['fb_post_id']) ? $post['fb_post_id'] : (!empty($post['error_msg']) ? $post['error_msg'] : '');
+                        if ($s === 'published' && $view_id): 
+                            $view_url = ($post['post_type'] === 'YouTube') ? "https://youtube.com/watch?v=" . htmlspecialchars($view_id) : "https://facebook.com/" . htmlspecialchars($view_id);
+                    ?>
+                        <a href="<?php echo $view_url; ?>" target="_blank"
+                           style="font-size:12px;color:var(--primary-color);text-decoration:none;padding:3px 9px;border:1px solid #c7d2fe;border-radius:4px;background:#eef2ff;">Xem</a>
+                    <?php endif; ?>
+                    <?php if (in_array($s, ['pending','failed'])): ?>
+                        <a href="campaign_detail.php?id=<?php echo $campaign_id; ?>&action=delete&post_id=<?php echo $post['id']; ?>&filter=<?php echo $filter; ?>"
+                           onclick="return confirm('Xóa bài đăng này?')"
+                           style="font-size:12px;color:#dc2626;text-decoration:none;padding:3px 9px;border:1px solid #fca5a5;border-radius:4px;">Xóa</a>
+                    <?php endif; ?>
+                    <?php if ($s === 'failed'): ?>
+                        <a href="campaign_detail.php?id=<?php echo $campaign_id; ?>&action=retry&post_id=<?php echo $post['id']; ?>&filter=<?php echo $filter; ?>"
+                           style="font-size:12px;color:#059669;text-decoration:none;padding:3px 9px;border:1px solid #6ee7b7;border-radius:4px;">Retry</a>
+                    <?php endif; ?>
+                    </div>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </form>
+    <?php endif; ?>
+</div>
+
+<?php if ($total_pgs > 1): ?>
+<div style="display:flex;justify-content:center;gap:6px;margin-top:16px;flex-wrap:wrap;">
+    <?php
+    $base_url = "campaign_detail.php?id=$campaign_id&filter=$filter";
+    if ($current_pg > 1): ?>
+        <a href="<?php echo $base_url . '&pg=' . ($current_pg - 1); ?>" style="padding:6px 12px;border:1px solid var(--border-color);border-radius:4px;text-decoration:none;color:var(--text-main);font-size:13px;">← Trước</a>
+    <?php endif; ?>
+    <?php
+    $start_pg = max(1, $current_pg - 3);
+    $end_pg = min($total_pgs, $current_pg + 3);
+    for ($i = $start_pg; $i <= $end_pg; $i++): ?>
+        <a href="<?php echo $base_url . '&pg=' . $i; ?>"
+           style="padding:6px 12px;border:1px solid <?php echo $i==$current_pg?'var(--primary-color)':'var(--border-color)'; ?>;border-radius:4px;text-decoration:none;color:<?php echo $i==$current_pg?'var(--primary-color)':'var(--text-main)'; ?>;font-weight:<?php echo $i==$current_pg?'bold':'normal'; ?>;font-size:13px;"><?php echo $i; ?></a>
+    <?php endfor; ?>
+    <?php if ($current_pg < $total_pgs): ?>
+        <a href="<?php echo $base_url . '&pg=' . ($current_pg + 1); ?>" style="padding:6px 12px;border:1px solid var(--border-color);border-radius:4px;text-decoration:none;color:var(--text-main);font-size:13px;">Sau →</a>
+    <?php endif; ?>
+    <span style="padding:6px 8px;font-size:12px;color:var(--text-muted);">(<?php echo number_format($total_filtered); ?> bài · Trang <?php echo $current_pg; ?>/<?php echo $total_pgs; ?>)</span>
+</div>
+<?php endif; ?>
+
+<script>
+function toggleAll(cb) {
+    document.querySelectorAll('.row-check').forEach(function(el) { el.checked = cb.checked; });
+}
+function confirmBulk() {
+    const checked = document.querySelectorAll('.row-check:checked').length;
+    if (checked === 0) { alert('Chưa chọn bài nào!'); return false; }
+    return confirm('Xóa ' + checked + ' bài đã chọn?');
+}
+
+// Keep scroll position on reload
+document.addEventListener("DOMContentLoaded", function() { 
+    const key = 'scrollpos_' + window.location.search;
+    if (sessionStorage.getItem(key)) window.scrollTo(0, sessionStorage.getItem(key));
+});
+window.addEventListener("beforeunload", function() {
+    sessionStorage.setItem('scrollpos_' + window.location.search, window.scrollY);
+});
+
+// Auto-reload if posts are pending/processing
+<?php if (((int)$stats['pend'] + (int)$stats['proc']) > 0): ?>
+setTimeout(function() { window.location.reload(); }, 15000);
+<?php endif; ?>
+</script>
+
+<?php include 'includes/footer.php'; ?>

@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: facebook_automation_web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - .:/var/www/html
+    environment:
+      - DB_HOST=db
+      - DB_NAME=facebooksever
+      - DB_USER=facebooksever
+      - DB_PASS=MncfFCSdWBXkbrxN
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:10.11
+    container_name: facebook_automation_db
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=MncfFCSdWBXkbrxN_root
+      - MYSQL_DATABASE=facebooksever
+      - MYSQL_USER=facebooksever
+      - MYSQL_PASSWORD=MncfFCSdWBXkbrxN
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  db_data:

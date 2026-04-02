@@ -1,0 +1,26 @@
+[23-Mar-2026 17:22:17 Asia/Ho_Chi_Minh] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'campaign_id' in 'field list' in /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php:175
+Stack trace:
+#0 /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php(175): PDOStatement->execute(Array)
+#1 {main}
+  thrown in /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php on line 175
+[23-Mar-2026 17:23:36 Asia/Ho_Chi_Minh] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'campaign_id' in 'field list' in /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php:175
+Stack trace:
+#0 /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php(175): PDOStatement->execute(Array)
+#1 {main}
+  thrown in /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php on line 175
+[23-Mar-2026 17:24:38 Asia/Ho_Chi_Minh] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'campaign_id' in 'field list' in /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php:175
+Stack trace:
+#0 /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php(175): PDOStatement->execute(Array)
+#1 {main}
+  thrown in /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php on line 175
+[23-Mar-2026 17:25:26 Asia/Ho_Chi_Minh] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'campaign_id' in 'field list' in /home/uethicaz/hongvippro.com/facebook/actions/publish_post.php:117
+Stack trace:
+#0 /home/uethicaz/hongvippro.com/facebook/actions/publish_post.php(117): PDOStatement->execute(Array)
+#1 {main}
+  thrown in /home/uethicaz/hongvippro.com/facebook/actions/publish_post.php on line 117
+[23-Mar-2026 17:30:23 Asia/Ho_Chi_Minh] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'campaign_id' in 'field list' in /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php:174
+Stack trace:
+#0 /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php(174): PDOStatement->execute(Array)
+#1 /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php(189): insert_sp(Object(PDOStatement), Object(PDOStatement), '5', '1', '300303016491689', 'Reel', '{"description":...', 'drive:1o9IVcFSB...', '2026-03-26 11:0...')
+#2 {main}
+  thrown in /home/uethicaz/hongvippro.com/facebook/actions/publish_video.php on line 174

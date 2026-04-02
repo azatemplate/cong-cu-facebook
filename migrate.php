@@ -1,0 +1,95 @@
+<?php
+// migrate.php
+// Run this file ONCE to apply all database schema migrations.
+// Access via browser: https://yourdomain.com/facebook/migrate.php
+// Then DELETE or protect this file afterward.
+
+require_once __DIR__ . '/includes/db.php';
+
+$results = [];
+
+$migrations = [
+    // system_accounts columns
+    ["ALTER TABLE system_accounts ADD COLUMN account_id INT DEFAULT 1", "users.account_id"],
+    ["ALTER TABLE system_accounts ADD COLUMN expire_date DATETIME DEFAULT NULL", "system_accounts.expire_date"],
+    ["ALTER TABLE system_accounts ADD COLUMN page_limit INT DEFAULT 500", "system_accounts.page_limit"],
+    ["ALTER TABLE system_accounts ADD COLUMN fb_app_id VARCHAR(255) DEFAULT NULL", "system_accounts.fb_app_id"],
+    ["ALTER TABLE system_accounts ADD COLUMN fb_app_secret VARCHAR(255) DEFAULT NULL", "system_accounts.fb_app_secret"],
+    ["ALTER TABLE system_accounts ADD COLUMN gg_client_id VARCHAR(255) DEFAULT NULL", "system_accounts.gg_client_id"],
+    ["ALTER TABLE system_accounts ADD COLUMN gg_client_secret VARCHAR(255) DEFAULT NULL", "system_accounts.gg_client_secret"],
+    ["ALTER TABLE system_accounts ADD COLUMN gg_refresh_token TEXT DEFAULT NULL", "system_accounts.gg_refresh_token"],
+
+    // users.account_id
+    ["ALTER TABLE users ADD COLUMN account_id INT DEFAULT 1", "users.account_id"],
+
+    // scheduled_posts enhancements
+    ["ALTER TABLE scheduled_posts ADD COLUMN retry_count INT DEFAULT 0", "scheduled_posts.retry_count"],
+    ["ALTER TABLE scheduled_posts ADD COLUMN campaign_id INT DEFAULT NULL", "scheduled_posts.campaign_id"],
+    ["ALTER TABLE scheduled_posts ADD COLUMN comment_lines TEXT DEFAULT NULL", "scheduled_posts.comment_lines"],
+    ["ALTER TABLE scheduled_posts ADD COLUMN comment_at DATETIME DEFAULT NULL", "scheduled_posts.comment_at"],
+    ["ALTER TABLE scheduled_posts ADD COLUMN comment_done TINYINT(1) DEFAULT 0", "scheduled_posts.comment_done"],
+    ["ALTER TABLE scheduled_posts ADD COLUMN comment_status VARCHAR(20) DEFAULT NULL", "scheduled_posts.comment_status"],
+    ["ALTER TABLE scheduled_posts ADD COLUMN fb_post_id VARCHAR(100) DEFAULT NULL", "scheduled_posts.fb_post_id"],
+
+    // Character set conversions (run once)
+    ["ALTER TABLE users CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", "users charset"],
+    ["ALTER TABLE pages CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", "pages charset"],
+
+    // Campaign table
+    ["CREATE TABLE IF NOT EXISTS post_campaigns (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        account_id INT NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        post_type VARCHAR(50) DEFAULT 'Mixed',
+        total_posts INT DEFAULT 0,
+        scheduled_time DATETIME DEFAULT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (account_id) REFERENCES system_accounts(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci", "post_campaigns table"],
+
+    // system_settings table
+    ["CREATE TABLE IF NOT EXISTS system_settings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        setting_key VARCHAR(100) UNIQUE NOT NULL,
+        setting_value TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci", "system_settings table"],
+];
+
+// Default system settings seed
+$default_settings = [
+    ['retry_interval_minutes', '1'],
+    ['max_retries', '3'],
+];
+
+foreach ($migrations as [$sql, $label]) {
+    try {
+        $pdo->exec($sql);
+        $results[] = "✅ OK: $label";
+    } catch (PDOException $e) {
+        // Most errors here are "column already exists" — safe to ignore
+        $results[] = "⚠️ Skip (exists): $label — " . $e->getMessage();
+    }
+}
+
+// Seed default settings
+foreach ($default_settings as [$key, $val]) {
+    try {
+        $pdo->prepare("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES (?, ?)")
+            ->execute([$key, $val]);
+        $results[] = "✅ Setting seeded: $key";
+    } catch (PDOException $e) {
+        $results[] = "⚠️ Setting skip: $key";
+    }
+}
+
+echo "<pre style='font-family:monospace; font-size:14px; padding:20px;'>";
+echo "<b>Database Migration Results</b>\n";
+echo str_repeat("-", 60) . "\n";
+foreach ($results as $r) {
+    echo $r . "\n";
+}
+echo str_repeat("-", 60) . "\n";
+echo "<b>Migration complete. You may now delete this file.</b>\n";
+echo "</pre>";
+?>
