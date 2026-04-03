@@ -14,7 +14,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'], $_POST
         $params = $post_ids;
         $auth   = ' AND account_id = ?';
         $params[] = $_s_account_id;
-        try { $pdo->prepare("DELETE FROM scheduled_posts WHERE id IN ($in) AND status IN ('pending','failed') $auth")->execute($params); } catch (PDOException $e) {}
+        try {
+            // Free up local files before deleting
+            $stmt = $pdo->prepare("SELECT media_path FROM scheduled_posts WHERE id IN ($in) AND status IN ('pending','failed') $auth");
+            $stmt->execute($params);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($row['media_path']) && strpos($row['media_path'], 'uploads/') !== false) {
+                    $decoded = @json_decode($row['media_path'], true);
+                    $paths = is_array($decoded) ? $decoded : [$row['media_path']];
+                    foreach ($paths as $p) {
+                        $p = trim($p);
+                        if (strpos($p, 'uploads/') !== false) {
+                            $full = __DIR__ . '/../' . $p;
+                            if (file_exists($full)) @unlink($full);
+                        }
+                    }
+                }
+            }
+            $pdo->prepare("DELETE FROM scheduled_posts WHERE id IN ($in) AND status IN ('pending','failed') $auth")->execute($params);
+        } catch (PDOException $e) {}
     }
     header('Location: manage_posts.php');
     exit;
@@ -28,6 +46,24 @@ if (isset($_GET['action'], $_GET['id'])) {
     try {
         if ($act === 'delete_campaign') {
             $p = [$id, $_s_account_id];
+            
+            // Free up local files for the campaign's pending posts before deleting
+            $stmt = $pdo->prepare("SELECT media_path FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed') $auth");
+            $stmt->execute($p);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($row['media_path']) && strpos($row['media_path'], 'uploads/') !== false) {
+                    $decoded = @json_decode($row['media_path'], true);
+                    $paths = is_array($decoded) ? $decoded : [$row['media_path']];
+                    foreach ($paths as $path) {
+                        $path = trim($path);
+                        if (strpos($path, 'uploads/') !== false) {
+                            $full = __DIR__ . '/../' . $path;
+                            if (file_exists($full)) @unlink($full);
+                        }
+                    }
+                }
+            }
+            
             $pdo->prepare("DELETE FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed') $auth")->execute($p);
             $pdo->prepare("DELETE FROM post_campaigns WHERE id = ? AND account_id = ?")->execute([$id, $_s_account_id]);
         } elseif ($act === 'retry_campaign') {

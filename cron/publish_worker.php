@@ -470,6 +470,9 @@ foreach ($pending_posts as $post) {
                 }
                 $mi_mime = mime_content_type($mi_abs) ?: 'image/jpeg';
                 $mi_name = basename($mi_abs);
+                if (strpos($mi_abs, 'uploads/') !== false) {
+                    $temp_files_to_clean[] = $mi_abs;
+                }
             }
 
             // Upload as unpublished photo
@@ -685,7 +688,12 @@ foreach ($pending_posts as $post) {
 
         // Xóa local file nếu là Local Scheduler File (uploads/...) - Không xóa file hệ thống
         if (!$is_drive && $has_media && file_exists($abs_media_path) && strpos($abs_media_path, 'uploads/') !== false) {
-            @unlink($abs_media_path);
+            // SAFE UNLINK: Tránh xoá nhầm ảnh nếu hình ảnh được chia sẻ cho nhiều Campaign / Page cùng lúc
+            $check_usages = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing', 'failed') AND media_path = ? AND id != ?");
+            $check_usages->execute([$post['media_path'], $post['id']]);
+            if ($check_usages->fetchColumn() == 0) {
+                @unlink($abs_media_path);
+            }
         }
 
         if ($aid > 0 && isset($account_published_today[$aid])) {
