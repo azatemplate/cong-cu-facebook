@@ -1,11 +1,17 @@
 <?php
 // cron/test_cron.php — Trang chẩn đoán & kích hoạt thủ công Cron
-session_start();
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/security.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+header('Content-Type: text/html; charset=utf-8');
+
 if (empty($_SESSION['account_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
     http_response_code(403);
     die('<h2 style="font-family:monospace;color:red;text-align:center;margin-top:100px">403 - Forbidden: Chỉ Admin mới được truy cập trang này.</h2>');
 }
-require_once __DIR__ . '/../includes/db.php';
 
 $now_php   = date('Y-m-d H:i:s');
 $now_mysql = $pdo->query("SELECT NOW()")->fetchColumn();
