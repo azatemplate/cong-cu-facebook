@@ -37,15 +37,21 @@ wget -O install.sh https://raw.githubusercontent.com/azatemplate/cong-cu-faceboo
 
 ---
 
-## 🔄 Cập Nhật Hệ Thống
+## 🔄 Cập Nhật Hệ Thống (Auto-Update)
 
-Bất cứ lúc nào bạn sửa code (trên local / Github) và muốn Server áp dụng bản mới theo nhánh Main, trên VPS chỉ việc gõ gõ:
+Bất cứ lúc nào hệ thống có bản vá mới trên nhánh Main, bạn chỉ việc dùng 1 trong 2 lệnh sau trên giao diện Console/Terminal của VPS (chọn 1 lệnh tùy theo cách bạn cài đặt):
 
+**👉 Cách 1: NẾU BẠN CÀI LÊN AAPANEL HOẶC VPS TRỰC TIẾP (Native / cPanel / Không dùng Docker)**
+```bash
+curl -sL https://raw.githubusercontent.com/azatemplate/cong-cu-facebook/main/update_server.sh | bash
+```
+
+**👉 Cách 2: NẾU BẠN ĐANG DÙNG CÀI ĐẶT DOCKER (`install.sh`)**
 ```bash
 bash /opt/facebook-automation/update.sh
 ```
 
-Hệ thống sẽ kéo Git tự động và Restart trơn tru cực nhanh mà không làm hỏng Database đang có.
+Hệ thống sẽ kéo Git tự động, cấu hình phân quyền và Restart trơn tru cực nhanh mà không làm hỏng Database đang có.
 
 ---
 
