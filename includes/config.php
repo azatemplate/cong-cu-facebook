@@ -22,19 +22,26 @@
             if (preg_match('/^["\'](.*)["\']$/', $value, $m)) {
                 $value = $m[1];
             }
-            if (!getenv($key)) {
-                putenv("$key=$value");
+            if (!isset($_ENV[$key])) {
+                if (function_exists('putenv')) {
+                    @putenv("$key=$value");
+                }
                 $_ENV[$key] = $value;
+                $_SERVER[$key] = $value;
             }
         }
     }
 })();
 
+function get_env_var($key, $default = '') {
+    return $_ENV[$key] ?? (function_exists('getenv') ? getenv($key) : null) ?? $_SERVER[$key] ?? $default;
+}
+
 // --- Database ---
-define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
-define('DB_NAME', getenv('DB_NAME') ?: 'facebooksever');
-define('DB_USER', getenv('DB_USER') ?: 'facebooksever');
-define('DB_PASS', getenv('DB_PASS') ?: '');  // MUST be set via .env or environment
+define('DB_HOST', get_env_var('DB_HOST', 'localhost'));
+define('DB_NAME', get_env_var('DB_NAME', 'facebooksever'));
+define('DB_USER', get_env_var('DB_USER', 'facebooksever'));
+define('DB_PASS', get_env_var('DB_PASS', ''));  // MUST be set via .env or environment
 define('DB_CHARSET', 'utf8mb4');
 
 // --- Cấu hình Timezone (Quan trọng để Cronjob chạy đúng với giờ người dùng) ---
@@ -42,20 +49,27 @@ date_default_timezone_set('Asia/Ho_Chi_Minh');
 
 // --- Encryption ---
 // IMPORTANT: Set this via .env file. Must be kept secret and unique per installation.
-define('ENCRYPTION_KEY', getenv('ENCRYPTION_KEY') ?: '');
+define('ENCRYPTION_KEY', get_env_var('ENCRYPTION_KEY', ''));
 
 // --- Environment ---
 // Set to 'production' on live server to enable SSL verification etc.
-define('APP_ENV', getenv('APP_ENV') ?: 'production');
+define('APP_ENV', get_env_var('APP_ENV', 'production'));
 
 // ── Session Security ─────────────────────────────────────────────────────────
+// Dynamically set session save path to be cross-platform
+$session_path = __DIR__ . '/../uploads/sessions';
+if (!is_dir($session_path)) {
+    @mkdir($session_path, 0755, true);
+}
+ini_set('session.save_path', $session_path);
+
 // These must be set BEFORE session_start() is called.
 ini_set('session.cookie_httponly', 1);
 ini_set('session.cookie_samesite', 'Lax');
 ini_set('session.use_strict_mode', 1);
 ini_set('session.use_only_cookies', 1);
 // Enable secure cookie flag only in production with HTTPS
-if (APP_ENV === 'production' && (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')) {
+if (get_env_var('APP_ENV', 'production') === 'production' && (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')) {
     ini_set('session.cookie_secure', 1);
 }
 // Session lifetime: 8 hours
