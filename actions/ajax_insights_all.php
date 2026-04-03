@@ -17,7 +17,7 @@ $period = 'days_28';
 $end_date = date('Y-m-d');
 $start_date = date('Y-m-d', strtotime('-30 days'));
 
-$cache_key_all = "insights_all_growth_v2_{$account_id}_{$period}";
+$cache_key_all = "insights_all_growth_v3_{$account_id}_{$period}";
 
 if (isset($_SESSION[$cache_key_all]) && $_SESSION[$cache_key_all]['expires'] > time() && !isset($_GET['nocache'])) {
     header('Content-Type: application/json');
