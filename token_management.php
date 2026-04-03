@@ -110,7 +110,13 @@ endif; ?>
                         <td><?php echo htmlspecialchars($u['name']); ?></td>
                         <td style="font-weight: bold; color: var(--primary-color);"><?php echo (int)$u['page_count']; ?></td>
                         <td><?php echo htmlspecialchars($u['created_at']); ?></td>
-                        <td><a href="actions/delete_token.php?id=<?php echo $u['id']; ?>" class="color-red" style="text-decoration:none;">Xóa</a></td>
+                        <td>
+                            <form method="POST" action="actions/delete_token.php" style="display:inline;" onsubmit="return confirm('Bạn có chắc muốn xóa Token này?');">
+                                <?php echo csrf_field(); ?>
+                                <input type="hidden" name="id" value="<?php echo $u['id']; ?>">
+                                <button type="submit" class="color-red" style="background:none; border:none; cursor:pointer; text-decoration:underline; color:var(--red-danger); font-size:13px; padding:0;">Xóa</button>
+                            </form>
+                        </td>
                     </tr>
                 <?php
     endforeach; ?>

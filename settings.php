@@ -22,6 +22,7 @@ $alert_type = '';
 $alert_message = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verify_csrf();
     $current_pass = trim($_POST['current_password'] ?? '');
     $new_pass = trim($_POST['new_password'] ?? '');
     
@@ -123,6 +124,7 @@ $is_admin = ($_SESSION['role'] === 'admin');
     <div class="card" style="margin: 0; box-sizing: border-box;">
         <h3 style="margin-bottom: 20px;">Đổi Mật Khẩu</h3>
         <form method="POST" action="settings.php">
+            <?php echo csrf_field(); ?>
             <div class="form-group">
                 <label>Mật khẩu hiện tại</label>
                 <input type="password" name="current_password" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px;" required>
@@ -142,6 +144,7 @@ $is_admin = ($_SESSION['role'] === 'admin');
             Cấu hình này áp dụng cho toàn bộ Cronjob đăng bài tự động của tất cả User.
         </p>
         <form method="POST" action="settings.php">
+            <?php echo csrf_field(); ?>
             <div class="form-group">
                 <label>Thời gian chờ thử lại mặc định (Phút)</label>
                 <?php if ($is_admin): ?>
@@ -175,6 +178,7 @@ $is_admin = ($_SESSION['role'] === 'admin');
             Nhập App ID và App Secret của ứng dụng Facebook Business để lấy Token đăng bài tự động. Do hệ thống đã được App Review với tư cách Admin, tất cả người dùng sẽ dùng chung cấu hình App này.
         </p>
         <form method="POST" action="settings.php">
+            <?php echo csrf_field(); ?>
             <div class="form-group">
                 <label>Facebook App ID</label>
                 <input type="text" name="fb_app_id" value="<?php echo htmlspecialchars($account['fb_app_id'] ?? ''); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
@@ -195,6 +199,7 @@ $is_admin = ($_SESSION['role'] === 'admin');
             Nhập Client ID và Client Secret từ Google Cloud Console để hệ thống có thể kết nối với kho lưu trữ hình ảnh, video của bạn trên Google Drive.
         </p>
         <form method="POST" action="settings.php">
+            <?php echo csrf_field(); ?>
             <div class="form-group">
                 <label>Google Client ID</label>
                 <input type="text" name="gg_client_id" value="<?php echo htmlspecialchars($account['gg_client_id'] ?? ''); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
@@ -215,6 +220,7 @@ $is_admin = ($_SESSION['role'] === 'admin');
             <?php if (!empty($account['gg_refresh_token'])): ?>
                 <p style="color: #15803d; font-weight: bold; margin-bottom: 10px;">✅ Đã liên kết tài khoản Google Drive thành công.</p>
                 <form method="POST" action="settings.php">
+                    <?php echo csrf_field(); ?>
                     <button type="submit" name="disconnect_gg" class="btn btn-danger" style="background:#ef4444;">Ngắt kết nối ngầm</button>
                 </form>
             <?php else: ?>

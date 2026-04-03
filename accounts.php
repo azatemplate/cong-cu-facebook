@@ -9,18 +9,7 @@ if ($_SESSION['role'] !== 'admin') {
     exit;
 }
 
-// ── CSRF Token ───────────────────────────────────────────────────────────
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
-$csrf_token = $_SESSION['csrf_token'];
-
-function verify_csrf() {
-    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
-        http_response_code(403);
-        die('Invalid CSRF token.');
-    }
-}
+// CSRF is now handled by the centralized includes/security.php
 
 $alert_type = '';
 $alert_message = '';
@@ -178,7 +167,7 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <div class="card">
     <h3 style="margin-bottom: 20px;">Tạo Tài Khoản Mới</h3>
     <form method="POST" action="accounts.php">
-        <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+        <?php echo csrf_field(); ?>
         <input type="hidden" name="action" value="create">
         <div class="form-group" style="max-width: 400px; display: inline-block; vertical-align: top; margin-right: 20px;">
             <label>Tên đăng nhập (Username)</label>
@@ -267,7 +256,7 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <form method="POST" action="accounts.php" style="display:inline;" onsubmit="return confirm('Xóa tài khoản này?');">
                                 <input type="hidden" name="action" value="delete_account">
                                 <input type="hidden" name="del_id" value="<?php echo $acc['id']; ?>">
-                                <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                                <?php echo csrf_field(); ?>
                                 <button type="submit" style="background:none; border:none; color:var(--red-danger); cursor:pointer; font-size:13px; padding:0; text-decoration:underline;">Xóa</button>
                             </form>
                         <?php else: ?>
@@ -285,7 +274,7 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <div style="background:#fff; padding:25px; border-radius:8px; width:100%; max-width:400px; position:relative;">
         <h3 style="margin-top:0;">Sửa Quyền: <span id="e_username_label" style="color:var(--primary-color);"></span></h3>
         <form method="POST" action="accounts.php">
-            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+            <?php echo csrf_field(); ?>
             <input type="hidden" name="action" value="edit_limits">
             <input type="hidden" name="edit_id" id="e_id_input">
             

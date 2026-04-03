@@ -6,14 +6,29 @@ db_data/
 *.log
 *.lock
 docker_logs/
+error_log
 
 # IDE
 .idea/
 .vscode/
 
-# Ignore Env
+# Ignore Env (CRITICAL: never commit credentials)
 .env
 
 # Ignore large archives
 *.zip
 *.tar.gz
+
+# Ignore database dumps (CRITICAL: contain sensitive data)
+*.sql
+*.sql.gz
+*.sql.bz2
+
+# Ignore rate limit data
+uploads/rate_limits/
+
+# Ignore session data
+uploads/sessions/
+
+# Ignore cache data
+uploads/cache/

@@ -6,9 +6,18 @@ if (!isset($_SESSION['account_id'])) {
 }
 
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/security.php';
 
-if (isset($_GET['id'])) {
-    $user_id = intval($_GET['id']);
+// ── Security: Only accept POST requests with CSRF token ──
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header('Location: ../token_management.php?status=error&msg=' . urlencode('Yêu cầu không hợp lệ.'));
+    exit;
+}
+
+verify_csrf();
+
+if (isset($_POST['id'])) {
+    $user_id = intval($_POST['id']);
     $account_id = $_SESSION['account_id'];
     $is_admin = ($_SESSION['role'] === 'admin');
     
@@ -72,7 +81,11 @@ $stmt->execute([$user_id, $account_id]);
             exit;
         }
     } catch(PDOException $e) {
-        header('Location: ../token_management.php?status=error&msg=' . urlencode('Lỗi hệ thống khi xóa: ' . $e->getMessage()));
+        // Don't leak DB error details in production
+        $err_msg = (defined('APP_ENV') && APP_ENV === 'development') 
+            ? 'Lỗi hệ thống khi xóa: ' . $e->getMessage() 
+            : 'Lỗi hệ thống khi xóa. Vui lòng thử lại.';
+        header('Location: ../token_management.php?status=error&msg=' . urlencode($err_msg));
         exit;
     }
 }

@@ -1,8 +1,17 @@
 <?php
+session_start();
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
+require_once __DIR__ . '/../includes/security.php';
 
 header('Content-Type: application/json');
+
+// ── Auth Guard ────────────────────────────────────────────────────────────
+if (!isset($_SESSION['account_id'])) {
+    http_response_code(401);
+    echo json_encode(['status' => 'error', 'msg' => 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.']);
+    exit;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $message = isset($_POST['message']) ? trim($_POST['message']) : '';

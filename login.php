@@ -1,34 +1,55 @@
 <?php
+require_once __DIR__ . '/includes/security.php';
 session_start();
-require_once __DIR__ . '/includes/db.php';
+set_security_headers();
 
 if (isset($_SESSION['account_id'])) {
     header("Location: index.php");
     exit;
 }
 
+require_once __DIR__ . '/includes/db.php';
+
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Verify CSRF token
+    verify_csrf();
+
     $username = trim($_POST['username']);
     $password = $_POST['password'];
+    $client_ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 
-    $stmt = $pdo->prepare("SELECT id, username, password, role, expire_date FROM system_accounts WHERE username = ?");
-    $stmt->execute([$username]);
-    $account = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($account && password_verify($password, $account['password'])) {
-        // Kiểm tra thời hạn
-        if (!empty($account['expire_date']) && strtotime($account['expire_date']) < time()) {
-            $error = "Tài khoản của bạn đã hết hạn sử dụng. Vui lòng liên hệ Admin.";
-        } else {
-            $_SESSION['account_id'] = $account['id'];
-            $_SESSION['username'] = $account['username'];
-            $_SESSION['role'] = $account['role'];
-            header("Location: index.php");
-            exit;
-        }
+    // Rate limiting: 5 attempts per 15 minutes per IP
+    if (!rate_limit_check($client_ip, 5, 900)) {
+        $error = "Bạn đã nhập sai quá nhiều lần. Vui lòng thử lại sau 15 phút.";
     } else {
-        $error = "Sai tên đăng nhập hoặc mật khẩu.";
+        $stmt = $pdo->prepare("SELECT id, username, password, role, expire_date FROM system_accounts WHERE username = ?");
+        $stmt->execute([$username]);
+        $account = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($account && password_verify($password, $account['password'])) {
+            // Kiểm tra thời hạn
+            if (!empty($account['expire_date']) && strtotime($account['expire_date']) < time()) {
+                $error = "Tài khoản của bạn đã hết hạn sử dụng. Vui lòng liên hệ Admin.";
+            } else {
+                // ── Security: Regenerate session ID to prevent session fixation ──
+                session_regenerate_id(true);
+                
+                $_SESSION['account_id'] = $account['id'];
+                $_SESSION['username'] = $account['username'];
+                $_SESSION['role'] = $account['role'];
+                
+                // Clear rate limit on successful login
+                rate_limit_clear($client_ip);
+                
+                header("Location: index.php");
+                exit;
+            }
+        } else {
+            // Record failed attempt for rate limiting
+            rate_limit_record($client_ip);
+            $error = "Sai tên đăng nhập hoặc mật khẩu.";
+        }
     }
 }
 ?>
@@ -107,13 +128,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="error-msg"><?php echo htmlspecialchars($error); ?></div>
     <?php endif; ?>
     <form method="POST" action="">
+        <?php echo csrf_field(); ?>
         <div class="form-group">
             <label>Tên đăng nhập</label>
-            <input type="text" name="username" required placeholder="username">
+            <input type="text" name="username" required placeholder="username" autocomplete="username">
         </div>
         <div class="form-group">
             <label>Mật khẩu</label>
-            <input type="password" name="password" required placeholder="password">
+            <input type="password" name="password" required placeholder="password" autocomplete="current-password">
         </div>
         <button type="submit">Đăng Nhập</button>
     </form>

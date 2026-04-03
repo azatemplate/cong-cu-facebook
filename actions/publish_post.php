@@ -89,7 +89,7 @@ $scheduled_time = isset($_POST['scheduled_time']) && !empty(trim($_POST['schedul
     : date('Y-m-d H:i:s');
 
 if (!is_dir($upload_dir)) {
-    mkdir($upload_dir, 0777, true);
+    mkdir($upload_dir, 0755, true);
 }
 
 // ── Create Campaign (fault-tolerant: works even if table doesn't exist yet) ──

@@ -204,7 +204,15 @@ try {
     ");
 
 } catch (PDOException $e) {
-    die("Lỗi kết nối CSDL: " . $e->getMessage());
+    // Never expose DB error details to end users
+    $err_msg = date('[Y-m-d H:i:s] ') . 'DB Connection Error: ' . $e->getMessage() . "\n";
+    @file_put_contents(__DIR__ . '/../uploads/app_error.log', $err_msg, FILE_APPEND | LOCK_EX);
+    
+    if (defined('APP_ENV') && APP_ENV === 'development') {
+        die("Lỗi kết nối CSDL: " . $e->getMessage());
+    } else {
+        die("Hệ thống tạm thời gặp sự cố. Vui lòng thử lại sau hoặc liên hệ Admin.");
+    }
 }
 
 // ── Encryption Helpers ──────────────────────────────────────────────────────

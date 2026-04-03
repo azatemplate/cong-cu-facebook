@@ -11,15 +11,16 @@ try {
     if ($mr) $max_retries = (int)($mr->fetchColumn() ?: 3);
 } catch (Exception $e) {}
 
-$stmt = $pdo->query("
+$stmt = $pdo->prepare("
     SELECT DISTINCT page_id FROM scheduled_posts
     WHERE scheduled_time <= NOW()
       AND page_id IS NOT NULL
       AND (
         status = 'pending'
-        OR (status = 'failed' AND (retry_count IS NULL OR retry_count < $max_retries))
+        OR (status = 'failed' AND (retry_count IS NULL OR retry_count < ?))
       )
 ");
+$stmt->execute([$max_retries]);
 $pages = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
 if (empty($pages)) {

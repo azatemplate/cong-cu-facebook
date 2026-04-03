@@ -38,18 +38,20 @@ $stats = $pdo->query("
 ")->fetchAll(PDO::FETCH_KEY_PAIR);
 
 // ── Bài sẵn sàng đăng (đến/quá giờ) ─────────────────────────────────────────
-$ready_posts = $pdo->query("
+$ready_stmt = $pdo->prepare("
     SELECT id, account_id, page_id, post_type, status, retry_count, scheduled_time,
            TIMESTAMPDIFF(MINUTE, scheduled_time, NOW()) AS overdue_minutes
     FROM scheduled_posts
     WHERE scheduled_time <= NOW()
       AND (
         status = 'pending'
-        OR (status = 'failed' AND (retry_count IS NULL OR retry_count < $max_retries))
+        OR (status = 'failed' AND (retry_count IS NULL OR retry_count < ?))
       )
     ORDER BY scheduled_time ASC
     LIMIT 30
-")->fetchAll(PDO::FETCH_ASSOC);
+");
+$ready_stmt->execute([$max_retries]);
+$ready_posts = $ready_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Bài pending chưa tới giờ ─────────────────────────────────────────────────
 $upcoming = $pdo->query("

@@ -118,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         if (isset($response['data']['paging']['cursors']['after'])) {
             $next_cursor = $response['data']['paging']['cursors']['after'];
         }
-        echo json_encode(['status' => 'success', 'data' => $response['data']['data'], 'next_cursor' => $next_cursor, 'page_access_token' => $page_access_token]);
+        echo json_encode(['status' => 'success', 'data' => $response['data']['data'], 'next_cursor' => $next_cursor]);
     } else {
         $error_msg = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : 'Lỗi không xác định';
         echo json_encode(['status' => 'error', 'msg' => $error_msg]);

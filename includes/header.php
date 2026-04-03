@@ -1,10 +1,16 @@
 <!-- includes/header.php -->
 <?php 
+require_once __DIR__ . '/security.php';
 session_start();
+set_security_headers();
+
 if (!isset($_SESSION['account_id'])) {
     header("Location: login.php");
     exit;
 }
+
+// Generate CSRF token for all pages
+$_csrf_token = csrf_token();
 
 // Đặt $current_page ở các trang chính để highlight menu
 if(!isset($current_page)) $current_page = '';
