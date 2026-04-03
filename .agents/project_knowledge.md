@@ -29,3 +29,7 @@ File này lưu trữ toàn bộ bức tranh kiến trúc kỹ thuật của hệ
 ## 5. Workflows Tự Động (AI Skills)
 - Hệ thống có nạp sẵn một phím tắt Workflow ở `.agents/workflows/update_github.md`. 
 - Nếu người dùng cần commit code lên Github, AI chỉ cần nhận lệnh `/update_github`, đọc file thay đổi và gọi chuỗi lệnh git (Thêm, Commit Message Tiếng Anh ngắn gọn, và Push).
+
+## 6. Lịch sử Cập nhật Gần đây
+- Đã bổ sung tính năng tự động so sánh số liệu (Reach, Views, Followers) của ngày hôm nay so với hôm qua bằng Snapshot (hiển thị phần trăm tăng/giảm trên `index.php`).
+- Cải tổ lại hoàn toàn diện mạo và văn bản hiển thị trên trang đăng nhập `login.php` bằng giao diện Split-Screen hiện đại.

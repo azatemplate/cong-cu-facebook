@@ -149,6 +149,18 @@ foreach ($chart_days as $day) {
     }
 }
 
+$yesterday_date = date('Y-m-d', strtotime('-1 days'));
+$yest_followers = isset($snap_map[$yesterday_date]['total_followers']) ? intval($snap_map[$yesterday_date]['total_followers']) : 0;
+$followers_diff_pct = 0;
+if ($yest_followers > 0) {
+    $followers_diff_pct = round((($total_followers - $yest_followers) / $yest_followers) * 100, 1);
+} else if ($total_followers > 0) {
+    $followers_diff_pct = 100;
+}
+$followers_diff_html = $followers_diff_pct >= 0 
+    ? '<span style="color: #16a34a; font-size: 14px; margin-left:10px; font-weight: 500;">&uarr; ' . $followers_diff_pct . '%</span>'
+    : '<span style="color: #ef4444; font-size: 14px; margin-left:10px; font-weight: 500;">&darr; ' . abs($followers_diff_pct) . '%</span>';
+
 ?>
 
 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
@@ -191,18 +203,22 @@ foreach ($chart_days as $day) {
 
     <div class="stat-card">
         <div class="stat-title">Total Reach (All Users)</div>
-        <div class="stat-value color-red" style="display:flex; align-items:center;">
-            <span class="icon" style="margin-right:10px;">👁️</span> <span id="ajax-reach">Đang tải...</span> <span style="font-size:14px; color:var(--text-muted); margin-left:10px; font-weight: normal;">--</span>
+        <div class="stat-value color-red" style="display:flex; align-items:center; flex-wrap:wrap;">
+            <span class="icon" style="margin-right:10px;">👁️</span> 
+            <span id="ajax-reach">Đang tải...</span> 
+            <span id="ajax-reach-diff" style="display:none;"></span>
         </div>
-        <div class="stat-subtitle">Tổng reach từ page insights (<?php echo htmlspecialchars($period); ?>)</div>
+        <div class="stat-subtitle" style="margin-top: 10px;">Tổng reach từ page insights (<?php echo htmlspecialchars($period); ?>)</div>
     </div>
     
     <div class="stat-card">
         <div class="stat-title">Total Flow (All Followers)</div>
-        <div class="stat-value color-green" style="display:flex; align-items:center;">
-            <span class="icon" style="margin-right:10px;">👍</span> <?php echo number_format($total_followers); ?> <span style="font-size:14px; color:var(--text-muted); margin-left:10px; font-weight: normal;">--</span>
+        <div class="stat-value color-green" style="display:flex; align-items:center; flex-wrap:wrap;">
+            <span class="icon" style="margin-right:10px;">👍</span> 
+            <?php echo number_format($total_followers); ?> 
+            <?php echo $followers_diff_html; ?>
         </div>
-        <div class="stat-subtitle">Tổng người theo dõi toàn bộ fanpage</div>
+        <div class="stat-subtitle" style="margin-top: 10px;">Tổng người theo dõi toàn bộ fanpage</div>
     </div>
     
     <div class="stat-card">
@@ -220,10 +236,12 @@ foreach ($chart_days as $day) {
     
     <div class="stat-card">
         <div class="stat-title">Total Views (All Users)</div>
-        <div class="stat-value color-purple" style="display:flex; align-items:center; color: #8b5cf6;">
-            <span class="icon" style="margin-right:10px;">▶</span> <span id="ajax-views">Đang tải...</span> <span style="font-size:14px; color:var(--text-muted); margin-left:10px; font-weight: normal;">--</span>
+        <div class="stat-value color-purple" style="display:flex; align-items:center; color: #8b5cf6; flex-wrap:wrap;">
+            <span class="icon" style="margin-right:10px;">▶</span> 
+            <span id="ajax-views">Đang tải...</span> 
+            <span id="ajax-views-diff" style="display:none;"></span>
         </div>
-        <div class="stat-subtitle">Tổng views video/reels theo dữ liệu (<?php echo htmlspecialchars($period); ?>)</div>
+        <div class="stat-subtitle" style="margin-top: 10px;">Tổng views video/reels theo dữ liệu (<?php echo htmlspecialchars($period); ?>)</div>
     </div>
 </div>
 
@@ -235,8 +253,16 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.reach_formatted) {
                 document.getElementById('ajax-reach').textContent = data.reach_formatted;
             }
+            if (data.reach_diff_html) {
+                document.getElementById('ajax-reach-diff').innerHTML = data.reach_diff_html;
+                document.getElementById('ajax-reach-diff').style.display = 'inline';
+            }
             if (data.views_formatted) {
                 document.getElementById('ajax-views').textContent = data.views_formatted;
+            }
+            if (data.views_diff_html) {
+                document.getElementById('ajax-views-diff').innerHTML = data.views_diff_html;
+                document.getElementById('ajax-views-diff').style.display = 'inline';
             }
         })
         .catch(err => {

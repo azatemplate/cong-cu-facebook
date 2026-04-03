@@ -111,12 +111,50 @@ try {
     ")->execute([$snap_account_id, $today_date, $total_followers, $display_total_reach, $display_total_views, $total_pages]);
 } catch (Exception $e) { /* ignore */ }
 
+// 3. Fetch yesterday's snapshot to compute percentage diff
+$yesterday_date = date('Y-m-d', strtotime('-1 days'));
+$yest_reach = 0;
+$yest_views = 0;
+try {
+    $stmt_yest = $pdo->prepare("SELECT total_reach, total_views FROM dashboard_snapshots WHERE account_id = ? AND snapshot_date = ?");
+    $stmt_yest->execute([$snap_account_id, $yesterday_date]);
+    $yest_data = $stmt_yest->fetch(PDO::FETCH_ASSOC);
+    if ($yest_data) {
+        $yest_reach = intval($yest_data['total_reach']);
+        $yest_views = intval($yest_data['total_views']);
+    }
+} catch (Exception $e) { /* ignore */ }
+
+$reach_diff_pct = 0;
+if ($yest_reach > 0) {
+    $reach_diff_pct = round((($display_total_reach - $yest_reach) / $yest_reach) * 100, 1);
+} else if ($display_total_reach > 0) {
+    $reach_diff_pct = 100;
+}
+
+$views_diff_pct = 0;
+if ($yest_views > 0) {
+    $views_diff_pct = round((($display_total_views - $yest_views) / $yest_views) * 100, 1);
+} else if ($display_total_views > 0) {
+    $views_diff_pct = 100;
+}
+
+$reach_diff_html = $reach_diff_pct >= 0 
+    ? '<span style="color: #16a34a; font-size: 14px; margin-left:10px; font-weight: 500;">&uarr; ' . $reach_diff_pct . '%</span>'
+    : '<span style="color: #ef4444; font-size: 14px; margin-left:10px; font-weight: 500;">&darr; ' . abs($reach_diff_pct) . '%</span>';
+
+$views_diff_html = $views_diff_pct >= 0 
+    ? '<span style="color: #16a34a; font-size: 14px; margin-left:10px; font-weight: 500;">&uarr; ' . $views_diff_pct . '%</span>'
+    : '<span style="color: #ef4444; font-size: 14px; margin-left:10px; font-weight: 500;">&darr; ' . abs($views_diff_pct) . '%</span>';
+
 // Return JSON Output
 $resp = [
     'reach' => $display_total_reach,
     'views' => $display_total_views,
     'reach_formatted' => number_format($display_total_reach),
     'views_formatted' => number_format($display_total_views),
+    'reach_diff_html' => $reach_diff_html,
+    'views_diff_html' => $views_diff_html,
 ];
 file_put_contents($cache_file_path, json_encode($resp));
 
