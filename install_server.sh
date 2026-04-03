@@ -52,7 +52,39 @@ mkdir -p "$APP_DIR/uploads" "$APP_DIR/uploads/sessions" "$APP_DIR/uploads/rate_l
 chmod -R 777 "$APP_DIR/uploads"
 chown -R www:www "$APP_DIR/uploads"
 
-# 5. Cài đặt CronJob Tự Động
+# 5. Thiết lập Database & Sinh file bảo mật (.env)
+echo "-> Thiết lập Kết Nối Lưu Trữ Dữ Liệu (MySQL)..."
+echo "LƯU Ý: Bạn cần tạo sẵn 1 Database trống trên aaPanel/cPanel trước."
+read -p " - Nhập Database Name (Tên CSDL): " DB_NAME
+read -p " - Nhập Database User (Tên Người dùng): " DB_USER
+read -s -p " - Nhập Database Password (Mật khẩu - Bị ẩn khi gõ): " DB_PASS
+echo ""
+
+if [ -n "$DB_NAME" ] && [ -n "$DB_USER" ] && [ -n "$DB_PASS" ]; then
+    echo "-> Đang khởi tạo file bảo mật .env..."
+    cp .env.example .env
+    sed -i "s/DB_NAME=.*/DB_NAME=$DB_NAME/g" .env
+    sed -i "s/DB_USER=.*/DB_USER=$DB_USER/g" .env
+    sed -i "s/DB_PASS=.*/DB_PASS=$DB_PASS/g" .env
+    
+    echo "-> Đang tự động nạp dữ liệu (Import SQL) vào hệ thống..."
+    if command -v mysql &> /dev/null; then
+        mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < facebooksever.sql
+        if [ $? -eq 0 ]; then
+            echo "   [V] Import Dữ liệu Database THÀNH CÔNG!"
+            # Xoá file sql sau khi cài xong cho an toàn
+            rm -f facebooksever.sql
+        else
+            echo "   [X] Lỗi Import dữ liệu. Vui lòng tự Import file facebooksever.sql thủ công."
+        fi
+    else
+        echo "   [X] Không tìm thấy lệnh 'mysql' trên máy chủ. Bạn cần Import thủ công."
+    fi
+else
+    echo "-> Bỏ qua cài đặt tự động Database. Bạn phải cấu hình thủ công vào file .env!"
+fi
+
+# 6. Cài đặt CronJob Tự Động
 echo "-> Thiết lập tiến trình Cronjob chạy nền (Mỗi 1 phút)..."
 CRON_PUBLISH="* * * * * php $APP_DIR/cron/start_publish.php >> /tmp/fb_publish.log 2>&1"
 CRON_COMMENT="* * * * * php $APP_DIR/cron/start_comment.php >> /tmp/fb_comment.log 2>&1"
@@ -63,15 +95,13 @@ CRON_COMMENT="* * * * * php $APP_DIR/cron/start_comment.php >> /tmp/fb_comment.l
 
 echo ""
 echo "======================================================="
-echo " CÀI ĐẶT HOÀN TẤT, HỆ THỐNG ĐÃ SN SÀNG TRÊN NATIVE!  "
+echo " CÀI ĐẶT HOÀN TẤT, HỆ THỐNG ĐÃ SẴN SÀNG TRÊN NATIVE!  "
 echo "======================================================="
 echo " Tên miền: https://$DOMAIN_NAME"
 echo " Đường dẫn App: $APP_DIR"
 echo " Cronjob: Đã thêm tự động vào crontab của máy chủ."
 echo "-------------------------------------------------------"
-echo " Việc cần làm tiếp theo:"
-echo " 1. Vào phpMyAdmin tạo Database và Import file facebooksever.sql"
-echo " 2. Đổi tên file .env.example thành .env (hoặc rà soát file .env tạo sẵn) và cập nhật thông tin cài đặt Database vào đó."
-echo " 3. Truy cập vào web và đăng nhập Admin mặc định: admin / admin123"
+echo " Truy cập vào web và đăng nhập Admin mặc định: admin / admin123"
+echo " (Đổi mật khẩu ngay sau khi đăng nhập thành công)"
 echo "======================================================="
 echo ""
