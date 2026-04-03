@@ -49,11 +49,13 @@ foreach ($pages as $pid) {
     } elseif ($is_web) {
         // Fallback Web-Forking (cURL Async)
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
-        // Attempt to guess correct path based on current request
-        $uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/cron/start_publish.php';
-        $base_dir = dirname($uri);
-        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . $base_dir . "/publish_worker.php?page_id=" . urlencode($pid);
+        // Attempt to build accurate web path to current cron directory
+        $doc_root = $_SERVER['DOCUMENT_ROOT'];
+        $cron_dir_web_path = str_replace('\\', '/', str_replace($doc_root, '', __DIR__));
+        if (empty($cron_dir_web_path)) $cron_dir_web_path = '/cron'; // Fallback
         
+        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . rtrim($cron_dir_web_path, '/') . "/publish_worker.php?page_id=" . urlencode($pid);
+
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500); // Tăng timeout để webserver kịp nhận request kích luồng
