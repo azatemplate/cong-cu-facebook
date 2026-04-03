@@ -67,7 +67,7 @@ endif; ?>
         <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
             <p style="margin-top: 0; color: #166534; font-weight: 500;">Bấm Đăng Nhập Facebook Để Đăng Nhập</p>
             <p style="font-size: 13px; color: #15803d; margin-bottom: 10px;">
-                Nhấn nút bên dưới để cấp quyền thông qua Facebook App của bạn. Cần đảm bảo App của bạn đã cấu hình <strong>Valid OAuth Redirect URIs</strong> thành <code><?php echo $redirect_uri; ?></code>.
+                Nhấn nút bên dưới để cấp quyền thông qua Facebook App của bạn.
             </p>
             <a href="<?php echo htmlspecialchars($login_url); ?>" target="_blank" class="btn btn-primary" style="background: #1877f2; display: inline-flex; align-items: center; gap: 8px;">
                 <span style="font-weight: bold; font-size: 16px;">f</span> Đăng Nhập Facebook
