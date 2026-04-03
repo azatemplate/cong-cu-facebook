@@ -24,12 +24,12 @@ Công cụ tự động hóa toàn diện giúp quản lý và tối ưu hóa qu
 Vào máy chủ (VPS) của bạn bằng quyền `root`, copy và dán dòng lệnh tương ứng với nền tảng của bạn:
 
 **👉 Cách 1: NẾU BẠN DÙNG AAPANEL / NATIVE VPS (Khuyên Dùng)**
-Lệnh này sẽ tự động tải source code vào thư mục `wwwroot` của bạn, cấp quyền và Gắn Tự Động Cronjob (Background Worker) chuẩn xác 100%.
+Lệnh này sẽ tự động tải source code, cấp quyền bảo mật, kết nối CSDL và Gắn Tự Động Cronjob (Background Worker) chuẩn xác 100%.
 
 ```bash
 curl -sL https://raw.githubusercontent.com/azatemplate/cong-cu-facebook/main/install_server.sh | bash
 ```
-> Khi chạy xong, hãy vào phpMyAdmin để tạo CSDL, import bảng `facebooksever.sql` và sửa file `.env` ẩn ở thư mục gốc (Ghi cấu hình Database vào đó) là web chạy.
+> **Lưu ý:** Bạn cần tạo sẵn 1 Database rỗng trên hệ thống aaPanel/cPanel. Bảng Console (Terminal) sẽ hiện ra trợ lý ảo yêu cầu bạn nhập `Tên CSDL`, `Username` và `Password`. Việc gắn kết nối file bảo mật `.env` và Import bảng biểu Data sẽ do hệ thống tự làm hoàn toàn!
 
 **👉 Cách 2: NẾU BẠN CHUỘNG DOCKER (Dành cho VPS Trắng hoàn toàn)**
 Lệnh này tự động cài Caddy HTTPS và kéo toàn bộ hệ thống Database + Web Component bọc trong Docker kín.
