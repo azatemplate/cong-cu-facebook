@@ -212,7 +212,7 @@ function runCronJob() {
     const btn = document.getElementById('cronBtn');
     btn.innerHTML = '<span class="loader" style="width:12px;height:12px;border:2px solid #fff;border-bottom-color:transparent;border-radius:50%;display:inline-block;animation:rotation 1s linear infinite;"></span> Đang chạy...';
     btn.disabled = true;
-    fetch('cron/start_publish.php')
+    fetch('diagnostics.php?run=publish&ajax=1')
     .then(r => r.text())
     .then(text => { alert('HOÀN TẤT!\n\n' + text); window.location.reload(); })
     .catch(err => { alert('Lỗi: ' + err); window.location.reload(); });

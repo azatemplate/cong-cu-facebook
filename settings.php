@@ -111,7 +111,7 @@ $is_admin = ($_SESSION['role'] === 'admin');
 <div class="page-title" style="display: flex; justify-content: space-between; align-items: center;">
     <span>Cài Đặt Hệ Thống</span>
     <?php if ($is_admin): ?>
-        <a href="cron/test_cron.php" target="_blank" class="btn btn-primary" style="background: #8b5cf6; border-color: #8b5cf6;">🚀 Xem chẩn đoán Cronjob</a>
+        <a href="diagnostics.php" target="_blank" class="btn btn-primary" style="background: #8b5cf6; border-color: #8b5cf6;">🚀 Xem chẩn đoán Cronjob</a>
     <?php endif; ?>
 </div>
 

@@ -1,7 +1,7 @@
 <?php
-// cron/test_cron.php — Trang chẩn đoán & kích hoạt thủ công Cron
-require_once __DIR__ . '/../includes/db.php';
-require_once __DIR__ . '/../includes/security.php';
+// diagnostics.php — Trang chẩn đoán & kích hoạt thủ công Cron
+require_once __DIR__ . '/includes/db.php';
+require_once __DIR__ . '/includes/security.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -29,11 +29,15 @@ if (isset($_GET['run'])) {
     ob_start();
     $type = $_GET['run'];
     if ($type === 'publish') {
-        require __DIR__ . '/start_publish.php';
+        require __DIR__ . '/cron/start_publish.php';
     } elseif ($type === 'comment') {
-        require __DIR__ . '/start_comment.php';
+        require __DIR__ . '/cron/start_comment.php';
     }
     $run_msg = nl2br(htmlspecialchars(ob_get_clean()));
+    if (isset($_GET['ajax'])) {
+        echo strip_tags($run_msg);
+        exit;
+    }
 }
 
 // ── Đếm bài theo trạng thái ───────────────────────────────────────────────────
