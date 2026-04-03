@@ -27,7 +27,15 @@ foreach ($accounts as $aid) {
     if (!$aid) continue; 
     
     if ($exec_enabled) {
-        $php_bin = defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php';
+        $php_bin = 'php';
+        if (defined('PHP_BINARY') && PHP_BINARY && strpos(PHP_BINARY, 'php-fpm') === false && strpos(PHP_BINARY, 'php-cgi') === false) {
+            $php_bin = PHP_BINARY;
+        } elseif (file_exists('/www/server/php/81/bin/php')) {
+            $php_bin = '/www/server/php/81/bin/php';
+        } elseif (file_exists('/usr/bin/php')) {
+            $php_bin = '/usr/bin/php';
+        }
+        
         $script_path = __DIR__ . DIRECTORY_SEPARATOR . 'comment_worker.php';
         
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
@@ -35,13 +43,14 @@ foreach ($accounts as $aid) {
         } else {
             exec("\"$php_bin\" \"$script_path\" $aid > /dev/null 2>&1 &");
         }
-        echo "  -> Đã kích hoạt luồng bình luận CLI cho Account ID: $aid\n";
+        echo "  -> Đã kích hoạt luồng bình luận CLI ($php_bin) cho Account ID: $aid\n";
     } elseif ($is_web) {
-        // Fallback Web-Forking (cURL Async Timeout 1ms)
+        // Fallback Web-Forking (cURL Async Timeout 1ms) qua Wrapper gốc
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
-        $uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/cron/start_comment.php';
-        $base_dir = dirname($uri);
-        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . $base_dir . "/comment_worker.php?account_id=" . ((int)$aid);
+        $doc_root = $_SERVER['DOCUMENT_ROOT'];
+        $root_web_path = rtrim(str_replace('\\', '/', str_replace($doc_root, '', dirname(__DIR__))), '/');
+        
+        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . $root_web_path . "/run_worker.php?type=comment&page_id=" . ((int)$aid);
         
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);

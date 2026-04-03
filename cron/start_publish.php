@@ -37,7 +37,15 @@ foreach ($pages as $pid) {
     if (!$pid) continue; // Skip NULL
     
     if ($exec_enabled) {
-        $php_bin = defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php';
+        $php_bin = 'php';
+        if (defined('PHP_BINARY') && PHP_BINARY && strpos(PHP_BINARY, 'php-fpm') === false && strpos(PHP_BINARY, 'php-cgi') === false) {
+            $php_bin = PHP_BINARY;
+        } elseif (file_exists('/www/server/php/81/bin/php')) {
+            $php_bin = '/www/server/php/81/bin/php'; // Fallback mạnh nhất cho aaPanel
+        } elseif (file_exists('/usr/bin/php')) {
+            $php_bin = '/usr/bin/php';
+        }
+        
         $script_path = __DIR__ . DIRECTORY_SEPARATOR . 'publish_worker.php';
         
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
@@ -45,16 +53,15 @@ foreach ($pages as $pid) {
         } else {
             exec("\"$php_bin\" \"$script_path\" \"$pid\" > /dev/null 2>&1 &");
         }
-        echo "  -> Đã kích hoạt luồng CLI cho Page ID: $pid\n";
+        echo "  -> Đã kích hoạt luồng CLI ($php_bin) cho Page ID: $pid\n";
     } elseif ($is_web) {
-        // Fallback Web-Forking (cURL Async)
+        // Fallback Web-Forking (cURL Async) qua Wrapper gốc
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
         // Attempt to build accurate web path to current cron directory
         $doc_root = $_SERVER['DOCUMENT_ROOT'];
-        $cron_dir_web_path = str_replace('\\', '/', str_replace($doc_root, '', __DIR__));
-        if (empty($cron_dir_web_path)) $cron_dir_web_path = '/cron'; // Fallback
+        $root_web_path = rtrim(str_replace('\\', '/', str_replace($doc_root, '', dirname(__DIR__))), '/');
         
-        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . rtrim($cron_dir_web_path, '/') . "/publish_worker.php?page_id=" . urlencode($pid);
+        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . $root_web_path . "/run_worker.php?type=publish&page_id=" . urlencode($pid);
 
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
