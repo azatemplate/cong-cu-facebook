@@ -1,5 +1,5 @@
 #!/bin/bash
-# Kịch bản cập nhật Code tự động 1-Click dành riêng cho VPS dùng aaPanel (không dùng Docker)
+# Kịch bản cập nhật Code tự động 1-Click dành cho VPS Server (Native deployment)
 
 APP_DIR="/www/wwwroot/app.hongvippro.com"
 
