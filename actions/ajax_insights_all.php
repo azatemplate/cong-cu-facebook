@@ -25,22 +25,17 @@ if (isset($_SESSION[$cache_key_all]) && $_SESSION[$cache_key_all]['expires'] > t
     exit;
 }
 
-$all_user_pages = [];
-if ($is_admin) {
-    $stmt_all = $pdo->query("SELECT page_id, access_token, name, followers_count FROM pages ORDER BY followers_count DESC");
-} else {
-    $stmt_all = $pdo->prepare("
-        SELECT p.page_id, p.access_token, p.name, p.followers_count 
-        FROM pages p JOIN users u ON p.user_id = u.id 
-        WHERE u.account_id = :aid
-        UNION
-        SELECT p.page_id, p.access_token, p.name, p.followers_count 
-        FROM pages p JOIN page_shares ps ON p.page_id = ps.page_id 
-        WHERE ps.shared_with_account_id = :aid2
-        ORDER BY followers_count DESC
-    ");
-    $stmt_all->execute(['aid' => $account_id, 'aid2' => $account_id]);
-}
+$stmt_all = $pdo->prepare("
+    SELECT p.page_id, p.access_token, p.name, p.followers_count 
+    FROM pages p JOIN users u ON p.user_id = u.id 
+    WHERE u.account_id = :aid
+    UNION
+    SELECT p.page_id, p.access_token, p.name, p.followers_count 
+    FROM pages p JOIN page_shares ps ON p.page_id = ps.page_id 
+    WHERE ps.shared_with_account_id = :aid2
+    ORDER BY followers_count DESC
+");
+$stmt_all->execute(['aid' => $account_id, 'aid2' => $account_id]);
 $all_user_pages = $stmt_all->fetchAll(PDO::FETCH_ASSOC);
 
 $all_page_insights = [];
