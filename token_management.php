@@ -42,7 +42,8 @@ if (empty($fb_app_id)) {
 //pages_manage_engagement,business_management
 // Define exactly the permissions needed based on user request
 $fb_permissions = "pages_manage_engagement,business_management,pages_show_list,pages_manage_posts,pages_read_engagement,read_insights,pages_messaging,public_profile";
-$redirect_uri = "https://hongvippro.com/facebook/redirect_callback.php";
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
+$redirect_uri = $protocol . $_SERVER['HTTP_HOST'] . get_base_url() . "redirect_callback.php";
 
 $login_url = "";
 if ($fb_app_id) {
