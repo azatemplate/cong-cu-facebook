@@ -29,7 +29,7 @@ Lệnh này sẽ tự động tải source code vào thư mục `wwwroot` của 
 ```bash
 curl -sL https://raw.githubusercontent.com/azatemplate/cong-cu-facebook/main/install_server.sh | bash
 ```
-> Khi chạy xong, hãy vào phpMyAdmin để tạo CSDL, import bảng `facebooksever.sql` và sửa file `includes/config.php` là web chạy.
+> Khi chạy xong, hãy vào phpMyAdmin để tạo CSDL, import bảng `facebooksever.sql` và sửa file `.env` ẩn ở thư mục gốc (Ghi cấu hình Database vào đó) là web chạy.
 
 **👉 Cách 2: NẾU BẠN CHUỘNG DOCKER (Dành cho VPS Trắng hoàn toàn)**
 Lệnh này tự động cài Caddy HTTPS và kéo toàn bộ hệ thống Database + Web Component bọc trong Docker kín.
