@@ -55,15 +55,7 @@ define('ENCRYPTION_KEY', get_env_var('ENCRYPTION_KEY', ''));
 // Set to 'production' on live server to enable SSL verification etc.
 define('APP_ENV', get_env_var('APP_ENV', 'production'));
 
-// ── Session Security ─────────────────────────────────────────────────────────
 if (session_status() === PHP_SESSION_NONE) {
-    // Dynamically set session save path to be cross-platform
-    $session_path = __DIR__ . '/../uploads/sessions';
-    if (!is_dir($session_path)) {
-        @mkdir($session_path, 0755, true);
-    }
-    ini_set('session.save_path', $session_path);
-
     // These must be set BEFORE session_start() is called.
     ini_set('session.cookie_httponly', '1');
     ini_set('session.cookie_samesite', 'Lax');

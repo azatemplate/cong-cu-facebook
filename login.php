@@ -1,14 +1,15 @@
 <?php
+require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/security.php';
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 set_security_headers();
 
 if (isset($_SESSION['account_id'])) {
     header("Location: index.php");
     exit;
 }
-
-require_once __DIR__ . '/includes/db.php';
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
