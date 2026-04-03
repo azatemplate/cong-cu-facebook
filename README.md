@@ -21,15 +21,23 @@ Công cụ tự động hóa toàn diện giúp quản lý và tối ưu hóa qu
 
 ## 🚀 Hướng Dẫn Cài Đặt (1 Lệnh Duy Nhất)
 
-Vào máy chủ (VPS) của bạn bằng tài khoản `root` (hoặc có sudo), copy và dán nguyên xi dòng lệnh sau:
+Vào máy chủ (VPS) của bạn bằng quyền `root`, copy và dán dòng lệnh tương ứng với nền tảng của bạn:
+
+**👉 Cách 1: NẾU BẠN DÙNG AAPANEL / NATIVE VPS (Khuyên Dùng)**
+Lệnh này sẽ tự động tải source code vào thư mục `wwwroot` của bạn, cấp quyền và Gắn Tự Động Cronjob (Background Worker) chuẩn xác 100%.
+
+```bash
+curl -sL https://raw.githubusercontent.com/azatemplate/cong-cu-facebook/main/install_server.sh | bash
+```
+> Khi chạy xong, hãy vào phpMyAdmin để tạo CSDL, import bảng `facebooksever.sql` và sửa file `includes/config.php` là web chạy.
+
+**👉 Cách 2: NẾU BẠN CHUỘNG DOCKER (Dành cho VPS Trắng hoàn toàn)**
+Lệnh này tự động cài Caddy HTTPS và kéo toàn bộ hệ thống Database + Web Component bọc trong Docker kín.
 
 ```bash
 wget -O install.sh https://raw.githubusercontent.com/azatemplate/cong-cu-facebook/main/install.sh && bash install.sh
 ```
-
-**Quá trình tương tác khi cấu hình (Interactive Console):**
-1. Màn hình sẽ nhắc bạn nhập **Tên miền (Domain)**: Bạn có thể điền (Ví dụ: tool.domain.com). Nếu có điền, tool sẽ tải Caddy Reverse Proxy & thiết lập tự động chững chỉ xanh SSL. Nếu không muốn xài tên miền, nhấn Enter bỏ trống để chạy trực tiếp IP qua cổng 80.
-2. Chờ 3-4 phút cho tới khi màn hình hiển thị lời chào **CÀI ĐẶT HOÀN TẤT & HỆ THỐNG ĐÃ SẴN SÀNG CHẠY!**.
+> Trơn tru và tự động. Đợi cài xong và truy cập IP/Domain theo thông tin hiển thị trên màn hình.
 
 > **Tài khoản Đăng nhập Hệ Thống mặc định ban đầu:**
 > Username: `admin` \
