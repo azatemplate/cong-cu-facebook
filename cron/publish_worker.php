@@ -745,6 +745,13 @@ foreach ($pending_posts as $post) {
 $elapsed = round(microtime(true) - $start_time, 2);
 echo "Hoan thanh phien quet cho Page ID #$target_page_id ({$elapsed}s).\n";
 echo "-------------------------------------------\n";
+
+// Giai phong va xoa lock file (tranh tich luy file rac)
+if ($lock_fp) {
+    flock($lock_fp, LOCK_UN);
+    fclose($lock_fp);
+}
+@unlink($lock_file);
 // Cleanup DB chay rieng qua cron/cleanup.php (59 23 * * *).
 
 function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $has_error_msg = true, $has_retry_count = true)

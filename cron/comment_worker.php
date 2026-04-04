@@ -240,3 +240,10 @@ foreach ($rows as $row) {
 }
 
 echo "----------------------\n";
+
+// Giai phong va xoa lock file (tranh tich luy file rac)
+if ($comment_lock_fp) {
+    flock($comment_lock_fp, LOCK_UN);
+    fclose($comment_lock_fp);
+}
+@unlink($comment_lock_file);
