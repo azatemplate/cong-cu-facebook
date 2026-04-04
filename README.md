@@ -50,8 +50,9 @@ wget -O install.sh https://raw.githubusercontent.com/azatemplate/cong-cu-faceboo
 Bất cứ lúc nào hệ thống có bản vá mới trên nhánh Main, bạn chỉ việc dùng 1 trong 2 lệnh sau trên giao diện Console/Terminal của VPS (chọn 1 lệnh tùy theo cách bạn cài đặt):
 
 **👉 Cách 1: NẾU BẠN CÀI LÊN AAPANEL HOẶC VPS TRỰC TIẾP (Native / cPanel / Không dùng Docker)**
+Hãy thay `<TEN_MIEN_CUA_BAN>` bằng thư mục tên miền thực tế của bạn:
 ```bash
-curl -sL https://raw.githubusercontent.com/azatemplate/cong-cu-facebook/main/update_server.sh | bash
+bash /www/wwwroot/<TEN_MIEN_CUA_BAN>/update_server.sh
 ```
 
 **👉 Cách 2: NẾU BẠN ĐANG DÙNG CÀI ĐẶT DOCKER (`install.sh`)**
@@ -62,10 +63,10 @@ bash /opt/facebook-automation/update.sh
 Hệ thống sẽ kéo Git tự động, cấu hình phân quyền và Restart trơn tru cực nhanh mà không làm hỏng Database đang có.
 
 **🚨 Xử Lý Sự Cố: "Chưa liên kết với Github (chưa init Git)"**
-Nếu bạn gặp lỗi này khi chạy lệnh cập nhật trên AaPanel, điều đó nghĩa là lúc trước bạn tải file `.zip` và giải nén thủ công chứ không cài bằng lệnh Git. Bạn hãy dán chuỗi lệnh sau vào Terminal của VPS để liên kết hệ thống lại với kho lưu trữ mà không lo mất ảnh/database nhé:
+Nếu bạn gặp lỗi này khi chạy lệnh cập nhật trên AaPanel, điều đó nghĩa là lúc trước bạn tải file `.zip` và giải nén thủ công chứ không cài bằng lệnh Git. Bạn hãy thay phần `<TEN_MIEN_CUA_BAN>` bằng tên miền thực tế đang dùng và dán chuỗi lệnh sau vào Terminal của VPS để liên kết hệ thống lại với kho lưu trữ mà không lo mất ảnh/database nhé:
 
 ```bash
-cd /www/wwwroot/app.hongvippro.com
+cd /www/wwwroot/<TEN_MIEN_CUA_BAN>
 
 # Ép hệ thống nhận diện thư mục dưới dạng Git Repository
 git init
@@ -76,7 +77,7 @@ git fetch --all
 git reset --hard origin/main
 
 # Trả lại quyền bảo mật cấp ứng dụng cho thư mục
-chown -R www:www /www/wwwroot/app.hongvippro.com
+chown -R www:www /www/wwwroot/<TEN_MIEN_CUA_BAN>
 ```
 
 ---
