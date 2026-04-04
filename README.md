@@ -61,6 +61,24 @@ bash /opt/facebook-automation/update.sh
 
 Hệ thống sẽ kéo Git tự động, cấu hình phân quyền và Restart trơn tru cực nhanh mà không làm hỏng Database đang có.
 
+**🚨 Xử Lý Sự Cố: "Chưa liên kết với Github (chưa init Git)"**
+Nếu bạn gặp lỗi này khi chạy lệnh cập nhật trên AaPanel, điều đó nghĩa là lúc trước bạn tải file `.zip` và giải nén thủ công chứ không cài bằng lệnh Git. Bạn hãy dán chuỗi lệnh sau vào Terminal của VPS để liên kết hệ thống lại với kho lưu trữ mà không lo mất ảnh/database nhé:
+
+```bash
+cd /www/wwwroot/app.hongvippro.com
+
+# Ép hệ thống nhận diện thư mục dưới dạng Git Repository
+git init
+git remote add origin https://github.com/azatemplate/cong-cu-facebook.git
+
+# Kéo và ép ghi đè các file lỗi cũ thành file mới nhất (Bỏ qua Cấu hình .env + Media)
+git fetch --all
+git reset --hard origin/main
+
+# Trả lại quyền bảo mật cấp ứng dụng cho thư mục
+chown -R www:www /www/wwwroot/app.hongvippro.com
+```
+
 ---
 
 ## ⚙️ Cấu Hình (Setup Tool) Cơ Bản Bên Trong
