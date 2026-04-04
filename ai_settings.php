@@ -138,12 +138,12 @@ $active_tab = ($openai_conf['is_active'] == 1) ? 'openai' : 'gemini';
             
             <div style="display: flex; gap: 15px; margin-bottom: 15px;">
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label>Prompt viết Nội Dung (<b>{prompt}</b> là Input gốc)</label>
+                    <label>Prompt viết Nội Dung (<b>{prompt}</b> là Input gốc, hỗ trợ <b>{fanpage_name}</b>)</label>
                     <textarea name="prompt_content" rows="4" class="form-control" required style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace;"><?= htmlspecialchars($gemini_conf['prompt_content']) ?></textarea>
                 </div>
                 
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label>Prompt viết Tiêu Đề</label>
+                    <label>Prompt viết Tiêu Đề (Hỗ trợ <b>{fanpage_name}</b>)</label>
                     <textarea name="prompt_title" rows="4" class="form-control" required style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace;"><?= htmlspecialchars($gemini_conf['prompt_title']) ?></textarea>
                 </div>
             </div>
@@ -202,12 +202,12 @@ $active_tab = ($openai_conf['is_active'] == 1) ? 'openai' : 'gemini';
             
             <div style="display: flex; gap: 15px; margin-bottom: 15px;">
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label>Prompt viết Nội Dung (<b>{prompt}</b> là Input gốc)</label>
+                    <label>Prompt viết Nội Dung (<b>{prompt}</b> là Input gốc, hỗ trợ <b>{fanpage_name}</b>)</label>
                     <textarea name="prompt_content" rows="4" class="form-control" required style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace;"><?= htmlspecialchars($openai_conf['prompt_content']) ?></textarea>
                 </div>
                 
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label>Prompt viết Tiêu Đề</label>
+                    <label>Prompt viết Tiêu Đề (Hỗ trợ <b>{fanpage_name}</b>)</label>
                     <textarea name="prompt_title" rows="4" class="form-control" required style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace;"><?= htmlspecialchars($openai_conf['prompt_title']) ?></textarea>
                 </div>
             </div>

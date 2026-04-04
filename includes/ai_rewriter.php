@@ -117,7 +117,7 @@ function rewrite_content_with_openai($prompt, $api_keys, $endpoint, $prompt_vait
     return '';
 }
 
-function rewrite_content_with_ai($content, $account_id, $is_title = false) {
+function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanpage_name = '') {
     global $pdo;
     
     if (empty(trim($content))) return $content;
@@ -138,6 +138,10 @@ function rewrite_content_with_ai($content, $account_id, $is_title = false) {
         $api_keys_raw = decryptData($config['api_keys']);
         
         $prompt_vaitro = $is_title ? $config['prompt_title'] : $config['prompt_content'];
+        
+        if (!empty($fanpage_name)) {
+            $prompt_vaitro = str_replace('{fanpage_name}', $fanpage_name, $prompt_vaitro);
+        }
         
         if (empty($prompt_vaitro)) {
             ai_log("Missing prompt configuration (is_title=$is_title)");

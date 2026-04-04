@@ -151,7 +151,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 $stmt = $pdo->query("
     SELECT sa.*, 
            (SELECT COUNT(*) FROM users u WHERE u.account_id = sa.id) as total_users,
-           (SELECT COUNT(*) FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = sa.id) as total_pages
+           (SELECT COUNT(*) FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = sa.id) as total_pages,
+           (SELECT COUNT(*) FROM youtube_channels yt WHERE yt.account_id = sa.id) as total_youtube
     FROM system_accounts sa 
     ORDER BY sa.id ASC
 ");
@@ -244,7 +245,8 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <td>
                         <span style="font-size: 12px; color: var(--text-muted);">
                             👤 Ních FB: <strong style="color: var(--primary-color);"><?php echo $acc['total_users']; ?></strong><br>
-                            📄 Fanpage: <strong style="color: var(--secondary-color);"><?php echo $acc['total_pages']; ?></strong>
+                            📄 Fanpage: <strong style="color: var(--secondary-color);"><?php echo $acc['total_pages']; ?></strong><br>
+                            ▶️ YouTube: <strong style="color: #ff0000;"><?php echo $acc['total_youtube']; ?></strong>
                         </span>
                     </td>
                     <td>

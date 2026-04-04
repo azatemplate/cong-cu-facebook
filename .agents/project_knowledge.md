@@ -33,5 +33,7 @@ File này lưu trữ toàn bộ bức tranh kiến trúc kỹ thuật của hệ
 - Nếu người dùng cần commit code lên Github, AI chỉ cần nhận lệnh `/update_github`, đọc file thay đổi và gọi chuỗi lệnh git (Thêm, Commit Message Tiếng Anh ngắn gọn, và Push).
 
 ## 6. Lịch sử Cập nhật Gần đây
+- Bổ sung hiển thị số lượng kênh YouTube đã kết nối trực tiếp trong bảng hiển thị dữ liệu của màn hình Quản lý Tài khoản (Accounts Admin).
+- Nâng cấp AI Rewriter: Hỗ trợ tự động nội suy biến `{fanpage_name}` vào các Prompt hệ thống của Gemini/OpenAI khi thực thi tự động Auto-Publish cho các Page Facebook.
 - Đã bổ sung tính năng tự động so sánh số liệu (Reach, Views, Followers) của ngày hôm nay so với hôm qua bằng Snapshot (hiển thị phần trăm tăng/giảm trên `index.php`).
 - Cải tổ lại hoàn toàn diện mạo và văn bản hiển thị trên trang đăng nhập `login.php` bằng giao diện Split-Screen hiện đại.

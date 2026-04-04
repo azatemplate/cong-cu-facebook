@@ -383,7 +383,7 @@ foreach ($pending_posts as $post) {
     // ──────────────────────────────────────────────────────────────────────────
 
     // 3. Fetch Page Access Token
-    $page_stmt = $pdo->prepare("SELECT access_token FROM pages WHERE page_id = ?");
+    $page_stmt = $pdo->prepare("SELECT access_token, name FROM pages WHERE page_id = ?");
     $page_stmt->execute([$post['page_id']]);
     $page = $page_stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -393,6 +393,7 @@ foreach ($pending_posts as $post) {
     }
 
     $page_access_token = decryptData($page['access_token']);
+    $fanpage_name = isset($page['name']) ? $page['name'] : '';
 
     // 4. Prepare payload
     $endpoint = '';
@@ -430,7 +431,7 @@ foreach ($pending_posts as $post) {
             $p_desc = $parsed_content['description'];
             $use_ai = isset($parsed_content['use_ai']) && $parsed_content['use_ai'];
             if ($use_ai && !empty($p_desc)) {
-                $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false);
+                $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
             }
         } else {
             $p_desc = $post['content'];
@@ -580,7 +581,7 @@ foreach ($pending_posts as $post) {
             $use_ai = isset($parsed_content['use_ai']) && $parsed_content['use_ai'];
             
             if ($use_ai && !empty($p_desc)) {
-                $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false);
+                $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
             }
             $post_data['message'] = $p_desc;
             $post['content'] = $p_desc;
@@ -606,8 +607,8 @@ foreach ($pending_posts as $post) {
                 }
                 
                 if ($use_ai) {
-                    if (!empty($p_desc)) $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false);
-                    if (!empty($p_title) && $post_type !== 'Reel') $p_title = rewrite_content_with_ai($p_title, $post['account_id'], true);
+                    if (!empty($p_desc)) $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
+                    if (!empty($p_title) && $post_type !== 'Reel') $p_title = rewrite_content_with_ai($p_title, $post['account_id'], true, $fanpage_name);
                 }
                 
                 if (!empty($p_desc)) $post_data['description'] = $p_desc;
