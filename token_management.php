@@ -112,24 +112,80 @@ endif; ?>
                         <td style="font-weight: bold; color: var(--primary-color);"><?php echo (int)$u['page_count']; ?></td>
                         <td><?php echo htmlspecialchars($u['created_at']); ?></td>
                         <td>
-                            <form method="POST" action="actions/delete_token.php" style="display:inline;" onsubmit="return confirm('Bạn có chắc muốn xóa Token này?');">
+                            <form id="del-form-<?php echo $u['id']; ?>" method="POST" action="actions/delete_token.php" style="display:inline;">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="id" value="<?php echo $u['id']; ?>">
-                                <button type="submit" class="color-red" style="background:none; border:none; cursor:pointer; text-decoration:underline; color:var(--red-danger); font-size:13px; padding:0;">Xóa</button>
+                                <button type="button"
+                                    onclick="showDeleteModal(<?php echo $u['id']; ?>, '<?php echo addslashes(htmlspecialchars($u['name'])); ?>')"
+                                    style="background:none; border:none; cursor:pointer; text-decoration:underline; color:var(--red-danger); font-size:13px; padding:0;">
+                                    Xóa
+                                </button>
                             </form>
                         </td>
                     </tr>
-                <?php
-    endforeach; ?>
-            <?php
-else: ?>
+                <?php endforeach; ?>
+            <?php else: ?>
                 <tr>
                     <td colspan="5" style="text-align:center; color:#6b7280;">Chưa có token nào.</td>
                 </tr>
-            <?php
-endif; ?>
+            <?php endif; ?>
         </tbody>
     </table>
 </div>
+
+<!-- Custom Delete Confirmation Modal -->
+<div id="delete-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.55); align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; padding:28px 32px; max-width:380px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.25); text-align:center;">
+        <div style="font-size:40px; margin-bottom:12px;">🗑️</div>
+        <h3 style="margin:0 0 8px; color:#111; font-size:17px;">Xác nhận xóa Token</h3>
+        <p style="color:#6b7280; font-size:14px; margin:0 0 20px;">
+            Bạn có chắc muốn xóa token của<br>
+            <strong id="modal-user-name" style="color:#111;"></strong>?<br>
+            <span style="color:#ef4444; font-size:12px;">Thao tác này không thể hoàn tác.</span>
+        </p>
+        <div style="display:flex; gap:10px; justify-content:center;">
+            <button onclick="closeDeleteModal()"
+                style="padding:9px 24px; border:1px solid #d1d5db; border-radius:8px; background:#f9fafb; color:#374151; font-size:14px; cursor:pointer; font-weight:500;">
+                Huỷ
+            </button>
+            <button id="modal-confirm-btn" onclick="confirmDelete()"
+                style="padding:9px 24px; border:none; border-radius:8px; background:#ef4444; color:#fff; font-size:14px; cursor:pointer; font-weight:600;">
+                Xóa Token
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+var _deleteFormId = null;
+
+function showDeleteModal(userId, userName) {
+    _deleteFormId = 'del-form-' + userId;
+    document.getElementById('modal-user-name').textContent = userName;
+    var modal = document.getElementById('delete-modal');
+    modal.style.display = 'flex';
+}
+
+function closeDeleteModal() {
+    document.getElementById('delete-modal').style.display = 'none';
+    _deleteFormId = null;
+}
+
+function confirmDelete() {
+    if (_deleteFormId) {
+        document.getElementById(_deleteFormId).submit();
+    }
+}
+
+// Đóng modal khi bấm vào vùng tối bên ngoài
+document.getElementById('delete-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeDeleteModal();
+});
+
+// Đóng modal khi nhấn Escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeDeleteModal();
+});
+</script>
 
 <?php include 'includes/footer.php'; ?>
