@@ -19,6 +19,8 @@ File này lưu trữ toàn bộ bức tranh kiến trúc kỹ thuật của hệ
 - File `cron/start_publish.php` và `cron/start_comment.php` đóng vai trò là Dispatcher. Chúng quét CSDL mỗi 1 phút thông qua Cron của Ubuntu (được định nghĩa trong `docker/crontab`).
 - Tiến trình con độc lập chạy `publish_worker.php`. Nếu khởi chạy ở dạng **Web-AJAX**, CURL timeout là `1500ms`. 
 - **⚠ ĐIỀU LƯU Ý BẮT BUỘC:** Vì gọi bằng CURL thời gian cực ngắn (bỏ kết nối ngay), các file Worker (`publish_worker.php`, `comment_worker.php`) luôn phải có `ignore_user_abort(true);` và `set_time_limit(0);` ở dòng đầu tiên để script không bị chết/treo giữa chừng khi server web cắt kết nối mạng.
+- **Xử lý Thundering Herd (Chống sập Database):** Dispatcher `start_publish.php` không dùng `LIMIT` để bảo vệ hiệu năng chạy Real-time cho mọi user. Thay vào đó, trong các Worker (`publish_worker.php`, `comment_worker.php`) được chèn một đoạn `usleep(rand(50000, 800000));` ngay trước khi kết nối DB. Việc giãn cách vài mili-giây siêu nhỏ này giúp MySQL không bị sập (`Too many connections`) khi nhận hàng trăm luồng kết nối tạo ra cùng 1 giây.
+- **Lỗi vòng lặp vô tận do Retry Count:** Nếu truy vấn SQL trong Worker check thiếu `(retry_count IS NULL OR retry_count < 3)`, Worker sẽ từ chối nhận bài failed cũ mặc dù Dispatcher vẫn tiếp tục bốc bài đó đưa lên mỗi phút. Đã Fix logic để bao phủ cả trường hợp NULL.
 
 ## 4. Kiến trúc Bảo mật (Security)
 - **Quản lý Credentials**: Mật khẩu Database và Encryption Key được lưu trữ hoàn toàn trong file `.env` (không bao giờ commit file này lên Git). Mẫu tham khảo ở `.env.example`.

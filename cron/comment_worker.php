@@ -19,6 +19,9 @@ if (!flock($comment_lock_fp, LOCK_EX | LOCK_NB)) {
     exit;
 }
 
+// Chống Thundering Herd: Giãn cách vài mili-giây siêu nhỏ
+usleep(rand(50000, 800000)); // Nghỉ 0.05 đến 0.8 giây
+
 if (!isset($pdo)) require_once __DIR__ . '/../includes/db.php';
 if (!function_exists('fb_api_request')) require_once __DIR__ . '/../includes/fb_api.php';
 

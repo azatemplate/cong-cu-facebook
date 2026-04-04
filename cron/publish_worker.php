@@ -25,6 +25,9 @@ if (!flock($lock_fp, LOCK_EX | LOCK_NB)) {
 
 echo "Tiến trình xử lý thời gian thực độc lập cho Page ID: #$target_page_id\n";
 
+// Chống Thundering Herd: Giãn cách vài mili-giây siêu nhỏ để các luồng không lao vào Database cùng 1 mili-giây gây Crash MySQL Connections
+usleep(rand(50000, 800000)); // Nghỉ 0.05 đến 0.8 giây
+
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/drive_utils.php';
@@ -74,7 +77,7 @@ try {
 
 // 1. Fetch pending posts where scheduled_time <= NOW() AND page_id matches
 $retry_clause = $has_retry_count
-    ? "OR (status = 'failed' AND retry_count < $sys_max_retries)"
+    ? "OR (status = 'failed' AND (retry_count IS NULL OR retry_count < $sys_max_retries))"
     : '';
 $stmt = $pdo->prepare("SELECT * FROM scheduled_posts WHERE (status = 'pending' $retry_clause) AND scheduled_time <= NOW() AND page_id = ?");
 $stmt->execute([$target_page_id]);
