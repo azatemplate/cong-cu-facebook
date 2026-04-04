@@ -1,16 +1,27 @@
 <?php
 // diagnostics.php — Trang chẩn đoán & kích hoạt thủ công Cron
 require_once __DIR__ . '/includes/db.php';
-require_once __DIR__ . '/includes/security.php';
 
+// ── Khởi session trước khi check quyền ───────────────────────────────────────
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 header('Content-Type: text/html; charset=utf-8');
 
-if (empty($_SESSION['account_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
-    http_response_code(403);
-    die('<h2 style="font-family:monospace;color:red;text-align:center;margin-top:100px">403 - Forbidden: Chỉ Admin mới được truy cập trang này.</h2>');
+// ── Cho phép bypass qua cron_secret (để CLI/cron có thể check) ───────────────
+$cron_secret = '';
+try {
+    $cs = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key='cron_secret'");
+    if ($cs) $cron_secret = trim($cs->fetchColumn() ?: '');
+} catch (Exception $e) {}
+
+$bypass_ok = ($cron_secret && isset($_GET['secret']) && hash_equals($cron_secret, $_GET['secret']));
+
+if (!$bypass_ok) {
+    if (empty($_SESSION['account_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
+        http_response_code(403);
+        die('<h2 style="font-family:monospace;color:red;text-align:center;margin-top:100px">403 - Forbidden: Chỉ Admin mới được truy cập trang này.</h2>');
+    }
 }
 
 $now_php   = date('Y-m-d H:i:s');
@@ -75,6 +86,38 @@ $upcoming = $pdo->query("
 
 // ── Kiểm tra exec() ──────────────────────────────────────────────────────────
 $exec_ok = function_exists('exec') && strpos(ini_get('disable_functions'), 'exec') === false;
+
+// ── Kiểm tra lock files (worker bị stuck) ────────────────────────────────────
+$lock_files = [];
+$tmp_dir = sys_get_temp_dir();
+if (is_dir($tmp_dir)) {
+    foreach (glob($tmp_dir . '/facebook_publish_worker_page_*.lock') ?: [] as $lf) {
+        $fp = @fopen($lf, 'r');
+        $is_locked = false;
+        if ($fp) {
+            $is_locked = !flock($fp, LOCK_EX | LOCK_NB);
+            if (!$is_locked) flock($fp, LOCK_UN);
+            fclose($fp);
+        }
+        $lock_files[] = [
+            'file'   => basename($lf),
+            'mtime'  => filemtime($lf),
+            'locked' => $is_locked,
+            'age_min'=> round((time() - filemtime($lf)) / 60, 1),
+        ];
+    }
+}
+
+// ── Xoá lock files cũ nếu có &clear_locks=1 ──────────────────────────────────
+$clear_msg = '';
+if (isset($_GET['clear_locks'])) {
+    $cleared = 0;
+    foreach (glob($tmp_dir . '/facebook_publish_worker_page_*.lock') ?: [] as $lf) {
+        if (@unlink($lf)) $cleared++;
+    }
+    $clear_msg = "Đã xoá $cleared lock file(s).";
+    $lock_files = []; // Refresh
+}
 ?>
 <!DOCTYPE html>
 <html lang="vi">
@@ -191,6 +234,31 @@ tr:hover td { background: #1e293b55; }
     <?php endif; ?>
 </div>
 
+<!-- Lock Files -->
+<div class="card">
+    <h2>🔒 Worker Lock Files (<?= count($lock_files) ?> files)</h2>
+    <?php if ($clear_msg): ?>
+    <p class="ok">✔ <?= htmlspecialchars($clear_msg) ?></p>
+    <?php endif; ?>
+    <?php if (empty($lock_files)): ?>
+    <p class="ok">✔ Không có lock file nào. Tất cả worker đều rảnh.</p>
+    <?php else: ?>
+    <p class="warn">⚠ Có lock file tồn tại. Nếu bài không đăng được, thử xoá lock để unblock worker.</p>
+    <table>
+    <tr><th>File</th><th>Tuổi (phút)</th><th>Đang chạy?</th></tr>
+    <?php foreach ($lock_files as $lf): ?>
+    <tr>
+        <td style="font-size:11px;word-break:break-all"><?= htmlspecialchars($lf['file']) ?></td>
+        <td><?= $lf['age_min'] ?> phút</td>
+        <td><?php if ($lf['locked']): ?><span class="badge processing">🔒 LOCKED</span><?php else: ?><span class="badge published">✔ FREE</span><?php endif; ?></td>
+    </tr>
+    <?php endforeach; ?>
+    </table>
+    <br>
+    <a class="btn" style="background:#dc2626;color:#fff" href="?clear_locks=1">🗑 Xoá tất cả Lock Files</a>
+    <?php endif; ?>
+</div>
+
 <!-- Kích hoạt thủ công -->
 <div class="card">
     <h2>▶ Kích hoạt thủ công</h2>
@@ -206,9 +274,11 @@ tr:hover td { background: #1e293b55; }
 <div class="card">
     <h2>📋 Cài đặt Cron trên AaPanel / Linux</h2>
     <p style="color:#94a3b8">Thêm 2 dòng sau vào <b>crontab</b> (chạy mỗi phút):</p>
-    <pre style="background:#0a0a14;padding:12px;border-radius:6px;color:#7ee8fa;">* * * * * php <?= realpath(__DIR__) ?>/start_publish.php >> /tmp/fb_publish.log 2>&1
-* * * * * php <?= realpath(__DIR__) ?>/start_comment.php >> /tmp/fb_comment.log 2>&1</pre>
+    <pre style="background:#0a0a14;padding:12px;border-radius:6px;color:#7ee8fa;">* * * * * /www/server/php/81/bin/php <?= realpath(__DIR__ . '/cron') ?>/start_publish.php >> /tmp/fb_publish.log 2>&1
+* * * * * /www/server/php/81/bin/php <?= realpath(__DIR__ . '/cron') ?>/start_comment.php >> /tmp/fb_comment.log 2>&1</pre>
     <p style="color:#94a3b8;font-size:12px;">Trên AaPanel: Cron Jobs → Add Cron Job → Shell Script → mỗi 1 phút.</p>
+    <p style="color:#facc15;font-size:12px;">⚠ <b>Lưu ý quan trọng:</b> Đường dẫn PHP phải dùng đường dẫn tuyệt đối (ví dụ: <code>/www/server/php/81/bin/php</code>). Nếu cron chạy mà không có output, kiểm tra file log <code>/tmp/fb_publish.log</code></p>
+    <p style="color:#94a3b8;font-size:12px;">Xem log realtime: <code>tail -f /tmp/fb_publish.log</code></p>
 </div>
 
 </body>

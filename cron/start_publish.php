@@ -1,8 +1,19 @@
 <?php
 // cron/start_publish.php
-// Dispatcher: Quét xem có bao nhiêu User có bài cần đăng, sau đó kích hoạt bấy nhiêu luồng riêng biệt.
+// Dispatcher: Quet xem co bao nhieu User co bai can dang, sau do kich hoat bay nhieu luong rieng biet.
 
 require_once __DIR__ . '/../includes/db.php';
+
+// ── BUOC 1: Reset bai bi ket o 'processing' qua 10 phut ve 'pending' ─────────
+// Giai quyet truong hop worker crash ma khong release status
+try {
+    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND scheduled_time <= DATE_SUB(NOW(), INTERVAL 10 MINUTE)");
+    if ($stuck_count > 0) {
+        echo "  [RESET] Da reset $stuck_count bai bi stuck 'processing' => 'pending'.\n";
+    }
+} catch (Exception $e) {
+    echo "Loi reset stuck posts: " . $e->getMessage() . "\n";
+}
 
 // Tìm các page có bài cần đăng: pending HOẶC failed còn retry (retry_count < max từ settings)
 $max_retries = 3;
@@ -24,11 +35,11 @@ $stmt->execute([$max_retries]);
 $pages = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
 if (empty($pages)) {
-    echo "Không có Fanpage nào cần đăng tải.\n";
+    echo "Khong co Fanpage nao can dang tai.\n";
     exit;
 }
 
-echo "Có " . count($pages) . " Fanpage đang có bài hẹn giờ đăng trùng lúc. Khởi chạy " . count($pages) . " luồng độc lập...\n";
+echo "Co " . count($pages) . " Fanpage dang co bai hen gio dang trung luc. Khoi chay " . count($pages) . " luong doc lap...\n";
 
 $is_web = isset($_SERVER['HTTP_HOST']);
 $exec_enabled = function_exists('exec') && strpos(ini_get('disable_functions'), 'exec') === false;
@@ -41,7 +52,9 @@ foreach ($pages as $pid) {
         if (defined('PHP_BINARY') && PHP_BINARY && strpos(PHP_BINARY, 'php-fpm') === false && strpos(PHP_BINARY, 'php-cgi') === false) {
             $php_bin = PHP_BINARY;
         } elseif (file_exists('/www/server/php/81/bin/php')) {
-            $php_bin = '/www/server/php/81/bin/php'; // Fallback mạnh nhất cho aaPanel
+            $php_bin = '/www/server/php/81/bin/php'; // Fallback manh nhat cho aaPanel
+        } elseif (file_exists('/www/server/php/82/bin/php')) {
+            $php_bin = '/www/server/php/82/bin/php';
         } elseif (file_exists('/usr/bin/php')) {
             $php_bin = '/usr/bin/php';
         }
@@ -53,9 +66,9 @@ foreach ($pages as $pid) {
         } else {
             exec("\"$php_bin\" \"$script_path\" \"$pid\" > /dev/null 2>&1 &");
         }
-        echo "  -> Đã kích hoạt luồng CLI ($php_bin) cho Page ID: $pid\n";
+        echo "  -> Da kich hoat luong CLI ($php_bin) cho Page ID: $pid\n";
     } elseif ($is_web) {
-        // Fallback Web-Forking (cURL Async) qua Wrapper gốc
+        // Fallback Web-Forking (cURL Async) qua Wrapper goc
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
         // Attempt to build accurate web path to current cron directory
         $doc_root = $_SERVER['DOCUMENT_ROOT'];
@@ -65,14 +78,14 @@ foreach ($pages as $pid) {
 
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500); // Tăng timeout để webserver kịp nhận request kích luồng
+        curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500); // Tang timeout de webserver kip nhan request kich luong
         curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
         curl_exec($ch);
         curl_close($ch);
-        echo "  -> Đã kích luồng WEB-AJAX cho Page ID: $pid\n";
+        echo "  -> Da kich luong WEB-AJAX cho Page ID: $pid\n";
     } else {
-        echo "  -> THẤT BẠI: Hàm exec() bị khóa.\n";
+        echo "  -> THAT BAI: Ham exec() bi khoa.\n";
     }
 }
 
-echo "Đã Dispatch hoàn tất.\n";
+echo "Da Dispatch hoan tat.\n";

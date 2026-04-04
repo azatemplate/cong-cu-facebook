@@ -17,9 +17,35 @@ if (empty($target_page_id)) {
 }
 
 $lock_file = sys_get_temp_dir() . "/facebook_publish_worker_page_" . md5($target_page_id) . ".lock";
+
+// Xoá lock file cũ nếu quá 15 phút (worker cũ crash không release)
+$lock_stale_seconds = 15 * 60;
+if (file_exists($lock_file) && (time() - filemtime($lock_file)) > $lock_stale_seconds) {
+    @unlink($lock_file);
+    echo "  ⚠ Lock file cũ hơn 15 phút đã được dọn sạch cho Page ID: $target_page_id\n";
+}
+
 $lock_fp = fopen($lock_file, 'c');
-if (!flock($lock_fp, LOCK_EX | LOCK_NB)) {
-    echo "Tiến trình Page ID #$target_page_id đang chạy, vui lòng đợi...\n";
+if (!$lock_fp) {
+    echo " Không mở được lock file. Bỏ qua.\n";
+    exit;
+}
+
+// Thử lock trong 5 giây (blocking) thay vì exit ngay
+$lock_wait = 0;
+$lock_got  = false;
+while ($lock_wait < 5) {
+    if (flock($lock_fp, LOCK_EX | LOCK_NB)) {
+        $lock_got = true;
+        break;
+    }
+    sleep(1);
+    $lock_wait++;
+}
+
+if (!$lock_got) {
+    echo "Tiến trình Page ID #$target_page_id đang chạy (lock không giải phóng sau 5s), vùi lòng đợi...\n";
+    fclose($lock_fp);
     exit;
 }
 
