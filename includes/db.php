@@ -171,7 +171,17 @@ try {
     ");
 
     // Seed default settings silently
-    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1'), ('max_retries', '3')");
+    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1'), ('max_retries', '3'), ('cleanup_retain_days', '7')");
+
+    // ── Performance Indexes (safe to run every boot, IF NOT EXISTS) ─────────
+    // idx_cron_dispatch: tăng tốc query của dispatcher mỗi phút
+    try {
+        $pdo->exec("ALTER TABLE scheduled_posts ADD INDEX IF NOT EXISTS idx_cron_dispatch (status, scheduled_time, page_id)");
+    } catch (Exception $e) {}
+    // idx_comment_queue: tăng tốc query comment worker
+    try {
+        $pdo->exec("ALTER TABLE scheduled_posts ADD INDEX IF NOT EXISTS idx_comment_queue (status, comment_at, comment_done)");
+    } catch (Exception $e) {}
 
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS conversation_labels (

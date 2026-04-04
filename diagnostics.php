@@ -273,12 +273,13 @@ tr:hover td { background: #1e293b55; }
 <!-- Hướng dẫn cài Cron -->
 <div class="card">
     <h2>📋 Cài đặt Cron trên AaPanel / Linux</h2>
-    <p style="color:#94a3b8">Thêm 2 dòng sau vào <b>crontab</b> (chạy mỗi phút):</p>
+    <p style="color:#94a3b8">Thêm <b>3 dòng</b> sau vào <b>crontab</b>:</p>
     <pre style="background:#0a0a14;padding:12px;border-radius:6px;color:#7ee8fa;">* * * * * /www/server/php/81/bin/php <?= realpath(__DIR__ . '/cron') ?>/start_publish.php >> /tmp/fb_publish.log 2>&1
-* * * * * /www/server/php/81/bin/php <?= realpath(__DIR__ . '/cron') ?>/start_comment.php >> /tmp/fb_comment.log 2>&1</pre>
-    <p style="color:#94a3b8;font-size:12px;">Trên AaPanel: Cron Jobs → Add Cron Job → Shell Script → mỗi 1 phút.</p>
-    <p style="color:#facc15;font-size:12px;">⚠ <b>Lưu ý quan trọng:</b> Đường dẫn PHP phải dùng đường dẫn tuyệt đối (ví dụ: <code>/www/server/php/81/bin/php</code>). Nếu cron chạy mà không có output, kiểm tra file log <code>/tmp/fb_publish.log</code></p>
-    <p style="color:#94a3b8;font-size:12px;">Xem log realtime: <code>tail -f /tmp/fb_publish.log</code></p>
+* * * * * /www/server/php/81/bin/php <?= realpath(__DIR__ . '/cron') ?>/start_comment.php >> /tmp/fb_comment.log 2>&1
+59 23 * * * /www/server/php/81/bin/php <?= realpath(__DIR__ . '/cron') ?>/cleanup.php >> /tmp/fb_cleanup.log 2>&1</pre>
+    <p style="color:#94a3b8;font-size:12px;">Trên AaPanel: Cron Jobs → Add Cron Job → Shell Script → mỗi 1 phút (2 dòng đầu) + 1 lần/ngày lúc 23:59 (dòng cleanup).</p>
+    <p style="color:#facc15;font-size:12px;">⚠ <b>Lưu ý:</b> Đường dẫn PHP phải dùng đường dẫn tuyệt đối: <code>/www/server/php/81/bin/php</code> (hoặc <code>/usr/bin/php</code>)</p>
+    <p style="color:#94a3b8;font-size:12px;">Xem log realtime: <code>tail -f /tmp/fb_publish.log</code> | <code>tail -f /tmp/fb_cleanup.log</code></p>
 </div>
 
 </body>

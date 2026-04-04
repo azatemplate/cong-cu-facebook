@@ -49,18 +49,17 @@ if (!$lock_got) {
     exit;
 }
 
-echo "Tiến trình xử lý thời gian thực độc lập cho Page ID: #$target_page_id\n";
+echo "Tien trinh xu ly thoi gian thuc doc lap cho Page ID: #$target_page_id\n";
 
-// Chống Thundering Herd: Giãn cách vài mili-giây siêu nhỏ để các luồng không lao vào Database cùng 1 mili-giây gây Crash MySQL Connections
-usleep(rand(50000, 800000)); // Nghỉ 0.05 đến 0.8 giây
-
+// Khong sleep Thundering Herd (moi worker la 1 process doc lap per-page, khong tranh chap)
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/drive_utils.php';
 require_once __DIR__ . '/../includes/ai_rewriter.php';
 
+$start_time = microtime(true);
 echo "-------------------------------------------\n";
-echo "Bắt đầu quét các bài viết lên lịch lúc: " . date('Y-m-d H:i:s') . "\n";
+echo "Bat dau quet bai viet len lich luc: " . date('Y-m-d H:i:s') . "\n";
 
 // ── Reset stuck 'processing' posts back to 'pending' ─────────────────────
 // If a previous worker run crashed, posts stay at 'processing' forever.
@@ -741,76 +740,12 @@ foreach ($pending_posts as $post) {
     if ($temp_drive_file && file_exists($temp_drive_file)) {
         @unlink($temp_drive_file);
     }
-} // Kết thúc vòng lặp While Real-time Queue
+} // Ket thuc vong lap
 
-echo "Hoàn thành phiên quét cho mảng Page ID này.\n";
+$elapsed = round(microtime(true) - $start_time, 2);
+echo "Hoan thanh phien quet cho Page ID #$target_page_id ({$elapsed}s).\n";
 echo "-------------------------------------------\n";
-
-// ── Comment Worker chạy độc lập bằng Cron riêng để đúng tiến độ 120s ───────────
-// Đã xóa require nội tuyến. Bạn cần setup CRON riêng cho file comment_worker.php
-
-// ── Auto-cleanup: xóa dữ liệu cũ đã đăng thành công > 30 ngày ───────────
-// Chạy tự động mỗi lần cron quét, nhưng chỉ thực thi 1 lần mỗi ngày
-$cleanup_flag = sys_get_temp_dir() . '/fb_cleanup_' . date('Y-m-d') . '.done';
-if (!file_exists($cleanup_flag)) {
-    echo "\n--- Auto-Cleanup (>30 ngày) ---\n";
-    $cleanup_stats = ['scheduled_posts' => 0, 'posts_history' => 0, 'campaigns' => 0, 'media_files' => 0];
-
-    try {
-        // 1. Xóa media files của bài đã published > 30 ngày
-        $media_q = $pdo->query("SELECT media_path FROM scheduled_posts WHERE status = 'published' AND scheduled_time < DATE_SUB(NOW(), INTERVAL 30 DAY) AND media_path IS NOT NULL AND media_path != ''");
-        if ($media_q) {
-            foreach ($media_q->fetchAll(PDO::FETCH_COLUMN) as $mp) {
-                $decoded = @json_decode($mp, true);
-                $paths = is_array($decoded) ? $decoded : [$mp];
-                foreach ($paths as $p) {
-                    $p = trim($p);
-                    if (strpos($p, 'uploads/') !== false) {
-                        $full = __DIR__ . '/../' . $p;
-                        if (file_exists($full) && is_file($full)) {
-                            @unlink($full);
-                            $cleanup_stats['media_files']++;
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. Xóa scheduled_posts đã published > 30 ngày
-        $del1 = $pdo->exec("DELETE FROM scheduled_posts WHERE status = 'published' AND scheduled_time < DATE_SUB(NOW(), INTERVAL 30 DAY)");
-        $cleanup_stats['scheduled_posts'] = (int)$del1;
-
-        // 3. Xóa posts_history > 30 ngày
-        try {
-            $del2 = $pdo->exec("DELETE FROM posts_history WHERE created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)");
-            $cleanup_stats['posts_history'] = (int)$del2;
-        } catch (Exception $e) {}
-
-        // 4. Xóa campaigns rỗng (không còn scheduled_posts nào)
-        try {
-            $del3 = $pdo->exec("DELETE FROM post_campaigns WHERE id NOT IN (SELECT DISTINCT campaign_id FROM scheduled_posts WHERE campaign_id IS NOT NULL)");
-            $cleanup_stats['campaigns'] = (int)$del3;
-        } catch (Exception $e) {}
-
-        $total = array_sum($cleanup_stats);
-        if ($total > 0) {
-            echo "Đã dọn: {$cleanup_stats['scheduled_posts']} bài cũ, {$cleanup_stats['posts_history']} lịch sử, {$cleanup_stats['campaigns']} chiến dịch rỗng, {$cleanup_stats['media_files']} file media.\n";
-        } else {
-            echo "Không có dữ liệu cũ cần dọn.\n";
-        }
-        echo "----------------------------\n";
-
-        // Đánh dấu đã chạy cleanup hôm nay
-        @file_put_contents($cleanup_flag, date('Y-m-d H:i:s'));
-
-        // Xóa flag cũ của ngày hôm qua
-        $yesterday_flag = sys_get_temp_dir() . '/fb_cleanup_' . date('Y-m-d', strtotime('-1 day')) . '.done';
-        if (file_exists($yesterday_flag)) @unlink($yesterday_flag);
-
-    } catch (Exception $e) {
-        echo "Lỗi cleanup: " . $e->getMessage() . "\n";
-    }
-}
+// Cleanup DB chay rieng qua cron/cleanup.php (59 23 * * *).
 
 function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $has_error_msg = true, $has_retry_count = true)
 {

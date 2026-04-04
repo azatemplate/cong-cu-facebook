@@ -13,9 +13,28 @@ if ($target_account_id <= 0) {
 }
 
 $comment_lock_file = sys_get_temp_dir() . "/facebook_comment_worker_account_$target_account_id.lock";
-$comment_lock_fp = fopen($comment_lock_file, 'c');
-if (!flock($comment_lock_fp, LOCK_EX | LOCK_NB)) {
-    echo "Tiến trình Bình luận cho Account ID #$target_account_id đang chạy, vui lòng đợi...\n";
+
+// Xoa lock file cu neu > 15 phut (worker cu crash khong release)
+if (file_exists($comment_lock_file) && (time() - filemtime($comment_lock_file)) > 900) {
+    @unlink($comment_lock_file);
+    echo "  [!] Lock file comment cu > 15 phut, da don sach cho Account ID: $target_account_id\n";
+}
+
+$comment_lock_fp = @fopen($comment_lock_file, 'c');
+if (!$comment_lock_fp) {
+    echo "Khong mo duoc lock file comment. Bo qua.\n";
+    exit;
+}
+
+// Thu lock trong 3 giay thay vi exit ngay
+$lock_got = false;
+for ($i = 0; $i < 3; $i++) {
+    if (flock($comment_lock_fp, LOCK_EX | LOCK_NB)) { $lock_got = true; break; }
+    sleep(1);
+}
+if (!$lock_got) {
+    echo "Tien trinh Binh luan cho Account ID #$target_account_id dang chay, bo qua.\n";
+    fclose($comment_lock_fp);
     exit;
 }
 
