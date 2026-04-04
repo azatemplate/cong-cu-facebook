@@ -1,7 +1,7 @@
 #!/bin/bash
 # Kịch bản cập nhật Code tự động 1-Click dành cho VPS Server (Native deployment)
 
-APP_DIR="/www/wwwroot/app.hongvippro.com"
+APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "============================================="
 echo "    BẮT ĐẦU CẬP NHẬT CODE LÊN BẢN MỚI NHẤT   "
