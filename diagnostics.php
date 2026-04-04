@@ -313,8 +313,8 @@ tr:hover td { background: #1e293b55; }
             <tr>
                 <td style="color:#64748b;padding:3px 12px 3px 0;border:none;">PHP binary:</td>
                 <td style="border:none;">
-                    <code style="color:#4ade80;background:#052e16;padding:2px 8px;border-radius:4px;"><?= htmlspecialchars($php_bin_detected) ?></code>
-                    <?php if ($php_bin_detected === 'php'): ?>
+                    <code style="color:#4ade80;background:#052e16;padding:2px 8px;border-radius:4px;"><?= htmlspecialchars($php_bin_full) ?></code>
+                    <?php if ($php_bin_full === 'php'): ?>
                     <span style="color:#facc15;font-size:11px;margin-left:6px;">⚠ fallback — thử chạy <code>which php</code> trên server để xác nhận</span>
                     <?php else: ?>
                     <span style="color:#4ade80;font-size:11px;margin-left:6px;">✔ <?= htmlspecialchars($php_bin_note) ?></span>
