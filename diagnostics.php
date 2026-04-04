@@ -88,53 +88,35 @@ $upcoming = $pdo->query("
 $exec_ok = function_exists('exec') && strpos(ini_get('disable_functions'), 'exec') === false;
 
 // ── Auto-detect PHP binary path (dùng cho hướng dẫn cron) ────────────────────
-$php_bin_detected = 'php'; // fallback mặc định
-$php_bin_note     = '';
+// Luon dung 'php' cho AaPanel (shell da cau hinh san)
+$php_bin_simple = 'php';
 
-// Ưu tiên 1: PHP_BINARY nếu đang chạy CLI hoặc không phải FPM/CGI
+// Tim duong dan day du de hien thi nhu la alternative
+$php_bin_full = 'php';
+$php_bin_note = '';
+
 if (defined('PHP_BINARY') && PHP_BINARY
     && strpos(PHP_BINARY, 'php-fpm') === false
     && strpos(PHP_BINARY, 'php-cgi') === false
     && file_exists(PHP_BINARY)) {
-    $php_bin_detected = PHP_BINARY;
-    $php_bin_note = '(tự động phát hiện từ PHP_BINARY)';
+    $php_bin_full = PHP_BINARY;
+    $php_bin_note = 'tu PHP_BINARY';
 }
-
-// Ưu tiên 2: Nếu vẫn là fpm, thử tìm binary CLI tương đương
-if ($php_bin_detected === 'php' || strpos($php_bin_detected, 'fpm') !== false) {
-    $php_version_paths = [
-        '/www/server/php/84/bin/php',
-        '/www/server/php/83/bin/php',
-        '/www/server/php/82/bin/php',
-        '/www/server/php/81/bin/php',
-        '/www/server/php/80/bin/php',
-        '/usr/bin/php8.4',
-        '/usr/bin/php8.3',
-        '/usr/bin/php8.2',
-        '/usr/bin/php8.1',
-        '/usr/bin/php8.0',
-        '/usr/bin/php',
-        '/usr/local/bin/php',
-    ];
-    foreach ($php_version_paths as $path) {
-        if (file_exists($path)) {
-            $php_bin_detected = $path;
-            $php_bin_note = '(tìm thấy trên server)';
-            break;
-        }
+if ($php_bin_full === 'php' || strpos($php_bin_full, 'fpm') !== false) {
+    foreach (['/www/server/php/84/bin/php','/www/server/php/83/bin/php',
+              '/www/server/php/82/bin/php','/www/server/php/81/bin/php',
+              '/www/server/php/80/bin/php','/usr/bin/php8.4',
+              '/usr/bin/php8.3','/usr/bin/php8.2','/usr/bin/php8.1',
+              '/usr/bin/php','/usr/local/bin/php'] as $p) {
+        if (file_exists($p)) { $php_bin_full = $p; $php_bin_note = 'tim thay tren server'; break; }
     }
 }
-
-// Nếu `which php` hoạt động, dùng nó
-if ($exec_ok && ($php_bin_detected === 'php')) {
-    $which = @exec('which php 2>/dev/null');
-    if ($which && file_exists($which)) {
-        $php_bin_detected = trim($which);
-        $php_bin_note = '(từ `which php`)';
-    }
+if ($exec_ok && $php_bin_full === 'php') {
+    $w = trim((string)@exec('which php 2>/dev/null'));
+    if ($w && file_exists($w)) { $php_bin_full = $w; $php_bin_note = 'which php'; }
 }
 
-// Cron directory path tuyệt đối thực tế trên server
+// Cron directory path tuyet doi thuc te tren server
 $cron_dir_path = realpath(__DIR__ . '/cron');
 
 // ── Kiểm tra lock files (worker bị stuck) ────────────────────────────────────
@@ -350,27 +332,61 @@ tr:hover td { background: #1e293b55; }
         </table>
     </div>
 
-    <p style="color:#94a3b8;margin-bottom:12px;">Bạn cần <b>2 Cron Job</b> trên AaPanel — lệnh đã được tạo sẵn theo đúng cấu hình server này:</p>
+    <p style="color:#94a3b8;margin-bottom:12px;">Bạn cần <b>2 Cron Job</b>. Chọn loại server của bạn:</p>
 
-    <!-- Cron Job 1 -->
-    <div style="margin-bottom:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-            <p style="color:#a78bfa;font-weight:bold;margin:0;">① Cron Job 1 — Publish + Comment (mỗi 1 phút)</p>
-            <button onclick="copyText('cron1')" style="background:#1d4ed8;color:#fff;border:none;border-radius:5px;padding:4px 12px;font-size:12px;cursor:pointer;">📋 Copy</button>
-        </div>
-        <pre id="cron1" style="background:#0a0a14;padding:12px;border-radius:6px;color:#7ee8fa;margin:0;white-space:pre-wrap;word-break:break-all;"><?= htmlspecialchars($php_bin_detected) ?> <?= htmlspecialchars($cron_dir_path) ?>/start_publish.php >> /tmp/fb_publish.log 2>&1
-<?= htmlspecialchars($php_bin_detected) ?> <?= htmlspecialchars($cron_dir_path) ?>/start_comment.php >> /tmp/fb_comment.log 2>&1</pre>
-        <p style="color:#64748b;font-size:12px;margin-top:5px;">AaPanel: <b>N Minutes → 1 Minute</b> | Type: Shell Script</p>
+    <!-- Tab switcher -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <button id="tab-aapanel" onclick="switchTab('aapanel')"
+            style="background:#1d4ed8;color:#fff;border:none;border-radius:6px;padding:7px 18px;font-size:13px;cursor:pointer;font-weight:bold;">
+            🟢 AaPanel (php)
+        </button>
+        <button id="tab-fullpath" onclick="switchTab('fullpath')"
+            style="background:#374151;color:#9ca3af;border:none;border-radius:6px;padding:7px 18px;font-size:13px;cursor:pointer;">
+            🔵 Crontab hệ thống (đường dẫn đầy đủ)
+        </button>
     </div>
 
-    <!-- Cron Job 2 -->
-    <div style="margin-bottom:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-            <p style="color:#a78bfa;font-weight:bold;margin:0;">② Cron Job 2 — Dọn dẹp DB (lúc 23:59 mỗi ngày)</p>
-            <button onclick="copyText('cron2')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 12px;font-size:12px;cursor:pointer;">📋 Copy</button>
+    <!-- AaPanel tab -->
+    <div id="content-aapanel">
+        <div style="margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <p style="color:#a78bfa;font-weight:bold;margin:0;">① Cron Job 1 — Publish + Comment (mỗi 1 phút)</p>
+                <button onclick="copyText('cron1a')" style="background:#1d4ed8;color:#fff;border:none;border-radius:5px;padding:4px 12px;font-size:12px;cursor:pointer;">📋 Copy</button>
+            </div>
+            <pre id="cron1a" style="background:#0a0a14;padding:12px;border-radius:6px;color:#7ee8fa;margin:0;white-space:pre-wrap;word-break:break-all;">php <?= htmlspecialchars($cron_dir_path) ?>/start_publish.php >> /tmp/fb_publish.log 2>&1
+php <?= htmlspecialchars($cron_dir_path) ?>/start_comment.php >> /tmp/fb_comment.log 2>&1</pre>
+            <p style="color:#64748b;font-size:12px;margin-top:5px;">AaPanel: <b>N Minutes → 1 Minute</b> | Type: Shell Script</p>
         </div>
-        <pre id="cron2" style="background:#0a0a14;padding:12px;border-radius:6px;color:#4ade80;margin:0;white-space:pre-wrap;word-break:break-all;"><?= htmlspecialchars($php_bin_detected) ?> <?= htmlspecialchars($cron_dir_path) ?>/cleanup.php >> /tmp/fb_cleanup.log 2>&1</pre>
-        <p style="color:#64748b;font-size:12px;margin-top:5px;">AaPanel: <b>N Days → 1 Day → Time: 23:59</b> | Type: Shell Script</p>
+        <div style="margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <p style="color:#a78bfa;font-weight:bold;margin:0;">② Cron Job 2 — Dọn dẹp DB (lúc 23:59 mỗi ngày)</p>
+                <button onclick="copyText('cron2a')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 12px;font-size:12px;cursor:pointer;">📋 Copy</button>
+            </div>
+            <pre id="cron2a" style="background:#0a0a14;padding:12px;border-radius:6px;color:#4ade80;margin:0;white-space:pre-wrap;word-break:break-all;">php <?= htmlspecialchars($cron_dir_path) ?>/cleanup.php >> /tmp/fb_cleanup.log 2>&1</pre>
+            <p style="color:#64748b;font-size:12px;margin-top:5px;">AaPanel: <b>N Days → 1 Day → Time: 23:59</b> | Type: Shell Script</p>
+        </div>
+    </div>
+
+    <!-- Full path tab -->
+    <div id="content-fullpath" style="display:none;">
+        <p style="color:#facc15;font-size:12px;margin-bottom:10px;">⚙ PHP binary phát hiện: <code style="color:#4ade80;"><?= htmlspecialchars($php_bin_full) ?></code> <span style="color:#64748b;">(<?= htmlspecialchars($php_bin_note) ?>)</span></p>
+        <div style="margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <p style="color:#a78bfa;font-weight:bold;margin:0;">① Cron Job 1 — Publish + Comment (mỗi 1 phút)</p>
+                <button onclick="copyText('cron1b')" style="background:#1d4ed8;color:#fff;border:none;border-radius:5px;padding:4px 12px;font-size:12px;cursor:pointer;">📋 Copy</button>
+            </div>
+            <pre id="cron1b" style="background:#0a0a14;padding:12px;border-radius:6px;color:#7ee8fa;margin:0;white-space:pre-wrap;word-break:break-all;"><?= htmlspecialchars($php_bin_full) ?> <?= htmlspecialchars($cron_dir_path) ?>/start_publish.php >> /tmp/fb_publish.log 2>&1
+<?= htmlspecialchars($php_bin_full) ?> <?= htmlspecialchars($cron_dir_path) ?>/start_comment.php >> /tmp/fb_comment.log 2>&1</pre>
+            <p style="color:#64748b;font-size:12px;margin-top:5px;">Crontab: <code>* * * * *</code> (mỗi phút)</p>
+        </div>
+        <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <p style="color:#a78bfa;font-weight:bold;margin:0;">② Cron Job 2 — Dọn dẹp DB (23:59)</p>
+                <button onclick="copyText('cron2b')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 12px;font-size:12px;cursor:pointer;">📋 Copy</button>
+            </div>
+            <pre id="cron2b" style="background:#0a0a14;padding:12px;border-radius:6px;color:#4ade80;margin:0;white-space:pre-wrap;word-break:break-all;"><?= htmlspecialchars($php_bin_full) ?> <?= htmlspecialchars($cron_dir_path) ?>/cleanup.php >> /tmp/fb_cleanup.log 2>&1</pre>
+            <p style="color:#64748b;font-size:12px;margin-top:5px;">Crontab: <code>59 23 * * *</code></p>
+        </div>
     </div>
 
     <hr style="border-color:#1e293b;margin:16px 0">
@@ -378,6 +394,16 @@ tr:hover td { background: #1e293b55; }
 </div>
 
 <script>
+function switchTab(tab) {
+    document.getElementById('content-aapanel').style.display  = (tab === 'aapanel')  ? '' : 'none';
+    document.getElementById('content-fullpath').style.display = (tab === 'fullpath') ? '' : 'none';
+    document.getElementById('tab-aapanel').style.background  = (tab === 'aapanel')  ? '#1d4ed8' : '#374151';
+    document.getElementById('tab-aapanel').style.color       = (tab === 'aapanel')  ? '#fff'    : '#9ca3af';
+    document.getElementById('tab-aapanel').style.fontWeight  = (tab === 'aapanel')  ? 'bold'   : 'normal';
+    document.getElementById('tab-fullpath').style.background = (tab === 'fullpath') ? '#6d28d9' : '#374151';
+    document.getElementById('tab-fullpath').style.color      = (tab === 'fullpath') ? '#fff'    : '#9ca3af';
+    document.getElementById('tab-fullpath').style.fontWeight = (tab === 'fullpath') ? 'bold'   : 'normal';
+}
 function copyText(id) {
     var el = document.getElementById(id);
     var text = el.innerText || el.textContent;
