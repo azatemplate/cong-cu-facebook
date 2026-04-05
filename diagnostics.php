@@ -85,7 +85,8 @@ $upcoming = $pdo->query("
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Kiểm tra exec() ──────────────────────────────────────────────────────────
-$exec_ok = function_exists('exec') && strpos(ini_get('disable_functions'), 'exec') === false;
+$disabled_funcs = array_map('trim', explode(',', strtolower(ini_get('disable_functions'))));
+$exec_ok = function_exists('exec') && !in_array('exec', $disabled_funcs);
 
 // ── Auto-detect PHP binary path (dùng cho hướng dẫn cron) ────────────────────
 // Luon dung 'php' cho AaPanel (shell da cau hinh san)

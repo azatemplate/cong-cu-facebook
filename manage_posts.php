@@ -212,14 +212,14 @@ try {
             <!-- Actions -->
             <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
                 <?php if ($fail > 0): ?>
-                <a href="manage_posts.php?action=retry_campaign&id=<?php echo $c['id']; ?>" onclick="return confirm('Thử lại tất cả bài lỗi trong chiến dịch này?')" style="padding:7px 12px;background:#d1fae5;color:#065f46;border-radius:6px;text-decoration:none;font-size:13px;">
+                <button onclick="showConfirmModal('retry', <?php echo $c['id']; ?>, 'Thử lại tất cả bài lỗi trong chiến dịch này?')" style="padding:7px 12px;background:#d1fae5;color:#065f46;border-radius:6px;border:none;cursor:pointer;font-size:13px;">
                     Retry
-                </a>
+                </button>
                 <?php endif; ?>
                 <?php if ($pend > 0 || $fail > 0): ?>
-                <a href="manage_posts.php?action=delete_campaign&id=<?php echo $c['id']; ?>" onclick="return confirm('Xóa toàn bộ bài pending/lỗi trong chiến dịch này?')" style="padding:7px 12px;background:#fee2e2;color:#dc2626;border-radius:6px;text-decoration:none;font-size:13px;">
+                <button onclick="showConfirmModal('delete', <?php echo $c['id']; ?>, 'Xóa toàn bộ bài pending/lỗi trong chiến dịch này?')" style="padding:7px 12px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;">
                     Xóa
-                </a>
+                </button>
                 <?php endif; ?>
                 <a href="campaign_detail.php?id=<?php echo $c['id']; ?>" style="padding:7px 14px;background:var(--primary-color);color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;margin-left:auto;">
                     Xem chi tiết →
@@ -242,17 +242,89 @@ try {
     <?php endif; ?>
 </div>
 
+<!-- Custom Confirm Modal -->
+<div id="confirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;padding:28px 32px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.2);text-align:center;">
+        <div style="font-size:40px;margin-bottom:12px;" id="modalIcon">⚠️</div>
+        <h3 id="modalTitle" style="margin:0 0 10px;font-size:17px;color:#111;"></h3>
+        <p id="modalMessage" style="margin:0 0 24px;font-size:14px;color:#555;"></p>
+        <div style="display:flex;gap:12px;justify-content:center;">
+            <button id="modalCancelBtn" onclick="hideConfirmModal()" style="padding:9px 24px;border:1px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;cursor:pointer;font-size:14px;">Huỷ</button>
+            <button id="modalOkBtn" onclick="doConfirmAction()" style="padding:9px 24px;border:none;border-radius:8px;background:#ef4444;color:#fff;cursor:pointer;font-size:14px;font-weight:600;">Xác nhận</button>
+        </div>
+    </div>
+</div>
+
+<!-- Cron Result Modal -->
+<div id="cronModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;padding:28px 32px;max-width:500px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+        <h3 style="margin:0 0 14px;font-size:16px;color:#111;">⚙️ Kết quả Quét Hàng Đợi</h3>
+        <pre id="cronResult" style="background:#f8f9fa;border:1px solid #e5e7eb;border-radius:8px;padding:14px;font-size:13px;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;"></pre>
+        <div style="text-align:right;margin-top:16px;">
+            <button onclick="hideCronModal()" style="padding:9px 24px;border:none;border-radius:8px;background:var(--primary-color);color:#fff;cursor:pointer;font-size:14px;font-weight:600;">Đóng & Tải lại</button>
+        </div>
+    </div>
+</div>
+
 <script>
+let _confirmAction = null;
+let _confirmId = null;
+
+function showConfirmModal(action, id, message) {
+    _confirmAction = action;
+    _confirmId = id;
+    const isDelete = action === 'delete';
+    document.getElementById('modalIcon').textContent = isDelete ? '🗑️' : '🔄';
+    document.getElementById('modalTitle').textContent = isDelete ? 'Xác nhận xóa' : 'Xác nhận thử lại';
+    document.getElementById('modalMessage').textContent = message;
+    document.getElementById('modalOkBtn').style.background = isDelete ? '#ef4444' : '#10b981';
+    const modal = document.getElementById('confirmModal');
+    modal.style.display = 'flex';
+}
+
+function hideConfirmModal() {
+    document.getElementById('confirmModal').style.display = 'none';
+    _confirmAction = null;
+    _confirmId = null;
+}
+
+function doConfirmAction() {
+    if (!_confirmAction || !_confirmId) return;
+    window.location.href = 'manage_posts.php?action=' + _confirmAction + '_campaign&id=' + _confirmId;
+}
+
 function runCronJob() {
-    if (!confirm('Hệ thống sẽ tiến hành duyệt các bài viết đã đến giờ hẹn. Vui lòng bấm OK và chờ.')) return;
     const btn = document.getElementById('cronBtn');
     btn.innerHTML = '<span class="loader" style="width:12px;height:12px;border:2px solid #fff;border-bottom-color:transparent;border-radius:50%;display:inline-block;animation:rotation 1s linear infinite;"></span> Đang chạy...';
     btn.disabled = true;
     fetch('diagnostics.php?run=publish&ajax=1')
     .then(r => r.text())
-    .then(text => { alert('HOÀN TẤT!\n\n' + text); window.location.reload(); })
-    .catch(err => { alert('Lỗi: ' + err); window.location.reload(); });
+    .then(text => {
+        document.getElementById('cronResult').textContent = text;
+        document.getElementById('cronModal').style.display = 'flex';
+        btn.innerHTML = '⚙️ Quét Hàng Đợi';
+        btn.disabled = false;
+    })
+    .catch(err => {
+        document.getElementById('cronResult').textContent = 'Lỗi: ' + err;
+        document.getElementById('cronModal').style.display = 'flex';
+        btn.innerHTML = '⚙️ Quét Hàng Đợi';
+        btn.disabled = false;
+    });
 }
+
+function hideCronModal() {
+    document.getElementById('cronModal').style.display = 'none';
+    window.location.reload();
+}
+
+// Close modals on backdrop click
+document.getElementById('confirmModal').addEventListener('click', function(e) {
+    if (e.target === this) hideConfirmModal();
+});
+document.getElementById('cronModal').addEventListener('click', function(e) {
+    if (e.target === this) hideCronModal();
+});
 
 // Keep scroll position on reload
 document.addEventListener("DOMContentLoaded", function() { 

@@ -1,7 +1,8 @@
 <?php
 // cron/cleanup.php
-// Script don dep DB doc lap — chay 1 lan/ngay luc 23:59
-// Crontab: 59 23 * * * /www/server/php/81/bin/php /path/to/cron/cleanup.php >> /tmp/fb_cleanup.log 2>&1
+// Script dọn dẹp DB + cập nhật followers — chạy 1 lần/ngày lúc 06:00 hoặc 23:59
+// Crontab: 0 6 * * * php /path/to/cron/cleanup.php >> /tmp/fb_cleanup.log 2>&1
+// AaPanel: N Days → 1 Day → Time: 06:00 | Type: Shell Script
 
 ignore_user_abort(true);
 set_time_limit(120);

@@ -37,3 +37,18 @@ File này lưu trữ toàn bộ bức tranh kiến trúc kỹ thuật của hệ
 - Nâng cấp AI Rewriter: Hỗ trợ tự động nội suy biến `{fanpage_name}` vào các Prompt hệ thống của Gemini/OpenAI khi thực thi tự động Auto-Publish cho các Page Facebook.
 - Đã bổ sung tính năng tự động so sánh số liệu (Reach, Views, Followers) của ngày hôm nay so với hôm qua bằng Snapshot (hiển thị phần trăm tăng/giảm trên `index.php`).
 - Cải tổ lại hoàn toàn diện mạo và văn bản hiển thị trên trang đăng nhập `login.php` bằng giao diện Split-Screen hiện đại.
+- **[MỚI] Tích hợp trang `tiktok_search.php`**: Công cụ tìm kiếm video TikTok tích hợp sẵn vào sidebar (menu trước Insights). Gồm 2 tab chính:
+  - **Tab Từ khóa**: Tìm video theo keyword qua API `tikwm.com/api/feed/search`.
+  - **Tab Hashtag**: Tìm hashtag gợi ý theo keyword (`api/challenge/search`) → hiển thị dạng card clickable → click chọn hashtag sẽ tự động tải video (`api/challenge/posts`). Hỗ trợ thêm `api/challenge/info` để lấy thông tin hashtag chi tiết.
+  - Bảng kết quả hỗ trợ: sort theo cột, toggle hiển thị/ẩn cột (lọc cột), chọn checkbox hàng loạt, copy URL TikTok hàng loạt vào clipboard.
+  - **Lưu ý kiến trúc AJAX**: Toàn bộ handler AJAX (`?ajax=keyword|hashtag_search|hashtag_info|hashtag`) phải nằm **trước** `require_once 'includes/header.php'` — header.php xuất HTML, nếu AJAX handler nằm sau sẽ trả về HTML thay vì JSON gây lỗi `Unexpected token '<'`.
+  - **Lưu ý challenge_id**: TikTok dùng Snowflake ID 64-bit, không dùng `intval()` để tránh overflow trên server 32-bit. Lưu và truyền dưới dạng string, validate bằng `is_numeric()`.
+
+## 7. Kiến trúc TikTok API (tikwm.com)
+- **Host**: `https://www.tikwm.com`
+- **Tìm video theo keyword**: `api/feed/search` — params: `keywords`, `count`, `cursor`
+- **Tìm hashtag theo keyword**: `api/challenge/search` — params: `keywords`, `count`, `cursor` — trả về `challenge_list[{id, cha_name, user_count, view_count}]`
+- **Chi tiết hashtag**: `api/challenge/info` — param: `challenge_name` — trả về `{id, cha_name, user_count, view_count}`
+- **Video theo hashtag**: `api/challenge/posts` — params: `challenge_id` (string), `count`, `cursor` — trả về `videos[]`
+- **Fields chuẩn của video**: `['video_id', 'region', 'duration', 'title', 'play_count', 'digg_count', 'comment_count', 'share_count', 'download_count', 'create_time', 'music_info', 'author']`
+

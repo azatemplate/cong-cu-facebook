@@ -8,6 +8,7 @@ $is_admin = ($_SESSION['role'] === 'admin');
 // Regular user (and Admin) sees their own pages AND pages shared with their system account
 // 1. Owned pages (indirectly via users table), plus who they shared them with
 // 2. Shared pages
+
 $stmt = $pdo->prepare("
     (SELECT pages.*, users.name as user_name,
            (SELECT GROUP_CONCAT(CONCAT(sa.username, ':', sa.id) SEPARATOR ', ')
@@ -147,7 +148,21 @@ endforeach; ?>
                             <?php endif; ?>
                         </td>
                         <td><span class="status-tag"><?php echo htmlspecialchars($page['category']); ?></span></td>
-                        <td style="font-weight: 600;"><?php echo number_format($page['followers_count']); ?></td>
+                        <td style="font-weight: 600;">
+                            <?php
+                            echo number_format($page['followers_count']);
+                            $diff = isset($page['followers_diff']) ? $page['followers_diff'] : null;
+                            if ($diff !== null && $diff != 0) {
+                                if ($diff > 0) {
+                                    echo ' <span style="font-size:12px;font-weight:600;color:#16a34a;white-space:nowrap;">▲ +' . number_format($diff) . '</span>';
+                                } else {
+                                    echo ' <span style="font-size:12px;font-weight:600;color:#dc2626;white-space:nowrap;">▼ ' . number_format($diff) . '</span>';
+                                }
+                            } elseif ($diff === 0) {
+                                echo ' <span style="font-size:11px;color:#9ca3af;white-space:nowrap;">→ 0</span>';
+                            }
+                            ?>
+                        </td>
                         <td class="col-user"><?php echo htmlspecialchars($page['user_name'] === 'Shared' ? 'Khác' : $page['user_name']); ?></td>
                         <td><span style="color: var(--secondary-color); font-size: 12px; font-weight: 500;">Hoạt động</span></td>
                     </tr>

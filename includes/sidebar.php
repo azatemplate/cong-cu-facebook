@@ -32,6 +32,9 @@
         <li class="<?php echo ($current_page == 'youtube') ? 'active' : ''; ?>">
             <a href="youtube.php" data-tooltip="YouTube Scheduler"><span class="icon">🚀</span><span class="menu-label"> YouTube Scheduler</span></a>
         </li>
+        <li class="<?php echo ($current_page == 'tiktok_search') ? 'active' : ''; ?>">
+            <a href="tiktok_search.php" data-tooltip="TikTok Search"><span class="icon">🎵</span><span class="menu-label"> TikTok Search</span></a>
+        </li>
         <li class="<?php echo ($current_page == 'insights') ? 'active' : ''; ?>">
             <a href="insights.php" data-tooltip="Insights"><span class="icon">📈</span><span class="menu-label"> Insights</span></a>
         </li>

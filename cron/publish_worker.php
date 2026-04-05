@@ -33,7 +33,7 @@ if (!$lock_fp) {
 
 // Thử lock trong 5 giây (blocking) thay vì exit ngay
 $lock_wait = 0;
-$lock_got  = false;
+$lock_got = false;
 while ($lock_wait < 5) {
     if (flock($lock_fp, LOCK_EX | LOCK_NB)) {
         $lock_got = true;
@@ -66,39 +66,125 @@ echo "Bat dau quet bai viet len lich luc: " . date('Y-m-d H:i:s') . "\n";
 // We reset them so they can be retried.
 try {
     $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND scheduled_time <= DATE_SUB(NOW(), INTERVAL 10 MINUTE)");
-    if ($stuck > 0) echo "⚠ Reset $stuck bài bị kẹt ở trạng thái 'processing' về 'pending'.\n";
-} catch (Exception $e) {}
+    if ($stuck > 0)
+        echo "⚠ Reset $stuck bài bị kẹt ở trạng thái 'processing' về 'pending'.\n";
+} catch (Exception $e) {
+}
 
 // ── Detect available columns ─────────────────────────────────────────────
 $has_fb_post_id = false;
-$has_error_msg  = false;
+$has_error_msg = false;
 $has_retry_count = false;
-$has_comment_lines  = false;
-$has_comment_at     = false;
+$has_comment_lines = false;
+$has_comment_at = false;
 $has_comment_status = false;
 try {
     $col_q = $pdo->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME IN ('fb_post_id','error_msg','retry_count','comment_lines','comment_at','comment_status')");
     $existing_cols = $col_q ? $col_q->fetchAll(PDO::FETCH_COLUMN) : [];
-    $has_fb_post_id  = in_array('fb_post_id', $existing_cols);
-    $has_error_msg   = in_array('error_msg', $existing_cols);
+    $has_fb_post_id = in_array('fb_post_id', $existing_cols);
+    $has_error_msg = in_array('error_msg', $existing_cols);
     $has_retry_count = in_array('retry_count', $existing_cols);
-    $has_comment_lines  = in_array('comment_lines', $existing_cols);
-    $has_comment_at     = in_array('comment_at', $existing_cols);
+    $has_comment_lines = in_array('comment_lines', $existing_cols);
+    $has_comment_at = in_array('comment_at', $existing_cols);
     $has_comment_status = in_array('comment_status', $existing_cols);
-} catch (Exception $e) {}
+} catch (Exception $e) {
+}
 
 // Fetch system settings for retry logic
 $sys_retry_interval = 1;
-$sys_max_retries    = 3;
+$sys_max_retries = 3;
+$sys_tiktok_api_url = '';
 try {
-    $ss_stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('retry_interval_minutes', 'max_retries')");
+    $ss_stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('retry_interval_minutes', 'max_retries', 'tiktok_api_url')");
     $settings = [];
     while ($row = $ss_stmt->fetch(PDO::FETCH_ASSOC)) {
         $settings[$row['setting_key']] = $row['setting_value'];
     }
-    $sys_retry_interval = isset($settings['retry_interval_minutes']) ? (int)$settings['retry_interval_minutes'] : 1;
-    $sys_max_retries    = isset($settings['max_retries']) ? (int)$settings['max_retries'] : 3;
-} catch (Exception $e) {}
+    $sys_retry_interval = isset($settings['retry_interval_minutes']) ? (int) $settings['retry_interval_minutes'] : 1;
+    $sys_max_retries = isset($settings['max_retries']) ? (int) $settings['max_retries'] : 3;
+    $sys_tiktok_api_url = trim($settings['tiktok_api_url'] ?? '');
+} catch (Exception $e) {
+}
+
+// Helper: Tải thông tin video TikTok (logic giống api-dow-tik.php)
+function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?array
+{
+    // Nếu admin cấu hình API riêng (tiktok_api_url), dùng trực tiếp
+    if (!empty($custom_api_url)) {
+        $resp = @file_get_contents(rtrim($custom_api_url, '?&') . '?url=' . urlencode($tiktok_url));
+        $data = json_decode($resp, true);
+        if ($data && isset($data['download_url']))
+            return $data;
+    }
+
+    // Bước 1: Lấy video ID qua TikTok oEmbed (không cần API key, giống logic gốc)
+    $oembed_url = (strpos($tiktok_url, 'tiktok.com/oembed') === false)
+        ? 'https://www.tiktok.com/oembed?url=' . urlencode($tiktok_url)
+        : $tiktok_url;
+
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $oembed_url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_HTTPHEADER => [
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Accept: application/json',
+        ],
+    ]);
+    $resp = curl_exec($ch);
+    curl_close($ch);
+
+    $json = json_decode($resp, true);
+    if (!$json || empty($json['embed_product_id']))
+        return null;
+
+    $video_id = $json['embed_product_id'];
+    $title = preg_replace('/[\/\\\\:\*\?"<>\|]/u', '', $json['title'] ?? 'tiktok_video');
+
+    // Bước 2: Build link CDN tikwm.com (HD → SD → fallback)
+    $hd_url = "https://www.tikwm.com/video/media/hdplay/{$video_id}.mp4";
+    $sd_url = "https://www.tikwm.com/video/media/play/{$video_id}.mp4";
+
+    $download_url = _tiktok_resolve_cdn($hd_url)
+        ?: _tiktok_resolve_cdn($sd_url)
+        ?: $hd_url; // fallback giữ nguyên link HD
+
+    return [
+        'download_url' => $download_url,
+        'title' => $title,
+        'video_id' => $video_id,
+    ];
+}
+
+// Helper: Lấy URL cuối cùng sau redirect (kiểm tra tiktokcdn)
+function _tiktok_resolve_cdn(string $url): ?string
+{
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 10,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_NOBODY => true,
+        CURLOPT_HEADER => true,
+        CURLOPT_HTTPHEADER => [
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Accept: video/mp4,video/*',
+        ],
+    ]);
+    curl_exec($ch);
+    $final = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($code >= 200 && $code < 400 && $final && strpos($final, 'tiktokcdn') !== false) {
+        return $final;
+    }
+    return null;
+}
 
 // 1. Fetch pending posts where scheduled_time <= NOW() AND page_id matches
 $retry_clause = $has_retry_count
@@ -132,13 +218,13 @@ foreach ($pending_posts as $post) {
             $l_stmt = $pdo->prepare("SELECT page_limit, role FROM system_accounts WHERE id = ?");
             $l_stmt->execute([$aid]);
             $acc_data = $l_stmt->fetch(PDO::FETCH_ASSOC);
-            $account_limits[$aid] = ($acc_data && $acc_data['role'] !== 'admin') ? (int)$acc_data['page_limit'] : -1;
+            $account_limits[$aid] = ($acc_data && $acc_data['role'] !== 'admin') ? (int) $acc_data['page_limit'] : -1;
         }
 
         if (!isset($account_published_today[$aid])) {
             $c_stmt = $pdo->prepare("SELECT COUNT(id) FROM scheduled_posts WHERE account_id = ? AND status = 'published' AND DATE(scheduled_time) = CURDATE()");
             $c_stmt->execute([$aid]);
-            $account_published_today[$aid] = (int)$c_stmt->fetchColumn();
+            $account_published_today[$aid] = (int) $c_stmt->fetchColumn();
         }
 
         if ($account_limits[$aid] !== -1 && $account_published_today[$aid] >= $account_limits[$aid]) {
@@ -192,7 +278,7 @@ foreach ($pending_posts as $post) {
 
         // Download Media (nếu là Tiktok hoặc Drive)
         $raw_media = $post['media_path'];
-        $is_drive  = strpos($raw_media, 'drive:') === 0;
+        $is_drive = strpos($raw_media, 'drive:') === 0;
         $is_tiktok = strpos($raw_media, 'tiktok:') === 0;
         $abs_media_path = '';
         $temp_drive_file = null;
@@ -215,16 +301,15 @@ foreach ($pending_posts as $post) {
             $t_title_override = pathinfo($file_info['name'], PATHINFO_FILENAME);
         } elseif ($is_tiktok) {
             $tiktok_url = substr($raw_media, 7);
-            $api_response = @file_get_contents("https://hongvippro.com/apidowntik/api-dow-tik.php?url=" . urlencode($tiktok_url));
-            $tik_data = json_decode($api_response, true);
+            $tik_data = fetch_tiktok_info($tiktok_url, $sys_tiktok_api_url);
             if (!$tik_data || !isset($tik_data['download_url'])) {
                 marKAsFailed($pdo, $post['id'], "Không thể kết nối API tải video TikTok.", $sys_max_retries, $sys_retry_interval);
                 continue;
             }
-            
+
             $tik_title = isset($tik_data['title']) ? $tik_data['title'] : '';
             $t_title_override = $tik_title;
-            
+
             // Download the video locally to upload to youtube
             $file_content = @file_get_contents($tik_data['download_url']);
             if (!$file_content) {
@@ -245,37 +330,45 @@ foreach ($pending_posts as $post) {
 
         // Tích hợp Content
         $content_data = json_decode($post['content'], true);
-        if (!$content_data) $content_data = [];
+        if (!$content_data)
+            $content_data = [];
 
         // Thêm AI chuẩn SEO (Bao gồm Local, Drive, TikTok)
         if (isset($content_data['use_ai']) && $content_data['use_ai']) {
             $base_text = trim(($content_data['title'] ?? '') . " " . ($content_data['description'] ?? ''));
-            if (empty($base_text)) $base_text = $t_title_override;
-            if (empty($base_text)) $base_text = "Video giải trí và tin tức";
-            
+            if (empty($base_text))
+                $base_text = $t_title_override;
+            if (empty($base_text))
+                $base_text = "Video giải trí và tin tức";
+
             $channel_title = isset($yt_channel['channel_title']) ? $yt_channel['channel_title'] : '';
             $ai_json = rewrite_youtube_with_ai($base_text, $post['account_id'], $channel_title);
             if ($ai_json && is_array($ai_json)) {
-                if (!empty($ai_json['title'])) $content_data['title'] = $ai_json['title'];
-                if (!empty($ai_json['description'])) $content_data['description'] = $ai_json['description'];
-                if (!empty($ai_json['tags'])) $content_data['tags'] = $ai_json['tags'];
+                if (!empty($ai_json['title']))
+                    $content_data['title'] = $ai_json['title'];
+                if (!empty($ai_json['description']))
+                    $content_data['description'] = $ai_json['description'];
+                if (!empty($ai_json['tags']))
+                    $content_data['tags'] = $ai_json['tags'];
             }
         } elseif (isset($content_data['auto_title']) && $content_data['auto_title'] && empty($content_data['title'])) {
             $content_data['title'] = $t_title_override;
-            if (empty($content_data['description'])) $content_data['description'] = $t_title_override;
+            if (empty($content_data['description']))
+                $content_data['description'] = $t_title_override;
         }
 
         // Đảm bảo có fallback nếu tất cả các luồng trên đều không ra title
         if (empty($content_data['title']) && isset($content_data['auto_title']) && $content_data['auto_title']) {
             $content_data['title'] = $t_title_override;
-            if (empty($content_data['description'])) $content_data['description'] = $t_title_override;
+            if (empty($content_data['description']))
+                $content_data['description'] = $t_title_override;
         }
 
         $yt_title = !empty($content_data['title']) ? mb_substr($content_data['title'], 0, 100, 'UTF-8') : (!empty($t_title_override) ? mb_substr($t_title_override, 0, 100, 'UTF-8') : 'YouTube Video');
         $yt_desc = $content_data['description'] ?? '';
         $yt_tags_str = $content_data['tags'] ?? '';
         $yt_tags = array_filter(array_map('trim', explode(',', $yt_tags_str)));
-        
+
         $metadata = [
             "snippet" => [
                 "title" => $yt_title,
@@ -298,7 +391,7 @@ foreach ($pending_posts as $post) {
 
         // --- RESUMABLE UPLOAD PROCESS ---
         $file_size = filesize($abs_media_path);
-        
+
         // 1. Khởi tạo Upload
         $ch_init = curl_init('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status');
         curl_setopt($ch_init, CURLOPT_RETURNTRANSFER, true);
@@ -319,13 +412,14 @@ foreach ($pending_posts as $post) {
 
         if ($init_code !== 200) {
             marKAsFailed($pdo, $post['id'], "Lỗi khởi tạo upload YouTube: HTTP $init_code - $init_body", $sys_max_retries, $sys_retry_interval);
-            if ($temp_drive_file && file_exists($temp_drive_file)) @unlink($temp_drive_file);
+            if ($temp_drive_file && file_exists($temp_drive_file))
+                @unlink($temp_drive_file);
             continue;
         }
 
         // Tìm Location url
         $upload_url = '';
-        foreach(explode("\n", $init_headers) as $header_line) {
+        foreach (explode("\n", $init_headers) as $header_line) {
             if (stripos(trim($header_line), 'Location:') === 0) {
                 $upload_url = trim(substr(trim($header_line), 9));
                 break;
@@ -334,14 +428,15 @@ foreach ($pending_posts as $post) {
 
         if (empty($upload_url)) {
             marKAsFailed($pdo, $post['id'], "Lỗi lấy Location URL để upload lên YouTube.", $sys_max_retries, $sys_retry_interval);
-            if ($temp_drive_file && file_exists($temp_drive_file)) @unlink($temp_drive_file);
+            if ($temp_drive_file && file_exists($temp_drive_file))
+                @unlink($temp_drive_file);
             continue;
         }
 
         // 2. Tải File Lên
         set_time_limit(3600); // 1 giờ cho upload file to
         $file_handle = fopen($abs_media_path, 'r');
-        
+
         $ch_upload = curl_init($upload_url);
         curl_setopt($ch_upload, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch_upload, CURLOPT_PUT, true);
@@ -359,9 +454,10 @@ foreach ($pending_posts as $post) {
         if (in_array($upload_code, [200, 201])) {
             $youtube_res = json_decode($upload_response, true);
             $video_id = $youtube_res['id'] ?? '';
-            
+
             // Xoá file rác local
-            if ($temp_drive_file && file_exists($temp_drive_file)) @unlink($temp_drive_file);
+            if ($temp_drive_file && file_exists($temp_drive_file))
+                @unlink($temp_drive_file);
             if (!$is_drive && !$is_tiktok && file_exists($abs_media_path) && strpos($abs_media_path, 'uploads/') !== false) {
                 @unlink($abs_media_path);
             }
@@ -386,20 +482,22 @@ foreach ($pending_posts as $post) {
                         ->execute([$comment_at, $post['id']]);
                 }
             }
-            
+
             // Lịch sử
             try {
                 $display_content = is_string($post['content']) ? $post['content'] : json_encode($content_data);
                 $h_stmt = $pdo->prepare("INSERT INTO posts_history (page_id, post_type, content, fb_post_id) VALUES (?, 'YouTube', ?, ?)");
                 $h_stmt->execute([$post['page_id'], 'YouTube', $display_content, $video_id]);
-            } catch (Exception $e) {}
-            
+            } catch (Exception $e) {
+            }
+
             echo " -> Đăng Video YouTube thành công! Video ID: $video_id\n";
         } else {
             $err_data = json_decode($upload_response, true);
             $err_msg = $err_data['error']['message'] ?? $upload_response;
             marKAsFailed($pdo, $post['id'], "Lỗi lúc tải file lên YouTube: HTTP $upload_code - $err_msg", $sys_max_retries, $sys_retry_interval);
-            if ($temp_drive_file && file_exists($temp_drive_file)) @unlink($temp_drive_file);
+            if ($temp_drive_file && file_exists($temp_drive_file))
+                @unlink($temp_drive_file);
         }
 
         // Xong luồng YouTube, bỏ qua phần Facebook bên dưới
@@ -424,7 +522,7 @@ foreach ($pending_posts as $post) {
     $endpoint = '';
     $post_data = [];
     $params = ['access_token' => $page_access_token];
-    
+
     // ── Detect multi-image JSON array in media_path ──────────────────────
     $multi_image_paths = null;
     $raw_media = $post['media_path'];
@@ -506,7 +604,7 @@ foreach ($pending_posts as $post) {
 
             // Upload as unpublished photo
             $upload_data = [
-                'source'    => new CURLFile($mi_abs, $mi_mime, $mi_name),
+                'source' => new CURLFile($mi_abs, $mi_mime, $mi_name),
                 'published' => 'false'
             ];
             $upload_res = fb_api_request($post['page_id'] . '/photos', ['access_token' => $page_access_token], 'POST', $upload_data);
@@ -522,7 +620,8 @@ foreach ($pending_posts as $post) {
 
         // Cleanup temp drive files
         foreach ($temp_files_to_clean as $tf) {
-            if (file_exists($tf)) @unlink($tf);
+            if (file_exists($tf))
+                @unlink($tf);
         }
 
         if (empty($photo_ids)) {
@@ -532,7 +631,8 @@ foreach ($pending_posts as $post) {
 
         // Create multi-photo feed post with attached_media
         $feed_data = [];
-        if (!empty($p_desc)) $feed_data['message'] = $p_desc;
+        if (!empty($p_desc))
+            $feed_data['message'] = $p_desc;
         foreach ($photo_ids as $pi => $pid) {
             $feed_data["attached_media[$pi]"] = json_encode(['media_fbid' => $pid]);
         }
@@ -551,33 +651,32 @@ foreach ($pending_posts as $post) {
             marKAsFailed($pdo, $post['id'], "Không thể lấy Google Access Token. Có thể Admin chưa liên kết.", $sys_max_retries, $sys_retry_interval);
             continue;
         }
-        
+
         $file_info = download_drive_file_temp($drive_token, $drive_file_id);
         if (isset($file_info['error'])) {
             marKAsFailed($pdo, $post['id'], "Lỗi tải Google Drive: " . $file_info['error'], $sys_max_retries, $sys_retry_interval);
             continue;
         }
-        
+
         $has_media = true;
         $abs_media_path = $file_info['path'];
         $file_mime = $file_info['mime'];
         $file_name = $file_info['name'];
         $t_title_override = pathinfo($file_name, PATHINFO_FILENAME);
         $temp_drive_file = $abs_media_path;
-        
+
     } elseif ($is_tiktok) {
         $tiktok_url = substr($post['media_path'], 7);
-        $api_response = @file_get_contents("https://hongvippro.com/apidowntik/api-dow-tik.php?url=" . urlencode($tiktok_url));
-        $tik_data = json_decode($api_response, true);
-        
+        $tik_data = fetch_tiktok_info($tiktok_url, $sys_tiktok_api_url);
+
         if (!$tik_data || !isset($tik_data['download_url'])) {
             marKAsFailed($pdo, $post['id'], "Không thể kết nối API tải video TikTok.", $sys_max_retries, $sys_retry_interval);
             continue;
         }
-        
+
         $tik_title = isset($tik_data['title']) ? $tik_data['title'] : '';
         $t_title_override = $tik_title;
-        
+
         $post_data['file_url'] = $tik_data['download_url'];
     } else {
         $has_media = !empty($post['media_path']) && file_exists(__DIR__ . '/../' . $post['media_path']);
@@ -599,12 +698,12 @@ foreach ($pending_posts as $post) {
 
     if ($post_type === 'Status' || $post_type === 'Image') {
         $endpoint = ($post_type === 'Status') ? $post['page_id'] . '/feed' : $post['page_id'] . '/photos';
-        
+
         $parsed_content = @json_decode($post['content'], true);
         if (is_array($parsed_content) && isset($parsed_content['description'])) {
             $p_desc = $parsed_content['description'];
             $use_ai = isset($parsed_content['use_ai']) && $parsed_content['use_ai'];
-            
+
             if ($use_ai && !empty($p_desc)) {
                 $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
             }
@@ -613,8 +712,7 @@ foreach ($pending_posts as $post) {
         } else {
             $post_data['message'] = $post['content'];
         }
-    }
-    elseif ($post_type === 'Video' || $post_type === 'Reel') {
+    } elseif ($post_type === 'Video' || $post_type === 'Reel') {
         $endpoint = $post['page_id'] . '/videos';
         // Content might be JSON encoded with title and description for Videos
         if ($post['content']) {
@@ -624,27 +722,33 @@ foreach ($pending_posts as $post) {
                 $p_title = isset($content_data['title']) ? $content_data['title'] : '';
                 $is_auto = isset($content_data['auto_title']) && $content_data['auto_title'];
                 $use_ai = isset($content_data['use_ai']) && $content_data['use_ai'];
-                
+
                 if ($is_auto) {
-                    if (empty($p_desc) && !empty($t_title_override)) $p_desc = $t_title_override;
+                    if (empty($p_desc) && !empty($t_title_override))
+                        $p_desc = $t_title_override;
                     // Không tự động gán text dài vào $p_title để tránh bị Facebook Graph API cắt bớt hiển thị "..."
-                    if (empty($p_title) && !empty($t_title_override)) $p_title = '';
+                    if (empty($p_title) && !empty($t_title_override))
+                        $p_title = '';
                 }
-                
+
                 if ($use_ai) {
-                    if (!empty($p_desc)) $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
-                    if (!empty($p_title) && $post_type !== 'Reel') $p_title = rewrite_content_with_ai($p_title, $post['account_id'], true, $fanpage_name);
+                    if (!empty($p_desc))
+                        $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
+                    if (!empty($p_title) && $post_type !== 'Reel')
+                        $p_title = rewrite_content_with_ai($p_title, $post['account_id'], true, $fanpage_name);
                 }
-                
-                if (!empty($p_desc)) $post_data['description'] = $p_desc;
-                if (!empty($p_title) && $post_type !== 'Reel') $post_data['title'] = $p_title;
-                
+
+                if (!empty($p_desc))
+                    $post_data['description'] = $p_desc;
+                if (!empty($p_title) && $post_type !== 'Reel')
+                    $post_data['title'] = $p_title;
+
                 // Keep content intact for history reference
                 $post['content'] = $p_desc;
-            }
-            else {
+            } else {
                 $p_desc = !empty($post['content']) ? $post['content'] : $t_title_override;
-                if (!empty($p_desc)) $post_data['description'] = $p_desc;
+                if (!empty($p_desc))
+                    $post_data['description'] = $p_desc;
                 $post['content'] = $p_desc;
             }
         } else {
@@ -654,24 +758,23 @@ foreach ($pending_posts as $post) {
                 $post['content'] = $t_title_override;
             }
         }
-    }
-    elseif (strpos($post_type, 'Story') !== false) {
+    } elseif (strpos($post_type, 'Story') !== false) {
         // Nếu là Drive, post_type chỉ ghi là 'Story'. Cần parse lại dựa vào mime
         if ($post_type === 'Story' && $has_media) {
             $is_photo = strpos($file_mime, 'image') !== false;
             $post_type = 'Story (' . ($is_photo ? 'Image' : 'Video') . ')';
         }
-        
+
         $is_photo_story = strpos($post_type, 'Image') !== false;
-        
+
         $response = fb_upload_story($post['page_id'], $page_access_token, $abs_media_path, $file_mime, $is_photo_story, $file_name);
-        
+
         // Cần giả lập biến $endpoint để không lỗi đoạn dưới (hoặc skip)
         $endpoint = "story_uploaded";
-    }
-    else {
+    } else {
         marKAsFailed($pdo, $post['id'], "Loại bài đăng không hỗ trợ: $post_type", $sys_max_retries, $sys_retry_interval);
-        if ($temp_drive_file && file_exists($temp_drive_file)) @unlink($temp_drive_file);
+        if ($temp_drive_file && file_exists($temp_drive_file))
+            @unlink($temp_drive_file);
         continue;
     }
 
@@ -730,12 +833,11 @@ foreach ($pending_posts as $post) {
         }
 
         echo " -> Thành công! Post ID: $post_id\n";
-    }
-    else {
+    } else {
         $error_msg = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : json_encode($response['data']);
         marKAsFailed($pdo, $post['id'], "Lỗi API: $error_msg", $sys_max_retries, $sys_retry_interval, $has_error_msg, $has_retry_count);
     }
-    
+
     // Always cleanup temp drive file for this iteration
     if ($temp_drive_file && file_exists($temp_drive_file)) {
         @unlink($temp_drive_file);
@@ -762,8 +864,10 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
             $sel = $pdo->prepare("SELECT retry_count FROM scheduled_posts WHERE id = ?");
             $sel->execute([$id]);
             $row = $sel->fetch(PDO::FETCH_ASSOC);
-            $current_retry = $row ? (int)$row['retry_count'] : 0;
-        } catch (Exception $e) { $has_retry_count = false; }
+            $current_retry = $row ? (int) $row['retry_count'] : 0;
+        } catch (Exception $e) {
+            $has_retry_count = false;
+        }
     }
     $new_retry = $current_retry + 1;
 
