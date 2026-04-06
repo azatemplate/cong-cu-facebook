@@ -21,8 +21,8 @@ $total = $pdo->query("SELECT COUNT(*) FROM pages")->fetchColumn();
 echo "Tổng: $total pages\n";
 
 echo "\n--- 10 pages MỚI NHẤT trong DB ---\n";
-$rows = $pdo->query("SELECT p.page_id, p.name, u.username FROM pages p JOIN users u ON p.user_id = u.id ORDER BY p.id DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
+$rows = $pdo->query("SELECT p.page_id, p.name FROM pages ORDER BY p.id DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
 foreach ($rows as $r) {
-    echo "• {$r['page_id']} - {$r['name']} (user: {$r['username']})\n";
+    echo "• {$r['page_id']} - {$r['name']}\n";
 }
 echo "</pre>";
