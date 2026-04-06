@@ -35,6 +35,9 @@
         <li class="<?php echo ($current_page == 'tiktok_search') ? 'active' : ''; ?>">
             <a href="tiktok_search.php" data-tooltip="TikTok Search"><span class="icon">🎵</span><span class="menu-label"> TikTok Search</span></a>
         </li>
+        <li class="<?php echo ($current_page == 'special_watch') ? 'active' : ''; ?>">
+            <a href="special_watch.php" data-tooltip="Theo Dõi Đặc Biệt"><span class="icon">👁️</span><span class="menu-label"> Theo Dõi Đặc Biệt</span></a>
+        </li>
         <li class="<?php echo ($current_page == 'insights') ? 'active' : ''; ?>">
             <a href="insights.php" data-tooltip="Insights"><span class="icon">📈</span><span class="menu-label"> Insights</span></a>
         </li>

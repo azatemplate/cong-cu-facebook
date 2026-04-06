@@ -160,12 +160,13 @@ try {
 
     <div style="display:grid; gap:14px;">
     <?php foreach ($campaigns as $c):
-        $total    = max(1, (int)$c['cnt_total']);
-        $pub      = (int)$c['cnt_published'];
-        $pend     = (int)$c['cnt_pending'];
-        $proc     = (int)$c['cnt_processing'];
-        $fail     = (int)$c['cnt_failed'];
-        $progress = round($pub / $total * 100);
+        $total_real = (int)$c['cnt_total'];            // actual count (may be 0)
+        $total      = max(1, $total_real);             // clamped for division only
+        $pub        = (int)$c['cnt_published'];
+        $pend       = (int)$c['cnt_pending'];
+        $proc       = (int)$c['cnt_processing'];
+        $fail       = (int)$c['cnt_failed'];
+        $progress   = round($pub / $total * 100);
 
         // Badge — priority: processing > pending > failed > done > empty
         if ($proc > 0) {
@@ -174,8 +175,10 @@ try {
             $badge_color = '#fef3c7'; $badge_text_color = '#d97706'; $badge_label = "⏳ $pend chờ";
         } elseif ($fail > 0) {
             $badge_color = '#fee2e2'; $badge_text_color = '#dc2626'; $badge_label = "⚠️ $fail lỗi";
-        } elseif ($pub >= $total && $total > 0) {
+        } elseif ($pub >= $total && $total_real > 0) {
             $badge_color = '#d1fae5'; $badge_text_color = '#065f46'; $badge_label = "✅ Hoàn tất";
+        } elseif ($total_real === 0) {
+            $badge_color = '#f3f4f6'; $badge_text_color = '#6b7280'; $badge_label = "📭 Trống";
         } else {
             $badge_color = '#f3f4f6'; $badge_text_color = '#6b7280'; $badge_label = "—";
         }
@@ -219,6 +222,11 @@ try {
                 <?php if ($pend > 0 || $fail > 0): ?>
                 <button onclick="showConfirmModal('delete', <?php echo $c['id']; ?>, 'Xóa toàn bộ bài pending/lỗi trong chiến dịch này?')" style="padding:7px 12px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;">
                     Xóa
+                </button>
+                <?php endif; ?>
+                <?php if ($total_real === 0): ?>
+                <button onclick="showConfirmModal('delete', <?php echo $c['id']; ?>, 'Xóa chiến dịch trống này?')" style="padding:7px 12px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;">
+                    🗑 Xóa
                 </button>
                 <?php endif; ?>
                 <a href="campaign_detail.php?id=<?php echo $c['id']; ?>" style="padding:7px 14px;background:var(--primary-color);color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;margin-left:auto;">

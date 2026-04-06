@@ -200,11 +200,14 @@ function status_label($s) {
     </div>
     <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
         <?php if ((int)$stats['fail'] > 0): ?>
-        <a href="campaign_detail.php?id=<?php echo $campaign_id; ?>&action=retry_all" onclick="return confirm('Thử lại tất cả bài lỗi?')" style="padding:8px 16px;background:#10b981;color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;">🔄 Retry tất cả lỗi (<?php echo (int)$stats['fail']; ?>)</a>
+        <button onclick="showCampaignModal('retry_all', <?php echo $campaign_id; ?>, 'Thử lại tất cả bài lỗi trong chiến dịch này?', false)" style="padding:8px 16px;background:#10b981;color:white;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🔄 Retry tất cả lỗi (<?php echo (int)$stats['fail']; ?>)</button>
         <?php endif; ?>
         <?php if ((int)$stats['pend'] > 0 || (int)$stats['fail'] > 0): ?>
-        <a href="manage_posts.php?action=delete_campaign&id=<?php echo $campaign_id; ?>" onclick="return confirm('Xóa toàn bộ bài pending & lỗi?')" style="padding:8px 16px;background:#fee2e2;color:#dc2626;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;">🗑 Xóa bài chưa/lỗi</a>
+        <button onclick="showCampaignModal('delete_pending', <?php echo $campaign_id; ?>, 'Xóa toàn bộ bài pending &amp; lỗi trong chiến dịch này?', true)" style="padding:8px 16px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🗑 Xóa bài chưa/lỗi</button>
         <?php endif; ?>
+        <?php if ((int)$stats['total'] === 0): ?>
+        <button onclick="showCampaignModal('delete_campaign_empty', <?php echo $campaign_id; ?>, 'Xóa chiến dịch trống này?', true)" style="padding:8px 16px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🗑 Xóa Campaign</button>
+        <?php endif ?>
     </div>
 </div>
 
@@ -237,7 +240,7 @@ function status_label($s) {
     <?php if (empty($posts)): ?>
     <div style="text-align:center;padding:40px;color:var(--text-muted);">Không có bài viết nào với bộ lọc này.</div>
     <?php else: ?>
-    <form method="POST" action="campaign_detail.php?id=<?php echo $campaign_id; ?>">
+    <form id="bulkDeleteForm" method="POST" action="campaign_detail.php?id=<?php echo $campaign_id; ?>">
         <input type="hidden" name="bulk_action" value="delete">
         <!-- Bulk toolbar -->
         <div style="padding:10px 16px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;gap:10px;background:#fafafa;">
@@ -330,8 +333,8 @@ function status_label($s) {
                            style="font-size:12px;color:var(--primary-color);text-decoration:none;padding:3px 9px;border:1px solid #c7d2fe;border-radius:4px;background:#eef2ff;">Xem</a>
                     <?php endif; ?>
                     <?php if (in_array($s, ['pending','failed'])): ?>
-                        <a href="campaign_detail.php?id=<?php echo $campaign_id; ?>&action=delete&post_id=<?php echo $post['id']; ?>&filter=<?php echo $filter; ?>"
-                           onclick="return confirm('Xóa bài đăng này?')"
+                        <a href="#"
+                           onclick="showSingleDeleteModal(<?php echo $post['id']; ?>, '<?php echo $filter; ?>'); return false;"
                            style="font-size:12px;color:#dc2626;text-decoration:none;padding:3px 9px;border:1px solid #fca5a5;border-radius:4px;">Xóa</a>
                     <?php endif; ?>
                     <?php if ($s === 'failed'): ?>
@@ -369,14 +372,90 @@ function status_label($s) {
 </div>
 <?php endif; ?>
 
+<!-- Confirm Modal -->
+<div id="cdConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;padding:28px 32px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.2);text-align:center;">
+        <div id="cdModalIcon" style="font-size:40px;margin-bottom:12px;">⚠️</div>
+        <h3 id="cdModalTitle" style="margin:0 0 10px;font-size:17px;color:#111;"></h3>
+        <p id="cdModalMsg" style="margin:0 0 24px;font-size:14px;color:#555;"></p>
+        <div style="display:flex;gap:12px;justify-content:center;">
+            <button onclick="hideCdModal()" style="padding:9px 24px;border:1px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;cursor:pointer;font-size:14px;">Huỷ</button>
+            <button id="cdModalOkBtn" onclick="doCdAction()" style="padding:9px 24px;border:none;border-radius:8px;background:#ef4444;color:#fff;cursor:pointer;font-size:14px;font-weight:600;">Xác nhận</button>
+        </div>
+    </div>
+</div>
+
 <script>
+let _cdAction = null;
+let _cdId = null;
+let _cdExtra = null;
+
+function showCampaignModal(action, id, msg, isDanger) {
+    _cdAction = action;
+    _cdId = id;
+    _cdExtra = null;
+    document.getElementById('cdModalIcon').textContent = isDanger ? '🗑️' : '🔄';
+    document.getElementById('cdModalTitle').textContent = isDanger ? 'Xác nhận xóa' : 'Xác nhận thử lại';
+    document.getElementById('cdModalMsg').textContent = msg;
+    document.getElementById('cdModalOkBtn').style.background = isDanger ? '#ef4444' : '#10b981';
+    document.getElementById('cdConfirmModal').style.display = 'flex';
+}
+
+function showSingleDeleteModal(postId, filter) {
+    _cdAction = 'delete_single';
+    _cdId = postId;
+    _cdExtra = filter;
+    document.getElementById('cdModalIcon').textContent = '🗑️';
+    document.getElementById('cdModalTitle').textContent = 'Xác nhận xóa';
+    document.getElementById('cdModalMsg').textContent = 'Xóa bài đăng này?';
+    document.getElementById('cdModalOkBtn').style.background = '#ef4444';
+    document.getElementById('cdConfirmModal').style.display = 'flex';
+}
+
+function showBulkDeleteModal(checked) {
+    _cdAction = 'bulk_delete';
+    _cdId = null;
+    _cdExtra = checked;
+    document.getElementById('cdModalIcon').textContent = '🗑️';
+    document.getElementById('cdModalTitle').textContent = 'Xác nhận xóa';
+    document.getElementById('cdModalMsg').textContent = 'Xóa ' + checked + ' bài đã chọn?';
+    document.getElementById('cdModalOkBtn').style.background = '#ef4444';
+    document.getElementById('cdConfirmModal').style.display = 'flex';
+}
+
+function hideCdModal() {
+    document.getElementById('cdConfirmModal').style.display = 'none';
+    _cdAction = null; _cdId = null; _cdExtra = null;
+}
+
+function doCdAction() {
+    const cid = <?php echo $campaign_id; ?>;
+    if (_cdAction === 'retry_all') {
+        window.location.href = 'campaign_detail.php?id=' + cid + '&action=retry_all';
+    } else if (_cdAction === 'delete_pending') {
+        window.location.href = 'manage_posts.php?action=delete_campaign&id=' + cid;
+    } else if (_cdAction === 'delete_campaign_empty') {
+        window.location.href = 'manage_posts.php?action=delete_campaign&id=' + cid;
+    } else if (_cdAction === 'delete_single') {
+        window.location.href = 'campaign_detail.php?id=' + cid + '&action=delete&post_id=' + _cdId + '&filter=' + (_cdExtra || 'all');
+    } else if (_cdAction === 'bulk_delete') {
+        document.getElementById('cdConfirmModal').style.display = 'none';
+        document.getElementById('bulkDeleteForm').submit();
+    }
+}
+
+document.getElementById('cdConfirmModal').addEventListener('click', function(e) {
+    if (e.target === this) hideCdModal();
+});
+
 function toggleAll(cb) {
     document.querySelectorAll('.row-check').forEach(function(el) { el.checked = cb.checked; });
 }
 function confirmBulk() {
     const checked = document.querySelectorAll('.row-check:checked').length;
     if (checked === 0) { alert('Chưa chọn bài nào!'); return false; }
-    return confirm('Xóa ' + checked + ' bài đã chọn?');
+    showBulkDeleteModal(checked);
+    return false;
 }
 
 // Keep scroll position on reload

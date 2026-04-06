@@ -10,7 +10,8 @@ try {
     );
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->exec("SET NAMES '" . DB_CHARSET . "'");
-    $pdo->exec("SET time_zone = '+07:00'");
+    // Timezone: wrapped separately — some MariaDB servers lack tz tables
+    try { $pdo->exec("SET time_zone = '+07:00'"); } catch (Exception $e) {}
 
     // ── Core Tables (created once, safe to run every request) ──────────────
 
@@ -183,47 +184,103 @@ try {
         $pdo->exec("ALTER TABLE scheduled_posts ADD INDEX IF NOT EXISTS idx_comment_queue (status, comment_at, comment_done)");
     } catch (Exception $e) {}
 
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS conversation_labels (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            conv_id VARCHAR(100) NOT NULL,
-            page_id VARCHAR(100) NOT NULL,
-            recipient_id VARCHAR(100) NOT NULL,
-            label_name VARCHAR(100) NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_label (conv_id, page_id, label_name),
-            INDEX (conv_id),
-            INDEX (page_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    ");
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS conversation_labels (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                conv_id VARCHAR(100) NOT NULL,
+                page_id VARCHAR(100) NOT NULL,
+                recipient_id VARCHAR(100) NOT NULL,
+                label_name VARCHAR(100) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_label (conv_id, page_id, label_name),
+                INDEX (conv_id),
+                INDEX (page_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+    } catch (Exception $e) {
+        @file_put_contents(__DIR__ . '/../uploads/app_error.log',
+            date('[Y-m-d H:i:s] ') . 'conversation_labels error: ' . $e->getMessage() . "\n",
+            FILE_APPEND | LOCK_EX
+        );
+    }
 
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS dashboard_snapshots (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            account_id INT NOT NULL COMMENT '0 = admin/global',
-            snapshot_date DATE NOT NULL,
-            total_followers BIGINT DEFAULT 0,
-            total_reach BIGINT DEFAULT 0,
-            total_views BIGINT DEFAULT 0,
-            total_pages INT DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_snapshot (account_id, snapshot_date),
-            INDEX (snapshot_date)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    ");
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS dashboard_snapshots (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                account_id INT NOT NULL COMMENT '0 = admin/global',
+                snapshot_date DATE NOT NULL,
+                total_followers BIGINT DEFAULT 0,
+                total_reach BIGINT DEFAULT 0,
+                total_views BIGINT DEFAULT 0,
+                total_pages INT DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_snapshot (account_id, snapshot_date),
+                INDEX (snapshot_date)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+    } catch (Exception $e) {
+        @file_put_contents(__DIR__ . '/../uploads/app_error.log',
+            date('[Y-m-d H:i:s] ') . 'dashboard_snapshots error: ' . $e->getMessage() . "\n",
+            FILE_APPEND | LOCK_EX
+        );
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS special_watch_targets (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                account_id INT NOT NULL,
+                page_url VARCHAR(500) NOT NULL,
+                page_name VARCHAR(255) DEFAULT '',
+                page_avatar VARCHAR(500) DEFAULT '',
+                label VARCHAR(100) DEFAULT '',
+                post_limit INT DEFAULT 20,
+                auto_refresh TINYINT(1) DEFAULT 1,
+                post_count INT DEFAULT 0,
+                last_scanned_at DATETIME DEFAULT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES system_accounts(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS special_watch_posts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                target_id INT NOT NULL,
+                post_fb_id VARCHAR(255) DEFAULT '',
+                content TEXT,
+                image_url VARCHAR(500) DEFAULT '',
+                likes INT DEFAULT 0,
+                comments INT DEFAULT 0,
+                shares INT DEFAULT 0,
+                post_time DATETIME DEFAULT NULL,
+                post_url VARCHAR(500) DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX (target_id),
+                FOREIGN KEY (target_id) REFERENCES special_watch_targets(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+    } catch (Exception $e) {
+        // Log but don't crash — tables may already exist or environment may not support FK
+        @file_put_contents(__DIR__ . '/../uploads/app_error.log',
+            date('[Y-m-d H:i:s] ') . 'special_watch table error: ' . $e->getMessage() . "\n",
+            FILE_APPEND | LOCK_EX
+        );
+    }
 
 } catch (PDOException $e) {
-    // Never expose DB error details to end users
     $err_msg = date('[Y-m-d H:i:s] ') . 'DB Connection Error: ' . $e->getMessage() . "\n";
     @file_put_contents(__DIR__ . '/../uploads/app_error.log', $err_msg, FILE_APPEND | LOCK_EX);
-    
     if (defined('APP_ENV') && APP_ENV === 'development') {
         die("Lỗi kết nối CSDL: " . $e->getMessage());
     } else {
         die("Hệ thống tạm thời gặp sự cố. Vui lòng thử lại sau hoặc liên hệ Admin.");
     }
 }
+
 
 // ── Encryption Helpers ──────────────────────────────────────────────────────
 if (!function_exists('encryptData')) {
