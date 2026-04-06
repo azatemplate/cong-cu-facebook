@@ -49,17 +49,30 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
     } catch (Exception $e) {}
 
-    $stmt2 = $pdo->prepare("
-        SELECT n.*, p.name as page_name 
-        FROM page_notifications n
-        JOIN pages p ON n.page_id = p.page_id
-        JOIN users u ON p.user_id = u.id
-        WHERE u.account_id = ? AND n.is_read = 0
-        ORDER BY n.created_at DESC
-        LIMIT 20
+    // Get page IDs accessible to this account (own + shared)
+    $stmt_pages = $pdo->prepare("
+        SELECT DISTINCT p.page_id FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = :aid
+        UNION
+        SELECT DISTINCT ps.page_id FROM page_shares ps WHERE ps.shared_with_account_id = :aid2
     ");
-    $stmt2->execute([$account_id]);
-    $live_notifs = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+    $stmt_pages->bindValue(':aid', $account_id, PDO::PARAM_INT);
+    $stmt_pages->bindValue(':aid2', $account_id, PDO::PARAM_INT);
+    $stmt_pages->execute();
+    $accessible_page_ids = $stmt_pages->fetchAll(PDO::FETCH_COLUMN);
+
+    if (!empty($accessible_page_ids)) {
+        $placeholders = implode(',', array_fill(0, count($accessible_page_ids), '?'));
+        $stmt2 = $pdo->prepare("
+            SELECT n.*, p.name as page_name 
+            FROM page_notifications n
+            JOIN pages p ON n.page_id = p.page_id
+            WHERE n.page_id IN ($placeholders) AND n.is_read = 0
+            ORDER BY n.created_at DESC
+            LIMIT 20
+        ");
+        $stmt2->execute($accessible_page_ids);
+        $live_notifs = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+    }
 } catch (Exception $e) {}
 
 echo json_encode([
