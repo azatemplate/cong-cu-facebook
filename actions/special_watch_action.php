@@ -59,14 +59,13 @@ function parse_fb_url(string $url): array {
     $url = rtrim(trim($url), '/');
     $url = preg_replace('/\?.*/', '', $url);
 
-    // Groups
-    if (preg_match('#facebook\.com/groups/([^/?#]+)#i', $url, $m)) {
+    // Groups — dùng ~ làm delimiter để tránh xung đột với # trong character class
+    if (preg_match('~facebook\.com/groups/([^/?#]+)~i', $url, $m)) {
         return ['id_type' => 'group', 'identifier' => $m[1]];
     }
-    // Profile / Page (handle /profile.php?id=xxx already cleaned)
-    if (preg_match('#facebook\.com/(?:pages/[^/]+/|profile\.php\?id=)?([^/?#]+)#i', $url, $m)) {
+    // Profile / Page
+    if (preg_match('~facebook\.com/(?:pages/[^/]+/|profile\.php\?id=)?([^/?#]+)~i', $url, $m)) {
         $id = $m[1];
-        // Loại bỏ các path không hợp lệ
         if (!in_array(strtolower($id), ['watch', 'marketplace', 'gaming', 'live', 'stories'])) {
             return ['id_type' => 'page', 'identifier' => $id];
         }
