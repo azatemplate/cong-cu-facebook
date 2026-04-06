@@ -47,39 +47,26 @@ try {
             INDEX idx_page (page_id),
             INDEX idx_read (is_read)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+        // Fix collation mismatch if table already existed with wrong collation
+        $pdo->exec("ALTER TABLE page_notifications CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;");
     } catch (Exception $e) {}
 
-    // Get page IDs belonging to this account
-    $stmt_pages = $pdo->prepare("
-        SELECT DISTINCT p.page_id FROM pages p 
-        JOIN users u ON p.user_id = u.id 
-        WHERE u.account_id = ?
+    // Direct query: notifications for pages belonging to this account
+    $stmt2 = $pdo->prepare("
+        SELECT n.*, p.name as page_name 
+        FROM page_notifications n
+        JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
+        JOIN users u ON p.user_id = u.id
+        WHERE u.account_id = ? AND n.is_read = 0
+        ORDER BY n.created_at DESC
+        LIMIT 20
     ");
-    $stmt_pages->execute([$account_id]);
-    $accessible_page_ids = $stmt_pages->fetchAll(PDO::FETCH_COLUMN);
-
-    // Also add shared pages if table exists
-    try {
-        $stmt_shared = $pdo->prepare("SELECT DISTINCT page_id FROM page_shares WHERE shared_with_account_id = ?");
-        $stmt_shared->execute([$account_id]);
-        $shared_ids = $stmt_shared->fetchAll(PDO::FETCH_COLUMN);
-        $accessible_page_ids = array_unique(array_merge($accessible_page_ids, $shared_ids));
-    } catch (Exception $e) {}
-
-    if (!empty($accessible_page_ids)) {
-        $placeholders = implode(',', array_fill(0, count($accessible_page_ids), '?'));
-        $stmt2 = $pdo->prepare("
-            SELECT n.*, p.name as page_name 
-            FROM page_notifications n
-            JOIN pages p ON n.page_id = p.page_id
-            WHERE n.page_id IN ($placeholders) AND n.is_read = 0
-            ORDER BY n.created_at DESC
-            LIMIT 20
-        ");
-        $stmt2->execute($accessible_page_ids);
-        $live_notifs = $stmt2->fetchAll(PDO::FETCH_ASSOC);
-    }
-} catch (Exception $e) {}
+    $stmt2->execute([$account_id]);
+    $live_notifs = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    // Log error for debugging
+    @file_put_contents(__DIR__ . '/../notif_error.txt', date('Y-m-d H:i:s').' '.$e->getMessage()."\n", FILE_APPEND);
+}
 
 echo json_encode([
     'status' => 'success',
