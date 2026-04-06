@@ -207,6 +207,92 @@ function get_fb_conversations_multi($pages, $limit = 5, $cursors = []) {
     ];
 }
 
+function get_fb_posts_multi($pages, $limit = 30, $cursors = []) {
+    $all_posts = [];
+    $next_cursors = [];
+    $chunks = array_chunk($pages, 10);
+
+    foreach ($chunks as $chunk) {
+        $multi_curl = curl_multi_init();
+        $handles = [];
+
+        foreach ($chunk as $p) {
+            $page_id = $p['page_id'];
+            $token = $p['access_token'];
+            $after = $cursors[$page_id] ?? '';
+            
+            $url = "https://graph.facebook.com/v19.0/{$page_id}/feed?fields=id,message,created_time,full_picture,comments.summary(1).limit(1)&limit={$limit}&access_token={$token}";
+            if ($after) {
+                $url .= "&after=" . urlencode($after);
+            }
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            fb_curl_setssl($ch);
+            curl_multi_add_handle($multi_curl, $ch);
+            $handles[$page_id] = $ch;
+        }
+
+        $active = null;
+        do {
+            $mrc = curl_multi_exec($multi_curl, $active);
+            if ($active) {
+                curl_multi_select($multi_curl, 0.5);
+            }
+        } while ($active && $mrc == CURLM_OK);
+
+        foreach ($handles as $page_id => $ch) {
+            $response = curl_multi_getcontent($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_multi_remove_handle($multi_curl, $ch);
+            
+            if ($http_code === 200) {
+                $data = json_decode($response, true);
+                if (!empty($data['data'])) {
+                    $current_page = null;
+                    foreach ($chunk as $c) {
+                        if ($c['page_id'] == $page_id) {
+                            $current_page = $c;
+                            break;
+                        }
+                    }
+                    
+                    if ($current_page) {
+                        foreach ($data['data'] as $post) {
+                            $post['_page_id'] = $current_page['page_id'];
+                            $post['_user_id'] = $current_page['user_id'];
+                            $post['_page_name'] = $current_page['name'] ?? 'Page';
+                            // Transform fields to match single API
+                            $post['picture'] = $post['full_picture'] ?? null;
+                            $cc = $post['comments']['summary']['total_count'] ?? 0;
+                            $post['comment_count'] = $cc;
+                            $post['has_comments'] = $cc > 0;
+                            $all_posts[] = $post;
+                        }
+                    }
+                }
+                if (isset($data['paging']['cursors']['after']) && count($data['data']) > 0) {
+                    $next_cursors[$page_id] = $data['paging']['cursors']['after'];
+                }
+            }
+        }
+        curl_multi_close($multi_curl);
+    }
+    
+    usort($all_posts, function ($a, $b) {
+        $timeA = strtotime($a['created_time']);
+        $timeB = strtotime($b['created_time']);
+        return $timeB - $timeA;
+    });
+
+    return [
+        'data' => array_slice($all_posts, 0, $limit),
+        'cursors' => $next_cursors
+    ];
+}
+
 function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $is_photo, $original_name) {
     if ($is_photo) {
         $post_data = [

@@ -38,81 +38,17 @@ require_once __DIR__ . '/fb_api.php';
             <div class="header-right">
                 <span class="header-icon" id="theme_toggle">🌙</span>
                 <span class="header-icon" id="lang_toggle">🌐 EN</span>
-                <?php
-                // Notification: cache in session for 5 minutes to avoid heavy JOIN every page load
-                $failed_posts = [];
-                $failed_count = 0;
-                $account_id   = $_SESSION['account_id'] ?? 0;
-
-                $notif_ttl = 300; // 5 minutes
-                $notif_key = 'notif_cache_' . $account_id;
-                $notif_ts  = 'notif_ts_' . $account_id;
-
-                if (!isset($_SESSION[$notif_ts]) || (time() - $_SESSION[$notif_ts]) > $notif_ttl) {
-                    try {
-                        $notif_stmt = $pdo->prepare("
-                            SELECT sp.id, sp.error_msg, sp.scheduled_time, p.name as page_name, p.page_id
-                            FROM scheduled_posts sp
-                            JOIN pages p ON sp.page_id = p.page_id
-                            JOIN users u ON p.user_id = u.id
-                            WHERE sp.status = 'failed' AND u.account_id = ?
-                            ORDER BY sp.scheduled_time DESC
-                            LIMIT 20
-                        ");
-                        $notif_stmt->execute([$account_id]);
-                        $fetched = $notif_stmt->fetchAll(PDO::FETCH_ASSOC);
-                        $_SESSION[$notif_key] = is_array($fetched) ? $fetched : [];
-                        $_SESSION[$notif_ts]  = time();
-                    } catch (Exception $e) {
-                        $_SESSION[$notif_key] = [];
-                        $_SESSION[$notif_ts]  = time();
-                    }
-                }
-                $failed_posts = $_SESSION[$notif_key] ?? [];
-                $failed_count = count($failed_posts);
-                ?>
                 <div style="position: relative; display: inline-block;">
                     <span class="header-icon" id="notif_toggle" style="cursor: pointer;">🔔
-                        <?php if ($failed_count > 0): ?>
-                        <span id="notif_badge" style="color:white; font-size:10px; position:absolute; margin-left:-8px; margin-top:-5px; background: red; border-radius: 50%; padding: 1px 5px; font-weight: bold;"><?php echo $failed_count > 9 ? '9+' : $failed_count; ?></span>
-                        <?php endif; ?>
+                        <span id="notif_badge" style="display:none; color:white; font-size:10px; position:absolute; margin-left:-8px; margin-top:-5px; background: red; border-radius: 50%; padding: 1px 5px; font-weight: bold;"></span>
                     </span>
-                    <div id="notif_dropdown" style="display:none; position: absolute; right: 0; top: 30px; width: 320px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; padding: 10px; max-height: 400px; overflow-y: auto;">
+                    <div id="notif_dropdown" style="display:none; position: absolute; right: 0; top: 30px; width: 340px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); z-index: 1000; padding: 10px; max-height: 400px; overflow-y: auto;">
                         <div style="font-weight:bold; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center;">
-                            <span>Thông báo Lỗi đăng bài</span>
-                            <span style="font-size: 11px; background: #fee2e2; color: #dc2626; padding: 2px 6px; border-radius: 10px;"><?php echo $failed_count; ?> lỗi</span>
+                            <span>Thông báo</span>
+                            <span id="notif_count_label" style="font-size: 11px; background: #fee2e2; color: #dc2626; padding: 2px 6px; border-radius: 10px; display:none;">0 mới</span>
                         </div>
-                        <div style="font-size: 13px; color: var(--text-muted);">
-                            <?php if ($failed_count > 0): ?>
-                                <?php foreach ($failed_posts as $fp): ?>
-                                    <div style="padding: 8px 0; border-bottom: 1px solid var(--border-color); display: flex; gap: 8px; align-items: flex-start;">
-                                        <div style="font-size: 16px; margin-top: 2px;">⚠️</div>
-                                        <div style="flex: 1;">
-                                            <div style="font-weight: 500; color: #b91c1c; margin-bottom: 2px;">
-                                                Page: <?php echo htmlspecialchars($fp['page_name']); ?>
-                                            </div>
-                                            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px; line-height: 1.3;">
-                                                <?php 
-                                                    $errMsg = $fp['error_msg'];
-                                                    if (strlen($errMsg) > 80) $errMsg = substr($errMsg, 0, 80) . '...';
-                                                    echo htmlspecialchars($errMsg); 
-                                                ?>
-                                            </div>
-                                            <div style="font-size: 11px; color: #9ca3af;">
-                                                Lúc: <?php echo date('H:i d/m', strtotime($fp['scheduled_time'])); ?>
-                                            </div>
-                                        </div>
-                                    </div>
-                                <?php endforeach; ?>
-                                <div style="text-align: center; margin-top: 10px;">
-                                    <a href="manage_posts.php?status=failed" style="color: var(--primary-color); text-decoration: none; font-weight: 500; font-size: 13px;">Xem tất cả trong Quản lý</a>
-                                </div>
-                            <?php else: ?>
-                                <div style="text-align: center; padding: 20px 0; color: #9ca3af;">
-                                    <div style="font-size: 24px; margin-bottom: 10px;">🎉</div>
-                                    Hệ thống hoạt động ổn định.<br>Không có lỗi đăng bài nào.
-                                </div>
-                            <?php endif; ?>
+                        <div id="notif_content" style="font-size: 13px; color: var(--text-muted);">
+                            <div style="text-align:center; padding:15px; color:#9ca3af;">Đang tải...</div>
                         </div>
                     </div>
                 </div>
@@ -194,24 +130,105 @@ require_once __DIR__ . '/fb_api.php';
                             applyLang();
                         });
 
-                        // Notification Dropdown
+                        // Notification Dropdown Logic & Polling
                         const notifToggle = document.getElementById('notif_toggle');
                         const notifDropdown = document.getElementById('notif_dropdown');
                         const notifBadge = document.getElementById('notif_badge');
+                        const notifContent = document.getElementById('notif_content');
+                        const notifCountLabel = document.getElementById('notif_count_label');
 
                         notifToggle.addEventListener('click', (e) => {
                             e.stopPropagation();
                             if (notifDropdown.style.display === 'none') {
                                 notifDropdown.style.display = 'block';
-                                notifBadge.style.display = 'none';
+                                notifBadge.style.display = 'none'; // hide badge when opened
                             } else {
                                 notifDropdown.style.display = 'none';
                             }
                         });
 
-                        document.addEventListener('click', () => {
-                            notifDropdown.style.display = 'none';
+                        document.addEventListener('click', (e) => {
+                            if (!notifDropdown.contains(e.target)) {
+                                notifDropdown.style.display = 'none';
+                            }
                         });
+
+                        function loadNotifications() {
+                            fetch('actions/get_notifications.php')
+                            .then(r => r.json())
+                            .then(data => {
+                                if (data.status === 'success') {
+                                    let totalCount = data.failed_posts.length + data.live_notifs.length;
+                                    if (totalCount > 0 && notifDropdown.style.display === 'none') {
+                                        notifBadge.style.display = 'inline-block';
+                                        notifBadge.innerText = totalCount > 9 ? '9+' : totalCount;
+                                    } else if (totalCount === 0) {
+                                        notifBadge.style.display = 'none';
+                                    }
+                                    
+                                    if (totalCount > 0) {
+                                        notifCountLabel.innerText = totalCount + ' mới';
+                                        notifCountLabel.style.display = 'inline-block';
+                                    } else {
+                                        notifCountLabel.style.display = 'none';
+                                    }
+
+                                    let html = '';
+                                    if (data.failed_posts.length > 0) {
+                                        html += `<div style="font-weight:bold; font-size:12px; margin-bottom:5px; color:#b91c1c;">Lỗi bài viết (${data.failed_posts.length})</div>`;
+                                        data.failed_posts.forEach(fp => {
+                                            html += `
+                                            <a href="manage_posts.php?status=failed" style="display:flex; gap:8px; padding:8px 0; border-bottom:1px solid var(--border-color); text-decoration:none; color:inherit;">
+                                                <div style="font-size:16px;">⚠️</div>
+                                                <div style="flex:1;">
+                                                    <div style="font-weight:500;color:#b91c1c;margin-bottom:2px;">${fp.page_name}</div>
+                                                    <div style="font-size:11px;color:var(--text-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${fp.error_msg}</div>
+                                                </div>
+                                            </a>`;
+                                        });
+                                    }
+                                    
+                                    if (data.live_notifs.length > 0) {
+                                        html += `<div style="font-weight:bold; font-size:12px; margin-top:10px; margin-bottom:5px; color:#0284c7;">Tin nhắn & Bình luận mới (${data.live_notifs.length})</div>`;
+                                        data.live_notifs.forEach(cn => {
+                                            const isMsg = cn.type === 'message';
+                                            const icon = isMsg ? '💬' : '📝';
+                                            const link = isMsg ? `live_chat.php?page_id=${cn.page_id}&conv_id=${cn.conversation_id || ''}` : `live_comments.php?page_id=${cn.page_id}&post_id=${cn.post_id || ''}`;
+                                            const name = cn.sender_name || 'Khách hàng';
+                                            html += `
+                                            <div onclick="readNotif('${cn.id}', '${link}')" style="cursor:pointer; display:flex; gap:8px; padding:8px; margin-bottom:4px; background:#f0f9ff; border-radius:6px; transition:background 0.2s;">
+                                                <div style="font-size:16px;">${icon}</div>
+                                                <div style="flex:1;">
+                                                    <div style="font-weight:500;color:#0369a1;margin-bottom:2px;">[${cn.page_name}] ${name}</div>
+                                                    <div style="font-size:12px;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${cn.snippet || 'Có thông báo mới'}</div>
+                                                    <div style="font-size:10px;color:#9ca3af;margin-top:2px;">${cn.created_at}</div>
+                                                </div>
+                                            </div>`;
+                                        });
+                                    }
+
+                                    if (totalCount === 0) {
+                                        html = `
+                                        <div style="text-align: center; padding: 20px 0; color: #9ca3af;">
+                                            <div style="font-size: 24px; margin-bottom: 10px;">🎉</div>
+                                            Không có thông báo mới.
+                                        </div>`;
+                                    }
+                                    notifContent.innerHTML = html;
+                                }
+                            }).catch(()=>{});
+                        }
+
+                        window.readNotif = function(id, link) {
+                            const fd = new FormData();
+                            fd.append('id', id);
+                            fetch('actions/read_notification.php', { method: 'POST', body: fd })
+                            .then(() => { window.location.href = link; });
+                        };
+
+                        // Initial load and poll every 15s
+                        loadNotifications();
+                        setInterval(loadNotifications, 15000);
 
                         // Sidebar Toggle Logic
                         const menuToggle = document.querySelector('.menu-toggle');

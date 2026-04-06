@@ -41,6 +41,9 @@
         <li class="<?php echo ($current_page == 'live_chat') ? 'active' : ''; ?>">
             <a href="live_chat.php" data-tooltip="Live Chat"><span class="icon">💬</span><span class="menu-label"> Live Chat</span></a>
         </li>
+        <li class="<?php echo ($current_page == 'live_comments') ? 'active' : ''; ?>">
+            <a href="live_comments.php" data-tooltip="Live Comments"><span class="icon">📝</span><span class="menu-label"> Live Comments</span></a>
+        </li>
         <?php if ($_SESSION['role'] === 'admin'): ?>
         <li>
             <a href="accounts.php" data-tooltip="User Management"><span class="icon">👥</span><span class="menu-label"> User Management</span></a>

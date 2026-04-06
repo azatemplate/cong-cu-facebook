@@ -23,6 +23,9 @@ $stmt2->bindValue(':aid2', $account_id, PDO::PARAM_INT);
 $stmt2->execute();
 $pages      = $stmt2->fetchAll(PDO::FETCH_ASSOC);
 $pages_json = json_encode($pages);
+
+$selected_page_id = $_GET['page_id'] ?? '';
+$selected_conv_id = $_GET['conv_id'] ?? '';
 ?>
 
 <div class="page-title">💬 Live Chat & Tin Nhắn</div>
@@ -263,8 +266,9 @@ let locallyReadConvs = JSON.parse(localStorage.getItem('fb_read_cache') || '{}')
 const phoneRegex   = /(03|05|07|08|09)+([0-9]{8})\b/;
 
 // active state
-let currentPageId = '';
+let currentPageId = '<?php echo $selected_page_id; ?>';
 let currentUserId = '';
+let selectedConvId= '<?php echo $selected_conv_id; ?>';
 let isMergedChat = false;
 
 // ── Tag class helper ──────────────────────────────────────────────────────
@@ -350,13 +354,21 @@ document.querySelectorAll('.page-tab').forEach(tab => {
 
 // Restore last selected page on load
 (function restoreLastPage() {
+    let lastPage = currentPageId || localStorage.getItem('last_page_id');
+    let lastUser = localStorage.getItem('last_user_id');
+    
+    // Nếu có query param page_id, focus thẳng vòng đó để lấy user_id luôn (bỏ qua cache)
+    if (currentPageId) {
+        lastPage = currentPageId;
+        const tab = document.querySelector(`.page-tab[data-page-id="${lastPage}"]`);
+        if (tab) lastUser = tab.dataset.userId;
+    }
+
     const isMergeSaved = localStorage.getItem('merge_all') === '1';
-    if (isMergeSaved) {
+    if (!currentPageId && isMergeSaved) {
         document.getElementById('chk_merge_all').checked = true;
         document.getElementById('chk_merge_all').dispatchEvent(new Event('change'));
     } else {
-        const lastPage = localStorage.getItem('last_page_id');
-        const lastUser = localStorage.getItem('last_user_id');
         if (lastPage && lastUser) {
             const tab = document.querySelector(`.page-tab[data-page-id="${lastPage}"]`);
             if (tab) {
@@ -407,6 +419,16 @@ function loadConversations(append = false) {
                 }
                 convCursor = data.next_cursor || '';
                 renderConversations();
+                
+                // Auto-open if redirected via query params
+                if (selectedConvId && !append) {
+                    const convTab = Array.from(document.querySelectorAll('.conv-item')).find(el => el.dataset.id === selectedConvId);
+                    if (convTab) {
+                        convTab.click();
+                        convTab.scrollIntoView({ block:'nearest' });
+                    }
+                    selectedConvId = ''; // Reset flag
+                }
             } else {
                 if (!append) convList.innerHTML = '<div style="padding:16px;color:red;font-size:12px;">' + (data.msg||'Lỗi tải') + '</div>';
             }
