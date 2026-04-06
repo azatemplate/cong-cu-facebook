@@ -1042,14 +1042,23 @@ function schedulePost(content) {
 // ════════════════════════════════════════════════════════════════════
 function fetchAction(action, data = {}, method = 'POST') {
     const url = 'actions/special_watch_action.php';
+    const parseJSON = r => r.text().then(text => {
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            console.error('[special_watch] Server response (not JSON):', text.substring(0, 500));
+            // Trả về JSON lỗi thay vì throw để catch bên ngoài không bắt
+            return { status: 'error', message: 'Lỗi server: ' + text.replace(/<[^>]*>/g, '').substring(0, 120).trim() };
+        }
+    });
     if (method === 'GET') {
         const params = new URLSearchParams({ action, ...data });
-        return fetch(`${url}?${params}`).then(r => r.json());
+        return fetch(`${url}?${params}`).then(parseJSON);
     }
     const form = new FormData();
     form.append('action', action);
     for (const [k, v] of Object.entries(data)) form.append(k, v);
-    return fetch(url, { method: 'POST', body: form }).then(r => r.json());
+    return fetch(url, { method: 'POST', body: form }).then(parseJSON);
 }
 
 function esc(str) {
