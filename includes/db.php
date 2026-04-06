@@ -233,6 +233,7 @@ try {
             CREATE TABLE IF NOT EXISTS special_watch_targets (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 account_id INT NOT NULL,
+                fb_user_id INT DEFAULT NULL,
                 page_url VARCHAR(500) NOT NULL,
                 page_name VARCHAR(255) DEFAULT '',
                 page_avatar VARCHAR(500) DEFAULT '',
@@ -245,6 +246,8 @@ try {
                 FOREIGN KEY (account_id) REFERENCES system_accounts(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         ");
+        // Thêm cột fb_user_id nếu bảng đã tồn tại trước đó
+        try { $pdo->exec("ALTER TABLE special_watch_targets ADD COLUMN IF NOT EXISTS fb_user_id INT DEFAULT NULL"); } catch (Exception $e) {}
 
         $pdo->exec("
             CREATE TABLE IF NOT EXISTS special_watch_posts (

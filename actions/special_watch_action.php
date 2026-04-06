@@ -32,30 +32,21 @@ $action     = $_POST['action'] ?? $_GET['action'] ?? '';
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Lấy access_token từ page đầu tiên của account hiện tại.
- * Dùng để gọi Graph API quét trang bất kỳ.
+ * Lấy access_token theo fb_user_id (nếu chỉ định) hoặc user đầu tiên của account.
  */
-function get_account_token(PDO $pdo, int $account_id): ?string {
-    // Ưu tiên lấy token từ pages của account
-    $stmt = $pdo->prepare("
-        SELECT p.access_token
-        FROM pages p
-        JOIN users u ON u.id = p.user_id
-        WHERE u.account_id = ?
-        ORDER BY p.id DESC
-        LIMIT 1
-    ");
-    $stmt->execute([$account_id]);
+function get_account_token(PDO $pdo, int $account_id, int $fb_user_id = 0): ?string {
+    if ($fb_user_id > 0) {
+        // Lấy đúng user được chọn
+        $stmt = $pdo->prepare("SELECT access_token FROM users WHERE id = ? AND account_id = ? LIMIT 1");
+        $stmt->execute([$fb_user_id, $account_id]);
+    } else {
+        // Fallback: user đầu tiên của account
+        $stmt = $pdo->prepare("SELECT access_token FROM users WHERE account_id = ? AND access_token IS NOT NULL ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$account_id]);
+    }
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if ($row && !empty($row['access_token'])) {
         return decryptData($row['access_token']);
-    }
-    // Fallback: lấy từ users trực tiếp
-    $stmt2 = $pdo->prepare("SELECT access_token FROM users WHERE account_id = ? AND access_token IS NOT NULL LIMIT 1");
-    $stmt2->execute([$account_id]);
-    $row2 = $stmt2->fetch(PDO::FETCH_ASSOC);
-    if ($row2 && !empty($row2['access_token'])) {
-        return decryptData($row2['access_token']);
     }
     return null;
 }
@@ -266,6 +257,26 @@ if ($action === 'get_labels') {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+//  ACTION: get_users — lấy danh sách Facebook users của account
+// ════════════════════════════════════════════════════════════════════════════
+if ($action === 'get_users') {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT id, name, fb_id
+            FROM users
+            WHERE account_id = ? AND access_token IS NOT NULL AND access_token != ''
+            ORDER BY name ASC
+        ");
+        $stmt->execute([$account_id]);
+        $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['status' => 'success', 'users' => $users]);
+    } catch (Exception $e) {
+        echo json_encode(['status' => 'error', 'users' => [], 'message' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 //  ACTION: add — thêm trang mới và quét bài viết thật từ Graph API
 // ════════════════════════════════════════════════════════════════════════════
 if ($action === 'add') {
@@ -273,6 +284,7 @@ if ($action === 'add') {
     $label        = trim($_POST['label']       ?? '');
     $post_limit   = max(1, min(200, (int)($_POST['post_limit'] ?? 20)));
     $auto_refresh = isset($_POST['auto_refresh']) ? 1 : 0;
+    $fb_user_id   = (int)($_POST['fb_user_id'] ?? 0);
 
     if (empty($page_url)) {
         echo json_encode(['status' => 'error', 'message' => 'Vui lòng nhập đường link trang.']);
@@ -283,8 +295,8 @@ if ($action === 'add') {
         exit;
     }
 
-    // Lấy access_token
-    $access_token = get_account_token($pdo, $account_id);
+    // Lấy access_token theo user được chọn
+    $access_token = get_account_token($pdo, $account_id, $fb_user_id);
     if (!$access_token) {
         echo json_encode(['status' => 'error', 'message' => 'Không tìm thấy access token. Vui lòng kết nối Facebook trước.']);
         exit;
@@ -299,13 +311,13 @@ if ($action === 'add') {
     $page_avatar = !empty($meta['avatar']) ? $meta['avatar'] : '';
 
     try {
-        // Lưu target
+        // Lưu target + fb_user_id để scan sau dùng đúng token
         $stmt = $pdo->prepare("
             INSERT INTO special_watch_targets
-                (account_id, page_url, page_name, page_avatar, label, post_limit, auto_refresh, post_count, last_scanned_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL)
+                (account_id, fb_user_id, page_url, page_name, page_avatar, label, post_limit, auto_refresh, post_count, last_scanned_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)
         ");
-        $stmt->execute([$account_id, $page_url, $page_name, $page_avatar, $label, $post_limit, $auto_refresh]);
+        $stmt->execute([$account_id, $fb_user_id ?: null, $page_url, $page_name, $page_avatar, $label, $post_limit, $auto_refresh]);
         $target_id = (int)$pdo->lastInsertId();
 
         // Lấy post IDs từ Graph API
@@ -377,15 +389,16 @@ if ($action === 'scan') {
             exit;
         }
 
-        $access_token = get_account_token($pdo, $account_id);
+        $parsed   = parse_fb_url($row['page_url']);
+        $fb_id    = $parsed['identifier'];
+        $id_type  = $parsed['id_type'];
+        // Dùng đúng user token đã lưu lúc thêm
+        $saved_user_id = (int)($row['fb_user_id'] ?? 0);
+        $access_token = get_account_token($pdo, $account_id, $saved_user_id);
         if (!$access_token) {
             echo json_encode(['status' => 'error', 'message' => 'Không tìm thấy access token.']);
             exit;
         }
-
-        $parsed   = parse_fb_url($row['page_url']);
-        $fb_id    = $parsed['identifier'];
-        $id_type  = $parsed['id_type'];
 
         // Xóa bài cũ
         $pdo->prepare("DELETE FROM special_watch_posts WHERE target_id = ?")->execute([$target_id]);

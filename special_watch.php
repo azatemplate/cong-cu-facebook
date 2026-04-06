@@ -482,6 +482,15 @@ require_once __DIR__ . '/includes/header.php';
             <input type="url" id="add-url" placeholder="https://www.facebook.com/pagename hoặc profile/group link...">
         </div>
 
+        <!-- Facebook User Token -->
+        <div class="sw-form-group">
+            <label>👤 Dùng token của tài khoản Facebook</label>
+            <select id="add-fb-user" style="width:100%;">
+                <option value="">⏳ Đang tải danh sách...</option>
+            </select>
+            <p style="font-size:11px;color:var(--text-muted);margin:5px 0 0;">Token này sẽ được dùng để quét bài viết từ trang trên.</p>
+        </div>
+
         <!-- Label -->
         <div class="sw-form-group">
             <label>🏷️ Chọn nhãn</label>
@@ -596,6 +605,7 @@ let selectedLimit  = 20;
 document.addEventListener('DOMContentLoaded', () => {
     loadTargets();
     loadLabels();
+    loadFbUsers();
 });
 
 // ════════════════════════════════════════════════════════════════════
@@ -727,6 +737,27 @@ function loadLabels() {
     });
 }
 
+// ── Facebook User handling ──
+function loadFbUsers() {
+    fetchAction('get_users', {}, 'GET').then(res => {
+        const sel = document.getElementById('add-fb-user');
+        if (!sel) return;
+        if (res.status !== 'success' || !res.users || !res.users.length) {
+            sel.innerHTML = '<option value="">-- Không tìm thấy tài khoản Facebook --</option>';
+            return;
+        }
+        sel.innerHTML = '<option value="">-- Chọn tài khoản Facebook --</option>';
+        res.users.forEach(u => {
+            sel.innerHTML += `<option value="${u.id}">👤 ${esc(u.name)}</option>`;
+        });
+        // Tự chọn user đầu tiên
+        if (res.users.length === 1) sel.value = res.users[0].id;
+    }).catch(() => {
+        const sel = document.getElementById('add-fb-user');
+        if (sel) sel.innerHTML = '<option value="">-- Lỗi tải danh sách --</option>';
+    });
+}
+
 let showingNewLabel = false;
 function toggleNewLabel() {
     showingNewLabel = !showingNewLabel;
@@ -770,6 +801,9 @@ function submitAddWatch() {
     const url = document.getElementById('add-url').value.trim();
     if (!url) { showToast('error', 'Vui lòng nhập đường link trang Facebook.'); return; }
 
+    const fbUserId = document.getElementById('add-fb-user').value;
+    if (!fbUserId) { showToast('error', 'Vui lòng chọn tài khoản Facebook để dùng token quét bài.'); return; }
+
     const labelSel = document.getElementById('add-label-select').value;
     const labelNew = document.getElementById('add-label-new').value.trim();
     const label    = showingNewLabel ? labelNew : labelSel;
@@ -782,7 +816,8 @@ function submitAddWatch() {
 
     fetchAction('add', {
         page_url: url, label, post_limit: limit,
-        auto_refresh: autoRef ? 'on' : ''
+        auto_refresh: autoRef ? 'on' : '',
+        fb_user_id: fbUserId
     }).then(res => {
         btn.disabled = false;
         btn.innerHTML = '<span>➕</span> Thêm & Quét bài viết';
