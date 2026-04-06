@@ -32,16 +32,26 @@ $action     = $_POST['action'] ?? $_GET['action'] ?? '';
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Lấy access_token theo fb_user_id (nếu chỉ định) hoặc user đầu tiên của account.
+ * Lấy page access_token từ bảng pages.
+ * fb_page_db_id là id (primary key) trong bảng pages được chọn.
+ * Nếu không chỉ định, lấy page mới nhất của account.
  */
-function get_account_token(PDO $pdo, int $account_id, int $fb_user_id = 0): ?string {
-    if ($fb_user_id > 0) {
-        // Lấy đúng user được chọn
-        $stmt = $pdo->prepare("SELECT access_token FROM users WHERE id = ? AND account_id = ? LIMIT 1");
-        $stmt->execute([$fb_user_id, $account_id]);
+function get_account_token(PDO $pdo, int $account_id, int $fb_page_db_id = 0): ?string {
+    if ($fb_page_db_id > 0) {
+        $stmt = $pdo->prepare("
+            SELECT p.access_token FROM pages p
+            JOIN users u ON u.id = p.user_id
+            WHERE p.id = ? AND u.account_id = ? LIMIT 1
+        ");
+        $stmt->execute([$fb_page_db_id, $account_id]);
     } else {
-        // Fallback: user đầu tiên của account
-        $stmt = $pdo->prepare("SELECT access_token FROM users WHERE account_id = ? AND access_token IS NOT NULL ORDER BY id DESC LIMIT 1");
+        // Fallback: page mới nhất của account
+        $stmt = $pdo->prepare("
+            SELECT p.access_token FROM pages p
+            JOIN users u ON u.id = p.user_id
+            WHERE u.account_id = ? AND p.access_token IS NOT NULL
+            ORDER BY p.id DESC LIMIT 1
+        ");
         $stmt->execute([$account_id]);
     }
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -49,6 +59,34 @@ function get_account_token(PDO $pdo, int $account_id, int $fb_user_id = 0): ?str
         return decryptData($row['access_token']);
     }
     return null;
+}
+
+/**
+ * Resolve FB slug/username → numeric page ID qua Graph API.
+ * Cần thiết vì API cần numeric ID cho một số endpoint.
+ */
+function resolve_fb_numeric_id(string $identifier, string $access_token): string {
+    // Nếu đã là số thì trả ngước luôn
+    if (ctype_digit($identifier)) return $identifier;
+
+    $url = "https://graph.facebook.com/v24.0/" . urlencode($identifier) . "?fields=id&access_token=" . urlencode($access_token);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_SSL_VERIFYPEER => (defined('APP_ENV') && APP_ENV === 'development') ? false : true,
+        CURLOPT_FOLLOWLOCATION => true,
+    ]);
+    $raw  = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($raw && $code === 200) {
+        $d = json_decode($raw, true);
+        if (!empty($d['id'])) return $d['id'];
+    }
+    // Trả về slug gốc nếu không resolve được
+    return $identifier;
 }
 
 /**
@@ -74,26 +112,22 @@ function parse_fb_url(string $url): array {
 }
 
 /**
- * Lấy danh sách post IDs từ Facebook Graph API (giống Python fetch_post_ids)
- * Trả về mảng post_id strings
+ * Lấy danh sách post IDs từ Facebook Graph API
+ * Dùng /feed cho mọi loại (page, group) vì /posts chỉ trả bài của trang mình.
  */
 function fetch_post_ids(string $fb_id, string $id_type, int $post_count, string $access_token): array {
     $all_ids = [];
-
-    if ($id_type === 'group') {
-        $base_url = "https://graph.facebook.com/v24.0/{$fb_id}/feed";
-    } else {
-        $base_url = "https://graph.facebook.com/v24.0/{$fb_id}/posts";
-    }
+    // /feed cho cả page lẫn group — trả bài public
+    $base_url = "https://graph.facebook.com/v24.0/{$fb_id}/feed";
 
     $params = [
         'fields'       => 'id',
         'access_token' => $access_token,
-        'limit'        => 100,
+        'limit'        => min(100, $post_count + 10),
     ];
     $next_url = $base_url . '?' . http_build_query($params);
     $fetched  = 0;
-    $target   = $post_count + 10; // lấy dư để lọc sau
+    $target   = $post_count + 10;
 
     while ($fetched < $target && $next_url) {
         $ch = curl_init($next_url);
@@ -256,15 +290,17 @@ if ($action === 'get_labels') {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-//  ACTION: get_users — lấy danh sách Facebook users của account
+//  ACTION: get_users — trả các PAGES có token để dùng quét bài
 // ════════════════════════════════════════════════════════════════════════════
+// Giữ tên action là get_users để không đổi JS, nhưng bây giờ trả pages (page token mạnh hơn user token)
 if ($action === 'get_users') {
     try {
         $stmt = $pdo->prepare("
-            SELECT id, name, fb_id
-            FROM users
-            WHERE account_id = ? AND access_token IS NOT NULL AND access_token != ''
-            ORDER BY name ASC
+            SELECT p.id, p.page_name AS name, p.page_id AS fb_id
+            FROM pages p
+            JOIN users u ON u.id = p.user_id
+            WHERE u.account_id = ? AND p.access_token IS NOT NULL AND p.access_token != ''
+            ORDER BY p.page_name ASC
         ");
         $stmt->execute([$account_id]);
         $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -283,19 +319,20 @@ if ($action === 'add') {
     $label        = trim($_POST['label']       ?? '');
     $post_limit   = max(1, min(200, (int)($_POST['post_limit'] ?? 20)));
     $auto_refresh = isset($_POST['auto_refresh']) ? 1 : 0;
-    $fb_user_id   = (int)($_POST['fb_user_id'] ?? 0);
+    // fb_user_id = id (PK) của bảng pages (page token)
+    $fb_page_db_id = (int)($_POST['fb_user_id'] ?? 0); // giữ tên POST key để không đổi JS
 
     if (empty($page_url)) {
         echo json_encode(['status' => 'error', 'message' => 'Vui lòng nhập đường link trang.']);
         exit;
     }
-    if (!preg_match('#facebook\.com#i', $page_url) && !filter_var($page_url, FILTER_VALIDATE_URL)) {
+    if (!preg_match('~facebook\.com~i', $page_url) && !filter_var($page_url, FILTER_VALIDATE_URL)) {
         echo json_encode(['status' => 'error', 'message' => 'Đường link không hợp lệ. Vui lòng nhập URL Facebook.']);
         exit;
     }
 
-    // Lấy access_token theo user được chọn
-    $access_token = get_account_token($pdo, $account_id, $fb_user_id);
+    // Lấy page access_token theo page được chọn
+    $access_token = get_account_token($pdo, $account_id, $fb_page_db_id);
     if (!$access_token) {
         echo json_encode(['status' => 'error', 'message' => 'Không tìm thấy access token. Vui lòng kết nối Facebook trước.']);
         exit;
@@ -304,19 +341,21 @@ if ($action === 'add') {
     // Meta trang (tên + avatar)
     $meta        = fetch_page_meta($page_url);
     $parsed      = parse_fb_url($page_url);
-    $fb_id       = $parsed['identifier'];
+    $identifier  = $parsed['identifier'];
     $id_type     = $parsed['id_type'];
-    $page_name   = !empty($meta['name'])   ? $meta['name']   : $fb_id;
+    // Resolve slug → numeric ID (Graph API yêu cầu numeric ID cho /feed)
+    $fb_id       = resolve_fb_numeric_id($identifier, $access_token);
+    $page_name   = !empty($meta['name'])   ? $meta['name']   : $identifier;
     $page_avatar = !empty($meta['avatar']) ? $meta['avatar'] : '';
 
     try {
-        // Lưu target + fb_user_id để scan sau dùng đúng token
+        // Lưu target + fb_page_db_id để scan sau dùng đúng token
         $stmt = $pdo->prepare("
             INSERT INTO special_watch_targets
                 (account_id, fb_user_id, page_url, page_name, page_avatar, label, post_limit, auto_refresh, post_count, last_scanned_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)
         ");
-        $stmt->execute([$account_id, $fb_user_id ?: null, $page_url, $page_name, $page_avatar, $label, $post_limit, $auto_refresh]);
+        $stmt->execute([$account_id, $fb_page_db_id ?: null, $page_url, $page_name, $page_avatar, $label, $post_limit, $auto_refresh]);
         $target_id = (int)$pdo->lastInsertId();
 
         // Lấy post IDs từ Graph API
@@ -389,15 +428,16 @@ if ($action === 'scan') {
         }
 
         $parsed   = parse_fb_url($row['page_url']);
-        $fb_id    = $parsed['identifier'];
         $id_type  = $parsed['id_type'];
-        // Dùng đúng user token đã lưu lúc thêm
-        $saved_user_id = (int)($row['fb_user_id'] ?? 0);
-        $access_token = get_account_token($pdo, $account_id, $saved_user_id);
+        // Dùng đúng page token đã lưu lúc thêm
+        $saved_page_id = (int)($row['fb_user_id'] ?? 0);
+        $access_token = get_account_token($pdo, $account_id, $saved_page_id);
         if (!$access_token) {
             echo json_encode(['status' => 'error', 'message' => 'Không tìm thấy access token.']);
             exit;
         }
+        // Resolve slug → numeric ID
+        $fb_id = resolve_fb_numeric_id($parsed['identifier'], $access_token);
 
         // Xóa bài cũ
         $pdo->prepare("DELETE FROM special_watch_posts WHERE target_id = ?")->execute([$target_id]);

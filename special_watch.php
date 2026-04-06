@@ -482,13 +482,13 @@ require_once __DIR__ . '/includes/header.php';
             <input type="url" id="add-url" placeholder="https://www.facebook.com/pagename hoặc profile/group link...">
         </div>
 
-        <!-- Facebook User Token -->
+        <!-- Facebook Page Token -->
         <div class="sw-form-group">
-            <label>👤 Dùng token của tài khoản Facebook</label>
+            <label>📄 Dùng token của Trang Facebook (Page)</label>
             <select id="add-fb-user" style="width:100%;">
                 <option value="">⏳ Đang tải danh sách...</option>
             </select>
-            <p style="font-size:11px;color:var(--text-muted);margin:5px 0 0;">Token này sẽ được dùng để quét bài viết từ trang trên.</p>
+            <p style="font-size:11px;color:var(--text-muted);margin:5px 0 0;">Chọn một trang bạn quản lý — token của trang này sẽ được dùng để quét bài viết công khai.</p>
         </div>
 
         <!-- Label -->
@@ -737,24 +737,24 @@ function loadLabels() {
     });
 }
 
-// ── Facebook User handling ──
+// ── Facebook Page Token handling ──
 function loadFbUsers() {
     fetchAction('get_users', {}, 'GET').then(res => {
         const sel = document.getElementById('add-fb-user');
         if (!sel) return;
         if (res.status !== 'success' || !res.users || !res.users.length) {
-            sel.innerHTML = '<option value="">-- Không tìm thấy tài khoản Facebook --</option>';
+            sel.innerHTML = '<option value="">-- Không tìm thấy trang Facebook nào --</option>';
             return;
         }
-        sel.innerHTML = '<option value="">-- Chọn tài khoản Facebook --</option>';
+        sel.innerHTML = '<option value="">-- Chọn trang Facebook để lấy token --</option>';
         res.users.forEach(u => {
-            sel.innerHTML += `<option value="${u.id}">👤 ${esc(u.name)}</option>`;
+            sel.innerHTML += `<option value="${u.id}">📄 ${esc(u.name)}</option>`;
         });
-        // Tự chọn user đầu tiên
+        // Tự chọn trang đầu tiên nếu chỉ có 1
         if (res.users.length === 1) sel.value = res.users[0].id;
     }).catch(() => {
         const sel = document.getElementById('add-fb-user');
-        if (sel) sel.innerHTML = '<option value="">-- Lỗi tải danh sách --</option>';
+        if (sel) sel.innerHTML = '<option value="">-- Lỗi tải danh sách trang --</option>';
     });
 }
 
