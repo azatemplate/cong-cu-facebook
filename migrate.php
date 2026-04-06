@@ -54,6 +54,9 @@ $migrations = [
         setting_value TEXT,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci", "system_settings table"],
+
+    // special_watch_targets - fb_user_id column (chọn FB user token khi quét)
+    ["ALTER TABLE special_watch_targets ADD COLUMN fb_user_id INT DEFAULT NULL", "special_watch_targets.fb_user_id"],
 ];
 
 // Default system settings seed

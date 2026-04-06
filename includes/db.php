@@ -246,8 +246,13 @@ try {
                 FOREIGN KEY (account_id) REFERENCES system_accounts(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         ");
-        // Thêm cột fb_user_id nếu bảng đã tồn tại trước đó
-        try { $pdo->exec("ALTER TABLE special_watch_targets ADD COLUMN IF NOT EXISTS fb_user_id INT DEFAULT NULL"); } catch (Exception $e) {}
+        // Thêm cột fb_user_id nếu bảng đã tồn tại trước đó (SHOW COLUMNS tương thích mọi MariaDB)
+        try {
+            $col = $pdo->query("SHOW COLUMNS FROM special_watch_targets LIKE 'fb_user_id'");
+            if ($col->rowCount() === 0) {
+                $pdo->exec("ALTER TABLE special_watch_targets ADD COLUMN fb_user_id INT DEFAULT NULL");
+            }
+        } catch (Exception $e) {}
 
         $pdo->exec("
             CREATE TABLE IF NOT EXISTS special_watch_posts (
