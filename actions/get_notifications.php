@@ -49,16 +49,22 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
     } catch (Exception $e) {}
 
-    // Get page IDs accessible to this account (own + shared)
+    // Get page IDs belonging to this account
     $stmt_pages = $pdo->prepare("
-        SELECT DISTINCT p.page_id FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = :aid
-        UNION
-        SELECT DISTINCT ps.page_id FROM page_shares ps WHERE ps.shared_with_account_id = :aid2
+        SELECT DISTINCT p.page_id FROM pages p 
+        JOIN users u ON p.user_id = u.id 
+        WHERE u.account_id = ?
     ");
-    $stmt_pages->bindValue(':aid', $account_id, PDO::PARAM_INT);
-    $stmt_pages->bindValue(':aid2', $account_id, PDO::PARAM_INT);
-    $stmt_pages->execute();
+    $stmt_pages->execute([$account_id]);
     $accessible_page_ids = $stmt_pages->fetchAll(PDO::FETCH_COLUMN);
+
+    // Also add shared pages if table exists
+    try {
+        $stmt_shared = $pdo->prepare("SELECT DISTINCT page_id FROM page_shares WHERE shared_with_account_id = ?");
+        $stmt_shared->execute([$account_id]);
+        $shared_ids = $stmt_shared->fetchAll(PDO::FETCH_COLUMN);
+        $accessible_page_ids = array_unique(array_merge($accessible_page_ids, $shared_ids));
+    } catch (Exception $e) {}
 
     if (!empty($accessible_page_ids)) {
         $placeholders = implode(',', array_fill(0, count($accessible_page_ids), '?'));

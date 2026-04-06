@@ -1,28 +1,29 @@
 <?php
+session_start();
 require_once __DIR__ . '/includes/db.php';
-echo "<pre>";
+header('Content-Type: text/plain; charset=utf-8');
 
-// Kiểm tra page IDs của webhook có trong bảng pages không
-$webhook_page_ids = ['148579325014720', '385520708717160', '783833318136925', '2216507885096928', '1581358195505357'];
-echo "--- Kiểm tra các Page từ Webhook trong bảng pages ---\n";
-foreach ($webhook_page_ids as $pid) {
-    $row = $pdo->prepare("SELECT page_id, name, user_id FROM pages WHERE page_id = ?");
-    $row->execute([$pid]);
-    $r = $row->fetch(PDO::FETCH_ASSOC);
-    if ($r) {
-        echo "✅ FOUND: $pid - {$r['name']} (user_id={$r['user_id']})\n";
-    } else {
-        echo "❌ NOT FOUND: $pid\n";
-    }
+echo "=== SESSION INFO ===\n";
+$aid = $_SESSION['account_id'] ?? 0;
+echo "account_id: $aid\n\n";
+
+echo "=== account_id của user_id 20, 33, 41 ===\n";
+$stmt = $pdo->query("SELECT id, account_id, name FROM users WHERE id IN (20, 33, 41)");
+foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $u) {
+    echo "user_id={$u['id']} | account_id={$u['account_id']} | name={$u['name']}\n";
 }
 
-echo "\n--- Tổng số pages trong DB ---\n";
-$total = $pdo->query("SELECT COUNT(*) FROM pages")->fetchColumn();
-echo "Tổng: $total pages\n";
-
-echo "\n--- 10 pages MỚI NHẤT trong DB ---\n";
-$rows = $pdo->query("SELECT p.page_id, p.name FROM pages ORDER BY p.id DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
+echo "\n=== Pages thuộc account_id=$aid ===\n";
+$stmt2 = $pdo->prepare("SELECT p.page_id, p.name FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = ? LIMIT 5");
+$stmt2->execute([$aid]);
+$rows = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+echo "Tổng: " . count($rows) . "+ pages\n";
 foreach ($rows as $r) {
     echo "• {$r['page_id']} - {$r['name']}\n";
 }
-echo "</pre>";
+
+echo "\n=== Notifications (10 mới nhất) ===\n";
+$stmt3 = $pdo->query("SELECT n.id, n.page_id, n.type, n.snippet, n.is_read FROM page_notifications ORDER BY n.id DESC LIMIT 10");
+foreach ($stmt3->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    echo "[{$r['id']}] {$r['type']} | page={$r['page_id']} | read={$r['is_read']} | {$r['snippet']}\n";
+}
