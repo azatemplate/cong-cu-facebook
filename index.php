@@ -37,7 +37,7 @@ $cache_file_key = $is_admin ? "admin_{$period}" : "user_{$account_id}_{$period}"
 $cache_file_path = $cache_dir . "/dashboard_" . $cache_file_key . ".json";
 
 $dashboard_data = null;
-if (file_exists($cache_file_path) && (time() - filemtime($cache_file_path)) < 1800) {
+if (file_exists($cache_file_path) && (time() - filemtime($cache_file_path)) < 7200) { // Cache 2 giờ
     $dashboard_data = json_decode(file_get_contents($cache_file_path), true);
 }
 
@@ -180,6 +180,11 @@ $followers_diff_html = $followers_diff_pct >= 0
     </div>
 </div>
 
+<!-- Banner cảnh báo checkpoint - hiển thị động qua JS -->
+<div id="checkpoint-warning-banner"
+    style="display:none; background:#fffbeb; border:1px solid #fde68a; border-left:4px solid #f59e0b; padding:12px 16px; border-radius:6px; margin-bottom:16px; font-size:13px; color:#78350f; line-height:1.6;">
+</div>
+
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-title">Connected Accounts (All Users)</div>
@@ -263,6 +268,19 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.views_diff_html) {
                 document.getElementById('ajax-views-diff').innerHTML = data.views_diff_html;
                 document.getElementById('ajax-views-diff').style.display = 'inline';
+            }
+
+            // Hiển thị cảnh báo nếu có token bị checkpoint
+            if (data.checkpointed_pages && data.checkpointed_pages > 0) {
+                var banner = document.getElementById('checkpoint-warning-banner');
+                if (banner) {
+                    var msg = data.checkpointed_pages === 1
+                        ? '⚠️ Có <strong>1 Fanpage</strong> bị bỏ qua vì Token đã bị <strong>Checkpoint</strong> hoặc hết hạn.'
+                        : '⚠️ Có <strong>' + data.checkpointed_pages + ' Fanpage</strong> bị bỏ qua vì Token đã bị <strong>Checkpoint</strong> hoặc hết hạn.';
+                    msg += ' Vui lòng vào <a href="token_management.php" style="color:#92400e; font-weight:bold; text-decoration:underline;">Quản lý Token</a> để cập nhật lại.';
+                    banner.innerHTML = msg;
+                    banner.style.display = 'block';
+                }
             }
         })
         .catch(err => {

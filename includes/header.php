@@ -130,18 +130,30 @@ require_once __DIR__ . '/fb_api.php';
                             applyLang();
                         });
 
-                        // Notification Dropdown Logic & Polling
-                        const notifToggle = document.getElementById('notif_toggle');
+                        // Notification Dropdown Logic & Infinite Scroll
+                        const notifToggle   = document.getElementById('notif_toggle');
                         const notifDropdown = document.getElementById('notif_dropdown');
-                        const notifBadge = document.getElementById('notif_badge');
-                        const notifContent = document.getElementById('notif_content');
+                        const notifBadge    = document.getElementById('notif_badge');
+                        const notifContent  = document.getElementById('notif_content');
                         const notifCountLabel = document.getElementById('notif_count_label');
+
+                        // Trạng thái phân trang
+                        let notifOffset    = 0;
+                        let notifHasMore   = false;
+                        let notifLoading   = false;
+                        let notifInitDone  = false; // đã render lần đầu chưa
 
                         notifToggle.addEventListener('click', (e) => {
                             e.stopPropagation();
                             if (notifDropdown.style.display === 'none') {
                                 notifDropdown.style.display = 'block';
-                                notifBadge.style.display = 'none'; // hide badge when opened
+                                notifBadge.style.display = 'none';
+                                // Reset & reload mỗi lần mở
+                                notifOffset   = 0;
+                                notifHasMore  = false;
+                                notifInitDone = false;
+                                notifContent.innerHTML = '<div style="text-align:center;padding:15px;color:#9ca3af;">Đang tải...</div>';
+                                loadNotifications();
                             } else {
                                 notifDropdown.style.display = 'none';
                             }
@@ -153,19 +165,63 @@ require_once __DIR__ . '/fb_api.php';
                             }
                         });
 
-                        function loadNotifications() {
-                            fetch('actions/get_notifications.php')
+                        // Helper: render 1 live_notif item
+                        function renderNotifItem(cn) {
+                            const isMsg = cn.type === 'message';
+                            const icon  = isMsg ? '💬' : '📝';
+                            const link  = isMsg
+                                ? `live_chat.php?page_id=${cn.page_id}&conv_id=${cn.conversation_id || ''}`
+                                : `live_comments.php?page_id=${cn.page_id}&post_id=${cn.post_id || ''}`;
+                            const name  = cn.sender_name || 'Khách hàng';
+                            return `<div onclick="readNotif('${cn.id}','${link}')" style="cursor:pointer;display:flex;gap:8px;padding:8px;margin-bottom:4px;background:#f0f9ff;border-radius:6px;transition:background 0.2s;" onmouseover="this.style.background='#e0f2fe'" onmouseout="this.style.background='#f0f9ff'">
+                                <div style="font-size:16px;">${icon}</div>
+                                <div style="flex:1;min-width:0;">
+                                    <div style="font-weight:500;color:#0369a1;margin-bottom:2px;">[${cn.page_name}] ${name}</div>
+                                    <div style="font-size:12px;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${cn.snippet || 'Có thông báo mới'}</div>
+                                    <div style="font-size:10px;color:#9ca3af;margin-top:2px;">${cn.created_at}</div>
+                                </div>
+                            </div>`;
+                        }
+
+                        function loadNotifications(append) {
+                            if (notifLoading) return;
+                            notifLoading = true;
+
+                            // Hiện spinner ở cuối nếu đang load thêm
+                            if (append) {
+                                let spinner = document.getElementById('notif-load-spinner');
+                                if (!spinner) {
+                                    spinner = document.createElement('div');
+                                    spinner.id = 'notif-load-spinner';
+                                    spinner.style.cssText = 'text-align:center;padding:10px;color:#9ca3af;font-size:12px;';
+                                    spinner.textContent = '⏳ Đang tải thêm...';
+                                    notifContent.appendChild(spinner);
+                                }
+                            }
+
+                            fetch('actions/get_notifications.php?offset=' + notifOffset)
                             .then(r => r.json())
                             .then(data => {
-                                if (data.status === 'success') {
+                                notifLoading = false;
+                                // Xóa spinner
+                                const spinner = document.getElementById('notif-load-spinner');
+                                if (spinner) spinner.remove();
+
+                                if (data.status !== 'success') return;
+
+                                notifHasMore = data.has_more;
+
+                                if (!append) {
+                                    // === Lần đầu: render toàn bộ ===
                                     let totalCount = data.failed_posts.length + data.live_notifs.length;
+
+                                    // Cập nhật badge
                                     if (totalCount > 0 && notifDropdown.style.display === 'none') {
                                         notifBadge.style.display = 'inline-block';
                                         notifBadge.innerText = totalCount > 9 ? '9+' : totalCount;
                                     } else if (totalCount === 0) {
                                         notifBadge.style.display = 'none';
                                     }
-                                    
                                     if (totalCount > 0) {
                                         notifCountLabel.innerText = totalCount + ' mới';
                                         notifCountLabel.style.display = 'inline-block';
@@ -175,10 +231,9 @@ require_once __DIR__ . '/fb_api.php';
 
                                     let html = '';
                                     if (data.failed_posts.length > 0) {
-                                        html += `<div style="font-weight:bold; font-size:12px; margin-bottom:5px; color:#b91c1c;">Lỗi bài viết (${data.failed_posts.length})</div>`;
+                                        html += `<div style="font-weight:bold;font-size:12px;margin-bottom:5px;color:#b91c1c;">Lỗi bài viết (${data.failed_posts.length})</div>`;
                                         data.failed_posts.forEach(fp => {
-                                            html += `
-                                            <a href="manage_posts.php?status=failed" style="display:flex; gap:8px; padding:8px 0; border-bottom:1px solid var(--border-color); text-decoration:none; color:inherit;">
+                                            html += `<a href="manage_posts.php?status=failed" style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-color);text-decoration:none;color:inherit;">
                                                 <div style="font-size:16px;">⚠️</div>
                                                 <div style="flex:1;">
                                                     <div style="font-weight:500;color:#b91c1c;margin-bottom:2px;">${fp.page_name}</div>
@@ -187,37 +242,52 @@ require_once __DIR__ . '/fb_api.php';
                                             </a>`;
                                         });
                                     }
-                                    
                                     if (data.live_notifs.length > 0) {
-                                        html += `<div style="font-weight:bold; font-size:12px; margin-top:10px; margin-bottom:5px; color:#0284c7;">Tin nhắn & Bình luận mới (${data.live_notifs.length})</div>`;
-                                        data.live_notifs.forEach(cn => {
-                                            const isMsg = cn.type === 'message';
-                                            const icon = isMsg ? '💬' : '📝';
-                                            const link = isMsg ? `live_chat.php?page_id=${cn.page_id}&conv_id=${cn.conversation_id || ''}` : `live_comments.php?page_id=${cn.page_id}&post_id=${cn.post_id || ''}`;
-                                            const name = cn.sender_name || 'Khách hàng';
-                                            html += `
-                                            <div onclick="readNotif('${cn.id}', '${link}')" style="cursor:pointer; display:flex; gap:8px; padding:8px; margin-bottom:4px; background:#f0f9ff; border-radius:6px; transition:background 0.2s;">
-                                                <div style="font-size:16px;">${icon}</div>
-                                                <div style="flex:1;">
-                                                    <div style="font-weight:500;color:#0369a1;margin-bottom:2px;">[${cn.page_name}] ${name}</div>
-                                                    <div style="font-size:12px;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${cn.snippet || 'Có thông báo mới'}</div>
-                                                    <div style="font-size:10px;color:#9ca3af;margin-top:2px;">${cn.created_at}</div>
-                                                </div>
-                                            </div>`;
-                                        });
+                                        html += `<div style="font-weight:bold;font-size:12px;margin-top:10px;margin-bottom:5px;color:#0284c7;">Tin nhắn & Bình luận mới</div>`;
+                                        data.live_notifs.forEach(cn => { html += renderNotifItem(cn); });
                                     }
-
                                     if (totalCount === 0) {
-                                        html = `
-                                        <div style="text-align: center; padding: 20px 0; color: #9ca3af;">
-                                            <div style="font-size: 24px; margin-bottom: 10px;">🎉</div>
-                                            Không có thông báo mới.
-                                        </div>`;
+                                        html = `<div style="text-align:center;padding:20px 0;color:#9ca3af;"><div style="font-size:24px;margin-bottom:10px;">🎉</div>Không có thông báo mới.</div>`;
                                     }
                                     notifContent.innerHTML = html;
+                                    notifInitDone = true;
+
+                                } else {
+                                    // === Load thêm: chỉ append live_notifs ===
+                                    if (data.live_notifs.length > 0) {
+                                        data.live_notifs.forEach(cn => {
+                                            notifContent.insertAdjacentHTML('beforeend', renderNotifItem(cn));
+                                        });
+                                    }
                                 }
-                            }).catch(()=>{});
+
+                                // Cập nhật offset cho lần tiếp
+                                notifOffset += data.live_notifs.length;
+
+                                // Hiện thông báo "hết" nếu không còn thêm
+                                if (!notifHasMore && notifOffset > 0) {
+                                    let endMsg = document.getElementById('notif-end-msg');
+                                    if (!endMsg) {
+                                        endMsg = document.createElement('div');
+                                        endMsg.id = 'notif-end-msg';
+                                        endMsg.style.cssText = 'text-align:center;padding:8px;color:#9ca3af;font-size:11px;';
+                                        endMsg.textContent = '— Đã hiển thị tất cả thông báo —';
+                                        notifContent.appendChild(endMsg);
+                                    }
+                                }
+                            })
+                            .catch(() => { notifLoading = false; });
                         }
+
+                        // Infinite scroll: lắng nghe scroll trong dropdown
+                        notifDropdown.addEventListener('scroll', () => {
+                            if (!notifInitDone || notifLoading || !notifHasMore) return;
+                            const threshold = 60; // px từ đáy
+                            const distFromBottom = notifDropdown.scrollHeight - notifDropdown.scrollTop - notifDropdown.clientHeight;
+                            if (distFromBottom <= threshold) {
+                                loadNotifications(true); // append mode
+                            }
+                        });
 
                         window.readNotif = function(id, link) {
                             const fd = new FormData();
@@ -226,9 +296,23 @@ require_once __DIR__ . '/fb_api.php';
                             .then(() => { window.location.href = link; });
                         };
 
-                        // Initial load and poll every 15s
-                        loadNotifications();
-                        setInterval(loadNotifications, 15000);
+                        // Polling badge mỗi 15s (không reset dropdown đang mở)
+                        function pollBadge() {
+                            fetch('actions/get_notifications.php?offset=0')
+                            .then(r => r.json())
+                            .then(data => {
+                                if (data.status !== 'success') return;
+                                const total = data.failed_posts.length + data.live_notifs.length;
+                                if (total > 0 && notifDropdown.style.display === 'none') {
+                                    notifBadge.style.display = 'inline-block';
+                                    notifBadge.innerText = total > 9 ? '9+' : total;
+                                } else if (total === 0) {
+                                    notifBadge.style.display = 'none';
+                                }
+                            }).catch(() => {});
+                        }
+                        pollBadge();
+                        setInterval(pollBadge, 15000);
 
                         // Sidebar Toggle Logic
                         const menuToggle = document.querySelector('.menu-toggle');

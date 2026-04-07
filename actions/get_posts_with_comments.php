@@ -31,16 +31,27 @@ $formatted_posts = [];
 $next_cursor = '';
 $next_cursors_multi = [];
 
-// Get Unread post IDs for this account
+// Get Unread post IDs for this account (bao gồm cả shared pages)
 $unread_post_ids = [];
 try {
-    $stmt_notif = $pdo->prepare("SELECT n.post_id FROM page_notifications n JOIN pages p ON n.page_id = p.page_id JOIN users u ON p.user_id = u.id WHERE u.account_id = ? AND n.is_read = 0 AND n.type = 'comment' AND n.post_id IS NOT NULL");
-    if ($stmt_notif && $stmt_notif->execute([$_SESSION['account_id']])) {
+    $stmt_notif = $pdo->prepare("
+        SELECT n.post_id FROM page_notifications n
+        JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
+        JOIN users u ON p.user_id = u.id
+        WHERE (
+            u.account_id = ?
+            OR EXISTS (SELECT 1 FROM page_shares ps WHERE ps.page_id = p.page_id AND ps.shared_with_account_id = ?)
+        ) AND n.is_read = 0 AND n.type = 'comment' AND n.post_id IS NOT NULL
+    ");
+    if ($stmt_notif && $stmt_notif->execute([$_SESSION['account_id'], $_SESSION['account_id']])) {
         $unread_post_ids = $stmt_notif->fetchAll(PDO::FETCH_COLUMN);
     }
 } catch (Exception $e) {
     // If the table doesn't exist yet, we just ignore
 }
+
+// Giải phóng session lock sớm — tránh block các request song song (pollBadge, live_chat, vv.)
+session_write_close();
 
 if ($merge_all === 1) {
     $append = isset($_GET['append']) ? intval($_GET['append']) : 0;
@@ -99,8 +110,8 @@ if ($merge_all === 1) {
     $token = decryptData($page['access_token']);
     $endpoint = "$page_id/feed";
     $params = [
-        'fields' => 'id,message,created_time,full_picture,comments.summary(1).limit(1)',
-        'limit' => 30,
+        'fields' => 'id,message,created_time,full_picture,comments.summary(true)',
+        'limit' => 10, // Giảm từ 30 → 10 để tránh lỗi "reduce amount of data"
         'access_token' => $token
     ];
     if ($cursor) {

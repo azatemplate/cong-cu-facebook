@@ -23,7 +23,7 @@ if (!is_dir($cache_dir)) @mkdir($cache_dir, 0777, true);
 $cache_file_key = $is_admin ? "admin_{$period}_fbmetrics" : "user_{$account_id}_{$period}_fbmetrics";
 $cache_file_path = $cache_dir . "/dashboard_" . $cache_file_key . ".json";
 
-if (file_exists($cache_file_path) && (time() - filemtime($cache_file_path)) < 1800) {
+if (file_exists($cache_file_path) && (time() - filemtime($cache_file_path)) < 7200) { // Cache 2 giờ
     if (!isset($_GET['force'])) {
         header('Content-Type: application/json');
         echo file_get_contents($cache_file_path);
@@ -56,16 +56,23 @@ unset($p_row);
 
 $display_total_views = 0;
 $display_total_reach = 0;
+$checkpointed_pages = 0;
+$error_pages = 0;
+
+// Mã lỗi Facebook chỉ ra tài khoản bị checkpoint hoặc token không hợp lệ
+$CHECKPOINT_ERROR_CODES = [190, 368, 2500, 467, 10902];
+$CHECKPOINT_SUBCODES   = [459, 460, 461, 462, 463, 464, 492, 500];
 
 $api_responses = get_fb_page_insights_multi($all_user_pages, $period, $start_date, $end_date);
 foreach ($api_responses as $page_id => $api_response) {
     if ($api_response['status_code'] === 200 && isset($api_response['data']['data'])) {
+        // Xử lý dữ liệu hợp lệ bình thường
         foreach ($api_response['data']['data'] as $metric) {
             if ($metric['name'] === 'page_media_view' || $metric['name'] === 'page_impressions_unique') {
                 if (isset($metric['values']) && is_array($metric['values']) && count($metric['values']) > 0) {
                     $values_arr = $metric['values'];
                     $latest_value = end($values_arr);
-                    
+
                     $val = isset($latest_value['value']) ? intval($latest_value['value']) : 0;
                     if ($metric['name'] === 'page_media_view') {
                         $display_total_views += $val;
@@ -75,6 +82,21 @@ foreach ($api_responses as $page_id => $api_response) {
                 }
             }
         }
+    } elseif ($api_response['status_code'] !== 200) {
+        // Bỏ qua page bị lỗi - phân loại theo loại lỗi
+        $err     = $api_response['data']['error'] ?? [];
+        $errCode = intval($err['code']      ?? 0);
+        $errSub  = intval($err['error_subcode'] ?? 0);
+
+        if (in_array($errCode, $CHECKPOINT_ERROR_CODES) || in_array($errSub, $CHECKPOINT_SUBCODES)) {
+            // Token bị checkpoint hoặc hết hạn: đếm riêng và bỏ qua
+            $checkpointed_pages++;
+        } else {
+            // Lỗi khác (rate limit, permission, ...): cũng bỏ qua
+            $error_pages++;
+        }
+        // Tiếp tục xử lý các page khác - không dừng lại
+        continue;
     }
 }
 
@@ -149,12 +171,14 @@ $views_diff_html = $views_diff_pct >= 0
 
 // Return JSON Output
 $resp = [
-    'reach' => $display_total_reach,
-    'views' => $display_total_views,
-    'reach_formatted' => number_format($display_total_reach),
-    'views_formatted' => number_format($display_total_views),
-    'reach_diff_html' => $reach_diff_html,
-    'views_diff_html' => $views_diff_html,
+    'reach'               => $display_total_reach,
+    'views'               => $display_total_views,
+    'reach_formatted'     => number_format($display_total_reach),
+    'views_formatted'     => number_format($display_total_views),
+    'reach_diff_html'     => $reach_diff_html,
+    'views_diff_html'     => $views_diff_html,
+    'checkpointed_pages'  => $checkpointed_pages,  // Số page bị checkpoint/token lỗi
+    'error_pages'         => $error_pages,          // Số page bị lỗi khác
 ];
 file_put_contents($cache_file_path, json_encode($resp));
 

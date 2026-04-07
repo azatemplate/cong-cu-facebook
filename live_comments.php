@@ -347,9 +347,8 @@ function renderPosts() {
         `;
         div.addEventListener('click', function() {
             if (post.is_unread) {
-                const rfd = new FormData();
-                rfd.append('post_id', post.id);
-                fetch('actions/read_notification.php', { method: 'POST', body: rfd });
+                // Chỉ xóa indicator trong UI cục bộ, KHÔNG gọi read_notification.php
+                // Việc mark-as-read thực sự chỉ xảy ra khi user click từ chuông thông báo
                 this.classList.remove('conv-unread');
                 let dot = this.querySelector('.unread-dot'); if (dot) dot.remove();
                 let txt = this.querySelector('.msg-txt'); if (txt) txt.style.fontWeight = hasComments ? '600' : 'normal';
@@ -376,10 +375,30 @@ function renderPosts() {
         });
         convList.appendChild(div);
     });
+
+    // Nút "Tải thêm" — hiện khi còn cursor (kể cả khi không cần scroll)
+    if (convCursor) {
+        const loadMoreBtn = document.createElement('div');
+        loadMoreBtn.id = 'load-more-posts-btn';
+        loadMoreBtn.style.cssText = 'padding:12px;text-align:center;cursor:pointer;font-size:13px;color:#0284c7;font-weight:600;border-top:1px solid var(--border-color);transition:background .15s;';
+        loadMoreBtn.textContent = '⬇️ Tải thêm bài viết';
+        loadMoreBtn.onmouseover = () => loadMoreBtn.style.background = '#f0f9ff';
+        loadMoreBtn.onmouseout  = () => loadMoreBtn.style.background = '';
+        loadMoreBtn.onclick = () => {
+            if (!convCursor) return;
+            let tempCursor = convCursor;
+            convCursor = '';
+            loadMoreBtn.textContent = '⏳ Đang tải...';
+            loadMoreBtn.style.pointerEvents = 'none';
+            loadPosts(true, tempCursor);
+        };
+        convList.appendChild(loadMoreBtn);
+    }
 }
 
 convList.addEventListener('scroll', function() {
-    if (this.scrollHeight - this.scrollTop <= this.clientHeight + 60 && convCursor) {
+    // Tăng threshold lên 120px để dễ trigger hơn
+    if (this.scrollHeight - this.scrollTop <= this.clientHeight + 120 && convCursor) {
         let tempCursor = convCursor;
         convCursor = ''; // prevent multiple requests
         loadPosts(true, tempCursor);
