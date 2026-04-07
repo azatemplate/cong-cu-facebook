@@ -45,30 +45,47 @@ if (isset($_GET['ajax'])) {
 
     // ── Search by keyword ──────────────────────────────────────────────────────
     if ($ajax === 'keyword') {
-        $keyword = trim($_GET['keyword'] ?? '');
-        $count   = max(1, min(50, intval($_GET['count'] ?? 10)));
-        $cursor  = max(0, intval($_GET['cursor'] ?? 0));
+        $keyword       = trim($_GET['keyword'] ?? '');
+        $total_needed  = max(1, min(300, intval($_GET['count'] ?? 10)));
+        $per_page      = 30; // tikwm trả tối đa ~30/request
 
         if ($keyword === '') {
             echo json_encode(['status' => 'error', 'message' => 'Vui lòng nhập từ khóa tìm kiếm.']); exit;
         }
 
-        $api_url = "https://www.tikwm.com/api/feed/search?" . http_build_query([
-            'keywords' => $keyword, 'count' => $count, 'cursor' => $cursor,
-        ]);
+        set_time_limit(120); // Cho phép tối đa 120s khi fetch nhiều trang
+        $collected = [];
+        $cursor    = 0;
+        $max_pages = (int)ceil($total_needed / $per_page); // Số trang cần fetch
 
-        ['raw' => $raw, 'err' => $err] = tiktok_curl($api_url);
-        if ($err) { echo json_encode(['status' => 'error', 'message' => 'Lỗi cURL: ' . $err]); exit; }
+        for ($page = 0; $page < $max_pages; $page++) {
+            $api_url = "https://www.tikwm.com/api/feed/search?" . http_build_query([
+                'keywords' => $keyword, 'count' => $per_page, 'cursor' => $cursor,
+            ]);
+            ['raw' => $raw, 'err' => $err] = tiktok_curl($api_url);
+            if ($err || !$raw) break;
 
-        $data = json_decode($raw, true);
-        if (!$data || ($data['msg'] ?? '') !== 'success') {
-            echo json_encode(['status' => 'error', 'message' => $data['msg'] ?? 'API không phản hồi.']); exit;
+            $data = json_decode($raw, true);
+            if (!$data || ($data['msg'] ?? '') !== 'success') break;
+
+            $videos = $data['data']['videos'] ?? [];
+            if (empty($videos)) break;
+
+            $collected = array_merge($collected, $videos);
+            $cursor    = $data['data']['cursor'] ?? 0;
+            $hasMore   = !empty($data['data']['hasMore']);
+
+            if (!$hasMore || $cursor <= 0) break; // Hết trang
+        }
+
+        if (empty($collected)) {
+            echo json_encode(['status' => 'error', 'message' => 'Không tìm thấy video nào.']); exit;
         }
 
         echo json_encode([
             'status' => 'success',
-            'data'   => filter_video_fields($data['data']['videos'] ?? []),
-            'cursor' => $data['data']['cursor'] ?? 0,
+            'data'   => filter_video_fields($collected), // Trả về tất cả đã fetch (>= total_needed)
+            'cursor' => $cursor,
         ]);
         exit;
     }
@@ -144,37 +161,51 @@ if (isset($_GET['ajax'])) {
     // path    = api/challenge/posts
     // params  = challenge_id, count, cursor
     if ($ajax === 'hashtag') {
-        // Keep as string to avoid overflow on large TikTok IDs (64-bit snowflake)
-        $challenge_id = trim($_GET['challenge_id'] ?? '');
-        $count        = max(1, min(50, intval($_GET['count'] ?? 10)));
-        $cursor       = max(0, intval($_GET['cursor'] ?? 0));
+        $challenge_id  = trim($_GET['challenge_id'] ?? '');
+        $total_needed  = max(1, min(300, intval($_GET['count'] ?? 10)));
+        $per_page      = 30; // tikwm trả tối đa ~30/request
 
         if (!is_numeric($challenge_id) || $challenge_id <= 0) {
             echo json_encode(['status' => 'error', 'message' => 'challenge_id không hợp lệ.']); exit;
         }
 
-        // Exactly mirrors: build_external_url($this->host, 'api/challenge/posts', $query)
-        $host    = 'https://www.tikwm.com';
-        $path    = 'api/challenge/posts';
-        $api_url = rtrim($host, '/') . '/' . ltrim($path, '/') . '?' . http_build_query([
-            'challenge_id' => $challenge_id,
-            'count'        => $count,
-            'cursor'       => $cursor,
-        ]);
+        set_time_limit(120);
+        $host      = 'https://www.tikwm.com';
+        $path      = 'api/challenge/posts';
+        $collected = [];
+        $cursor    = 0;
+        $max_pages = (int)ceil($total_needed / $per_page);
 
-        ['raw' => $raw, 'err' => $err] = tiktok_curl($api_url);
-        if ($err) { echo json_encode(['status' => 'error', 'message' => 'Lỗi cURL: ' . $err]); exit; }
+        for ($page = 0; $page < $max_pages; $page++) {
+            $api_url = rtrim($host, '/') . '/' . ltrim($path, '/') . '?' . http_build_query([
+                'challenge_id' => $challenge_id,
+                'count'        => $per_page,
+                'cursor'       => $cursor,
+            ]);
+            ['raw' => $raw, 'err' => $err] = tiktok_curl($api_url);
+            if ($err || !$raw) break;
 
-        $data = json_decode($raw, true);
-        if (!$data || ($data['msg'] ?? '') !== 'success') {
-            echo json_encode(['status' => 'error', 'message' => $data['msg'] ?? 'API không phản hồi.']); exit;
+            $data = json_decode($raw, true);
+            if (!$data || ($data['msg'] ?? '') !== 'success') break;
+
+            $videos = $data['data']['videos'] ?? [];
+            if (empty($videos)) break;
+
+            $collected = array_merge($collected, $videos);
+            $cursor    = $data['data']['cursor'] ?? 0;
+            $hasMore   = !empty($data['data']['hasMore']);
+
+            if (!$hasMore || $cursor <= 0) break;
         }
 
-        // Mirrors: Arr::only($video, ['video_id','region','duration','title',...])
+        if (empty($collected)) {
+            echo json_encode(['status' => 'error', 'message' => 'Không tìm thấy video nào cho hashtag này.']); exit;
+        }
+
         echo json_encode([
             'status' => 'success',
-            'data'   => filter_video_fields($data['data']['videos'] ?? []),
-            'cursor' => $data['data']['cursor'] ?? 0,
+            'data'   => filter_video_fields($collected),
+            'cursor' => $cursor,
         ]);
         exit;
     }
@@ -431,8 +462,8 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="text" id="kw-input" placeholder="Nhập từ khóa..." autocomplete="off">
             </div>
             <div class="search-field">
-                <label for="kw-count">Số video</label>
-                <input type="number" id="kw-count" value="10" min="1" max="50" style="width:110px;">
+                <label for="kw-count">Số video <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 300)</span></label>
+                <input type="number" id="kw-count" value="10" min="1" max="300" style="width:110px;">
             </div>
             <div style="display:flex; align-items:flex-end;">
                 <button class="btn-search" id="btn-search-kw" onclick="doSearchKeyword()">
@@ -454,8 +485,8 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="text" id="ht-input" placeholder="Ví dụ: viral, xuhuong, dancechallenge..." autocomplete="off">
             </div>
             <div class="search-field">
-                <label for="ht-count">Số video / hashtag</label>
-                <input type="number" id="ht-count" value="10" min="1" max="50" style="width:120px;">
+                <label for="ht-count">Số video / hashtag <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 300)</span></label>
+                <input type="number" id="ht-count" value="10" min="1" max="300" style="width:120px;">
             </div>
             <div style="display:flex;align-items:flex-end;gap:8px;">
                 <button class="btn-search ht" id="btn-search-ht" onclick="doSearchHashtagKeyword()">
@@ -567,9 +598,13 @@ function resetResults() {
 function doSearchKeyword() {
     const keyword = document.getElementById('kw-input').value.trim();
     if (!keyword) { alert('Vui lòng nhập từ khóa tìm kiếm!'); return; }
-    const count = document.getElementById('kw-count').value;
+    const count = parseInt(document.getElementById('kw-count').value) || 10;
+    const pageCount = Math.ceil(count / 30);
+    const loadMsg = count > 30
+        ? `⏳ Đang tải ${count} video (${pageCount} trang)... có thể mất ${pageCount * 3}-${pageCount * 5}s`
+        : '🔍 Đang tìm kiếm video TikTok...';
 
-    setLoading(true);
+    setLoading(true, loadMsg);
     resetResults();
 
     fetch(`tiktok_search.php?ajax=keyword&keyword=${encodeURIComponent(keyword)}&count=${encodeURIComponent(count)}&cursor=0`)
