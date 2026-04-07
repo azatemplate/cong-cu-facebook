@@ -45,47 +45,31 @@ if (isset($_GET['ajax'])) {
 
     // ── Search by keyword ──────────────────────────────────────────────────────
     if ($ajax === 'keyword') {
-        $keyword       = trim($_GET['keyword'] ?? '');
-        $total_needed  = max(1, min(300, intval($_GET['count'] ?? 10)));
-        $per_page      = 30; // tikwm trả tối đa ~30/request
+        $keyword = trim($_GET['keyword'] ?? '');
+        $count   = 30; // API trả tối đa ~30/request, JS sẽ loop
+        $cursor  = max(0, intval($_GET['cursor'] ?? 0));
 
         if ($keyword === '') {
             echo json_encode(['status' => 'error', 'message' => 'Vui lòng nhập từ khóa tìm kiếm.']); exit;
         }
 
-        set_time_limit(120); // Cho phép tối đa 120s khi fetch nhiều trang
-        $collected = [];
-        $cursor    = 0;
-        $max_pages = (int)ceil($total_needed / $per_page); // Số trang cần fetch
+        $api_url = "https://www.tikwm.com/api/feed/search?" . http_build_query([
+            'keywords' => $keyword, 'count' => $count, 'cursor' => $cursor,
+        ]);
 
-        for ($page = 0; $page < $max_pages; $page++) {
-            $api_url = "https://www.tikwm.com/api/feed/search?" . http_build_query([
-                'keywords' => $keyword, 'count' => $per_page, 'cursor' => $cursor,
-            ]);
-            ['raw' => $raw, 'err' => $err] = tiktok_curl($api_url);
-            if ($err || !$raw) break;
+        ['raw' => $raw, 'err' => $err] = tiktok_curl($api_url);
+        if ($err) { echo json_encode(['status' => 'error', 'message' => 'Lỗi cURL: ' . $err]); exit; }
 
-            $data = json_decode($raw, true);
-            if (!$data || ($data['msg'] ?? '') !== 'success') break;
-
-            $videos = $data['data']['videos'] ?? [];
-            if (empty($videos)) break;
-
-            $collected = array_merge($collected, $videos);
-            $cursor    = $data['data']['cursor'] ?? 0;
-            $hasMore   = !empty($data['data']['hasMore']);
-
-            if (!$hasMore || $cursor <= 0) break; // Hết trang
-        }
-
-        if (empty($collected)) {
-            echo json_encode(['status' => 'error', 'message' => 'Không tìm thấy video nào.']); exit;
+        $data = json_decode($raw, true);
+        if (!$data || ($data['msg'] ?? '') !== 'success') {
+            echo json_encode(['status' => 'error', 'message' => $data['msg'] ?? 'API không phản hồi.']); exit;
         }
 
         echo json_encode([
-            'status' => 'success',
-            'data'   => filter_video_fields($collected), // Trả về tất cả đã fetch (>= total_needed)
-            'cursor' => $cursor,
+            'status'  => 'success',
+            'data'    => filter_video_fields($data['data']['videos'] ?? []),
+            'cursor'  => $data['data']['cursor'] ?? 0,
+            'hasMore' => !empty($data['data']['hasMore']),
         ]);
         exit;
     }
@@ -161,51 +145,35 @@ if (isset($_GET['ajax'])) {
     // path    = api/challenge/posts
     // params  = challenge_id, count, cursor
     if ($ajax === 'hashtag') {
-        $challenge_id  = trim($_GET['challenge_id'] ?? '');
-        $total_needed  = max(1, min(300, intval($_GET['count'] ?? 10)));
-        $per_page      = 30; // tikwm trả tối đa ~30/request
+        $challenge_id = trim($_GET['challenge_id'] ?? '');
+        $count        = 30; // API trả tối đa ~30/request, JS sẽ loop
+        $cursor       = max(0, intval($_GET['cursor'] ?? 0));
 
         if (!is_numeric($challenge_id) || $challenge_id <= 0) {
             echo json_encode(['status' => 'error', 'message' => 'challenge_id không hợp lệ.']); exit;
         }
 
-        set_time_limit(120);
-        $host      = 'https://www.tikwm.com';
-        $path      = 'api/challenge/posts';
-        $collected = [];
-        $cursor    = 0;
-        $max_pages = (int)ceil($total_needed / $per_page);
+        $host    = 'https://www.tikwm.com';
+        $path    = 'api/challenge/posts';
+        $api_url = rtrim($host, '/') . '/' . ltrim($path, '/') . '?' . http_build_query([
+            'challenge_id' => $challenge_id,
+            'count'        => $count,
+            'cursor'       => $cursor,
+        ]);
 
-        for ($page = 0; $page < $max_pages; $page++) {
-            $api_url = rtrim($host, '/') . '/' . ltrim($path, '/') . '?' . http_build_query([
-                'challenge_id' => $challenge_id,
-                'count'        => $per_page,
-                'cursor'       => $cursor,
-            ]);
-            ['raw' => $raw, 'err' => $err] = tiktok_curl($api_url);
-            if ($err || !$raw) break;
+        ['raw' => $raw, 'err' => $err] = tiktok_curl($api_url);
+        if ($err) { echo json_encode(['status' => 'error', 'message' => 'Lỗi cURL: ' . $err]); exit; }
 
-            $data = json_decode($raw, true);
-            if (!$data || ($data['msg'] ?? '') !== 'success') break;
-
-            $videos = $data['data']['videos'] ?? [];
-            if (empty($videos)) break;
-
-            $collected = array_merge($collected, $videos);
-            $cursor    = $data['data']['cursor'] ?? 0;
-            $hasMore   = !empty($data['data']['hasMore']);
-
-            if (!$hasMore || $cursor <= 0) break;
-        }
-
-        if (empty($collected)) {
-            echo json_encode(['status' => 'error', 'message' => 'Không tìm thấy video nào cho hashtag này.']); exit;
+        $data = json_decode($raw, true);
+        if (!$data || ($data['msg'] ?? '') !== 'success') {
+            echo json_encode(['status' => 'error', 'message' => $data['msg'] ?? 'API không phản hồi.']); exit;
         }
 
         echo json_encode([
-            'status' => 'success',
-            'data'   => filter_video_fields($collected),
-            'cursor' => $cursor,
+            'status'  => 'success',
+            'data'    => filter_video_fields($data['data']['videos'] ?? []),
+            'cursor'  => $data['data']['cursor'] ?? 0,
+            'hasMore' => !empty($data['data']['hasMore']),
         ]);
         exit;
     }
@@ -594,30 +562,24 @@ function resetResults() {
     document.getElementById('search-error').style.display = 'none';
 }
 
-// ─── Keyword Search ────────────────────────────────────────────────────────────
+// ─── Progressive Fetch State ──────────────────────────────────────────────────
+let pgState = null; // { mode, keyword, challengeId, challengeName, cursor, needed, seenIds }
+
+// ─── Keyword Search (progressive) ────────────────────────────────────────────
 function doSearchKeyword() {
     const keyword = document.getElementById('kw-input').value.trim();
     if (!keyword) { alert('Vui lòng nhập từ khóa tìm kiếm!'); return; }
-    const count = parseInt(document.getElementById('kw-count').value) || 10;
-    const pageCount = Math.ceil(count / 30);
-    const loadMsg = count > 30
-        ? `⏳ Đang tải ${count} video (${pageCount} trang)... có thể mất ${pageCount * 3}-${pageCount * 5}s`
-        : '🔍 Đang tìm kiếm video TikTok...';
+    const needed = parseInt(document.getElementById('kw-count').value) || 10;
 
-    setLoading(true, loadMsg);
+    allVideos = [];
+    sortKey = null; sortDir = 'desc';
     resetResults();
-
-    fetch(`tiktok_search.php?ajax=keyword&keyword=${encodeURIComponent(keyword)}&count=${encodeURIComponent(count)}&cursor=0`)
-        .then(r => r.json())
-        .then(res => {
-            setLoading(false);
-            if (res.status !== 'success') { showError('❌ ' + res.message); return; }
-            displayResults(res.data, `Tìm thấy <strong>${res.data.length}</strong> video cho từ khóa "<strong>${escHtml(keyword)}</strong>"`);
-        })
-        .catch(e => { setLoading(false); showError('❌ Lỗi kết nối: ' + e.message); });
+    pgState = { mode: 'keyword', keyword, challengeId: '', challengeName: '', cursor: 0, needed, seenIds: new Set() };
+    setLoading(true, '🔍 Đang tải video...');
+    fetchNextPage();
 }
 
-// ─── Hashtag: Step 1 — Search hashtags by keyword (api/challenge/search) ────────
+// ─── Hashtag: Step 1 — Search hashtags by keyword ────────────────────────────
 function doSearchHashtagKeyword() {
     const kw = document.getElementById('ht-input').value.trim().replace(/^#+/, '');
     if (!kw) { alert('Vui lòng nhập từ khóa tìm hashtag!'); return; }
@@ -649,10 +611,10 @@ function renderHashtagSuggestions(list) {
     }
 
     grid.innerHTML = list.map(ch => {
-        const name     = ch.cha_name || '—';
-        const views    = ch.view_count  ? fmtNum(ch.view_count)  : '—';
-        const users    = ch.user_count  ? fmtNum(ch.user_count)  : '—';
-        const id       = String(ch.id || '');
+        const name  = ch.cha_name || '—';
+        const views = ch.view_count ? fmtNum(ch.view_count) : '—';
+        const users = ch.user_count ? fmtNum(ch.user_count) : '—';
+        const id    = String(ch.id || '');
         return `
         <div class="ht-suggest-card" onclick="selectHashtag('${escHtml(id)}', '${escHtml(name)}')" title="Click để xem video">
             <div class="ht-card-name">#${escHtml(name)}</div>
@@ -666,16 +628,16 @@ function renderHashtagSuggestions(list) {
     wrap.style.display = 'block';
 }
 
-// ─── Hashtag: Step 2 — Select a hashtag and load videos ──────────────────────
+// ─── Hashtag: Step 2 — Select hashtag and start progressive fetch ─────────────
 function selectHashtag(challenge_id, cha_name) {
     if (!challenge_id) return;
-    const count = document.getElementById('ht-count').value;
+    const needed = parseInt(document.getElementById('ht-count').value) || 10;
 
     // Highlight selected card
     document.querySelectorAll('.ht-suggest-card').forEach(c => c.classList.remove('selected'));
     event.currentTarget.classList.add('selected');
 
-    // Show info bar
+    // Show info bar (loading state)
     const bar = document.getElementById('ht-info-bar');
     bar.innerHTML = `
         <div class="hashtag-info-bar">
@@ -687,35 +649,116 @@ function selectHashtag(challenge_id, cha_name) {
         </div>`;
     bar.style.display = 'block';
 
+    allVideos = [];
+    sortKey = null; sortDir = 'desc';
     resetResults();
+    pgState = { mode: 'hashtag', keyword: '', challengeId: challenge_id, challengeName: cha_name, cursor: 0, needed, seenIds: new Set() };
     setLoading(true, `🎬 Đang tải video của #${escHtml(cha_name)}...`);
-
-    fetch(`tiktok_search.php?ajax=hashtag&challenge_id=${encodeURIComponent(challenge_id)}&count=${encodeURIComponent(count)}&cursor=0`)
-        .then(r => r.json())
-        .then(res => {
-            setLoading(false);
-            if (res.status !== 'success') { showError('❌ ' + res.message); return; }
-            // Update info bar with video count
-            bar.innerHTML = `
-                <div class="hashtag-info-bar">
-                    <span class="ht-tag">#${escHtml(cha_name)}</span>
-                    <div class="ht-stat">🎬 Kết quả<br><strong>${res.data.length} video</strong></div>
-                    <div class="ht-stat">🆔 ID: <strong style="font-size:11px;">${escHtml(challenge_id)}</strong></div>
-                </div>`;
-            displayResults(res.data, `<strong>${res.data.length}</strong> video trong hashtag "<strong>#${escHtml(cha_name)}</strong>"`);
-        })
-        .catch(e => { setLoading(false); showError('❌ Lỗi kết nối: ' + e.message); });
+    fetchNextPage();
 }
 
-// ─── Display Results ──────────────────────────────────────────────────────────
-function displayResults(videos, infoText) {
-    allVideos = videos || [];
-    sortKey   = null; sortDir = 'desc';
+// ─── Unified Progressive Fetch Engine ────────────────────────────────────────
+function fetchNextPage() {
+    if (!pgState) return;
+    const s = pgState;
+    const thisState = s; // capture reference to detect stale calls
+
+    let url;
+    if (s.mode === 'keyword') {
+        url = `tiktok_search.php?ajax=keyword&keyword=${encodeURIComponent(s.keyword)}&cursor=${s.cursor}`;
+    } else {
+        url = `tiktok_search.php?ajax=hashtag&challenge_id=${encodeURIComponent(s.challengeId)}&cursor=${s.cursor}`;
+    }
+
+    fetch(url)
+        .then(r => r.json())
+        .then(res => {
+            if (pgState !== thisState) return; // Search was reset — discard stale result
+
+            if (res.status !== 'success') {
+                setLoading(false);
+                if (allVideos.length === 0) showError('❌ ' + res.message);
+                else finalizeResults(); // Show what we have
+                return;
+            }
+
+            // ── Dedup by video_id ──────────────────────────────────────────────
+            const newVideos = (res.data || []).filter(v => {
+                const id = String(v.video_id || '');
+                if (!id || s.seenIds.has(id)) return false;
+                s.seenIds.add(id);
+                return true;
+            });
+
+            if (newVideos.length > 0) {
+                const isFirst = allVideos.length === 0;
+                allVideos.push(...newVideos);
+
+                if (isFirst) {
+                    // First batch: show table + chips
+                    document.getElementById('col-filter-wrap').style.display = 'block';
+                    document.getElementById('results-section').style.display = 'block';
+                    buildChips();
+                }
+                renderTable();
+            }
+
+            s.cursor = res.cursor || 0;
+            const hasMore = res.hasMore && s.cursor > 0;
+            const gotEnough = allVideos.length >= s.needed;
+
+            if (!gotEnough && hasMore) {
+                // Update progress and fetch next page
+                const infoEl = document.getElementById('result-count');
+                infoEl.innerHTML = `⏳ Đang tải... <strong>${allVideos.length}</strong> / ${s.needed} video`;
+                setLoading(true, `⏳ Đang tải... ${allVideos.length}/${s.needed} video`);
+                setTimeout(fetchNextPage, 150); // slight delay to prevent API throttle
+            } else {
+                finalizeResults();
+            }
+        })
+        .catch(e => {
+            if (pgState !== thisState) return;
+            setLoading(false);
+            if (allVideos.length === 0) showError('❌ Lỗi kết nối: ' + e.message);
+            else finalizeResults();
+        });
+}
+
+// ─── Finalize after all pages loaded ─────────────────────────────────────────
+function finalizeResults() {
+    setLoading(false);
+    if (!pgState) return;
+    const s = pgState;
 
     if (allVideos.length === 0) {
         document.getElementById('empty-state').style.display = 'block';
         return;
     }
+
+    const infoEl = document.getElementById('result-count');
+    if (s.mode === 'keyword') {
+        infoEl.innerHTML = `Tìm thấy <strong>${allVideos.length}</strong> video cho từ khóa "<strong>${escHtml(s.keyword)}</strong>"`;
+    } else {
+        infoEl.innerHTML = `<strong>${allVideos.length}</strong> video trong hashtag "<strong>#${escHtml(s.challengeName)}</strong>"`;
+        // Update ht-info-bar
+        const bar = document.getElementById('ht-info-bar');
+        if (bar) bar.innerHTML = `
+            <div class="hashtag-info-bar">
+                <span class="ht-tag">#${escHtml(s.challengeName)}</span>
+                <div class="ht-stat">🎬 Kết quả<br><strong>${allVideos.length} video</strong></div>
+                <div class="ht-stat">🆔 ID: <strong style="font-size:11px;">${escHtml(s.challengeId)}</strong></div>
+            </div>`;
+    }
+    renderTable(); // Final render (may re-apply sort)
+}
+
+// ─── Display Results (legacy — kept for backward compat) ──────────────────────
+function displayResults(videos, infoText) {
+    allVideos = videos || [];
+    sortKey   = null; sortDir = 'desc';
+
+    if (allVideos.length === 0) { document.getElementById('empty-state').style.display = 'block'; return; }
 
     document.getElementById('col-filter-wrap').style.display = 'block';
     document.getElementById('results-section').style.display = 'block';
@@ -723,6 +766,7 @@ function displayResults(videos, infoText) {
     buildChips();
     renderTable();
 }
+
 
 // ─── Build column chips ────────────────────────────────────────────────────────
 function buildChips() {
