@@ -88,10 +88,12 @@ fi
 echo "-> Thiết lập tiến trình Cronjob chạy nền (Mỗi 1 phút)..."
 CRON_PUBLISH="* * * * * php $APP_DIR/cron/start_publish.php >> /tmp/fb_publish.log 2>&1"
 CRON_COMMENT="* * * * * php $APP_DIR/cron/start_comment.php >> /tmp/fb_comment.log 2>&1"
+CRON_INSIGHTS="*/5 * * * * php $APP_DIR/cron/comment_insights_worker.php >> /tmp/fb_comment_insights.log 2>&1"
 
 # Kiểm tra xem cronjob đã tồn tại chưa để tránh add trùng
 (crontab -l 2>/dev/null | grep -F "$APP_DIR/cron/start_publish.php") || (crontab -l 2>/dev/null; echo "$CRON_PUBLISH") | crontab -
 (crontab -l 2>/dev/null | grep -F "$APP_DIR/cron/start_comment.php") || (crontab -l 2>/dev/null; echo "$CRON_COMMENT") | crontab -
+(crontab -l 2>/dev/null | grep -F "$APP_DIR/cron/comment_insights_worker.php") || (crontab -l 2>/dev/null; echo "$CRON_INSIGHTS") | crontab -
 
 echo ""
 echo "======================================================="

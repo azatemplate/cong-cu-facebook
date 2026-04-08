@@ -78,8 +78,9 @@ $has_retry_count = false;
 $has_comment_lines = false;
 $has_comment_at = false;
 $has_comment_status = false;
+$has_comment_mode = false;
 try {
-    $col_q = $pdo->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME IN ('fb_post_id','error_msg','retry_count','comment_lines','comment_at','comment_status')");
+    $col_q = $pdo->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME IN ('fb_post_id','error_msg','retry_count','comment_lines','comment_at','comment_status','comment_mode')");
     $existing_cols = $col_q ? $col_q->fetchAll(PDO::FETCH_COLUMN) : [];
     $has_fb_post_id = in_array('fb_post_id', $existing_cols);
     $has_error_msg = in_array('error_msg', $existing_cols);
@@ -87,6 +88,7 @@ try {
     $has_comment_lines = in_array('comment_lines', $existing_cols);
     $has_comment_at = in_array('comment_at', $existing_cols);
     $has_comment_status = in_array('comment_status', $existing_cols);
+    $has_comment_mode = in_array('comment_mode', $existing_cols);
 } catch (Exception $e) {
 }
 
@@ -473,13 +475,24 @@ foreach ($pending_posts as $post) {
 
             // Hẹn giờ Comment
             if ($has_comment_lines && $has_comment_at && !empty($post['comment_lines'])) {
-                $comment_at = date('Y-m-d H:i:s', time() + 120);
-                if ($has_comment_status) {
-                    $pdo->prepare("UPDATE scheduled_posts SET comment_at = ?, comment_status = 'pending' WHERE id = ?")
-                        ->execute([$comment_at, $post['id']]);
+                $post_comment_mode = ($has_comment_mode && !empty($post['comment_mode'])) ? $post['comment_mode'] : 'timer';
+                if ($post_comment_mode === 'insights') {
+                    // Insights mode: don't set comment_at, let cron/comment_insights_worker.php handle it
+                    if ($has_comment_status) {
+                        $pdo->prepare("UPDATE scheduled_posts SET comment_status = 'waiting_insights' WHERE id = ?")
+                            ->execute([$post['id']]);
+                    }
+                    echo "   → Comment mode: insights (chờ cron kiểm tra metrics)\n";
                 } else {
-                    $pdo->prepare("UPDATE scheduled_posts SET comment_at = ? WHERE id = ?")
-                        ->execute([$comment_at, $post['id']]);
+                    // Timer mode: comment after 120s
+                    $comment_at = date('Y-m-d H:i:s', time() + 120);
+                    if ($has_comment_status) {
+                        $pdo->prepare("UPDATE scheduled_posts SET comment_at = ?, comment_status = 'pending' WHERE id = ?")
+                            ->execute([$comment_at, $post['id']]);
+                    } else {
+                        $pdo->prepare("UPDATE scheduled_posts SET comment_at = ? WHERE id = ?")
+                            ->execute([$comment_at, $post['id']]);
+                    }
                 }
             }
 
@@ -799,13 +812,24 @@ foreach ($pending_posts as $post) {
 
         // Schedule comment if needed (120s after now)
         if ($has_comment_lines && $has_comment_at && !empty($post['comment_lines'])) {
-            $comment_at = date('Y-m-d H:i:s', time() + 120);
-            if ($has_comment_status) {
-                $pdo->prepare("UPDATE scheduled_posts SET comment_at = ?, comment_status = 'pending' WHERE id = ?")
-                    ->execute([$comment_at, $post['id']]);
+            $post_comment_mode = ($has_comment_mode && !empty($post['comment_mode'])) ? $post['comment_mode'] : 'timer';
+            if ($post_comment_mode === 'insights') {
+                // Insights mode: don't set comment_at, let cron/comment_insights_worker.php handle it
+                if ($has_comment_status) {
+                    $pdo->prepare("UPDATE scheduled_posts SET comment_status = 'waiting_insights' WHERE id = ?")
+                        ->execute([$post['id']]);
+                }
+                echo "   → Comment mode: insights (chờ cron kiểm tra metrics)\n";
             } else {
-                $pdo->prepare("UPDATE scheduled_posts SET comment_at = ? WHERE id = ?")
-                    ->execute([$comment_at, $post['id']]);
+                // Timer mode: comment after 120s
+                $comment_at = date('Y-m-d H:i:s', time() + 120);
+                if ($has_comment_status) {
+                    $pdo->prepare("UPDATE scheduled_posts SET comment_at = ?, comment_status = 'pending' WHERE id = ?")
+                        ->execute([$comment_at, $post['id']]);
+                } else {
+                    $pdo->prepare("UPDATE scheduled_posts SET comment_at = ? WHERE id = ?")
+                        ->execute([$comment_at, $post['id']]);
+                }
             }
         }
 

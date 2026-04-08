@@ -137,13 +137,39 @@ endforeach; ?>
 
         <div class="form-group" style="flex:1; min-width:300px; background:#f0fdf4; padding:15px; border-radius:6px; border:1px solid #bbf7d0; margin-bottom:0;">
             <label style="color:#15803d; font-weight:500; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                <input type="checkbox" name="enable_comment" id="enableComment" value="1" onchange="document.getElementById('commentBox').style.display=this.checked?'block':'none'" style="width:16px;height:16px;accent-color:#16a34a;">
+                <input type="checkbox" name="enable_comment" id="enableComment" value="1" onchange="toggleCommentMode('timer')" style="width:16px;height:16px;accent-color:#16a34a;">
                 💬 Bình luận vào bài viết sau khi đăng (120 giây)
             </label>
             <div id="commentBox" style="display:none; margin-top:12px;">
                 <label style="font-size:13px; color:#166534;">Mỗi dòng = 1 nội dung bình luận (random 1 dòng):</label>
-                <textarea name="comment_lines" rows="6" placeholder="Bình luận hay quá!&#10;Cảm ơn bạn đã xem!&#10;Video rất bổ ích 👍" style="width:100%; margin-top:6px; padding:8px 10px; border:1px solid #86efac; border-radius:6px; font-size:13px; resize:vertical; background:#fff;"></textarea>
+                <textarea name="comment_lines" id="commentLinesTimer" rows="4" placeholder="Bình luận hay quá!&#10;Cảm ơn bạn đã xem!&#10;Video rất bổ ích 👍" style="width:100%; margin-top:6px; padding:8px 10px; border:1px solid #86efac; border-radius:6px; font-size:13px; resize:vertical; background:#fff;"></textarea>
                 <p style="font-size:11px; color:#166534; margin-top:5px; margin-bottom:0;">⚡ Hệ thống sẽ chọn ngẫu nhiên 1 dòng để bình luận sau 120 giây kể từ khi bài được đăng thành công.</p>
+            </div>
+
+            <div style="border-top: 1px dashed #86efac; margin-top: 14px; padding-top: 14px;">
+                <label style="color:#15803d; font-weight:500; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <input type="checkbox" name="enable_comment_insights" id="enableCommentInsights" value="1" onchange="toggleCommentMode('insights')" style="width:16px;height:16px;accent-color:#16a34a;">
+                    💬 Bình luận khi đủ số Like, View, Bình luận
+                </label>
+                <div id="commentInsightsBox" style="display:none; margin-top:12px;">
+                    <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+                        <div style="flex:1; min-width:90px;">
+                            <label style="font-size:12px; color:#166534; font-weight:500;">👁️ View tối thiểu</label>
+                            <input type="number" name="threshold_views" id="thresholdViews" value="1000" min="0" style="width:100%; padding:7px 10px; border:1px solid #86efac; border-radius:6px; font-size:13px; background:#fff; margin-top:4px;">
+                        </div>
+                        <div style="flex:1; min-width:90px;">
+                            <label style="font-size:12px; color:#166534; font-weight:500;">👍 Like tối thiểu</label>
+                            <input type="number" name="threshold_likes" id="thresholdLikes" value="10" min="0" style="width:100%; padding:7px 10px; border:1px solid #86efac; border-radius:6px; font-size:13px; background:#fff; margin-top:4px;">
+                        </div>
+                        <div style="flex:1; min-width:90px;">
+                            <label style="font-size:12px; color:#166534; font-weight:500;">💬 Comment tối thiểu</label>
+                            <input type="number" name="threshold_comments" id="thresholdComments" value="5" min="0" style="width:100%; padding:7px 10px; border:1px solid #86efac; border-radius:6px; font-size:13px; background:#fff; margin-top:4px;">
+                        </div>
+                    </div>
+                    <label style="font-size:13px; color:#166534;">Mỗi dòng = 1 nội dung bình luận (random 1 dòng):</label>
+                    <textarea name="comment_lines_insights" id="commentLinesInsights" rows="4" placeholder="Bình luận hay quá!&#10;Cảm ơn bạn đã xem!&#10;Video rất bổ ích 👍" style="width:100%; margin-top:6px; padding:8px 10px; border:1px solid #86efac; border-radius:6px; font-size:13px; resize:vertical; background:#fff;"></textarea>
+                    <p style="font-size:11px; color:#166534; margin-top:5px; margin-bottom:0;">📊 Cron sẽ kiểm tra mỗi 5 phút. Khi Reels đạt đủ <b>tất cả</b> các ngưỡng (View, Like, Comment), hệ thống sẽ tự động bình luận.</p>
+                </div>
             </div>
         </div>
 
@@ -167,6 +193,28 @@ endforeach; ?>
 </div>
 
 <script>
+    // Toggle between two comment modes (mutually exclusive)
+    function toggleCommentMode(mode) {
+        const timerCb = document.getElementById('enableComment');
+        const insightsCb = document.getElementById('enableCommentInsights');
+        const timerBox = document.getElementById('commentBox');
+        const insightsBox = document.getElementById('commentInsightsBox');
+        
+        if (mode === 'timer') {
+            if (timerCb.checked) {
+                insightsCb.checked = false;
+                insightsBox.style.display = 'none';
+            }
+            timerBox.style.display = timerCb.checked ? 'block' : 'none';
+        } else {
+            if (insightsCb.checked) {
+                timerCb.checked = false;
+                timerBox.style.display = 'none';
+            }
+            insightsBox.style.display = insightsCb.checked ? 'block' : 'none';
+        }
+    }
+
     const allPages = <?php echo $pages_json; ?>;
     const userSelect = document.getElementById('user_select');
     const pageSelect = document.getElementById('page_select');

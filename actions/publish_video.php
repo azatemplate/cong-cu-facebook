@@ -46,6 +46,22 @@ $comment_lines = isset($_POST['enable_comment']) && !empty(trim($_POST['comment_
     ? trim($_POST['comment_lines'])
     : null;
 
+// New: Insights-based comment mode
+$comment_mode = null;
+$comment_threshold_views = 0;
+$comment_threshold_likes = 0;
+$comment_threshold_comments = 0;
+
+if ($comment_lines) {
+    $comment_mode = 'timer'; // existing 120s mode
+} elseif (isset($_POST['enable_comment_insights']) && !empty(trim($_POST['comment_lines_insights'] ?? ''))) {
+    $comment_lines = trim($_POST['comment_lines_insights']);
+    $comment_mode = 'insights';
+    $comment_threshold_views = intval($_POST['threshold_views'] ?? 1000);
+    $comment_threshold_likes = intval($_POST['threshold_likes'] ?? 10);
+    $comment_threshold_comments = intval($_POST['threshold_comments'] ?? 5);
+}
+
 if (!$user_id || empty($page_ids)) {
     echo json_encode(['status' => 'error', 'msg' => 'Vui lòng chọn đầy đủ User và Fanpage.']);
     exit;
@@ -178,16 +194,28 @@ try {
     $has_extra_cols = ($col_chk && $col_chk->fetchColumn() > 0);
 } catch (Exception $e) { }
 
+$has_comment_mode = false;
+try {
+    $col_chk2 = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME='comment_mode'");
+    $has_comment_mode = ($col_chk2 && $col_chk2->fetchColumn() > 0);
+} catch (Exception $e) { }
+
 if (!$has_extra_cols) $campaign_id = null;
 
-$s_stmt_with    = $has_extra_cols
-    ? $pdo->prepare("INSERT INTO scheduled_posts (account_id, page_id, post_type, content, media_path, scheduled_time, status, campaign_id, comment_lines) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)")
-    : null;
+$s_stmt_with    = ($has_extra_cols && $has_comment_mode)
+    ? $pdo->prepare("INSERT INTO scheduled_posts (account_id, page_id, post_type, content, media_path, scheduled_time, status, campaign_id, comment_lines, comment_mode, comment_threshold_views, comment_threshold_likes, comment_threshold_comments) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)")
+    : ($has_extra_cols
+        ? $pdo->prepare("INSERT INTO scheduled_posts (account_id, page_id, post_type, content, media_path, scheduled_time, status, campaign_id, comment_lines) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)")
+        : null);
 $s_stmt_without = $pdo->prepare("INSERT INTO scheduled_posts (account_id, page_id, post_type, content, media_path, scheduled_time, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')");
 
-function insert_sp($s_with, $s_without, $campaign_id, $comment_lines, ...$args) {
+function insert_sp($s_with, $s_without, $campaign_id, $comment_lines, $comment_mode, $comment_threshold_views, $comment_threshold_likes, $comment_threshold_comments, $has_comment_mode, ...$args) {
     if ($campaign_id !== null && $s_with !== null) {
-        $s_with->execute(array_merge($args, [$campaign_id, $comment_lines]));
+        if ($has_comment_mode) {
+            $s_with->execute(array_merge($args, [$campaign_id, $comment_lines, $comment_mode, $comment_threshold_views, $comment_threshold_likes, $comment_threshold_comments]));
+        } else {
+            $s_with->execute(array_merge($args, [$campaign_id, $comment_lines]));
+        }
     } else {
         $s_without->execute($args);
     }
@@ -202,7 +230,7 @@ if (!empty($schedule_dates)) {
             $media = $media_pool[array_rand($media_pool)];
             [$media_path, $t_title, $t_desc] = resolve_media_path_video($media, $upload_dir, $auto_title, $title_input, $desc_input);
             $content_data = json_encode(['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai]);
-            insert_sp($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $account_id, $p_id, $post_type, $content_data, $media_path, $datetime);
+            insert_sp($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $comment_mode, $comment_threshold_views, $comment_threshold_likes, $comment_threshold_comments, $has_comment_mode, $account_id, $p_id, $post_type, $content_data, $media_path, $datetime);
             $success_count++;
         }
     }
@@ -214,7 +242,7 @@ if (!empty($schedule_dates)) {
         $media = $media_pool[array_rand($media_pool)];
         [$media_path, $t_title, $t_desc] = resolve_media_path_video($media, $upload_dir, $auto_title, $title_input, $desc_input);
         $content_data = json_encode(['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai]);
-        insert_sp($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $account_id, $p_id, $post_type, $content_data, $media_path, $now);
+        insert_sp($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $comment_mode, $comment_threshold_views, $comment_threshold_likes, $comment_threshold_comments, $has_comment_mode, $account_id, $p_id, $post_type, $content_data, $media_path, $now);
         $success_count++;
     }
     echo json_encode(['status' => 'success', 'msg' => "Đã đưa $success_count bài vào hàng đợi xử lý ngay.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);

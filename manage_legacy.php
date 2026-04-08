@@ -270,6 +270,8 @@ $has_comment_status_col = ($chk->rowCount() > 0);
                         $cs_bg = '#d1fae5'; $cs_tc = '#065f46'; $cs_label = '✅ Đã BL';
                     } elseif ($cs === 'error') {
                         $cs_bg = '#fee2e2'; $cs_tc = '#dc2626'; $cs_label = '❌ Lỗi BL';
+                    } elseif ($cs === 'expired_insights') {
+                        $cs_bg = '#f3f4f6'; $cs_tc = '#6b7280'; $cs_label = '💬 Không đủ ĐK';
                     } elseif ($cs === 'pending') {
                         $cs_bg = '#fef3c7'; $cs_tc = '#d97706'; $cs_label = '⏳ Chờ BL';
                     } else {

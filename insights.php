@@ -78,11 +78,14 @@ if ($selected_page_id) {
     if ($page_token) {
         // Session cache: avoid hitting FB API on every page load (30 min TTL)
         $cache_key    = "insights_{$selected_page_id}_{$period}";
+        $cache_key_engagement = "engagement_{$selected_page_id}_{$period}";
         $insights_data = null;
+        $engagement_data = null;
 
         // Clear cache if refresh requested
         if (isset($_GET['nocache'])) {
             unset($_SESSION[$cache_key]);
+            unset($_SESSION[$cache_key_engagement]);
         }
 
         if (isset($_SESSION[$cache_key]) && $_SESSION[$cache_key]['expires'] > time()) {
@@ -91,13 +94,56 @@ if ($selected_page_id) {
             $api_response = get_fb_page_insights($selected_page_id, $page_token, $period, $start_date, $end_date);
             if ($api_response['status_code'] === 200 && isset($api_response['data']['data'])) {
                 $insights_data = $api_response['data']['data'];
-                // Cache for 30 minutes
                 $_SESSION[$cache_key] = ['data' => $insights_data, 'expires' => time() + 1800];
             } else {
                 $error_msg = "Error #" . ($api_response['data']['error']['code'] ?? 'Unknown') . ": "
                            . ($api_response['data']['error']['message'] ?? 'API Failed')
                            . " | Raw: " . json_encode($api_response['data']);
             }
+        }
+
+        // Fetch engagement data (likes + comments) from posts feed
+        if (isset($_SESSION[$cache_key_engagement]) && $_SESSION[$cache_key_engagement]['expires'] > time()) {
+            $engagement_data = $_SESSION[$cache_key_engagement]['data'];
+        } else {
+            $engagement_data = ['daily_likes' => [], 'daily_comments' => [], 'total_likes' => 0, 'total_comments' => 0];
+            $feed_url = "https://graph.facebook.com/v25.0/{$selected_page_id}/published_posts"
+                      . "?fields=" . urlencode('created_time,reactions.summary(true).limit(0),comments.summary(true).limit(0)')
+                      . "&since={$start_date}&until={$end_date}"
+                      . "&limit=100"
+                      . "&access_token=" . urlencode($page_token);
+
+            $all_posts_data = [];
+            $fetch_url = $feed_url;
+            $fetch_attempts = 0;
+            while ($fetch_url && $fetch_attempts < 5) {
+                $ch = curl_init($fetch_url);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                $raw = curl_exec($ch);
+                curl_close($ch);
+                $json = $raw ? json_decode($raw, true) : [];
+                if (!empty($json['data'])) {
+                    $all_posts_data = array_merge($all_posts_data, $json['data']);
+                }
+                $fetch_url = $json['paging']['next'] ?? null;
+                $fetch_attempts++;
+            }
+
+            // Aggregate by day
+            foreach ($all_posts_data as $p) {
+                $day = date('Y-m-d', strtotime($p['created_time']));
+                $likes = (int)($p['reactions']['summary']['total_count'] ?? 0);
+                $comments = (int)($p['comments']['summary']['total_count'] ?? 0);
+                if (!isset($engagement_data['daily_likes'][$day])) $engagement_data['daily_likes'][$day] = 0;
+                if (!isset($engagement_data['daily_comments'][$day])) $engagement_data['daily_comments'][$day] = 0;
+                $engagement_data['daily_likes'][$day] += $likes;
+                $engagement_data['daily_comments'][$day] += $comments;
+                $engagement_data['total_likes'] += $likes;
+                $engagement_data['total_comments'] += $comments;
+            }
+            $_SESSION[$cache_key_engagement] = ['data' => $engagement_data, 'expires' => time() + 1800];
         }
     } else {
         $error_msg = "Không tìm thấy Token hoặc bạn không có quyền sở hữu Fanpage này.";
@@ -125,24 +171,31 @@ if ($selected_page_id) {
     <?php
     $chart_labels = [];
     $chart_views = [];
+    $chart_likes = [];
+    $chart_comments = [];
     
     $total_views = 0;
+    $total_likes = $engagement_data['total_likes'] ?? 0;
+    $total_comments = $engagement_data['total_comments'] ?? 0;
+    $daily_likes = $engagement_data['daily_likes'] ?? [];
+    $daily_comments = $engagement_data['daily_comments'] ?? [];
     
     foreach ($insights_data as $metric) {
         if ($metric['name'] === 'page_media_view') {
             if (isset($metric['values']) && is_array($metric['values']) && count($metric['values']) > 0) {
-                // Fetch the last node which generally represents the latest aggregation.
                 $latest_val = end($metric['values']);
                 $total_views += isset($latest_val['value']) ? intval($latest_val['value']) : 0;
                 
-                // Keep chart functionality mostly simple array mapping
                 foreach ($metric['values'] as $v) {
                     if (isset($v['end_time'])) {
-                        $date = date('m-d', strtotime($v['end_time']));
-                        if (!in_array($date, $chart_labels)) {
-                            $chart_labels[] = $date;
+                        $date_key = date('Y-m-d', strtotime($v['end_time']));
+                        $date_label = date('m-d', strtotime($v['end_time']));
+                        if (!in_array($date_label, $chart_labels)) {
+                            $chart_labels[] = $date_label;
                         }
                         $chart_views[] = isset($v['value']) ? intval($v['value']) : 0;
+                        $chart_likes[] = $daily_likes[$date_key] ?? 0;
+                        $chart_comments[] = $daily_comments[$date_key] ?? 0;
                     }
                 }
             }
@@ -154,50 +207,85 @@ if ($selected_page_id) {
         for ($i=6; $i>=0; $i--) {
             $chart_labels[] = date('m-d', strtotime("-$i days"));
             $chart_views[] = 0;
+            $chart_likes[] = 0;
+            $chart_comments[] = 0;
         }
     }
     ?>
 
-    <div class="stats-grid">
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
         <div class="stat-card">
-            <div class="stat-title">Total Media Views (<?php echo htmlspecialchars($period); ?>)</div>
+            <div class="stat-title">Total Media Views</div>
             <div class="stat-value color-primary" style="display:flex; align-items:center;">
                 <span class="icon" style="margin-right:10px;">▶</span> <?php echo number_format($total_views); ?>
             </div>
-            <div class="stat-subtitle">Tổng lượt xem media của Fanpage</div>
+            <div class="stat-subtitle">Tổng lượt xem media</div>
         </div>
         
         <div class="stat-card">
-            <div class="stat-title">API Status</div>
-            <div class="stat-value color-green" style="display:flex; align-items:center;">
+            <div class="stat-title">Total Likes</div>
+            <div class="stat-value" style="display:flex; align-items:center; color:#3b82f6;">
+                <span class="icon" style="margin-right:10px;">👍</span> <?php echo number_format($total_likes); ?>
+            </div>
+            <div class="stat-subtitle">Tổng lượt thích (reactions)</div>
+        </div>
+        
+        <div class="stat-card">
+            <div class="stat-title">Total Comments</div>
+            <div class="stat-value" style="display:flex; align-items:center; color:#10b981;">
+                <span class="icon" style="margin-right:10px;">💬</span> <?php echo number_format($total_comments); ?>
+            </div>
+            <div class="stat-subtitle">Tổng lượt bình luận</div>
+        </div>
+        
+        <div class="stat-card">
+            <div class="stat-title">Fanpage</div>
+            <div class="stat-value color-green" style="display:flex; align-items:center; font-size: 16px;">
                 <span class="icon" style="margin-right:10px;">✅</span> Online
             </div>
-            <div class="stat-subtitle">Fanpage: <?php echo htmlspecialchars($page_name); ?></div>
+            <div class="stat-subtitle"><?php echo htmlspecialchars($page_name); ?></div>
         </div>
     </div>
 
     <div class="card" style="margin-bottom: 25px;">
         <h3 style="margin-bottom: 5px;">Insights Growth Chart (<?php echo htmlspecialchars($period); ?>)</h3>
-        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px;">Dữ liệu biểu đồ được truy xuất trực tiếp từ Facebook Graph API.</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px;">Dữ liệu biểu đồ được truy xuất trực tiếp từ Facebook Graph API. Views = Page Insights, Likes/Comments = Tổng hợp từ bài đăng.</div>
         
-        <div style="height: 350px; position: relative; width: 100%;">
+        <div style="height: 400px; position: relative; width: 100%;">
             <canvas id="insightsChart"></canvas>
         </div>
-        <div style="text-align: center; margin-top: 15px; font-size: 13px; font-weight: 500;">
-            <span style="color: #ef4444;">● Media Views</span>
+        <div style="display:flex; justify-content:center; gap:20px; margin-top: 15px; font-size: 13px; font-weight: 500; flex-wrap:wrap;">
+            <span style="color: #ef4444; cursor:pointer;" onclick="toggleDataset(0)">● Media Views</span>
+            <span style="color: #3b82f6; cursor:pointer;" onclick="toggleDataset(1)">● Likes</span>
+            <span style="color: #10b981; cursor:pointer;" onclick="toggleDataset(2)">● Comments</span>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
+    let insightsChartInstance = null;
+    function toggleDataset(idx) {
+        if (!insightsChartInstance) return;
+        const meta = insightsChartInstance.getDatasetMeta(idx);
+        meta.hidden = !meta.hidden;
+        insightsChartInstance.update();
+    }
     document.addEventListener('DOMContentLoaded', function() {
         const ctx = document.getElementById('insightsChart').getContext('2d');
         
-        const gradientReach = ctx.createLinearGradient(0, 0, 0, 350);
-        gradientReach.addColorStop(0, 'rgba(239, 68, 68, 0.3)');
-        gradientReach.addColorStop(1, 'rgba(239, 68, 68, 0)');
+        const gradientViews = ctx.createLinearGradient(0, 0, 0, 400);
+        gradientViews.addColorStop(0, 'rgba(239, 68, 68, 0.25)');
+        gradientViews.addColorStop(1, 'rgba(239, 68, 68, 0)');
 
-        new Chart(ctx, {
+        const gradientLikes = ctx.createLinearGradient(0, 0, 0, 400);
+        gradientLikes.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
+        gradientLikes.addColorStop(1, 'rgba(59, 130, 246, 0)');
+
+        const gradientComments = ctx.createLinearGradient(0, 0, 0, 400);
+        gradientComments.addColorStop(0, 'rgba(16, 185, 129, 0.2)');
+        gradientComments.addColorStop(1, 'rgba(16, 185, 129, 0)');
+
+        insightsChartInstance = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: <?php echo json_encode($chart_labels); ?>,
@@ -206,14 +294,42 @@ if ($selected_page_id) {
                         label: 'Media Views',
                         data: <?php echo json_encode($chart_views); ?>,
                         borderColor: '#ef4444',
-                        backgroundColor: gradientReach,
-                        borderWidth: 2,
+                        backgroundColor: gradientViews,
+                        borderWidth: 2.5,
                         fill: true,
                         tension: 0.4,
                         pointBackgroundColor: '#ef4444',
                         pointBorderColor: '#fff',
-                        pointRadius: 4,
+                        pointRadius: 3,
                         pointHoverRadius: 6
+                    },
+                    {
+                        label: 'Likes',
+                        data: <?php echo json_encode($chart_likes); ?>,
+                        borderColor: '#3b82f6',
+                        backgroundColor: gradientLikes,
+                        borderWidth: 2.5,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#3b82f6',
+                        pointBorderColor: '#fff',
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        yAxisID: 'y1'
+                    },
+                    {
+                        label: 'Comments',
+                        data: <?php echo json_encode($chart_comments); ?>,
+                        borderColor: '#10b981',
+                        backgroundColor: gradientComments,
+                        borderWidth: 2.5,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#10b981',
+                        pointBorderColor: '#fff',
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        yAxisID: 'y1'
                     }
                 ]
             },
@@ -221,7 +337,24 @@ if ($selected_page_id) {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { display: false }
+                    legend: { display: false },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(15,23,42,0.9)',
+                        titleFont: { size: 13, weight: 'bold' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(ctx) {
+                                let val = ctx.parsed.y;
+                                if (val >= 1000000) val = (val/1000000).toFixed(1) + 'M';
+                                else if (val >= 1000) val = (val/1000).toFixed(1) + 'k';
+                                return ' ' + ctx.dataset.label + ': ' + val;
+                            }
+                        }
+                    }
                 },
                 scales: {
                     x: {
@@ -229,9 +362,27 @@ if ($selected_page_id) {
                         ticks: { color: '#6b7280', font: { size: 11 }, maxTicksLimit: 14 }
                     },
                     y: {
+                        type: 'linear',
+                        position: 'left',
                         grid: { color: '#e5e7eb', drawBorder: false, borderDash: [5, 5] },
+                        title: { display: true, text: 'Views', color: '#ef4444', font: { size: 12, weight: 'bold' } },
                         ticks: { 
-                            color: '#6b7280', 
+                            color: '#ef4444', 
+                            font: { size: 11 },
+                            callback: function(value) {
+                                if (value >= 1000000) return value / 1000000 + 'M';
+                                if (value >= 1000) return value / 1000 + 'k';
+                                return value;
+                            }
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        title: { display: true, text: 'Likes / Comments', color: '#3b82f6', font: { size: 12, weight: 'bold' } },
+                        ticks: { 
+                            color: '#3b82f6', 
                             font: { size: 11 },
                             callback: function(value) {
                                 if (value >= 1000000) return value / 1000000 + 'M';
@@ -258,7 +409,7 @@ $today_str   = date('Y-m-d');           // e.g. 2026-03-25
 $tomorrow_str = date('Y-m-d', strtotime('+1 day'));
 
 if ($page_token) {
-    $fields = 'created_time,message,attachments{media_type,url,media},insights.metric(post_video_views,post_impressions_unique)';
+    $fields = 'created_time,message,attachments{media_type,url,media},reactions.summary(true).limit(0),comments.summary(true).limit(0),insights.metric(post_video_views,post_impressions_unique)';
     $tp_url = "https://graph.facebook.com/v25.0/{$selected_page_id}/posts"
             . "?fields=" . urlencode($fields)
             . "&since={$today_str}&until={$tomorrow_str}"
@@ -317,6 +468,8 @@ function get_post_metric($post, $metric_name) {
         $post_url   = $tp['attachments']['data'][0]['url'] ?? "https://facebook.com/{$tp['id']}";
         $views      = get_post_metric($tp, 'post_video_views');
         $reach      = get_post_metric($tp, 'post_impressions_unique');
+        $post_likes = (int)($tp['reactions']['summary']['total_count'] ?? 0);
+        $post_comments = (int)($tp['comments']['summary']['total_count'] ?? 0);
 
         $is_video = in_array($media_type, ['video', 'reel']);
         $type_icon = $is_video ? '🎬' : ($media_type === 'photo' ? '🖼️' : '📝');
@@ -343,6 +496,8 @@ function get_post_metric($post, $metric_name) {
                 <?php if ($reach !== null): ?>
                 <span style="color:#ef4444; font-weight:600;">👁 <?php echo number_format($reach); ?> reach</span>
                 <?php endif; ?>
+                <span style="color:#3b82f6; font-weight:600;">👍 <?php echo number_format($post_likes); ?> likes</span>
+                <span style="color:#10b981; font-weight:600;">💬 <?php echo number_format($post_comments); ?> comments</span>
                 <a href="<?php echo htmlspecialchars($post_url); ?>" target="_blank"
                    style="color:var(--primary-color); text-decoration:none; margin-left:auto;">Xem trên FB →</a>
             </div>

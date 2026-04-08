@@ -168,15 +168,24 @@ require_once __DIR__ . '/fb_api.php';
                         // Helper: render 1 live_notif item
                         function renderNotifItem(cn) {
                             const isMsg = cn.type === 'message';
-                            const icon  = isMsg ? '💬' : '📝';
-                            const link  = isMsg
-                                ? `live_chat.php?page_id=${cn.page_id}&conv_id=${cn.conversation_id || ''}`
-                                : `live_comments.php?page_id=${cn.page_id}&post_id=${cn.post_id || ''}`;
+                            const isInsight = cn.type === 'insights_comment';
+                            const icon  = isInsight ? '📊' : (isMsg ? '💬' : '📝');
+                            let link;
+                            if (isInsight) {
+                                link = `manage_posts.php`;
+                            } else if (isMsg) {
+                                link = `live_chat.php?page_id=${cn.page_id}&conv_id=${cn.conversation_id || ''}`;
+                            } else {
+                                link = `live_comments.php?page_id=${cn.page_id}&post_id=${cn.post_id || ''}`;
+                            }
                             const name  = cn.sender_name || 'Khách hàng';
-                            return `<div onclick="readNotif('${cn.id}','${link}')" style="cursor:pointer;display:flex;gap:8px;padding:8px;margin-bottom:4px;background:#f0f9ff;border-radius:6px;transition:background 0.2s;" onmouseover="this.style.background='#e0f2fe'" onmouseout="this.style.background='#f0f9ff'">
+                            const bgColor = isInsight ? '#f0fdf4' : '#f0f9ff';
+                            const hoverColor = isInsight ? '#dcfce7' : '#e0f2fe';
+                            const nameColor = isInsight ? '#15803d' : '#0369a1';
+                            return `<div onclick="readNotif('${cn.id}','${link}')" style="cursor:pointer;display:flex;gap:8px;padding:8px;margin-bottom:4px;background:${bgColor};border-radius:6px;transition:background 0.2s;" onmouseover="this.style.background='${hoverColor}'" onmouseout="this.style.background='${bgColor}'">
                                 <div style="font-size:16px;">${icon}</div>
                                 <div style="flex:1;min-width:0;">
-                                    <div style="font-weight:500;color:#0369a1;margin-bottom:2px;">[${cn.page_name}] ${name}</div>
+                                    <div style="font-weight:500;color:${nameColor};margin-bottom:2px;">[${cn.page_name}] ${name}</div>
                                     <div style="font-size:12px;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${cn.snippet || 'Có thông báo mới'}</div>
                                     <div style="font-size:10px;color:#9ca3af;margin-top:2px;">${cn.created_at}</div>
                                 </div>

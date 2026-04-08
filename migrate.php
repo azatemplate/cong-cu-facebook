@@ -29,6 +29,10 @@ $migrations = [
     ["ALTER TABLE scheduled_posts ADD COLUMN comment_at DATETIME DEFAULT NULL", "scheduled_posts.comment_at"],
     ["ALTER TABLE scheduled_posts ADD COLUMN comment_done TINYINT(1) DEFAULT 0", "scheduled_posts.comment_done"],
     ["ALTER TABLE scheduled_posts ADD COLUMN comment_status VARCHAR(20) DEFAULT NULL", "scheduled_posts.comment_status"],
+    ["ALTER TABLE scheduled_posts ADD COLUMN comment_mode VARCHAR(20) DEFAULT NULL", "scheduled_posts.comment_mode"],
+    ["ALTER TABLE scheduled_posts ADD COLUMN comment_threshold_views INT DEFAULT 0", "scheduled_posts.comment_threshold_views"],
+    ["ALTER TABLE scheduled_posts ADD COLUMN comment_threshold_likes INT DEFAULT 0", "scheduled_posts.comment_threshold_likes"],
+    ["ALTER TABLE scheduled_posts ADD COLUMN comment_threshold_comments INT DEFAULT 0", "scheduled_posts.comment_threshold_comments"],
     ["ALTER TABLE scheduled_posts ADD COLUMN fb_post_id VARCHAR(100) DEFAULT NULL", "scheduled_posts.fb_post_id"],
 
     // Character set conversions (run once)
