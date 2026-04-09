@@ -36,7 +36,13 @@
             <a href="tiktok_search.php" data-tooltip="TikTok Search"><span class="icon">🎵</span><span class="menu-label"> TikTok Search</span></a>
         </li>
         <li class="<?php echo ($current_page == 'insights') ? 'active' : ''; ?>">
-            <a href="insights.php" data-tooltip="Insights"><span class="icon">📈</span><span class="menu-label"> Insights</span></a>
+            <a href="insights.php" data-tooltip="Insights"><span class="icon">📊</span><span class="menu-label"> Insights</span></a>
+        </li>
+        <li class="<?php echo ($current_page == 'growth') ? 'active' : ''; ?>">
+            <a href="growth.php" data-tooltip="Growth"><span class="icon">📈</span><span class="menu-label"> Growth</span></a>
+        </li>
+        <li class="<?php echo ($current_page == 'earnings') ? 'active' : ''; ?>">
+            <a href="earnings.php" data-tooltip="Earnings"><span class="icon">💰</span><span class="menu-label"> Earnings</span></a>
         </li>
         <li class="<?php echo ($current_page == 'live_chat') ? 'active' : ''; ?>">
             <a href="live_chat.php" data-tooltip="Live Chat"><span class="icon">💬</span><span class="menu-label"> Live Chat</span></a>
