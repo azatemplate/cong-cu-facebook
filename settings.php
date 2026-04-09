@@ -18,6 +18,18 @@ try {
     $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN retry_count INT DEFAULT 0 AFTER status");
 } catch (Exception $e) {}
 
+try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");
+} catch (Exception $e) {}
+
+try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN retry_interval_minutes INT DEFAULT 1");
+} catch (Exception $e) {}
+
+try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
+} catch (Exception $e) {}
+
 $alert_type = '';
 $alert_message = '';
 
@@ -77,33 +89,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $account['gg_refresh_token'] = null;
     }
     
-    if (isset($_POST['update_retry_settings']) && $_SESSION['role'] === 'admin') {
-        $interval = (int)trim($_POST['retry_interval_minutes']);
-        $max_retries = (int)trim($_POST['max_retries']);
+    if (isset($_POST['update_retry_settings'])) {
+        $account_id = $_SESSION['account_id'];
         
-        $u_stmt1 = $pdo->prepare("UPDATE system_settings SET setting_value = ? WHERE setting_key = 'retry_interval_minutes'");
-        $u_stmt1->execute([$interval]);
-        $u_stmt2 = $pdo->prepare("UPDATE system_settings SET setting_value = ? WHERE setting_key = 'max_retries'");
-        $u_stmt2->execute([$max_retries]);
+        // Update user's delay and retry settings (cho bất kỳ user nào)
+        $delay = isset($_POST['post_delay_seconds']) ? (int)trim($_POST['post_delay_seconds']) : 15;
+        $interval = isset($_POST['retry_interval_minutes']) ? (int)trim($_POST['retry_interval_minutes']) : 1;
+        $max_retries = isset($_POST['max_retries']) ? (int)trim($_POST['max_retries']) : 3;
+        
+        $u_stmt = $pdo->prepare("UPDATE system_accounts SET post_delay_seconds = ?, retry_interval_minutes = ?, max_retries = ? WHERE id = ?");
+        $u_stmt->execute([$delay, $interval, $max_retries, $account_id]);
         
         $alert_type = 'success';
-        $alert_message = 'Đã cập nhật cấu hình Thử lại thành công.';
+        $alert_message = 'Đã cập nhật cấu hình Đăng bài thành công.';
     }
 } else {
     $account_id = $_SESSION['account_id'];
-    $stmt = $pdo->prepare("SELECT fb_app_id, fb_app_secret, gg_client_id, gg_client_secret, gg_refresh_token FROM system_accounts WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT fb_app_id, fb_app_secret, gg_client_id, gg_client_secret, gg_refresh_token, post_delay_seconds, retry_interval_minutes, max_retries FROM system_accounts WHERE id = ?");
     $stmt->execute([$account_id]);
     $account = $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
-// Fetch Retry Settings
-$s_stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('retry_interval_minutes', 'max_retries')");
-$settings = [];
-while ($row = $s_stmt->fetch(PDO::FETCH_ASSOC)) {
-    $settings[$row['setting_key']] = $row['setting_value'];
-}
-$retry_interval = isset($settings['retry_interval_minutes']) ? $settings['retry_interval_minutes'] : '1';
-$max_retries = isset($settings['max_retries']) ? $settings['max_retries'] : '3';
+// Lấy Cấu hình Retry từ User
+$retry_interval = isset($account['retry_interval_minutes']) && $account['retry_interval_minutes'] !== null ? $account['retry_interval_minutes'] : '1';
+$max_retries = isset($account['max_retries']) && $account['max_retries'] !== null ? $account['max_retries'] : '3';
 
 $is_admin = ($_SESSION['role'] === 'admin');
 ?>
@@ -119,8 +128,9 @@ $is_admin = ($_SESSION['role'] === 'admin');
     <div class="alert alert-<?php echo $alert_type; ?>"><?php echo htmlspecialchars($alert_message); ?></div>
 <?php endif; ?>
 
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; align-items: start;">
-
+<div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+    <!-- CỘT TRÁI -->
+    <div style="flex: 1; min-width: 400px; display: flex; flex-direction: column; gap: 20px;">
     <div class="card" style="margin: 0; box-sizing: border-box;">
         <h3 style="margin-bottom: 20px;">Đổi Mật Khẩu</h3>
         <form method="POST" action="settings.php">
@@ -136,61 +146,6 @@ $is_admin = ($_SESSION['role'] === 'admin');
             <button type="submit" name="update_password" class="btn btn-primary">Cập nhật Mật khẩu</button>
         </form>
     </div>
-
-    <!-- Cài đặt Chung (Hiển thị cho tất cả) -->
-    <div class="card" style="margin: 0; box-sizing: border-box;">
-        <h3 style="margin-bottom: 20px;">Tuỳ chỉnh Hệ thống chung (Shared Settings)</h3>
-        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px;">
-            Cấu hình này áp dụng cho toàn bộ Cronjob đăng bài tự động của tất cả User.
-        </p>
-        <form method="POST" action="settings.php">
-            <?php echo csrf_field(); ?>
-            <div class="form-group">
-                <label>Thời gian chờ thử lại mặc định (Phút)</label>
-                <?php if ($is_admin): ?>
-                    <input type="number" name="retry_interval_minutes" value="<?php echo htmlspecialchars($retry_interval); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="1" max="1440">
-                <?php else: ?>
-                    <div style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background-color: #f9fafb; color: #374151; box-sizing: border-box;">
-                        <?php echo htmlspecialchars($retry_interval); ?> phút
-                    </div>
-                <?php endif; ?>
-            </div>
-            <div class="form-group">
-                <label>Số lần thử lại tối đa (khi API báo lỗi)</label>
-                <?php if ($is_admin): ?>
-                    <input type="number" name="max_retries" value="<?php echo htmlspecialchars($max_retries); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="0" max="10">
-                <?php else: ?>
-                    <div style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background-color: #f9fafb; color: #374151; box-sizing: border-box;">
-                        <?php echo htmlspecialchars($max_retries); ?> lần
-                    </div>
-                <?php endif; ?>
-            </div>
-            <?php if ($is_admin): ?>
-                <button type="submit" name="update_retry_settings" class="btn btn-primary">Cập nhật Cấu hình Lỗi</button>
-            <?php endif; ?>
-        </form>
-    </div>
-
-    <?php if ($is_admin): ?>
-    <div class="card" style="margin: 0; box-sizing: border-box;">
-        <h3 style="margin-bottom: 20px;">Cấu hình Facebook App</h3>
-        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px;">
-            Nhập App ID và App Secret của ứng dụng Facebook Business để lấy Token đăng bài tự động. Do hệ thống đã được App Review với tư cách Admin, tất cả người dùng sẽ dùng chung cấu hình App này.
-        </p>
-        <form method="POST" action="settings.php">
-            <?php echo csrf_field(); ?>
-            <div class="form-group">
-                <label>Facebook App ID</label>
-                <input type="text" name="fb_app_id" value="<?php echo htmlspecialchars($account['fb_app_id'] ?? ''); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
-            </div>
-            <div class="form-group">
-                <label>Facebook App Secret</label>
-                <input type="password" name="fb_app_secret" value="<?php echo htmlspecialchars($account['fb_app_secret'] ?? ''); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
-            </div>
-            <button type="submit" name="update_fb_app" class="btn btn-primary">Lưu Cấu Hình</button>
-        </form>
-    </div>
-    <?php endif; ?>
 
     <?php if ($is_admin): ?>
     <div class="card" style="margin: 0; box-sizing: border-box;">
@@ -238,6 +193,58 @@ $is_admin = ($_SESSION['role'] === 'admin');
             <?php endif; ?>
         </div>
     </div>
+    </div> <!-- ĐÓNG CỘT TRÁI -->
+
+    <!-- CỘT PHẢI -->
+    <div style="flex: 1; min-width: 400px; display: flex; flex-direction: column; gap: 20px;">
+    <!-- Cài đặt Chung (Hiển thị cho tất cả) -->
+    <div class="card" style="margin: 0; box-sizing: border-box;">
+        <h3 style="margin-bottom: 20px;">Tuỳ chỉnh Hệ thống chung (Shared Settings)</h3>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px;">
+            Cấu hình này áp dụng cho toàn bộ Cronjob đăng bài tự động của tất cả User.
+        </p>
+        <form method="POST" action="settings.php">
+            <?php echo csrf_field(); ?>
+            <div class="form-group">
+                <label>Delay giữa mỗi post (Giây)</label>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: -5px; margin-bottom: 5px;">Thời gian chờ giữa các bài đăng trên các Page khác nhau thuộc cùng 1 Token (mặc định 15s).</p>
+                <input type="number" name="post_delay_seconds" value="<?php echo htmlspecialchars($account['post_delay_seconds'] ?? '15'); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="0" max="3600">
+            </div>
+
+            <div class="form-group">
+                <label>Thời gian chờ thử lại mặc định (Phút)</label>
+                <input type="number" name="retry_interval_minutes" value="<?php echo htmlspecialchars($retry_interval); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="1" max="1440">
+            </div>
+            <div class="form-group">
+                <label>Số lần thử lại tối đa (khi API báo lỗi)</label>
+                <input type="number" name="max_retries" value="<?php echo htmlspecialchars($max_retries); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="0" max="10">
+            </div>
+            <button type="submit" name="update_retry_settings" class="btn btn-primary">Lưu Tùy Chỉnh</button>
+        </form>
+    </div>
+
+    <?php if ($is_admin): ?>
+    <div class="card" style="margin: 0; box-sizing: border-box;">
+        <h3 style="margin-bottom: 20px;">Cấu hình Facebook App</h3>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px;">
+            Nhập App ID và App Secret của ứng dụng Facebook Business để lấy Token đăng bài tự động. Do hệ thống đã được App Review với tư cách Admin, tất cả người dùng sẽ dùng chung cấu hình App này.
+        </p>
+        <form method="POST" action="settings.php">
+            <?php echo csrf_field(); ?>
+            <div class="form-group">
+                <label>Facebook App ID</label>
+                <input type="text" name="fb_app_id" value="<?php echo htmlspecialchars($account['fb_app_id'] ?? ''); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
+            </div>
+            <div class="form-group">
+                <label>Facebook App Secret</label>
+                <input type="password" name="fb_app_secret" value="<?php echo htmlspecialchars($account['fb_app_secret'] ?? ''); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
+            </div>
+            <button type="submit" name="update_fb_app" class="btn btn-primary">Lưu Cấu Hình</button>
+        </form>
+    </div>
+    <?php endif; ?>
+
+    </div> <!-- ĐÓNG CỘT PHẢI -->
 
 </div>
 

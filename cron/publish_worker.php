@@ -57,6 +57,17 @@ require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/drive_utils.php';
 require_once __DIR__ . '/../includes/ai_rewriter.php';
 
+// Auto-migrate newly required columns
+try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");
+} catch (Exception $e) {}
+try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN retry_interval_minutes INT DEFAULT 1");
+} catch (Exception $e) {}
+try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
+} catch (Exception $e) {}
+
 $start_time = microtime(true);
 echo "-------------------------------------------\n";
 echo "Bat dau quet bai viet len lich luc: " . date('Y-m-d H:i:s') . "\n";
@@ -97,14 +108,10 @@ $sys_retry_interval = 1;
 $sys_max_retries = 3;
 $sys_tiktok_api_url = '';
 try {
-    $ss_stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('retry_interval_minutes', 'max_retries', 'tiktok_api_url')");
-    $settings = [];
-    while ($row = $ss_stmt->fetch(PDO::FETCH_ASSOC)) {
-        $settings[$row['setting_key']] = $row['setting_value'];
+    $ss_stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'tiktok_api_url'");
+    if ($ss_stmt) {
+        $sys_tiktok_api_url = trim($ss_stmt->fetchColumn() ?: '');
     }
-    $sys_retry_interval = isset($settings['retry_interval_minutes']) ? (int) $settings['retry_interval_minutes'] : 1;
-    $sys_max_retries = isset($settings['max_retries']) ? (int) $settings['max_retries'] : 3;
-    $sys_tiktok_api_url = trim($settings['tiktok_api_url'] ?? '');
 } catch (Exception $e) {
 }
 
@@ -188,13 +195,76 @@ function _tiktok_resolve_cdn(string $url): ?string
     return null;
 }
 
+// Lớp hỗ trợ lock tài nguyên Token (đảm bảo 1 token chỉ đăng 1 post 1 lúc, và có delay)
+class TokenLocker {
+    private $fp = null;
+    private $lock_file;
+    public function __construct($uid, $delay_sec) {
+        if (!$uid) return;
+        $this->lock_file = sys_get_temp_dir() . "/fb_publish_token_" . md5($uid) . ".lock";
+        $this->fp = fopen($this->lock_file, 'c');
+        if ($this->fp) {
+            $wait_time = 0;
+            // Đợi tối đa 15 phút (900s) nhường cho worker trước upload xong
+            while ($wait_time < 900) {
+                if (flock($this->fp, LOCK_EX | LOCK_NB)) {
+                    rewind($this->fp);
+                    $last = (int)stream_get_contents($this->fp);
+                    $elapsed = time() - $last;
+                    if ($elapsed >= 0 && $elapsed < $delay_sec) {
+                        $s = $delay_sec - $elapsed;
+                        echo "   → Chờ $s giây trước khi đăng tiếp (Delay cấu hình của Token)... \n";
+                        sleep($s);
+                    }
+                    break;
+                }
+                sleep(1);
+                $wait_time++;
+            }
+        }
+    }
+    public function __destruct() {
+        if ($this->fp) {
+            ftruncate($this->fp, 0);
+            rewind($this->fp);
+            fwrite($this->fp, time());
+            fflush($this->fp);
+            flock($this->fp, LOCK_UN);
+            fclose($this->fp);
+        }
+    }
+}
+
 // 1. Fetch pending posts where scheduled_time <= NOW() AND page_id matches
 $retry_clause = $has_retry_count
-    ? "OR (status = 'failed' AND (retry_count IS NULL OR retry_count < $sys_max_retries))"
+    ? "OR (sp.status = 'failed' AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3)))"
     : '';
-$stmt = $pdo->prepare("SELECT * FROM scheduled_posts WHERE (status = 'pending' $retry_clause) AND scheduled_time <= NOW() AND page_id = ?");
-$stmt->execute([$target_page_id]);
+$stmt = $pdo->prepare("
+    SELECT sp.*, sa.max_retries AS sa_max_retries, sa.retry_interval_minutes AS sa_retry_interval 
+    FROM scheduled_posts sp 
+    LEFT JOIN system_accounts sa ON sp.account_id = sa.id 
+    WHERE (sp.status = 'pending' $retry_clause) 
+      AND sp.scheduled_time <= NOW() 
+      AND sp.page_id = ?
+");
+if (!$stmt) {
+    file_put_contents(sys_get_temp_dir() . '/worker_error.log', date('Y-m-d H:i:s') . " - Prepare Error: " . print_r($pdo->errorInfo(), true) . "\n", FILE_APPEND);
+    exit;
+}
+if (!$stmt->execute([$target_page_id])) {
+    file_put_contents(sys_get_temp_dir() . '/worker_error.log', date('Y-m-d H:i:s') . " - Execute Error: " . print_r($stmt->errorInfo(), true) . "\n", FILE_APPEND);
+    exit;
+}
 $pending_posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+if (!empty($pending_posts)) {
+    if (isset($pending_posts[0]['sa_max_retries']) && $pending_posts[0]['sa_max_retries'] !== null) {
+        $sys_max_retries = (int)$pending_posts[0]['sa_max_retries'];
+    }
+    if (isset($pending_posts[0]['sa_retry_interval']) && $pending_posts[0]['sa_retry_interval'] !== null) {
+        $sys_retry_interval = (int)$pending_posts[0]['sa_retry_interval'];
+    }
+}
 
 if (empty($pending_posts)) {
     echo "Không có bài viết nào cần đăng cho Page ID: $target_page_id.\n";
@@ -531,7 +601,7 @@ foreach ($pending_posts as $post) {
     // ──────────────────────────────────────────────────────────────────────────
 
     // 3. Fetch Page Access Token
-    $page_stmt = $pdo->prepare("SELECT access_token, name FROM pages WHERE page_id = ?");
+    $page_stmt = $pdo->prepare("SELECT access_token, name, user_id FROM pages WHERE page_id = ?");
     $page_stmt->execute([$post['page_id']]);
     $page = $page_stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -542,6 +612,21 @@ foreach ($pending_posts as $post) {
 
     $page_access_token = decryptData($page['access_token']);
     $fanpage_name = isset($page['name']) ? $page['name'] : '';
+
+    // Khởi tạo Lock dựa trên token. Chỉ 1 process cùng token được chạy qua đoạn này tại 1 thời điểm.
+    $token_user_id = $page['user_id'] ?? 0;
+    $acc_id = $page['account_id'] ?? $post['account_id'] ?? 0;
+    
+    $delay_sec = 15;
+    if ($acc_id > 0) {
+        try {
+            $stmt_d = $pdo->prepare("SELECT post_delay_seconds FROM system_accounts WHERE id = ?");
+            $stmt_d->execute([$acc_id]);
+            $d = $stmt_d->fetchColumn();
+            if ($d !== false) $delay_sec = (int)$d;
+        } catch (Exception $ed) {}
+    }
+    $locker = new TokenLocker($token_user_id, $delay_sec);
 
     // 4. Prepare payload
     $endpoint = '';

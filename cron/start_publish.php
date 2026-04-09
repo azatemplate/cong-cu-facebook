@@ -4,10 +4,21 @@
 
 require_once __DIR__ . '/../includes/db.php';
 
-// ── BUOC 1: Reset bai bi ket o 'processing' qua 10 phut ve 'pending' ─────────
+// Auto-migrate newly required columns in case the user missed accessing settings.php
+try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");
+} catch (Exception $e) {}
+try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN retry_interval_minutes INT DEFAULT 1");
+} catch (Exception $e) {}
+try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
+} catch (Exception $e) {}
+
+// ── BUOC 1: Reset bai bi ket o 'processing' qua 1 phut ve 'pending' ─────────
 // Giai quyet truong hop worker crash ma khong release status
 try {
-    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND scheduled_time <= DATE_SUB(NOW(), INTERVAL 10 MINUTE)");
+    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND scheduled_time <= DATE_SUB(NOW(), INTERVAL 1 MINUTE)");
     if ($stuck_count > 0) {
         echo "  [RESET] Da reset $stuck_count bai bi stuck 'processing' => 'pending'.\n";
     }
@@ -15,24 +26,29 @@ try {
     echo "Loi reset stuck posts: " . $e->getMessage() . "\n";
 }
 
-// Tìm các page có bài cần đăng: pending HOẶC failed còn retry (retry_count < max từ settings)
-$max_retries = 3;
-try {
-    $mr = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key='max_retries'");
-    if ($mr) $max_retries = (int)($mr->fetchColumn() ?: 3);
-} catch (Exception $e) {}
-
-$stmt = $pdo->prepare("
-    SELECT DISTINCT page_id FROM scheduled_posts
-    WHERE scheduled_time <= NOW()
-      AND page_id IS NOT NULL
+// Tìm các page có bài cần đăng: pending HOẶC failed còn retry (retry_count < max từ accounts)
+$sql = "
+    SELECT DISTINCT sp.page_id 
+    FROM scheduled_posts sp
+    LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+    WHERE sp.scheduled_time <= NOW()
+      AND sp.page_id IS NOT NULL
       AND (
-        status = 'pending'
-        OR (status = 'failed' AND (retry_count IS NULL OR retry_count < ?))
+        sp.status = 'pending'
+        OR (sp.status = 'failed' AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3)))
       )
-");
-$stmt->execute([$max_retries]);
+";
+$stmt = $pdo->prepare($sql);
+if (!$stmt) {
+    file_put_contents(__DIR__ . '/cron_debug.log', date('Y-m-d H:i:s') . " - Prepare SQL Error: " . print_r($pdo->errorInfo(), true) . "\n", FILE_APPEND);
+    echo "Loi prepare SQL"; exit;
+}
+if (!$stmt->execute()) {
+    file_put_contents(__DIR__ . '/cron_debug.log', date('Y-m-d H:i:s') . " - Execute SQL Error: " . print_r($stmt->errorInfo(), true) . "\n", FILE_APPEND);
+    echo "Loi execute SQL"; exit;
+}
 $pages = $stmt->fetchAll(PDO::FETCH_COLUMN);
+file_put_contents(__DIR__ . '/cron_debug.log', date('Y-m-d H:i:s') . " - SQL Hoan tat. So page can dang: " . count($pages) . ". So ban ghi: " . count($pages) . "\n", FILE_APPEND);
 
 if (empty($pages)) {
     echo "Khong co Fanpage nao can dang tai.\n";
