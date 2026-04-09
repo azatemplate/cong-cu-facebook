@@ -113,6 +113,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
     $response = fb_api_request($endpoint, $params, 'GET');
 
+    $target_conv_id = $_GET['target_conv_id'] ?? '';
+    $target_sender_id = $_GET['target_sender_id'] ?? '';
+
+    if (($target_conv_id || $target_sender_id) && !$after && $response['status_code'] === 200) {
+        $single_data = null;
+        if ($target_conv_id) {
+            $single_res = fb_api_request($target_conv_id, [
+                'fields' => 'id,updated_time,unread_count,tags{name},participants{id,name,email,custom_labels},messages.limit(5){message,from}',
+                'access_token' => $page_access_token
+            ], 'GET');
+            if (isset($single_res['data']['id'])) {
+                $single_data = $single_res['data'];
+            }
+        } elseif ($target_sender_id) {
+            $single_res = fb_api_request($page_id . '/conversations', [
+                'user_id' => $target_sender_id,
+                'fields' => 'id,updated_time,unread_count,tags{name},participants{id,name,email,custom_labels},messages.limit(5){message,from}',
+                'access_token' => $page_access_token
+            ], 'GET');
+            if (!empty($single_res['data']['data'][0])) {
+                $single_data = $single_res['data']['data'][0];
+            }
+        }
+
+        if ($single_data) {
+            $data_arr = $response['data']['data'] ?? [];
+            $found = false;
+            foreach ($data_arr as $c) {
+                if (isset($c['id']) && $c['id'] === $single_data['id']) { $found = true; break; }
+            }
+            if (!$found) {
+                array_unshift($data_arr, $single_data);
+                $response['data']['data'] = $data_arr;
+            }
+        }
+    }
+
     if ($response['status_code'] === 200) {
         $next_cursor = '';
         if (isset($response['data']['paging']['cursors']['after'])) {

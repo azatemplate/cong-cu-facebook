@@ -401,9 +401,15 @@ function loadConversations(append = false) {
         }
     }
 
-    let url = 'actions/get_conversations.php?page_id=' + currentPageId + '&user_id=' + currentUserId;
+    let targetParams = '';
+    if (!append) {
+        if (selectedConvId) targetParams += '&target_conv_id=' + selectedConvId;
+        if (selectedSenderId) targetParams += '&target_sender_id=' + selectedSenderId;
+    }
+
+    let url = 'actions/get_conversations.php?page_id=' + currentPageId + '&user_id=' + currentUserId + targetParams;
     if (isMergedChat) {
-        url = 'actions/get_conversations.php?merge_all=1';
+        url = 'actions/get_conversations.php?merge_all=1' + targetParams;
         if (append) url += '&append=1';
     } else if (append && convCursor) {
         url += '&after=' + convCursor;
