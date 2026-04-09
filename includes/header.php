@@ -241,6 +241,14 @@ require_once __DIR__ . '/fb_api.php';
                                     if (cn.snippet && cn.snippet.includes('✅')) isSuccess = true;
                                     else if (cn.snippet && cn.snippet.includes('❌')) isError = true;
                                     
+                                    // Thử extract ID bài viết từ text (VD: "Đã bình luận bài 1458834319288390 đủ điều kiện")
+                                    if (cn.snippet) {
+                                        const match = cn.snippet.match(/bài\s+(\d+)/i) || cn.snippet.match(/video\s+(\d+)/i);
+                                        if (match && match[1]) {
+                                            targetPostId = match[1];
+                                        }
+                                    }
+                                    
                                     contentHtml = `<div style="margin-top:4px;line-height:1.5;">
                                         <div>&bull; Fanpage: ${cn.page_name}</div>
                                         <div style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">&bull; Hệ thống: ${cn.snippet}</div>
