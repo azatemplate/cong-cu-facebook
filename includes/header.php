@@ -169,19 +169,66 @@ require_once __DIR__ . '/fb_api.php';
                         function renderNotifItem(cn) {
                             const isMsg = cn.type === 'message';
                             const isInsight = cn.type === 'insights_comment';
-                            const icon  = isInsight ? '📊' : (isMsg ? '💬' : '📝');
                             let link;
                             if (isInsight) {
                                 link = `manage_posts.php`;
                             } else if (isMsg) {
-                                link = `live_chat.php?page_id=${cn.page_id}&conv_id=${cn.conversation_id || ''}`;
+                                link = `live_chat.php?page_id=${cn.page_id}&conv_id=${cn.conversation_id || ''}&sender_id=${cn.sender_id || ''}`;
                             } else {
                                 link = `live_comments.php?page_id=${cn.page_id}&post_id=${cn.post_id || ''}`;
                             }
-                            const name  = cn.sender_name || 'Khách hàng';
                             const bgColor = isInsight ? '#f0fdf4' : '#f0f9ff';
                             const hoverColor = isInsight ? '#dcfce7' : '#e0f2fe';
-                            const nameColor = isInsight ? '#15803d' : '#0369a1';
+                            const name  = cn.sender_name || 'Khách hàng';
+                            
+                            if (isInsight) {
+                                let snippetData;
+                                let isSuccess = false;
+                                let isError = false;
+                                let contentHtml = '';
+                                
+                                try {
+                                    snippetData = JSON.parse(cn.snippet);
+                                    if (snippetData.type === 'success') {
+                                        isSuccess = true;
+                                        contentHtml = `<div style="margin-top:4px;line-height:1.5;">
+                                            <div>&bull; Fanpage: ${cn.page_name}</div>
+                                            <div>&bull; Video: ${snippetData.video_id}</div>
+                                            <div style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;" title='${snippetData.content.replace(/'/g, "&#39;")}'>&bull; Nội dung: "${snippetData.content}"</div>
+                                        </div>`;
+                                    } else if (snippetData.type === 'error') {
+                                        isError = true;
+                                        contentHtml = `<div style="margin-top:4px;line-height:1.5;">
+                                            <div>&bull; Fanpage: ${cn.page_name}</div>
+                                            <div>&bull; Video: ${snippetData.video_id}</div>
+                                            <div style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">&bull; Lỗi: ${snippetData.error}</div>
+                                        </div>`;
+                                    }
+                                } catch(e) {
+                                    // Fallback cho text cũ
+                                    if (cn.snippet && cn.snippet.includes('✅')) isSuccess = true;
+                                    else if (cn.snippet && cn.snippet.includes('❌')) isError = true;
+                                    
+                                    contentHtml = `<div style="margin-top:4px;line-height:1.5;">
+                                        <div>&bull; Fanpage: ${cn.page_name}</div>
+                                        <div style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">&bull; Hệ thống: ${cn.snippet}</div>
+                                    </div>`;
+                                }
+
+                                const titleText = isSuccess ? '✅ [COMMENT SUCCESS]' : (isError ? '❌ [COMMENT ERROR]' : '📊 [REPORT]');
+                                const titleColor = isSuccess ? '#15803d' : (isError ? '#b91c1c' : '#15803d');
+
+                                return `<div onclick="readNotif('${cn.id}','${link}')" style="cursor:pointer;padding:10px;margin-bottom:4px;background:${bgColor};border-radius:6px;transition:background 0.2s;" onmouseover="this.style.background='${hoverColor}'" onmouseout="this.style.background='${bgColor}'">
+                                    <div style="font-weight:bold;color:${titleColor};font-size:13px;margin-bottom:2px;">${titleText}</div>
+                                    <div style="font-size:12px;color:#334155;">
+                                        ${contentHtml}
+                                    </div>
+                                    <div style="font-size:10px;color:#9ca3af;margin-top:6px;">${cn.created_at}</div>
+                                </div>`;
+                            }
+
+                            const icon  = isMsg ? '💬' : '📝';
+                            const nameColor = '#0369a1';
                             return `<div onclick="readNotif('${cn.id}','${link}')" style="cursor:pointer;display:flex;gap:8px;padding:8px;margin-bottom:4px;background:${bgColor};border-radius:6px;transition:background 0.2s;" onmouseover="this.style.background='${hoverColor}'" onmouseout="this.style.background='${bgColor}'">
                                 <div style="font-size:16px;">${icon}</div>
                                 <div style="flex:1;min-width:0;">

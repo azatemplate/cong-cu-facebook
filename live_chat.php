@@ -26,6 +26,7 @@ $pages_json = json_encode($pages);
 
 $selected_page_id = $_GET['page_id'] ?? '';
 $selected_conv_id = $_GET['conv_id'] ?? '';
+$selected_sender_id = $_GET['sender_id'] ?? '';
 ?>
 
 <div class="page-title">💬 Live Chat & Tin Nhắn</div>
@@ -268,7 +269,8 @@ const phoneRegex   = /(03|05|07|08|09)+([0-9]{8})\b/;
 // active state
 let currentPageId = '<?php echo $selected_page_id; ?>';
 let currentUserId = '';
-let selectedConvId= '<?php echo $selected_conv_id; ?>';
+let selectedConvId = '<?php echo $selected_conv_id; ?>';
+let selectedSenderId = '<?php echo $selected_sender_id; ?>';
 let isMergedChat = false;
 
 // ── Tag class helper ──────────────────────────────────────────────────────
@@ -421,13 +423,20 @@ function loadConversations(append = false) {
                 renderConversations();
                 
                 // Auto-open if redirected via query params
-                if (selectedConvId && !append) {
-                    const convTab = Array.from(document.querySelectorAll('.conv-item')).find(el => el.dataset.id === selectedConvId);
+                if ((selectedConvId || selectedSenderId) && !append) {
+                    let convTab;
+                    if (selectedConvId) {
+                        convTab = Array.from(document.querySelectorAll('.conv-item')).find(el => el.dataset.id === selectedConvId);
+                    }
+                    if (!convTab && selectedSenderId) {
+                        convTab = Array.from(document.querySelectorAll('.conv-item')).find(el => el.dataset.senderId === selectedSenderId);
+                    }
                     if (convTab) {
                         convTab.click();
                         convTab.scrollIntoView({ block:'nearest' });
                     }
                     selectedConvId = ''; // Reset flag
+                    selectedSenderId = '';
                 }
             } else {
                 if (!append) convList.innerHTML = '<div style="padding:16px;color:red;font-size:12px;">' + (data.msg||'Lỗi tải') + '</div>';
@@ -523,6 +532,7 @@ function renderConversations() {
         div.className = 'conv-item' + (isUnread ? ' conv-unread' : '');
         if (activeConvId.value === conv.id) div.classList.add('active');
         div.dataset.id = conv.id;
+        div.dataset.senderId = senderId;
         div.innerHTML = `
             <div style="font-size:13px;margin-bottom:3px;">${pagePrefix}${senderName}${isUnread ? '<span class="unread-dot"></span>': ''}</div>
             <div style="font-size:11px;color:${isUnread?'#111':'#6b7280'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${snippet}</div>

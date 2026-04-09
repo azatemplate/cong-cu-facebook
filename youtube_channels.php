@@ -1,6 +1,13 @@
 <?php
-$current_page = 'youtube_channels';
-require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/db.php';
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+if (!isset($_SESSION['account_id'])) {
+    header("Location: login.php");
+    exit;
+}
 
 $account_id = $_SESSION['account_id'];
 
@@ -11,6 +18,9 @@ if (isset($_GET['delete'])) {
     header("Location: youtube_channels.php");
     exit;
 }
+
+$current_page = 'youtube_channels';
+require_once __DIR__ . '/includes/header.php';
 
 $stmt = $pdo->prepare("SELECT * FROM youtube_channels WHERE account_id = ? ORDER BY created_at DESC");
 $stmt->execute([$account_id]);
@@ -63,7 +73,7 @@ $channels = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <?php echo date('d/m/Y H:i', strtotime($channel['created_at'])); ?>
                         </td>
                         <td style="padding: 12px; border-bottom: 1px solid var(--border-color); text-align: right;">
-                            <a href="youtube_channels.php?delete=<?php echo $channel['id']; ?>" class="btn btn-danger" style="padding: 4px 8px; font-size: 13px;" onclick="return confirm('Bạn có chắc xoá kênh này khỏi hệ thống? (Việc này không can thiệp vào tài khoản Youtube của bạn)')">Xóa kênh</a>
+                            <a href="youtube_channels.php?delete=<?php echo $channel['id']; ?>" class="btn btn-danger" style="padding: 4px 8px; font-size: 13px;">Xóa kênh</a>
                         </td>
                     </tr>
                 <?php endforeach; ?>

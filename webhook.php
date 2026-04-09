@@ -67,11 +67,33 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                     $sender_id = $messaging_event['sender']['id'];
                     $text = $messaging_event['message']['text'] ?? 'Đã gửi một tệp đính kèm';
                     
-                    // Lấy tên người gửi qua Graph API (nếu có token) - Tạm bỏ qua để tối ưu tốc độ webhook
+                    // Lấy tên người gửi qua Graph API
+                    $sender_name = null;
+                    try {
+                        $ts = $pdo->prepare("SELECT access_token FROM pages WHERE page_id = ?");
+                        $ts->execute([$page_id]);
+                        if ($page = $ts->fetch(PDO::FETCH_ASSOC)) {
+                            $page_token = decryptData($page['access_token']);
+                            if ($page_token) {
+                                $profile_res = fb_api_request($sender_id, ['fields' => 'name', 'access_token' => $page_token]);
+                                webhook_log("API Profile Res for $sender_id: " . json_encode($profile_res));
+                                if ($profile_res['status_code'] === 200 && !empty($profile_res['data']['name'])) {
+                                    $sender_name = $profile_res['data']['name'];
+                                }
+                            } else {
+                                webhook_log("No decrypted token for page $page_id");
+                            }
+                        } else {
+                            webhook_log("No page found for $page_id");
+                        }
+                    } catch (Exception $e) {
+                        webhook_log("Exception in profile fetch: " . $e->getMessage());
+                    }
+
                     // Lưu trực tiếp vào Database
                     try {
-                        $stmt = $pdo->prepare("INSERT INTO page_notifications (page_id, type, sender_id, snippet) VALUES (?, 'message', ?, ?)");
-                        $r = $stmt->execute([$page_id, $sender_id, $text]);
+                        $stmt = $pdo->prepare("INSERT INTO page_notifications (page_id, type, sender_id, sender_name, snippet) VALUES (?, 'message', ?, ?, ?)");
+                        $r = $stmt->execute([$page_id, $sender_id, $sender_name, $text]);
                         webhook_log("MSG INSERT: page=$page_id sender=$sender_id result=" . ($r ? 'OK id='.$pdo->lastInsertId() : 'FAIL'));
                     } catch (Exception $e) { webhook_log('MSG DB ERR: ' . $e->getMessage()); }
                 }

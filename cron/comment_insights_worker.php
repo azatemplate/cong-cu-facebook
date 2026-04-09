@@ -288,7 +288,11 @@ foreach ($rows as $row) {
 
         // Gửi thông báo lên chuông (bell notification)
         try {
-            $notif_snippet = "✅ Đã bình luận bài {$fb_post_id} đủ điều kiện (👁{$current_views} 👍{$current_likes} 💬{$current_comments_count})";
+            $notif_snippet = json_encode([
+                'type' => 'success',
+                'video_id' => $fb_post_id,
+                'content' => $comment_text
+            ], JSON_UNESCAPED_UNICODE);
             $pdo->prepare("INSERT INTO page_notifications (page_id, type, sender_name, snippet, post_id, comment_id) VALUES (?, 'insights_comment', 'Hệ thống', ?, ?, ?)")
                 ->execute([$row['page_id'], $notif_snippet, $fb_post_id, $response['data']['id']]);
         } catch (Exception $e) {
@@ -302,7 +306,11 @@ foreach ($rows as $row) {
 
         // Gửi thông báo lỗi lên chuông
         try {
-            $notif_err_snippet = "❌ Lỗi bình luận bài {$fb_post_id}: " . mb_strimwidth($err, 0, 100, '…');
+            $notif_err_snippet = json_encode([
+                'type' => 'error',
+                'video_id' => $fb_post_id,
+                'error' => mb_strimwidth($err, 0, 100, '…')
+            ], JSON_UNESCAPED_UNICODE);
             $pdo->prepare("INSERT INTO page_notifications (page_id, type, sender_name, snippet, post_id) VALUES (?, 'insights_comment', 'Hệ thống', ?, ?)")
                 ->execute([$row['page_id'], $notif_err_snippet, $fb_post_id]);
         } catch (Exception $e) {}
