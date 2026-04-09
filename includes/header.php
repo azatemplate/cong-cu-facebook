@@ -47,6 +47,11 @@ require_once __DIR__ . '/fb_api.php';
                             <span>Thông báo</span>
                             <span id="notif_count_label" style="font-size: 11px; background: #fee2e2; color: #dc2626; padding: 2px 6px; border-radius: 10px; display:none;">0 mới</span>
                         </div>
+                        <div id="notif_tabs" style="display:flex; gap: 10px; margin-bottom: 10px; font-size: 12px; font-weight: 500; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+                            <span class="notif-tab active" data-tab="unread" style="cursor: pointer; padding: 4px 8px; border-radius: 4px; background: #0ea5e9; color: white;">Chưa đọc</span>
+                            <span class="notif-tab" data-tab="all" style="cursor: pointer; padding: 4px 8px; border-radius: 4px; color: var(--text-muted); background: transparent;">Tất cả</span>
+                            <span class="notif-tab" data-tab="read" style="cursor: pointer; padding: 4px 8px; border-radius: 4px; color: var(--text-muted); background: transparent;">Đã đọc</span>
+                        </div>
                         <div id="notif_content" style="font-size: 13px; color: var(--text-muted);">
                             <div style="text-align:center; padding:15px; color:#9ca3af;">Đang tải...</div>
                         </div>
@@ -142,6 +147,7 @@ require_once __DIR__ . '/fb_api.php';
                         let notifHasMore   = false;
                         let notifLoading   = false;
                         let notifInitDone  = false; // đã render lần đầu chưa
+                        let currentNotifTab = 'unread';
 
                         notifToggle.addEventListener('click', (e) => {
                             e.stopPropagation();
@@ -152,11 +158,43 @@ require_once __DIR__ . '/fb_api.php';
                                 notifOffset   = 0;
                                 notifHasMore  = false;
                                 notifInitDone = false;
+                                currentNotifTab = 'unread';
+                                document.querySelectorAll('.notif-tab').forEach(t => {
+                                    if(t.dataset.tab === currentNotifTab) {
+                                        t.classList.add('active');
+                                        t.style.background = '#0ea5e9';
+                                        t.style.color = 'white';
+                                    } else {
+                                        t.classList.remove('active');
+                                        t.style.background = 'transparent';
+                                        t.style.color = 'var(--text-muted)';
+                                    }
+                                });
                                 notifContent.innerHTML = '<div style="text-align:center;padding:15px;color:#9ca3af;">Đang tải...</div>';
                                 loadNotifications();
                             } else {
                                 notifDropdown.style.display = 'none';
                             }
+                        });
+
+                        document.querySelectorAll('.notif-tab').forEach(tabEl => {
+                            tabEl.addEventListener('click', function(e) {
+                                e.stopPropagation();
+                                document.querySelectorAll('.notif-tab').forEach(t => {
+                                    t.classList.remove('active');
+                                    t.style.background = 'transparent';
+                                    t.style.color = 'var(--text-muted)';
+                                });
+                                this.classList.add('active');
+                                this.style.background = '#0ea5e9';
+                                this.style.color = 'white';
+
+                                currentNotifTab = this.dataset.tab;
+                                notifOffset = 0;
+                                notifHasMore = false;
+                                notifContent.innerHTML = '<div style="text-align:center;padding:15px;color:#9ca3af;">Đang tải...</div>';
+                                loadNotifications();
+                            });
                         });
 
                         document.addEventListener('click', (e) => {
@@ -255,7 +293,7 @@ require_once __DIR__ . '/fb_api.php';
                                 }
                             }
 
-                            fetch('actions/get_notifications.php?offset=' + notifOffset)
+                            fetch('actions/get_notifications.php?offset=' + notifOffset + '&tab=' + currentNotifTab)
                             .then(r => r.json())
                             .then(data => {
                                 notifLoading = false;
@@ -354,7 +392,7 @@ require_once __DIR__ . '/fb_api.php';
 
                         // Polling badge mỗi 15s (không reset dropdown đang mở)
                         function pollBadge() {
-                            fetch('actions/get_notifications.php?offset=0')
+                            fetch('actions/get_notifications.php?offset=0&tab=unread')
                             .then(r => r.json())
                             .then(data => {
                                 if (data.status !== 'success') return;
@@ -364,6 +402,12 @@ require_once __DIR__ . '/fb_api.php';
                                     notifBadge.innerText = total > 9 ? '9+' : total;
                                 } else if (total === 0) {
                                     notifBadge.style.display = 'none';
+                                }
+                                if (total > 0) {
+                                    notifCountLabel.innerText = total + ' mới';
+                                    notifCountLabel.style.display = 'inline-block';
+                                } else {
+                                    notifCountLabel.style.display = 'none';
                                 }
                             }).catch(() => {});
                         }

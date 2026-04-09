@@ -57,6 +57,15 @@ try {
         // làm block các query khác trên bảng page_notifications
     } catch (Exception $e) {}
 
+    // Determine filter
+    $tab = $_GET['tab'] ?? 'unread'; // default unread for badge consistency, but frontend will control this
+    $read_condition = "";
+    if ($tab === 'unread') {
+        $read_condition = "AND n.is_read = 0";
+    } elseif ($tab === 'read') {
+        $read_condition = "AND n.is_read = 1";
+    }
+
     // Fetch limit+1 để biết còn thêm hay không
     $fetch_limit = $limit + 1;
     $stmt2 = $pdo->prepare("
@@ -70,7 +79,7 @@ try {
                 SELECT 1 FROM page_shares ps
                 WHERE ps.page_id = p.page_id AND ps.shared_with_account_id = ?
             )
-        ) AND n.is_read = 0
+        ) {$read_condition}
         ORDER BY n.created_at DESC
         LIMIT {$fetch_limit} OFFSET {$offset}
     ");
