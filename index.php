@@ -4,121 +4,23 @@ require_once __DIR__ . '/includes/header.php';
 
 $account_id = $_SESSION['account_id'];
 $is_admin = ($_SESSION['role'] === 'admin');
-
-// Date Filter Logic - Hardcoded to 'days_28' as per request
 $period = 'days_28';
 
-// We still need a start and end datetime for the SQL queries (Users, Pages connected in the period)
 $end_date = date('Y-m-d');
-if ($period === 'day') {
-    $start_date = date('Y-m-d', strtotime('-1 days'));
-} elseif ($period === 'week') {
-    $start_date = date('Y-m-d', strtotime('-7 days'));
-} elseif ($period === 'days_28') {
-    $start_date = date('Y-m-d', strtotime('-28 days'));
-} elseif ($period === 'month') {
-    $start_date = date('Y-m-d', strtotime('-30 days'));
-} elseif ($period === 'lifetime') {
-    $start_date = date('Y-m-d', strtotime('-90 days')); // Graph API allows up to 93 days normally for insights if no lifetime metric is specific
-}
+$start_date = date('Y-m-d', strtotime('-28 days'));
 
-$start_datetime = $start_date . ' 00:00:00';
-$end_datetime = $end_date . ' 23:59:59';
+$sub_msg = $is_admin 
+    ? "🛡 Super Admin — Global View · Auto-Sync 12PM ICT" 
+    : "👤 User View — Hiển thị dữ liệu của riêng bạn";
 
-// Get Dashboard Data
-// Note: total_pages/total_followers = ALL-TIME totals, not filtered by period
-// (period filter only applies to "new users joined in period" stat)
-
-$cache_dir = __DIR__ . '/uploads/cache';
-if (!is_dir($cache_dir)) {
-    @mkdir($cache_dir, 0777, true);
-}
-$cache_file_key = $is_admin ? "admin_{$period}" : "user_{$account_id}_{$period}";
-$cache_file_path = $cache_dir . "/dashboard_" . $cache_file_key . ".json";
-
-$dashboard_data = null;
-if (file_exists($cache_file_path) && (time() - filemtime($cache_file_path)) < 7200) { // Cache 2 giờ
-    $dashboard_data = json_decode(file_get_contents($cache_file_path), true);
-}
-
-if ($dashboard_data && is_array($dashboard_data)) {
-    extract($dashboard_data);
-} else {
-    // === 1. Fetch DB Metrics ===
-    if ($is_admin) {
-        $stmt = $pdo->prepare("SELECT COUNT(*) as total_users FROM users WHERE created_at BETWEEN ? AND ?");
-        $stmt->execute([$start_datetime, $end_datetime]);
-
-        $stmt2 = $pdo->query("SELECT COUNT(id) as total_pages, SUM(followers_count) as total_followers FROM pages");
-
-        $stmt3 = $pdo->query("SELECT pages.*, users.name as user_name FROM pages JOIN users ON pages.user_id = users.id ORDER BY pages.created_at DESC LIMIT 10");
-        
-        $stmt_reels = $pdo->query("SELECT COUNT(id) as total_reels, SUM(IF(status = 'failed', 1, 0)) as failed_reels FROM scheduled_posts WHERE post_type = 'Reel' AND DATE(scheduled_time) = CURDATE()");
-
-        $sub_msg = "🛡 Super Admin — Global View · Auto-Sync 12PM ICT";
-    } else {
-        $stmt = $pdo->prepare("SELECT COUNT(*) as total_users FROM users WHERE account_id = ? AND created_at BETWEEN ? AND ?");
-        $stmt->execute([$account_id, $start_datetime, $end_datetime]);
-
-        $stmt2 = $pdo->prepare("
-            SELECT COUNT(DISTINCT combined.id) as total_pages, SUM(combined.followers_count) as total_followers
-            FROM (
-                SELECT p.id, p.followers_count
-                FROM pages p JOIN users u ON p.user_id = u.id
-                WHERE u.account_id = :aid
-                UNION
-                SELECT p.id, p.followers_count
-                FROM pages p JOIN page_shares ps ON p.page_id = ps.page_id
-                WHERE ps.shared_with_account_id = :aid2
-            ) as combined
-        ");
-        $stmt2->execute(['aid' => $account_id, 'aid2' => $account_id]);
-
-        $stmt3 = $pdo->prepare("
-            (SELECT p.*, u.name as user_name
-             FROM pages p JOIN users u ON p.user_id = u.id
-             WHERE u.account_id = :aid3)
-            UNION
-            (SELECT p.*, u.name as user_name
-             FROM pages p
-             JOIN page_shares ps ON p.page_id = ps.page_id
-             JOIN users u ON p.user_id = u.id
-             WHERE ps.shared_with_account_id = :aid4)
-            ORDER BY created_at DESC LIMIT 10
-        ");
-        $stmt3->execute(['aid3' => $account_id, 'aid4' => $account_id]);
-        
-        $stmt_reels = $pdo->prepare("SELECT COUNT(id) as total_reels, SUM(IF(status = 'failed', 1, 0)) as failed_reels FROM scheduled_posts WHERE account_id = ? AND post_type = 'Reel' AND DATE(scheduled_time) = CURDATE()");
-        $stmt_reels->execute([$account_id]);
-
-        $sub_msg = "👤 User View — Hiển thị dữ liệu của riêng bạn";
-    }
-
-    $total_users = $stmt->fetchColumn();
-
-    $pages_data = $stmt2->fetch(PDO::FETCH_ASSOC);
-    $total_pages = $pages_data['total_pages'] ?: 0;
-    $total_followers = $pages_data['total_followers'] ?: 0;
-
-    $recent_pages = $stmt3->fetchAll(PDO::FETCH_ASSOC);
-
-    $reels_data = $stmt_reels->fetch(PDO::FETCH_ASSOC);
-    $total_reels_today = $reels_data['total_reels'] ?: 0;
-    $failed_reels_today = $reels_data['failed_reels'] ?: 0;
-    
-    // API Insights and Snapshot now computed asynchronously in actions/ajax_dashboard_metrics.php
-}
-
+// ── Chart data from snapshots (lightweight DB query, always fast) ────────────
 $snap_account_id = $is_admin ? 0 : $account_id;
 $today_date = date('Y-m-d');
-
-// === Build 7-day chart data from snapshots ===
 $chart_days = [];
 for ($i = 6; $i >= 0; $i--) {
     $chart_days[] = date('Y-m-d', strtotime("-$i days"));
 }
 
-// Fetch existing snapshots for the last 7 days
 $snap_map = [];
 try {
     $snap_stmt = $pdo->prepare("
@@ -133,7 +35,6 @@ try {
     }
 } catch (Exception $e) { /* ignore */ }
 
-// Build arrays: fill gaps with null so chart shows gaps naturally
 $followers_chart_data = [];
 $reach_chart_data = [];
 $views_chart_data = [];
@@ -148,19 +49,6 @@ foreach ($chart_days as $day) {
         $views_chart_data[]     = null;
     }
 }
-
-$yesterday_date = date('Y-m-d', strtotime('-1 days'));
-$yest_followers = isset($snap_map[$yesterday_date]['total_followers']) ? intval($snap_map[$yesterday_date]['total_followers']) : 0;
-$followers_diff_pct = 0;
-if ($yest_followers > 0) {
-    $followers_diff_pct = round((($total_followers - $yest_followers) / $yest_followers) * 100, 1);
-} else if ($total_followers > 0) {
-    $followers_diff_pct = 100;
-}
-$followers_diff_html = $followers_diff_pct >= 0 
-    ? '<span style="color: #16a34a; font-size: 14px; margin-left:10px; font-weight: 500;">&uarr; ' . $followers_diff_pct . '%</span>'
-    : '<span style="color: #ef4444; font-size: 14px; margin-left:10px; font-weight: 500;">&darr; ' . abs($followers_diff_pct) . '%</span>';
-
 ?>
 
 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
@@ -180,16 +68,17 @@ $followers_diff_html = $followers_diff_pct >= 0
     </div>
 </div>
 
-<!-- Banner cảnh báo checkpoint - hiển thị động qua JS -->
+<!-- Banner cảnh báo checkpoint -->
 <div id="checkpoint-warning-banner"
     style="display:none; background:#fffbeb; border:1px solid #fde68a; border-left:4px solid #f59e0b; padding:12px 16px; border-radius:6px; margin-bottom:16px; font-size:13px; color:#78350f; line-height:1.6;">
 </div>
 
+<!-- Stats Grid: All values loaded via AJAX for instant page render -->
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-title">Connected Accounts (All Users)</div>
         <div class="stat-value color-primary" style="display:flex; align-items:center;">
-            <span class="icon" style="margin-right:10px;">👥</span> <?php echo number_format($total_users); ?>
+            <span class="icon" style="margin-right:10px;">👥</span> <span id="ajax-users">—</span>
         </div>
         <div class="stat-subtitle">Tổng tài khoản FB đã kết nối</div>
     </div>
@@ -197,20 +86,16 @@ $followers_diff_html = $followers_diff_pct >= 0
     <div class="stat-card">
         <div class="stat-title">Total Fanpages (All Users)</div>
         <div class="stat-value color-blue" style="display:flex; align-items:center;">
-            <span class="icon" style="margin-right:10px;">f</span> <?php echo number_format($total_pages); ?>
+            <span class="icon" style="margin-right:10px;">f</span> <span id="ajax-pages">—</span>
         </div>
         <div class="stat-subtitle">Tổng fanpage trên toàn hệ thống</div>
     </div>
-    
-    <?php
-    // Removed old fetch API block since it's cached above
-    ?>
 
     <div class="stat-card">
         <div class="stat-title">Total Reach (All Users)</div>
         <div class="stat-value color-red" style="display:flex; align-items:center; flex-wrap:wrap;">
             <span class="icon" style="margin-right:10px;">👁️</span> 
-            <span id="ajax-reach">Đang tải...</span> 
+            <span id="ajax-reach">—</span> 
             <span id="ajax-reach-diff" style="display:none;"></span>
         </div>
         <div class="stat-subtitle" style="margin-top: 10px;">Tổng reach từ page insights (<?php echo htmlspecialchars($period); ?>)</div>
@@ -220,8 +105,8 @@ $followers_diff_html = $followers_diff_pct >= 0
         <div class="stat-title">Total Flow (All Followers)</div>
         <div class="stat-value color-green" style="display:flex; align-items:center; flex-wrap:wrap;">
             <span class="icon" style="margin-right:10px;">👍</span> 
-            <?php echo number_format($total_followers); ?> 
-            <?php echo $followers_diff_html; ?>
+            <span id="ajax-followers">—</span>
+            <span id="ajax-followers-diff" style="display:none;"></span>
         </div>
         <div class="stat-subtitle" style="margin-top: 10px;">Tổng người theo dõi toàn bộ fanpage</div>
     </div>
@@ -229,12 +114,7 @@ $followers_diff_html = $followers_diff_pct >= 0
     <div class="stat-card">
         <div class="stat-title">Reels Uploaded Today (All Users)</div>
         <div class="stat-value color-orange" style="display:flex; align-items:center; color: #f97316;">
-            <span class="icon" style="margin-right:10px;">📹</span> <?php echo number_format($total_reels_today); ?> 
-            <?php if ($failed_reels_today > 0): ?>
-            <span style="font-size:14px; color:#ef4444; margin-left:10px; font-weight: 500;">(<?php echo $failed_reels_today; ?> failed)</span>
-            <?php else: ?>
-            <span style="font-size:14px; color:var(--text-muted); margin-left:10px; font-weight: normal;">(0 failed)</span>
-            <?php endif; ?>
+            <span class="icon" style="margin-right:10px;">📹</span> <span id="ajax-reels">—</span>
         </div>
         <div class="stat-subtitle">Tổng reels đã upload hôm nay (giờ VN)</div>
     </div>
@@ -243,34 +123,72 @@ $followers_diff_html = $followers_diff_pct >= 0
         <div class="stat-title">Total Views (All Users)</div>
         <div class="stat-value color-purple" style="display:flex; align-items:center; color: #8b5cf6; flex-wrap:wrap;">
             <span class="icon" style="margin-right:10px;">▶</span> 
-            <span id="ajax-views">Đang tải...</span> 
+            <span id="ajax-views">—</span> 
             <span id="ajax-views-diff" style="display:none;"></span>
         </div>
         <div class="stat-subtitle" style="margin-top: 10px;">Tổng views video/reels theo dữ liệu (<?php echo htmlspecialchars($period); ?>)</div>
     </div>
 </div>
 
+<!-- AJAX: Load all dashboard metrics asynchronously -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // 1. Fast DB metrics (users, pages, followers, reels) — should return in <100ms
+    fetch('actions/ajax_dashboard_db.php')
+        .then(res => res.json())
+        .then(data => {
+            if (data.total_users !== undefined) document.getElementById('ajax-users').textContent = Number(data.total_users).toLocaleString();
+            if (data.total_pages !== undefined) document.getElementById('ajax-pages').textContent = Number(data.total_pages).toLocaleString();
+            if (data.total_followers !== undefined) document.getElementById('ajax-followers').textContent = Number(data.total_followers).toLocaleString();
+            if (data.followers_diff_html) {
+                document.getElementById('ajax-followers-diff').innerHTML = data.followers_diff_html;
+                document.getElementById('ajax-followers-diff').style.display = 'inline';
+            }
+            if (data.total_reels_today !== undefined) {
+                let reelsText = Number(data.total_reels_today).toLocaleString();
+                if (data.failed_reels_today > 0) {
+                    reelsText += ' <span style="font-size:14px; color:#ef4444; margin-left:10px; font-weight: 500;">(' + data.failed_reels_today + ' failed)</span>';
+                } else {
+                    reelsText += ' <span style="font-size:14px; color:var(--text-muted); margin-left:10px; font-weight: normal;">(0 failed)</span>';
+                }
+                document.getElementById('ajax-reels').innerHTML = reelsText;
+            }
+            // Load recent pages table
+            if (data.recent_pages && data.recent_pages.length > 0) {
+                let html = '';
+                data.recent_pages.forEach(p => {
+                    html += `<tr>
+                        <td style="color: var(--text-muted); font-size: 12px;">${p.page_id}</td>
+                        <td style="font-weight: 500; color: var(--primary-color);">${p.name}</td>
+                        <td><span class="status-tag">${p.category || ''}</span></td>
+                        <td style="font-weight: 600;">${Number(p.followers_count).toLocaleString()}</td>
+                        <td>${p.user_name}</td>
+                    </tr>`;
+                });
+                document.getElementById('recent-pages-body').innerHTML = html;
+            } else {
+                document.getElementById('recent-pages-body').innerHTML = '<tr><td colspan="5" style="text-align:center; color:#6b7280;">Chưa có Fanpage nào được tải. Vui lòng thêm Token.</td></tr>';
+            }
+        })
+        .catch(() => {
+            document.getElementById('ajax-users').textContent = 'Lỗi';
+            document.getElementById('ajax-pages').textContent = 'Lỗi';
+        });
+
+    // 2. Slow FB API metrics (reach, views) — may take several seconds
     fetch('actions/ajax_dashboard_metrics.php')
         .then(res => res.json())
         .then(data => {
-            if (data.reach_formatted) {
-                document.getElementById('ajax-reach').textContent = data.reach_formatted;
-            }
+            if (data.reach_formatted) document.getElementById('ajax-reach').textContent = data.reach_formatted;
             if (data.reach_diff_html) {
                 document.getElementById('ajax-reach-diff').innerHTML = data.reach_diff_html;
                 document.getElementById('ajax-reach-diff').style.display = 'inline';
             }
-            if (data.views_formatted) {
-                document.getElementById('ajax-views').textContent = data.views_formatted;
-            }
+            if (data.views_formatted) document.getElementById('ajax-views').textContent = data.views_formatted;
             if (data.views_diff_html) {
                 document.getElementById('ajax-views-diff').innerHTML = data.views_diff_html;
                 document.getElementById('ajax-views-diff').style.display = 'inline';
             }
-
-            // Hiển thị cảnh báo nếu có token bị checkpoint
             if (data.checkpointed_pages && data.checkpointed_pages > 0) {
                 var banner = document.getElementById('checkpoint-warning-banner');
                 if (banner) {
@@ -286,7 +204,6 @@ document.addEventListener('DOMContentLoaded', function() {
         .catch(err => {
             document.getElementById('ajax-reach').textContent = 'Lỗi API';
             document.getElementById('ajax-views').textContent = 'Lỗi API';
-            console.error('FB API Metrics error: ', err);
         });
 });
 </script>
@@ -375,7 +292,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
-
 });
 </script>
 
@@ -391,24 +307,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 <th>Tài khoản quản lý</th>
             </tr>
         </thead>
-        <tbody>
-            <?php if (count($recent_pages) > 0): ?>
-                <?php foreach ($recent_pages as $page): ?>
-                    <tr>
-                        <td style="color: var(--text-muted); font-size: 12px;"><?php echo htmlspecialchars($page['page_id']); ?></td>
-                        <td style="font-weight: 500; color: var(--primary-color);"><?php echo htmlspecialchars($page['name']); ?></td>
-                        <td><span class="status-tag"><?php echo htmlspecialchars($page['category']); ?></span></td>
-                        <td style="font-weight: 600;"><?php echo number_format($page['followers_count']); ?></td>
-                        <td><?php echo htmlspecialchars($page['user_name']); ?></td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <tr>
-                    <td colspan="5" style="text-align:center; color:#6b7280;">Chưa có Fanpage nào được tải. Vui lòng thêm Token.</td>
-                </tr>
-            <?php endif; ?>
+        <tbody id="recent-pages-body">
+            <tr><td colspan="5" style="text-align:center; color:#6b7280; padding:20px;">
+                <span style="display:inline-block; width:14px; height:14px; border:2px solid #e5e7eb; border-top-color:var(--primary-color); border-radius:50%; animation: spin 1s linear infinite;"></span>
+                Đang tải...
+            </td></tr>
         </tbody>
     </table>
 </div>
+<style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
 
 <?php include 'includes/footer.php'; ?>

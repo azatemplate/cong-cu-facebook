@@ -14,6 +14,9 @@ $account_id = $_SESSION['account_id'];
 $is_admin = ($_SESSION['role'] === 'admin');
 $period = 'days_28';
 
+// Giải phóng session lock sớm — cho phép ajax_dashboard_db.php chạy song song
+session_write_close();
+
 $end_date = date('Y-m-d');
 $start_date = date('Y-m-d', strtotime('-28 days'));
 
