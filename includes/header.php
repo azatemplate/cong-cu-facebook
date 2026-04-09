@@ -207,16 +207,7 @@ require_once __DIR__ . '/fb_api.php';
                         function renderNotifItem(cn) {
                             const isMsg = cn.type === 'message';
                             const isInsight = cn.type === 'insights_comment';
-                            let link;
-                            if (isInsight) {
-                                link = `manage_posts.php`;
-                            } else if (isMsg) {
-                                link = `live_chat.php?page_id=${cn.page_id}&conv_id=${cn.conversation_id || ''}&sender_id=${cn.sender_id || ''}`;
-                            } else {
-                                link = `live_comments.php?page_id=${cn.page_id}&post_id=${cn.post_id || ''}`;
-                            }
-                            const bgColor = isInsight ? '#f0fdf4' : '#f0f9ff';
-                            const hoverColor = isInsight ? '#dcfce7' : '#e0f2fe';
+                            
                             const name  = cn.sender_name || 'Khách hàng';
                             
                             if (isInsight) {
@@ -224,21 +215,24 @@ require_once __DIR__ . '/fb_api.php';
                                 let isSuccess = false;
                                 let isError = false;
                                 let contentHtml = '';
+                                let targetPostId = '';
                                 
                                 try {
                                     snippetData = JSON.parse(cn.snippet);
+                                    if (snippetData.video_id) targetPostId = snippetData.video_id;
+                                    
                                     if (snippetData.type === 'success') {
                                         isSuccess = true;
                                         contentHtml = `<div style="margin-top:4px;line-height:1.5;">
                                             <div>&bull; Fanpage: ${cn.page_name}</div>
-                                            <div>&bull; Video: ${snippetData.video_id}</div>
-                                            <div style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;" title='${snippetData.content.replace(/'/g, "&#39;")}'>&bull; Nội dung: "${snippetData.content}"</div>
+                                            <div>&bull; Hệ thống: ✅ Đã bình luận bài ${targetPostId} đủ điều kiện</div>
+                                            <div style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;" title='${snippetData.content.replace(/'/g, "&#39;")}'>&bull; B/L: "${snippetData.content}"</div>
                                         </div>`;
                                     } else if (snippetData.type === 'error') {
                                         isError = true;
                                         contentHtml = `<div style="margin-top:4px;line-height:1.5;">
                                             <div>&bull; Fanpage: ${cn.page_name}</div>
-                                            <div>&bull; Video: ${snippetData.video_id}</div>
+                                            <div>&bull; Video: ${targetPostId}</div>
                                             <div style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">&bull; Lỗi: ${snippetData.error}</div>
                                         </div>`;
                                     }
@@ -255,6 +249,10 @@ require_once __DIR__ . '/fb_api.php';
 
                                 const titleText = isSuccess ? '✅ [COMMENT SUCCESS]' : (isError ? '❌ [COMMENT ERROR]' : '📊 [REPORT]');
                                 const titleColor = isSuccess ? '#15803d' : (isError ? '#b91c1c' : '#15803d');
+                                const bgColor = '#f0fdf4';
+                                const hoverColor = '#dcfce7';
+                                
+                                let link = targetPostId ? `live_comments.php?page_id=${cn.page_id}&post_id=${targetPostId}` : 'manage_posts.php';
 
                                 return `<div onclick="readNotif('${cn.id}','${link}')" style="cursor:pointer;padding:10px;margin-bottom:4px;background:${bgColor};border-radius:6px;transition:background 0.2s;" onmouseover="this.style.background='${hoverColor}'" onmouseout="this.style.background='${bgColor}'">
                                     <div style="font-weight:bold;color:${titleColor};font-size:13px;margin-bottom:2px;">${titleText}</div>
@@ -264,6 +262,17 @@ require_once __DIR__ . '/fb_api.php';
                                     <div style="font-size:10px;color:#9ca3af;margin-top:6px;">${cn.created_at}</div>
                                 </div>`;
                             }
+
+                            let link = '';
+                            if (isMsg) {
+                                link = `live_chat.php?page_id=${cn.page_id}&conv_id=${cn.conversation_id || ''}&sender_id=${cn.sender_id || ''}`;
+                            } else {
+                                link = `live_comments.php?page_id=${cn.page_id}&post_id=${cn.post_id || ''}`;
+                            }
+                            
+                            const bgColor = '#f0f9ff';
+                            const hoverColor = '#e0f2fe';
+
 
                             const icon  = isMsg ? '💬' : '📝';
                             const nameColor = '#0369a1';
