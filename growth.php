@@ -147,7 +147,7 @@ $period = 'days_28';
                             <td style="font-weight: 500; color: var(--text-main);">
                                 <span style="display:flex; align-items:center; gap:8px;">
                                     <span class="icon" style="color:#1e40af;">f</span>
-                                    <a href="insights.php?page_id=${p_id}" style="text-decoration: none; color: inherit;">${row.name}</a>
+                                    <a href="insights.php?page_id=${p_id}" target="_blank" style="text-decoration: none; color: inherit;">${row.name}</a>
                                 </span>
                             </td>
                             <td style="font-weight: 600; color: #1e40af;">👥 ${Number(row.followers).toLocaleString()}</td>
@@ -158,7 +158,7 @@ $period = 'days_28';
                             </td>
                             <td style="color: #8b5cf6; font-weight: 600;">▶ ${Number(row.views).toLocaleString()}</td>
                             <td>
-                                <a href="insights.php?page_id=${p_id}" class="btn" style="padding: 6px 12px; font-size: 12px; border: 1px solid var(--border-color); color: var(--text-main); background: var(--bg-color);">Xem Biểu Đồ</a>
+                                <a href="insights.php?page_id=${p_id}" target="_blank" class="btn" style="padding: 6px 12px; font-size: 12px; border: 1px solid var(--border-color); color: var(--text-main); background: var(--bg-color);">Xem Biểu Đồ</a>
                             </td>
                         </tr>
                     `;
