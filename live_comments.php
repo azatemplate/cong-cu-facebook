@@ -286,7 +286,9 @@ function loadPosts(append = false, cursorOverride = null) {
 
                 // Nv1: Auto-open if redirected via query params
                 if (selectedPostId && !append) {
-                    const postTab = Array.from(document.querySelectorAll('.conv-item')).find(el => el.dataset.id === selectedPostId);
+                    const postTab = Array.from(document.querySelectorAll('.conv-item')).find(el => 
+                        el.dataset.id === selectedPostId || el.dataset.id.endsWith('_' + selectedPostId)
+                    );
                     if (postTab) {
                         postTab.click();
                         postTab.scrollIntoView({ block:'nearest' });
