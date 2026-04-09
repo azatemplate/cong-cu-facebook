@@ -126,6 +126,29 @@ if ($merge_all === 1) {
     }
     $data = $response['data']['data'] ?? [];
     $next_cursor = $response['data']['paging']['cursors']['after'] ?? null;
+    
+    // Nv1: Trích xuất bài cụ thể nếu user jump từ link
+    $target_post_id = $_GET['target_post_id'] ?? '';
+    if ($target_post_id && !$cursor) {
+        // Đảm bảo target có dạng PAGEID_POSTID
+        $full_target_id = strpos($target_post_id, '_') !== false ? $target_post_id : "{$page_id}_{$target_post_id}";
+        
+        // Kiểm tra xem bài này có trong list $data vừa lấy chưa (tránh trùng)
+        $found = false;
+        foreach ($data as $p) {
+            if ($p['id'] === $full_target_id) { $found = true; break; }
+        }
+        
+        if (!$found) {
+            $single_res = fb_api_request($full_target_id, [
+                'fields' => 'id,message,created_time,full_picture,comments.summary(true)',
+                'access_token' => $token
+            ], 'GET');
+            if (isset($single_res['data']['id'])) {
+                array_unshift($data, $single_res['data']);
+            }
+        }
+    }
 }
 
 foreach ($data as $post) {

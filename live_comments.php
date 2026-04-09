@@ -267,7 +267,11 @@ function loadPosts(append = false, cursorOverride = null) {
     
     let activeCursor = append ? (cursorOverride !== null ? cursorOverride : convCursor) : '';
     let mergeAll = isMergeAll ? 1 : 0;
-    fetch('actions/get_posts_with_comments.php?page_id=' + currentPageId + '&user_id=' + currentUserId + '&merge_all=' + mergeAll + (append ? '&after=' + activeCursor + '&append=1' : ''))
+    
+    // Nv1: Khai báo tham số target_post_id nếu có
+    let targetParam = (selectedPostId && !append) ? '&target_post_id=' + selectedPostId : '';
+
+    fetch('actions/get_posts_with_comments.php?page_id=' + currentPageId + '&user_id=' + currentUserId + '&merge_all=' + mergeAll + targetParam + (append ? '&after=' + activeCursor + '&append=1' : ''))
         .then(r => r.text())
         .then(text => {
             let data;
