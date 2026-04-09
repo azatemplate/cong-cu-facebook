@@ -75,10 +75,13 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                         if ($page = $ts->fetch(PDO::FETCH_ASSOC)) {
                             $page_token = decryptData($page['access_token']);
                             if ($page_token) {
-                                $profile_res = fb_api_request($sender_id, ['fields' => 'name', 'access_token' => $page_token]);
+                                $profile_res = fb_api_request($sender_id, ['fields' => 'first_name,last_name,name,profile_pic', 'access_token' => $page_token]);
                                 webhook_log("API Profile Res for $sender_id: " . json_encode($profile_res));
-                                if ($profile_res['status_code'] === 200 && !empty($profile_res['data']['name'])) {
-                                    $sender_name = $profile_res['data']['name'];
+                                if ($profile_res['status_code'] === 200 && !empty($profile_res['data'])) {
+                                    $sender_name = $profile_res['data']['name'] ?? 
+                                                  ($profile_res['data']['first_name'] . ' ' . $profile_res['data']['last_name']);
+                                    $sender_name = trim($sender_name);
+                                    if (empty($sender_name)) $sender_name = null;
                                 }
                             } else {
                                 webhook_log("No decrypted token for page $page_id");
