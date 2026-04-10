@@ -3,6 +3,7 @@
 error_reporting(0);
 ob_start();
 session_start();
+set_time_limit(0); // Chống timeout khi tạo hàng ngàn story
 
 // ── Auth Guard ────────────────────────────────────────────────────────────
 if (!isset($_SESSION['account_id'])) {
@@ -100,17 +101,27 @@ if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
 $upload_dir = __DIR__ . '/../uploads/';
 if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
 
+// Pre-copy local files to avoid copying thousands of times in the loop
+foreach ($media_pool as &$media) {
+    if ($media['type'] === 'local') {
+        $is_photo = strpos($media['mime'], 'image') !== false;
+        $ext      = pathinfo($media['name'], PATHINFO_EXTENSION) ?: ($is_photo ? 'jpg' : 'mp4');
+        $filename = uniqid('story_') . '.' . $ext;
+        $media_path = 'uploads/' . $filename;
+        copy($media['tmp_name'], $upload_dir . $filename);
+        $media['saved_path'] = $media_path;
+        $media['is_photo']   = $is_photo;
+    }
+}
+unset($media);
+
 // ── Helper: resolve media for story ──────────────────────────────────────
-function resolve_story_media($media, $upload_dir) {
+function resolve_story_media($media) {
     if ($media['type'] === 'drive') {
         return ['drive:' . $media['id'], 'Story'];
     }
-    $is_photo  = strpos($media['mime'], 'image') !== false;
-    $post_type = 'Story (' . ($is_photo ? 'Image' : 'Video') . ')';
-    $ext       = pathinfo($media['name'], PATHINFO_EXTENSION) ?: ($is_photo ? 'jpg' : 'mp4');
-    $filename  = uniqid('story_') . '.' . $ext;
-    copy($media['tmp_name'], $upload_dir . $filename);
-    return ['uploads/' . $filename, $post_type];
+    $post_type = 'Story (' . ($media['is_photo'] ? 'Image' : 'Video') . ')';
+    return [$media['saved_path'], $post_type];
 }
 
 // ── Create Campaign (fault-tolerant) ─────────────────────────────────────
@@ -149,22 +160,31 @@ $s_stmt_without = $pdo->prepare("INSERT INTO scheduled_posts (account_id, page_i
 $success_count  = 0;
 $dates_to_use   = !empty($schedule_dates) ? $schedule_dates : [date('Y-m-d H:i:s')];
 
-foreach ($dates_to_use as $datetime) {
-    foreach ($page_ids as $p_id) {
-        $media = $media_pool[array_rand($media_pool)];
-        [$media_path, $post_type] = resolve_story_media($media, $upload_dir);
-        if ($campaign_id !== null && $s_stmt_with !== null) {
-            $s_stmt_with->execute([$account_id, $p_id, $post_type, 'Story', $media_path, $datetime, $campaign_id, $comment_lines]);
-        } else {
-            $s_stmt_without->execute([$account_id, $p_id, $post_type, 'Story', $media_path, $datetime]);
+try {
+    $pdo->beginTransaction();
+    foreach ($dates_to_use as $datetime) {
+        foreach ($page_ids as $p_id) {
+            $media = $media_pool[array_rand($media_pool)];
+            [$media_path, $post_type] = resolve_story_media($media);
+            if ($campaign_id !== null && $s_stmt_with !== null) {
+                $s_stmt_with->execute([$account_id, $p_id, $post_type, 'Story', $media_path, $datetime, $campaign_id, $comment_lines]);
+            } else {
+                $s_stmt_without->execute([$account_id, $p_id, $post_type, 'Story', $media_path, $datetime]);
+            }
+            $success_count++;
         }
-        $success_count++;
     }
-}
+    $pdo->commit();
 
-if (!empty($schedule_dates)) {
-    echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} Story vào hàng đợi lên lịch hàng loạt!", 'campaign_id' => $campaign_id]);
-} else {
-    echo json_encode(['status' => 'success', 'msg' => "Đã đưa $success_count Story vào hàng đợi xử lý ngay.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
+    if (!empty($schedule_dates)) {
+        echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} Story vào hàng đợi lên lịch hàng loạt!", 'campaign_id' => $campaign_id]);
+    } else {
+        echo json_encode(['status' => 'success', 'msg' => "Đã đưa $success_count Story vào hàng đợi xử lý ngay.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
+    }
+} catch (Exception $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    echo json_encode(['status' => 'error', 'msg' => 'Quá trình lưu dữ liệu có lỗi: ' . $e->getMessage()]);
 }
 ?>

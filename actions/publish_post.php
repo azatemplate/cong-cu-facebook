@@ -3,6 +3,7 @@
 error_reporting(0);
 ob_start();
 session_start();
+set_time_limit(0); // Chống timeout khi tạo hàng ngàn bài viết
 
 // ── Auth Guard ────────────────────────────────────────────────────────────
 if (!isset($_SESSION['account_id'])) {
@@ -164,20 +165,29 @@ function build_media_path_shuffled($media_pool, $saved_local_files) {
 }
 
 $success_count = 0;
-foreach ($page_ids as $p_id) {
-    $media_path = build_media_path_shuffled($media_pool, $saved_local_files);
-    if ($campaign_id !== null && $s_stmt_with !== null) {
-        $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $scheduled_time, $campaign_id, $comment_lines]);
-    } else {
-        $s_stmt_without->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $scheduled_time]);
+try {
+    $pdo->beginTransaction();
+    foreach ($page_ids as $p_id) {
+        $media_path = build_media_path_shuffled($media_pool, $saved_local_files);
+        if ($campaign_id !== null && $s_stmt_with !== null) {
+            $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $scheduled_time, $campaign_id, $comment_lines]);
+        } else {
+            $s_stmt_without->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $scheduled_time]);
+        }
+        $success_count++;
     }
-    $success_count++;
-}
-
-$is_scheduled = strtotime($scheduled_time) > time();
-if ($is_scheduled) {
-    echo json_encode(['status' => 'success', 'msg' => "Đã lên lịch thành công cho $success_count Fanpage.", 'campaign_id' => $campaign_id]);
-} else {
-    echo json_encode(['status' => 'success', 'msg' => "Đã đưa $success_count bài đăng vào hàng đợi xử lý ngay lập tức.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
+    $pdo->commit();
+    
+    $is_scheduled = strtotime($scheduled_time) > time();
+    if ($is_scheduled) {
+        echo json_encode(['status' => 'success', 'msg' => "Đã lên lịch thành công cho $success_count Fanpage.", 'campaign_id' => $campaign_id]);
+    } else {
+        echo json_encode(['status' => 'success', 'msg' => "Đã đưa $success_count bài đăng vào hàng đợi xử lý ngay lập tức.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
+    }
+} catch (Exception $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    echo json_encode(['status' => 'error', 'msg' => 'Quá trình lưu dữ liệu có lỗi: ' . $e->getMessage()]);
 }
 ?>

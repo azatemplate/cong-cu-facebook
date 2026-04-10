@@ -3,6 +3,7 @@
 error_reporting(0);
 ob_start();
 session_start();
+set_time_limit(0); // Chống timeout khi tạo hàng ngàn bài viết
 
 // ── Auth Guard ────────────────────────────────────────────────────────────
 if (!isset($_SESSION['account_id'])) {
@@ -121,8 +122,20 @@ $post_type  = $is_reel ? 'Reel' : 'Video';
 $upload_dir = __DIR__ . '/../uploads/';
 if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
 
+// Pre-copy local files to avoid copying thousands of times in the loop
+foreach ($media_pool as &$media) {
+    if ($media['type'] === 'local') {
+        $ext        = pathinfo($media['name'], PATHINFO_EXTENSION) ?: 'mp4';
+        $filename   = uniqid('vid_') . '.' . $ext;
+        $media_path = 'uploads/' . $filename;
+        copy($media['tmp_name'], $upload_dir . $filename);
+        $media['saved_path'] = $media_path;
+    }
+}
+unset($media);
+
 // ── Helper: Resolve media for 1 slot ─────────────────────────────────────
-function resolve_media_path_video($media, $upload_dir, $auto_title, $title_input, $desc_input) {
+function resolve_media_path_video($media, $auto_title, $title_input, $desc_input) {
     $t_title = $title_input;
     $t_desc  = $desc_input;
     $media_path = null;
@@ -134,10 +147,7 @@ function resolve_media_path_video($media, $upload_dir, $auto_title, $title_input
         $media_path = 'tiktok:' . $media['url'];
         if ($auto_title) { $t_title = ''; $t_desc = ''; }
     } elseif ($media['type'] === 'local') {
-        $ext        = pathinfo($media['name'], PATHINFO_EXTENSION) ?: 'mp4';
-        $filename   = uniqid('vid_') . '.' . $ext;
-        $media_path = 'uploads/' . $filename;
-        copy($media['tmp_name'], $upload_dir . $filename);
+        $media_path = $media['saved_path']; // use pre-copied path
         if ($auto_title) {
             $fn_no_ext = pathinfo($media['name'], PATHINFO_FILENAME);
             $t_title   = $fn_no_ext;
@@ -223,28 +233,40 @@ function insert_sp($s_with, $s_without, $campaign_id, $comment_lines, $comment_m
 
 $success_count = 0;
 
-if (!empty($schedule_dates)) {
-    // Scheduled matrix mode
-    foreach ($schedule_dates as $datetime) {
+try {
+    $pdo->beginTransaction();
+
+    if (!empty($schedule_dates)) {
+        // Scheduled matrix mode
+        foreach ($schedule_dates as $datetime) {
+            foreach ($page_ids as $p_id) {
+                $media = $media_pool[array_rand($media_pool)];
+                [$media_path, $t_title, $t_desc] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input);
+                $content_data = json_encode(['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai]);
+                insert_sp($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $comment_mode, $comment_threshold_views, $comment_threshold_likes, $comment_threshold_comments, $has_comment_mode, $account_id, $p_id, $post_type, $content_data, $media_path, $datetime);
+                $success_count++;
+            }
+        }
+        $pdo->commit();
+        echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} bài vào hàng đợi lên lịch hàng loạt!", 'campaign_id' => $campaign_id]);
+    } else {
+        // Immediate queue mode
+        $now = date('Y-m-d H:i:s');
         foreach ($page_ids as $p_id) {
             $media = $media_pool[array_rand($media_pool)];
-            [$media_path, $t_title, $t_desc] = resolve_media_path_video($media, $upload_dir, $auto_title, $title_input, $desc_input);
+            [$media_path, $t_title, $t_desc] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input);
             $content_data = json_encode(['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai]);
-            insert_sp($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $comment_mode, $comment_threshold_views, $comment_threshold_likes, $comment_threshold_comments, $has_comment_mode, $account_id, $p_id, $post_type, $content_data, $media_path, $datetime);
+            insert_sp($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $comment_mode, $comment_threshold_views, $comment_threshold_likes, $comment_threshold_comments, $has_comment_mode, $account_id, $p_id, $post_type, $content_data, $media_path, $now);
             $success_count++;
         }
+        $pdo->commit();
+        echo json_encode(['status' => 'success', 'msg' => "Đã đưa $success_count bài vào hàng đợi xử lý ngay.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
     }
-    echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} bài vào hàng đợi lên lịch hàng loạt!", 'campaign_id' => $campaign_id]);
-} else {
-    // Immediate queue mode
-    $now = date('Y-m-d H:i:s');
-    foreach ($page_ids as $p_id) {
-        $media = $media_pool[array_rand($media_pool)];
-        [$media_path, $t_title, $t_desc] = resolve_media_path_video($media, $upload_dir, $auto_title, $title_input, $desc_input);
-        $content_data = json_encode(['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai]);
-        insert_sp($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $comment_mode, $comment_threshold_views, $comment_threshold_likes, $comment_threshold_comments, $has_comment_mode, $account_id, $p_id, $post_type, $content_data, $media_path, $now);
-        $success_count++;
+
+} catch (Exception $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
     }
-    echo json_encode(['status' => 'success', 'msg' => "Đã đưa $success_count bài vào hàng đợi xử lý ngay.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
+    echo json_encode(['status' => 'error', 'msg' => 'Quá trình lưu dữ liệu có lỗi: ' . $e->getMessage()]);
 }
 ?>

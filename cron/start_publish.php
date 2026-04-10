@@ -40,15 +40,12 @@ $sql = "
 ";
 $stmt = $pdo->prepare($sql);
 if (!$stmt) {
-    file_put_contents(__DIR__ . '/cron_debug.log', date('Y-m-d H:i:s') . " - Prepare SQL Error: " . print_r($pdo->errorInfo(), true) . "\n", FILE_APPEND);
     echo "Loi prepare SQL"; exit;
 }
 if (!$stmt->execute()) {
-    file_put_contents(__DIR__ . '/cron_debug.log', date('Y-m-d H:i:s') . " - Execute SQL Error: " . print_r($stmt->errorInfo(), true) . "\n", FILE_APPEND);
     echo "Loi execute SQL"; exit;
 }
 $pages = $stmt->fetchAll(PDO::FETCH_COLUMN);
-file_put_contents(__DIR__ . '/cron_debug.log', date('Y-m-d H:i:s') . " - SQL Hoan tat. So page can dang: " . count($pages) . ". So ban ghi: " . count($pages) . "\n", FILE_APPEND);
 
 if (empty($pages)) {
     echo "Khong co Fanpage nao can dang tai.\n";

@@ -16,7 +16,11 @@ if (empty($target_page_id)) {
     exit;
 }
 
-$lock_file = sys_get_temp_dir() . "/facebook_publish_worker_page_" . md5($target_page_id) . ".lock";
+$lock_dir = __DIR__ . '/../locks';
+if (!is_dir($lock_dir)) {
+    @mkdir($lock_dir, 0777, true);
+}
+$lock_file = $lock_dir . "/publish_page_" . md5($target_page_id) . ".lock";
 
 // Xoá lock file cũ nếu quá 15 phút (worker cũ crash không release)
 $lock_stale_seconds = 15 * 60;
@@ -25,7 +29,7 @@ if (file_exists($lock_file) && (time() - filemtime($lock_file)) > $lock_stale_se
     echo "  ⚠ Lock file cũ hơn 15 phút đã được dọn sạch cho Page ID: $target_page_id\n";
 }
 
-$lock_fp = fopen($lock_file, 'c');
+$lock_fp = @fopen($lock_file, 'c');
 if (!$lock_fp) {
     echo " Không mở được lock file. Bỏ qua.\n";
     exit;
@@ -201,8 +205,12 @@ class TokenLocker {
     private $lock_file;
     public function __construct($uid, $delay_sec) {
         if (!$uid) return;
-        $this->lock_file = sys_get_temp_dir() . "/fb_publish_token_" . md5($uid) . ".lock";
-        $this->fp = fopen($this->lock_file, 'c');
+        $lock_dir = __DIR__ . '/../locks';
+        if (!is_dir($lock_dir)) {
+            @mkdir($lock_dir, 0777, true);
+        }
+        $this->lock_file = $lock_dir . "/publish_token_" . md5($uid) . ".lock";
+        $this->fp = @fopen($this->lock_file, 'c');
         if ($this->fp) {
             $wait_time = 0;
             // Đợi tối đa 15 phút (900s) nhường cho worker trước upload xong
@@ -248,11 +256,11 @@ $stmt = $pdo->prepare("
       AND sp.page_id = ?
 ");
 if (!$stmt) {
-    file_put_contents(sys_get_temp_dir() . '/worker_error.log', date('Y-m-d H:i:s') . " - Prepare Error: " . print_r($pdo->errorInfo(), true) . "\n", FILE_APPEND);
+    file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - Prepare Error: " . print_r($pdo->errorInfo(), true) . "\n", FILE_APPEND);
     exit;
 }
 if (!$stmt->execute([$target_page_id])) {
-    file_put_contents(sys_get_temp_dir() . '/worker_error.log', date('Y-m-d H:i:s') . " - Execute Error: " . print_r($stmt->errorInfo(), true) . "\n", FILE_APPEND);
+    file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - Execute Error: " . print_r($stmt->errorInfo(), true) . "\n", FILE_APPEND);
     exit;
 }
 $pending_posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
