@@ -167,13 +167,13 @@ function showInlineAlert(typeClass, msg) {
             <div style="padding:16px;font-size:12px;color:var(--text-muted);text-align:center;">Chưa có fanpage nào</div>
             <?php else: ?>
             <?php foreach ($pages as $p): ?>
-            <div class="page-tab" data-page-id="<?php echo htmlspecialchars($p['page_id']); ?>"
+            <div class="page-tab" data-page-id="<?php echo htmlspecialchars($p['page_id'] ?? ''); ?>"
                  data-user-id="<?php echo (int)$p['user_id']; ?>"
                  data-token="<?php echo htmlspecialchars(decryptData($p['access_token']) ?? ''); ?>"
-                 title="<?php echo htmlspecialchars($p['name']); ?> — <?php echo htmlspecialchars($p['user_name']); ?>"
+                 title="<?php echo htmlspecialchars($p['name'] ?? ''); ?> — <?php echo htmlspecialchars($p['user_name'] ?? ''); ?>"
                  style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);transition:background .15s;">
-                <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?php echo htmlspecialchars($p['name']); ?></div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?php echo htmlspecialchars($p['user_name']); ?></div>
+                <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?php echo htmlspecialchars($p['name'] ?? ''); ?></div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?php echo htmlspecialchars($p['user_name'] ?? ''); ?></div>
             </div>
             <?php endforeach; endif; ?>
         </div>
