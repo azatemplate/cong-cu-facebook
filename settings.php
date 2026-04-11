@@ -11,9 +11,11 @@ try {
     )");
     $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1')");
     $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_retries', '3')");
-    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('telegram_bot_token', '')");
-    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('telegram_chat_id', '')");
 } catch (Exception $e) {}
+
+// Auto-migrate Telegram columns per-user
+try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN telegram_bot_token VARCHAR(255) DEFAULT NULL"); } catch (Exception $e) {}
+try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN telegram_chat_id VARCHAR(100) DEFAULT NULL"); } catch (Exception $e) {}
 
 try {
     // Add column if it doesn't exist
@@ -106,22 +108,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $alert_message = 'Đã cập nhật cấu hình Đăng bài thành công.';
     }
 
-    if (isset($_POST['update_telegram']) && $_SESSION['role'] === 'admin') {
+    if (isset($_POST['update_telegram'])) {
         $tg_token = trim($_POST['telegram_bot_token'] ?? '');
         $tg_chat_id = trim($_POST['telegram_chat_id'] ?? '');
         
-        $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('telegram_bot_token', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
-            ->execute([$tg_token, $tg_token]);
-        $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('telegram_chat_id', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
-            ->execute([$tg_chat_id, $tg_chat_id]);
+        $u_stmt = $pdo->prepare("UPDATE system_accounts SET telegram_bot_token = ?, telegram_chat_id = ? WHERE id = ?");
+        $u_stmt->execute([$tg_token, $tg_chat_id, $_SESSION['account_id']]);
         
         $alert_type = 'success';
         $alert_message = 'Đã cập nhật cấu hình Telegram Bot thành công.';
     }
 
-    if (isset($_POST['test_telegram']) && $_SESSION['role'] === 'admin') {
+    if (isset($_POST['test_telegram'])) {
         require_once __DIR__ . '/includes/telegram.php';
-        $ok = send_telegram_notification($pdo, "<b>🔔 Thông báo thử nghiệm</b>\nHệ thống Facebook Automation đã kết nối Telegram thành công!\n\n🕐 Thời gian: " . date('d/m/Y H:i:s'), 'general');
+        $ok = send_telegram_notification($pdo, $_SESSION['account_id'], "<b>🔔 Thông báo thử nghiệm</b>\nHệ thống Facebook Automation đã kết nối Telegram thành công!\n\n🕐 Thời gian: " . date('d/m/Y H:i:s'), 'general');
         if ($ok) {
             $alert_type = 'success';
             $alert_message = 'Đã gửi thông báo thử nghiệm lên Telegram thành công! Kiểm tra Telegram của bạn.';
@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 } else {
     $account_id = $_SESSION['account_id'];
-    $stmt = $pdo->prepare("SELECT fb_app_id, fb_app_secret, gg_client_id, gg_client_secret, gg_refresh_token, post_delay_seconds, retry_interval_minutes, max_retries FROM system_accounts WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT fb_app_id, fb_app_secret, gg_client_id, gg_client_secret, gg_refresh_token, post_delay_seconds, retry_interval_minutes, max_retries, telegram_bot_token, telegram_chat_id FROM system_accounts WHERE id = ?");
     $stmt->execute([$account_id]);
     $account = $stmt->fetch(PDO::FETCH_ASSOC);
 }
@@ -141,17 +141,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $retry_interval = isset($account['retry_interval_minutes']) && $account['retry_interval_minutes'] !== null ? $account['retry_interval_minutes'] : '1';
 $max_retries = isset($account['max_retries']) && $account['max_retries'] !== null ? $account['max_retries'] : '3';
 
-// Lấy cấu hình Telegram
-$tg_bot_token = '';
-$tg_chat_id = '';
-try {
-    $tg_stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('telegram_bot_token', 'telegram_chat_id')");
-    if ($tg_stmt) {
-        $tg_rows = $tg_stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-        $tg_bot_token = $tg_rows['telegram_bot_token'] ?? '';
-        $tg_chat_id = $tg_rows['telegram_chat_id'] ?? '';
-    }
-} catch (Exception $e) {}
+// Lấy cấu hình Telegram từ account của user hiện tại
+$tg_bot_token = $account['telegram_bot_token'] ?? '';
+$tg_chat_id = $account['telegram_chat_id'] ?? '';
 
 $is_admin = ($_SESSION['role'] === 'admin');
 ?>
@@ -283,11 +275,10 @@ $is_admin = ($_SESSION['role'] === 'admin');
     </div>
     <?php endif; ?>
 
-    <?php if ($is_admin): ?>
     <div class="card" style="margin: 0; box-sizing: border-box;">
         <h3 style="margin-bottom: 10px;">🤖 Thông Báo Telegram Bot</h3>
         <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 15px;">
-            Nhập Token và Chat ID từ Bot Telegram để nhận thông báo tự động khi có bài đăng thành công, video đủ điều kiện bình luận, hoặc báo cáo hàng ngày.
+            Nhập Token và Chat ID từ Bot Telegram của bạn để nhận thông báo tự động khi có bài đăng thành công, video đủ điều kiện bình luận, hoặc báo cáo hàng ngày.
         </p>
         <form method="POST" action="settings.php">
             <?php echo csrf_field(); ?>
@@ -307,7 +298,6 @@ $is_admin = ($_SESSION['role'] === 'admin');
             </div>
         </form>
     </div>
-    <?php endif; ?>
 
     </div> <!-- ĐÓNG CỘT PHẢI -->
 

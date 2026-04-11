@@ -288,7 +288,7 @@ foreach ($rows as $row) {
         echo "  📝 Nội dung: \"$comment_text\"\n\n";
 
         // Gửi thông báo Telegram
-        send_telegram_notification($pdo, "<b>Video đủ điều kiện bình luận!</b>\n🎬 Video: {$fb_post_id}\n📊 View: {$current_views}, Like: {$current_likes}, Comment: {$current_comments_count}\n📝 Bình luận: \"{$comment_text}\"", 'comment');
+        send_telegram_notification($pdo, $row['account_id'], "<b>Video đủ điều kiện bình luận!</b>\n🎬 Video: {$fb_post_id}\n📊 View: {$current_views}, Like: {$current_likes}, Comment: {$current_comments_count}\n📝 Bình luận: \"{$comment_text}\"", 'comment');
 
         // Gửi thông báo lên chuông (bell notification)
         try {
@@ -310,7 +310,7 @@ foreach ($rows as $row) {
 
         // Gửi thông báo lỗi Telegram
         $short_err = mb_strimwidth($err, 0, 100, '…');
-        send_telegram_notification($pdo, "<b>Lỗi bình luận!</b>\n🎬 Video: {$fb_post_id}\n❌ Lỗi: {$short_err}", 'error');
+        send_telegram_notification($pdo, $row['account_id'], "<b>Lỗi bình luận!</b>\n🎬 Video: {$fb_post_id}\n❌ Lỗi: {$short_err}", 'error');
 
         // Gửi thông báo lỗi lên chuông
         try {

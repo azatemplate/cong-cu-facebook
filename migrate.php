@@ -64,6 +64,10 @@ $migrations = [
 
     // Missing updated_at for scheduled_posts (stuck detection)
     ["ALTER TABLE scheduled_posts ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP", "scheduled_posts.updated_at"],
+
+    // Telegram per-user columns
+    ["ALTER TABLE system_accounts ADD COLUMN telegram_bot_token VARCHAR(255) DEFAULT NULL", "system_accounts.telegram_bot_token"],
+    ["ALTER TABLE system_accounts ADD COLUMN telegram_chat_id VARCHAR(100) DEFAULT NULL", "system_accounts.telegram_chat_id"],
 ];
 
 // Default system settings seed

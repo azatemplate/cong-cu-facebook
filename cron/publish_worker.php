@@ -297,6 +297,9 @@ $account_limits = [];
 foreach ($pending_posts as $post) {
     echo "Đang xử lý bài đăng ID: {$post['id']} - Loại: {$post['post_type']}\n";
 
+    // Lưu account_id cho hàm marKAsFailed có thể gửi Telegram
+    $GLOBALS['_current_account_id'] = $post['account_id'] ?? 0;
+
     // 1.5. Check Daily Output Limit per Account
     $aid = $post['account_id'] ?? 0;
     if ($aid > 0) {
@@ -971,7 +974,7 @@ foreach ($pending_posts as $post) {
 
         // Gửi thông báo Telegram
         $tg_page_name = $fanpage_name ?: $post['page_id'];
-        send_telegram_notification($pdo, "<b>Đăng bài thành công!</b>\n📄 Page: {$tg_page_name}\n📝 Loại: {$post['post_type']}\n🆔 Post ID: {$post_id}", 'publish');
+        send_telegram_notification($pdo, $post['account_id'], "<b>Đăng bài thành công!</b>\n📄 Page: {$tg_page_name}\n📝 Loại: {$post['post_type']}\n🆔 Post ID: {$post_id}", 'publish');
     } else {
         $error_msg = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : json_encode($response['data']);
         marKAsFailed($pdo, $post['id'], "Lỗi API: $error_msg", $sys_max_retries, $sys_retry_interval, $has_error_msg, $has_retry_count);
@@ -1032,7 +1035,7 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
     // Gửi Telegram khi hết số lần thử
     if ($new_retry > $max_retries) {
         $short_msg = mb_strimwidth($msg, 0, 150, '…');
-        send_telegram_notification($pdo, "<b>Đăng bài thất bại!</b>\n🆔 Bài ID: {$id}\n💬 Lỗi: {$short_msg}\n🔄 Đã thử: {$new_retry}/{$max_retries} lần", 'error');
+        send_telegram_notification($pdo, $GLOBALS['_current_account_id'] ?? 0, "<b>Đăng bài thất bại!</b>\n🆔 Bài ID: {$id}\n💬 Lỗi: {$short_msg}\n🔄 Đã thử: {$new_retry}/{$max_retries} lần", 'error');
     }
 }
 ?>
