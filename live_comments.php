@@ -33,6 +33,14 @@ $pages_json = json_encode($pages);
 $selected_post_id = $_GET['post_id'] ?? '';
 $selected_page_id = $_GET['page_id'] ?? '';
 
+// Silently ensure columns exist if user forgot to run migrate script
+try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_reply_enabled TINYINT DEFAULT 0");
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_reply_text TEXT DEFAULT NULL");
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_inbox_enabled TINYINT DEFAULT 0");
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_inbox_text TEXT DEFAULT NULL");
+} catch (Exception $e) {}
+
 // Fetch account auto-reply config
 $stmt_acc = $pdo->prepare("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text FROM system_accounts WHERE id = ?");
 $stmt_acc->execute([$account_id]);
