@@ -15,10 +15,13 @@ try {
     $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
 } catch (Exception $e) {}
 
-// ── BUOC 1: Reset bai bi ket o 'processing' qua 1 phut ve 'pending' ─────────
-// Giai quyet truong hop worker crash ma khong release status
+// Auto-migrate updated_at for scheduled_posts (stuck detection)
 try {
-    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND scheduled_time <= DATE_SUB(NOW(), INTERVAL 1 MINUTE)");
+    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+} catch (Exception $e) {}
+
+try {
+    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 20 MINUTE)");
     if ($stuck_count > 0) {
         echo "  [RESET] Da reset $stuck_count bai bi stuck 'processing' => 'pending'.\n";
     }

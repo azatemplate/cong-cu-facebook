@@ -61,6 +61,9 @@ $migrations = [
 
     // special_watch_targets - fb_user_id column (chọn FB user token khi quét)
     ["ALTER TABLE special_watch_targets ADD COLUMN fb_user_id INT DEFAULT NULL", "special_watch_targets.fb_user_id"],
+
+    // Missing updated_at for scheduled_posts (stuck detection)
+    ["ALTER TABLE scheduled_posts ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP", "scheduled_posts.updated_at"],
 ];
 
 // Default system settings seed

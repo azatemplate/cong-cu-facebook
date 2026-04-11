@@ -72,6 +72,11 @@ try {
     $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
 } catch (Exception $e) {}
 
+// Auto-migrate updated_at for scheduled_posts (stuck detection)
+try {
+    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+} catch (Exception $e) {}
+
 $start_time = microtime(true);
 echo "-------------------------------------------\n";
 echo "Bat dau quet bai viet len lich luc: " . date('Y-m-d H:i:s') . "\n";
@@ -80,9 +85,9 @@ echo "Bat dau quet bai viet len lich luc: " . date('Y-m-d H:i:s') . "\n";
 // If a previous worker run crashed, posts stay at 'processing' forever.
 // We reset them so they can be retried.
 try {
-    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND scheduled_time <= DATE_SUB(NOW(), INTERVAL 10 MINUTE)");
+    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 20 MINUTE)");
     if ($stuck > 0)
-        echo "⚠ Reset $stuck bài bị kẹt ở trạng thái 'processing' về 'pending'.\n";
+        echo "  [RESET] Reset $stuck bài bị kẹt ở trạng thái 'processing' về 'pending'.\n";
 } catch (Exception $e) {
 }
 

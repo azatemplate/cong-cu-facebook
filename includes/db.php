@@ -177,6 +177,10 @@ try {
     // ── Performance Indexes (safe to run every boot, IF NOT EXISTS) ─────────
     // idx_cron_dispatch: tăng tốc query của dispatcher mỗi phút
     try {
+        $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+    } catch (Exception $e) {}
+
+    try {
         $pdo->exec("ALTER TABLE scheduled_posts ADD INDEX IF NOT EXISTS idx_cron_dispatch (status, scheduled_time, page_id)");
     } catch (Exception $e) {}
     // idx_comment_queue: tăng tốc query comment worker

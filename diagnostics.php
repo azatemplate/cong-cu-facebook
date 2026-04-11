@@ -53,6 +53,17 @@ if (isset($_GET['run'])) {
     }
 }
 
+// ── Force Reset Stuck Posts ──────────────────────────────────────────────────
+$reset_msg = '';
+if (isset($_GET['force_reset'])) {
+    try {
+        $reset_count = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing'");
+        $reset_msg = "Đã ép buộc đưa $reset_count bài từ 'processing' về 'pending'.";
+    } catch (Exception $e) {
+        $reset_msg = "Lỗi reset: " . $e->getMessage();
+    }
+}
+
 // ── Đếm bài theo trạng thái ───────────────────────────────────────────────────
 $stats = $pdo->query("
     SELECT status, COUNT(*) as cnt
@@ -84,6 +95,15 @@ $upcoming = $pdo->query("
     WHERE status = 'pending' AND scheduled_time > NOW()
     ORDER BY scheduled_time ASC
     LIMIT 10
+")->fetchAll(PDO::FETCH_ASSOC);
+
+// ── Bài đang xử lý (Processing) ──────────────────────────────────────────────
+$processing_posts = $pdo->query("
+    SELECT id, page_id, post_type, scheduled_time, updated_at,
+           TIMESTAMPDIFF(MINUTE, updated_at, NOW()) AS duration_min
+    FROM scheduled_posts
+    WHERE status = 'processing'
+    ORDER BY updated_at ASC
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Kiểm tra exec() ──────────────────────────────────────────────────────────
@@ -266,6 +286,35 @@ tr:hover td { background: #1e293b55; }
     </tr>
     <?php endforeach; ?>
     </table>
+    <?php endif; ?>
+</div>
+
+<!-- Bài đang PROCESSING -->
+<div class="card">
+    <h2 style="color: #38bdf8;">⏳ Bài đang xử lý (PROCESSING - <?= count($processing_posts) ?> bài)</h2>
+    <?php if ($reset_msg): ?>
+    <p class="ok">✔ <?= htmlspecialchars($reset_msg) ?></p>
+    <?php endif; ?>
+    
+    <?php if (empty($processing_posts)): ?>
+    <p class="ok">✔ Hiện không có bài nào đang xử lý.</p>
+    <?php else: ?>
+    <p class="warn">⚠ Lưu ý: Nếu bài ở trạng thái này quá lâu (ví dụ > 20p), có thể tiến trình đã bị treo.</p>
+    <table>
+    <tr><th>ID</th><th>Page ID</th><th>Loại</th><th>Giờ hẹn</th><th>Cập nhật cuối</th><th>Đã trôi qua</th></tr>
+    <?php foreach ($processing_posts as $p): ?>
+    <tr>
+        <td><?= $p['id'] ?></td>
+        <td><?= $p['page_id'] ?></td>
+        <td><?= $p['post_type'] ?></td>
+        <td><?= $p['scheduled_time'] ?></td>
+        <td><?= $p['updated_at'] ?></td>
+        <td class="<?= $p['duration_min'] > 20 ? 'err' : 'warn' ?>"><?= (int)$p['duration_min'] ?> phút</td>
+    </tr>
+    <?php endforeach; ?>
+    </table>
+    <br>
+    <a class="btn" style="background:#e11d48;color:#fff" href="?force_reset=1">🔥 Force Reset To Pending (Giải phóng bài treo)</a>
     <?php endif; ?>
 </div>
 
