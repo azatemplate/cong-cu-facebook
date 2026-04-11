@@ -130,6 +130,67 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                             $r = $stmt->execute([$page_id, $sender_id, $sender_name, $text, $post_id, $comment_id]);
                             webhook_log("CMT INSERT: page=$page_id post=$post_id sender=$sender_name result=" . ($r ? 'OK id='.$pdo->lastInsertId() : 'FAIL'));
                         } catch (Exception $e) { webhook_log('CMT DB ERR: ' . $e->getMessage()); }
+
+                        // ── Bắt đầu Phản Hồi Tự Động ──
+                        try {
+                            // Lấy access_token và account_id
+                            $stmt = $pdo->prepare("SELECT p.access_token, u.account_id FROM pages p JOIN users u ON p.user_id = u.id WHERE p.page_id = ?");
+                            $stmt->execute([$page_id]);
+                            $page_info = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                            if ($page_info && !empty($page_info['access_token'])) {
+                                $page_token = decryptData($page_info['access_token']);
+                                $acc_id = $page_info['account_id'];
+
+                                // Lấy cấu hình tự động của tài khoản
+                                $stmt_acc = $pdo->prepare("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text FROM system_accounts WHERE id = ?");
+                                $stmt_acc->execute([$acc_id]);
+                                $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC);
+
+                                if ($acc_setup) {
+                                    // 1. Tự động Phản hồi (Public Comment)
+                                    if (!empty($acc_setup['auto_reply_enabled']) && !empty($acc_setup['auto_reply_text'])) {
+                                        $msg = str_replace('{name}', $sender_name, $acc_setup['auto_reply_text']);
+                                        $url = "https://graph.facebook.com/v25.0/{$comment_id}/comments";
+                                        $post_data = json_encode([
+                                            'message' => $msg,
+                                            'access_token' => $page_token
+                                        ]);
+                                        
+                                        $ch = curl_init($url);
+                                        curl_setopt($ch, CURLOPT_POST, 1);
+                                        curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
+                                        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+                                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+                                        $output = curl_exec($ch);
+                                        curl_close($ch);
+                                        webhook_log("AUTO_REPLY: " . $output);
+                                    }
+
+                                    // 2. Tự động Nhắn tin (Private Inbox)
+                                    if (!empty($acc_setup['auto_inbox_enabled']) && !empty($acc_setup['auto_inbox_text'])) {
+                                        $msg = str_replace('{name}', $sender_name, $acc_setup['auto_inbox_text']);
+                                        $url = "https://graph.facebook.com/v22.0/me/messages?access_token={$page_token}";
+                                        $post_data = json_encode([
+                                            'recipient' => ['comment_id' => $comment_id],
+                                            'message' => ['text' => $msg],
+                                            'messaging_type' => 'RESPONSE'
+                                        ]);
+                                        
+                                        $ch = curl_init($url);
+                                        curl_setopt($ch, CURLOPT_POST, 1);
+                                        curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
+                                        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+                                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                        curl_setopt($ch, CURLOPT_TIMEOUT, 3); // Giới hạn 3s để không chặn tiến trình webhook
+                                        $output = curl_exec($ch);
+                                        curl_close($ch);
+                                        webhook_log("AUTO_INBOX: " . $output);
+                                    }
+                                }
+                            }
+                        } catch (Exception $e) { webhook_log('AUTO_REPLY ERR: ' . $e->getMessage()); }
                     }
                 }
             }

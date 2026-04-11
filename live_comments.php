@@ -32,9 +32,88 @@ $pages_json = json_encode($pages);
 
 $selected_post_id = $_GET['post_id'] ?? '';
 $selected_page_id = $_GET['page_id'] ?? '';
+
+// Fetch account auto-reply config
+$stmt_acc = $pdo->prepare("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text FROM system_accounts WHERE id = ?");
+$stmt_acc->execute([$account_id]);
+$acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC);
+$auto_reply_enabled = (int)($acc_setup['auto_reply_enabled'] ?? 0);
+$auto_reply_text = $acc_setup['auto_reply_text'] ?? '';
+$auto_inbox_enabled = (int)($acc_setup['auto_inbox_enabled'] ?? 0);
+$auto_inbox_text = $acc_setup['auto_inbox_text'] ?? '';
 ?>
 
-<div class="page-title">📝 Live Comments (Quản lý Bình luận)</div>
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+    <div class="page-title" style="margin-bottom:0;">📝 Live Comments (Quản lý Bình luận)</div>
+    <button onclick="document.getElementById('autoReplyModal').style.display='flex';" class="btn btn-secondary" style="background:#f59e0b; color:#fff; border:none; display:flex; align-items:center; gap:5px; font-weight:600;"><span style="font-size:16px;">⚙️</span> Cài đặt Bot Tự Động</button>
+</div>
+
+<!-- Modal Cài đặt Tự động -->
+<div id="autoReplyModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:#fff; padding:25px; border-radius:10px; width:100%; max-width:500px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+        <h3 style="margin-top:0; border-bottom:1px solid #e5e7eb; padding-bottom:10px; color:#1f2937;">🤖 Cài đặt Bot Phản Hồi Tự Động</h3>
+        <p style="font-size:12px; color:#6b7280; margin-bottom:15px;">Bot sẽ tự động hoạt động NGAY LẬP TỨC khi có khách bình luận mới (Áp dụng cho mọi Fanpage).</p>
+        <form id="frm_auto_setup" onsubmit="saveAutoSetup(event)">
+            <!-- 1. Trả lời bình luận -->
+            <div style="margin-bottom: 20px; padding:15px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px;">
+                <label style="display:flex; align-items:center; gap:8px; font-weight:bold; font-size:14px; cursor:pointer; color:#0284c7;">
+                    <input type="checkbox" id="chk_auto_reply" style="width:16px;height:16px;" <?php echo $auto_reply_enabled ? 'checked' : ''; ?>> Bật Tự động Trả Lời Bình Luận
+                </label>
+                <div style="margin-top:10px;">
+                    <textarea id="txt_auto_reply" rows="3" placeholder="Ví dụ: Chào {name}, kiểm tra tin nhắn em nhé..." style="width:100%; padding:10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($auto_reply_text); ?></textarea>
+                    <div style="font-size:11px; color:#6b7280; margin-top:4px;">Hỗ trợ biến: <b style="color:#000;">{name}</b> (Tên khách). Phản hồi công khai ngay dưới bình luận.</div>
+                </div>
+            </div>
+
+            <!-- 2. Nhắn tin Inbox -->
+            <div style="margin-bottom: 20px; padding:15px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px;">
+                <label style="display:flex; align-items:center; gap:8px; font-weight:bold; font-size:14px; cursor:pointer; color:#10b981;">
+                    <input type="checkbox" id="chk_auto_inbox" style="width:16px;height:16px;" <?php echo $auto_inbox_enabled ? 'checked' : ''; ?>> Bật Tự động Inbox riêng (Private Reply)
+                </label>
+                <div style="margin-top:10px;">
+                    <textarea id="txt_auto_inbox" rows="3" placeholder="Ví dụ: Chào {name}, em thấy anh/chị vừa bình luận..." style="width:100%; padding:10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($auto_inbox_text); ?></textarea>
+                    <div style="font-size:11px; color:#6b7280; margin-top:4px;">Thông báo sẽ gửi vào tin nhắn riêng. Lưu ý: Page cần có quyền gửi tin nhắn để tránh bị lỗi.</div>
+                </div>
+            </div>
+
+            <div style="text-align: right;">
+                <button type="button" onclick="document.getElementById('autoReplyModal').style.display='none';" class="btn" style="background:#f3f4f6; color:#374151; margin-right:10px;">Hủy</button>
+                <button type="submit" class="btn btn-primary" id="btn_save_setup">Lưu Cấu Hình</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function saveAutoSetup(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn_save_setup');
+    btn.disabled = true;
+    btn.innerText = 'Đang lưu...';
+
+    const fd = new FormData();
+    fd.append('auto_reply_enabled', document.getElementById('chk_auto_reply').checked ? 1 : 0);
+    fd.append('auto_reply_text', document.getElementById('txt_auto_reply').value);
+    fd.append('auto_inbox_enabled', document.getElementById('chk_auto_inbox').checked ? 1 : 0);
+    fd.append('auto_inbox_text', document.getElementById('txt_auto_inbox').value);
+
+    fetch('actions/save_auto_reply.php', {
+        method: 'POST',
+        body: fd
+    }).then(r => r.json()).then(res => {
+        alert(res.msg);
+        btn.disabled = false;
+        btn.innerText = 'Lưu Cấu Hình';
+        if (res.status === 'success') {
+            document.getElementById('autoReplyModal').style.display = 'none';
+        }
+    }).catch(() => {
+        alert('Lỗi kết nối.');
+        btn.disabled = false;
+        btn.innerText = 'Lưu Cấu Hình';
+    });
+}
+</script>
 
 <div class="livechat-container" id="livechatContainer" style="display:flex;gap:0;height:calc(100vh - 140px);min-height:520px;">
 
