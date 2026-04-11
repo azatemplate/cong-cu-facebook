@@ -255,10 +255,16 @@ require_once __DIR__ . '/fb_api.php';
                                     </div>`;
                                 }
 
-                                const titleText = isSuccess ? '✅ [COMMENT SUCCESS]' : (isError ? '❌ [COMMENT ERROR]' : '📊 [REPORT]');
-                                const titleColor = isSuccess ? '#15803d' : (isError ? '#b91c1c' : '#15803d');
-                                const bgColor = '#f0fdf4';
-                                const hoverColor = '#dcfce7';
+                                const isReport = snippetData && snippetData.type === 'report';
+                                if (isReport) {
+                                    isSuccess = true;
+                                    contentHtml = `<div style="margin-top:4px;line-height:1.4;white-space:pre-wrap;font-family:monospace;">${snippetData.content}</div>`;
+                                }
+
+                                const titleText = isReport ? '📊 [BÁO CÁO HÀNG NGÀY]' : (isSuccess ? '✅ [COMMENT SUCCESS]' : (isError ? '❌ [COMMENT ERROR]' : '💡 [INSIGHT]'));
+                                const titleColor = isReport ? '#0284c7' : (isSuccess ? '#15803d' : (isError ? '#b91c1c' : '#15803d'));
+                                const bgColor = isReport ? '#f0f9ff' : '#f0fdf4';
+                                const hoverColor = isReport ? '#e0f2fe' : '#dcfce7';
                                 
                                 let link = targetPostId ? `live_comments.php?page_id=${cn.page_id}&post_id=${targetPostId}` : 'manage_posts.php';
 

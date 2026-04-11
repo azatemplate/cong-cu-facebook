@@ -74,13 +74,8 @@ if (!function_exists('send_telegram_notification')) {
      */
     function send_telegram_daily_report($pdo) {
         try {
-            // Lấy tất cả account có cấu hình Telegram
-            $accounts = $pdo->query("
-                SELECT id, username, telegram_bot_token, telegram_chat_id 
-                FROM system_accounts 
-                WHERE telegram_bot_token IS NOT NULL AND telegram_bot_token != ''
-                  AND telegram_chat_id IS NOT NULL AND telegram_chat_id != ''
-            ")->fetchAll(PDO::FETCH_ASSOC);
+            // Lấy TẤT CẢ account trong hệ thống để gửi thông báo chuông (và Telegram nếu có)
+            $accounts = $pdo->query("SELECT id, username, telegram_bot_token, telegram_chat_id FROM system_accounts")->fetchAll(PDO::FETCH_ASSOC);
 
             if (empty($accounts)) return false;
 
@@ -124,19 +119,45 @@ if (!function_exists('send_telegram_notification')) {
                 $date = date('d/m/Y');
                 $time = date('H:i');
 
-                $message = "📊 <b>BÁO CÁO NGÀY {$date}</b>\n"
+                $message = "📊 BÁO CÁO NGÀY {$date}\n"
                          . "━━━━━━━━━━━━━━━━━━━━\n"
-                         . "👤 Tài khoản: <b>{$acc['username']}</b>\n"
-                         . "✅ Đã đăng: <b>{$published}</b> bài\n"
-                         . "❌ Lỗi: <b>{$failed}</b> bài\n"
-                         . "⏳ Đang chờ: <b>{$pending}</b> bài\n"
-                         . "🔄 Đang xử lý: <b>{$processing}</b> bài\n"
-                         . "📄 Page hoạt động: <b>{$active_pages}</b>\n"
-                         . "👁 Lượt xem mới: <b>{$views_formatted}</b> view\n"
+                         . "👤 Tài khoản: {$acc['username']}\n"
+                         . "✅ Đã đăng: {$published} bài\n"
+                         . "❌ Lỗi: {$failed} bài\n"
+                         . "⏳ Đang chờ: {$pending} bài\n"
+                         . "🔄 Đang xử lý: {$processing} bài\n"
+                         . "📄 Page hoạt động: {$active_pages}\n"
+                         . "👁 Lượt xem mới: {$views_formatted} view\n"
                          . "━━━━━━━━━━━━━━━━━━━━\n"
                          . "🕐 Cập nhật lúc: {$time}";
 
-                _tg_send($acc['telegram_bot_token'], $acc['telegram_chat_id'], $message);
+                // 1. Lưu vào chuông thông báo (Bell notification)
+                try {
+                    $sys_page_id = 'SYSTEM_ACCOUNT_' . $acc['id'];
+                    $notif_snippet = json_encode([
+                        'type' => 'report',
+                        'content' => $message
+                    ], JSON_UNESCAPED_UNICODE);
+                    $pdo->prepare("INSERT INTO page_notifications (page_id, type, sender_name, snippet) VALUES (?, 'report', 'Hệ thống', ?)")
+                        ->execute([$sys_page_id, $notif_snippet]);
+                } catch (Exception $e) {}
+
+                // 2. Gửi Telegram nếu có cấu hình
+                if (!empty($acc['telegram_bot_token']) && !empty($acc['telegram_chat_id'])) {
+                    // Format lại message có HTML tags cho Telegram
+                    $tg_message = "📊 <b>BÁO CÁO NGÀY {$date}</b>\n"
+                             . "━━━━━━━━━━━━━━━━━━━━\n"
+                             . "👤 Tài khoản: <b>{$acc['username']}</b>\n"
+                             . "✅ Đã đăng: <b>{$published}</b> bài\n"
+                             . "❌ Lỗi: <b>{$failed}</b> bài\n"
+                             . "⏳ Đang chờ: <b>{$pending}</b> bài\n"
+                             . "🔄 Đang xử lý: <b>{$processing}</b> bài\n"
+                             . "📄 Page hoạt động: <b>{$active_pages}</b>\n"
+                             . "👁 Lượt xem mới: <b>{$views_formatted}</b> view\n"
+                             . "━━━━━━━━━━━━━━━━━━━━\n"
+                             . "🕐 Cập nhật lúc: {$time}";
+                    _tg_send($acc['telegram_bot_token'], $acc['telegram_chat_id'], $tg_message);
+                }
             }
             return true;
         } catch (Exception $e) {
