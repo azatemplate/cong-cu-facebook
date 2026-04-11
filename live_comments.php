@@ -109,17 +109,36 @@ function saveAutoSetup(e) {
         method: 'POST',
         body: fd
     }).then(r => r.json()).then(res => {
-        alert(res.msg);
-        btn.disabled = false;
-        btn.innerText = 'Lưu Cấu Hình';
         if (res.status === 'success') {
             document.getElementById('autoReplyModal').style.display = 'none';
+            showInlineAlert('alert-success', res.msg);
+        } else {
+            showInlineAlert('alert-danger', res.msg);
         }
     }).catch(() => {
-        alert('Lỗi kết nối.');
+        showInlineAlert('alert-danger', 'Lỗi kết nối mạng hoặc máy chủ.');
         btn.disabled = false;
         btn.innerText = 'Lưu Cấu Hình';
     });
+}
+
+function showInlineAlert(typeClass, msg) {
+    let alertBox = document.getElementById('temp_inline_alert');
+    if (!alertBox) {
+        alertBox = document.createElement('div');
+        alertBox.id = 'temp_inline_alert';
+        // Theo chuẩn class 'alert alert-success/danger' của hệ thống
+        const titleRow = document.querySelector('.page-title').parentElement;
+        titleRow.parentNode.insertBefore(alertBox, titleRow.nextSibling);
+    }
+    alertBox.className = `alert ${typeClass}`;
+    alertBox.innerHTML = msg;
+    alertBox.style.display = 'block';
+    
+    // Tự động tắt sau 3 giây
+    setTimeout(() => {
+        alertBox.style.display = 'none';
+    }, 3000);
 }
 </script>
 
