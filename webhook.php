@@ -150,7 +150,11 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                 if ($acc_setup) {
                                     // 1. Tự động Phản hồi (Public Comment)
                                     if (!empty($acc_setup['auto_reply_enabled']) && !empty($acc_setup['auto_reply_text'])) {
-                                        $msg = str_replace('{name}', $sender_name, $acc_setup['auto_reply_text']);
+                                        // Tách các mẫu câu theo dòng và chọn ngẫu nhiên
+                                        $lines = array_filter(explode("\n", str_replace("\r", "", $acc_setup['auto_reply_text'])), 'trim');
+                                        $chosen_msg = $lines[array_rand($lines)];
+                                        
+                                        $msg = str_replace('{name}', $sender_name, $chosen_msg);
                                         $url = "https://graph.facebook.com/v25.0/{$comment_id}/comments";
                                         $post_data = json_encode([
                                             'message' => $msg,
@@ -170,7 +174,11 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
 
                                     // 2. Tự động Nhắn tin (Private Inbox)
                                     if (!empty($acc_setup['auto_inbox_enabled']) && !empty($acc_setup['auto_inbox_text'])) {
-                                        $msg = str_replace('{name}', $sender_name, $acc_setup['auto_inbox_text']);
+                                        // Tách các mẫu câu theo dòng và chọn ngẫu nhiên
+                                        $lines_inbox = array_filter(explode("\n", str_replace("\r", "", $acc_setup['auto_inbox_text'])), 'trim');
+                                        $chosen_inbox = $lines_inbox[array_rand($lines_inbox)];
+
+                                        $msg = str_replace('{name}', $sender_name, $chosen_inbox);
                                         $url = "https://graph.facebook.com/v22.0/me/messages?access_token={$page_token}";
                                         $post_data = json_encode([
                                             'recipient' => ['comment_id' => $comment_id],

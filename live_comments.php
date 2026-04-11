@@ -68,8 +68,11 @@ $auto_inbox_text = $acc_setup['auto_inbox_text'] ?? '';
                     <input type="checkbox" id="chk_auto_reply" style="width:16px;height:16px;" <?php echo $auto_reply_enabled ? 'checked' : ''; ?>> Bật Tự động Trả Lời Bình Luận
                 </label>
                 <div style="margin-top:10px;">
-                    <textarea id="txt_auto_reply" rows="3" placeholder="Ví dụ: Chào {name}, kiểm tra tin nhắn em nhé..." style="width:100%; padding:10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($auto_reply_text); ?></textarea>
-                    <div style="font-size:11px; color:#6b7280; margin-top:4px;">Hỗ trợ biến: <b style="color:#000;">{name}</b> (Tên khách). Phản hồi công khai ngay dưới bình luận.</div>
+                    <textarea id="txt_auto_reply" rows="4" placeholder="Ví dụ: 
+Chào {name}, check inbox nhé
+Em đã nhắn tin cho {name} rồi ạ
+{name} xem tin nhắn phía mình với nha..." style="width:100%; padding:10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($auto_reply_text ?? ''); ?></textarea>
+                    <div style="font-size:11px; color:#6b7280; margin-top:4px;">Nhập **mỗi dòng một mẫu câu** để Bot chọn ngẫu nhiên. Dùng <b style="color:#000;">{name}</b> để gọi tên khách.</div>
                 </div>
             </div>
 
@@ -79,8 +82,10 @@ $auto_inbox_text = $acc_setup['auto_inbox_text'] ?? '';
                     <input type="checkbox" id="chk_auto_inbox" style="width:16px;height:16px;" <?php echo $auto_inbox_enabled ? 'checked' : ''; ?>> Bật Tự động Inbox riêng (Private Reply)
                 </label>
                 <div style="margin-top:10px;">
-                    <textarea id="txt_auto_inbox" rows="3" placeholder="Ví dụ: Chào {name}, em thấy anh/chị vừa bình luận..." style="width:100%; padding:10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($auto_inbox_text); ?></textarea>
-                    <div style="font-size:11px; color:#6b7280; margin-top:4px;">Thông báo sẽ gửi vào tin nhắn riêng. Lưu ý: Page cần có quyền gửi tin nhắn để tránh bị lỗi.</div>
+                    <textarea id="txt_auto_inbox" rows="4" placeholder="Ví dụ:
+Chào {name}, shop đã gửi thông tin qua inbox...
+{name} ơi, mình check tin nhắn chờ giúp shop nhé!" style="width:100%; padding:10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($auto_inbox_text ?? ''); ?></textarea>
+                    <div style="font-size:11px; color:#6b7280; margin-top:4px;">Nhập **mỗi dòng một mẫu câu** để Bot chọn ngẫu nhiên.</div>
                 </div>
             </div>
 
@@ -164,7 +169,7 @@ function showInlineAlert(typeClass, msg) {
             <?php foreach ($pages as $p): ?>
             <div class="page-tab" data-page-id="<?php echo htmlspecialchars($p['page_id']); ?>"
                  data-user-id="<?php echo (int)$p['user_id']; ?>"
-                 data-token="<?php echo htmlspecialchars(decryptData($p['access_token'])); ?>"
+                 data-token="<?php echo htmlspecialchars(decryptData($p['access_token']) ?? ''); ?>"
                  title="<?php echo htmlspecialchars($p['name']); ?> — <?php echo htmlspecialchars($p['user_name']); ?>"
                  style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);transition:background .15s;">
                 <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?php echo htmlspecialchars($p['name']); ?></div>
