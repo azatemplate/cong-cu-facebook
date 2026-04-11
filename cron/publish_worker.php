@@ -972,9 +972,9 @@ foreach ($pending_posts as $post) {
 
         echo " -> Thành công! Post ID: $post_id\n";
 
-        // Gửi thông báo Telegram
+        // Gửi thông báo Telegram (Đã tắt theo yêu cầu để tránh spam)
         $tg_page_name = $fanpage_name ?: $post['page_id'];
-        send_telegram_notification($pdo, $post['account_id'], "<b>Đăng bài thành công!</b>\n📄 Page: {$tg_page_name}\n📝 Loại: {$post['post_type']}\n🆔 Post ID: {$post_id}", 'publish');
+        // send_telegram_notification($pdo, $post['account_id'], "<b>Đăng bài thành công!</b>\n📄 Page: {$tg_page_name}\n📝 Loại: {$post['post_type']}\n🆔 Post ID: {$post_id}", 'publish');
     } else {
         $error_msg = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : json_encode($response['data']);
         marKAsFailed($pdo, $post['id'], "Lỗi API: $error_msg", $sys_max_retries, $sys_retry_interval, $has_error_msg, $has_retry_count);
