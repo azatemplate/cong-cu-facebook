@@ -256,15 +256,19 @@ require_once __DIR__ . '/fb_api.php';
                                 }
 
                                 const isReport = snippetData && snippetData.type === 'report';
+                                const isExpire = snippetData && snippetData.type === 'expire';
                                 if (isReport) {
                                     isSuccess = true;
                                     contentHtml = `<div style="margin-top:4px;line-height:1.4;white-space:pre-wrap;font-family:monospace;">${snippetData.content}</div>`;
+                                } else if (isExpire) {
+                                    isError = true;
+                                    contentHtml = `<div style="margin-top:4px;line-height:1.5;color:#b91c1c;font-weight:bold;">&bull; CẢNH BÁO: ${snippetData.content}</div>`;
                                 }
 
-                                const titleText = isReport ? '📊 [BÁO CÁO HÀNG NGÀY]' : (isSuccess ? '✅ [COMMENT SUCCESS]' : (isError ? '❌ [COMMENT ERROR]' : '💡 [INSIGHT]'));
-                                const titleColor = isReport ? '#0284c7' : (isSuccess ? '#15803d' : (isError ? '#b91c1c' : '#15803d'));
-                                const bgColor = isReport ? '#f0f9ff' : '#f0fdf4';
-                                const hoverColor = isReport ? '#e0f2fe' : '#dcfce7';
+                                const titleText = isExpire ? '⚠️ [SẮP HẾT HẠN SỬ DỤNG]' : (isReport ? '📊 [BÁO CÁO HÀNG NGÀY]' : (isSuccess ? '✅ [COMMENT SUCCESS]' : (isError ? '❌ [COMMENT ERROR]' : '💡 [INSIGHT]')));
+                                const titleColor = isExpire ? '#dc2626' : (isReport ? '#0284c7' : (isSuccess ? '#15803d' : (isError ? '#b91c1c' : '#15803d')));
+                                const bgColor = isExpire ? '#fef2f2' : (isReport ? '#f0f9ff' : '#f0fdf4');
+                                const hoverColor = isExpire ? '#fee2e2' : (isReport ? '#e0f2fe' : '#dcfce7');
                                 
                                 let link = targetPostId ? `live_comments.php?page_id=${cn.page_id}&post_id=${targetPostId}` : (isReport ? 'index.php' : 'manage_posts.php');
 

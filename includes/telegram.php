@@ -75,7 +75,7 @@ if (!function_exists('send_telegram_notification')) {
     function send_telegram_daily_report($pdo) {
         try {
             // Lấy TẤT CẢ account trong hệ thống để gửi thông báo chuông (và Telegram nếu có)
-            $accounts = $pdo->query("SELECT id, username, telegram_bot_token, telegram_chat_id FROM system_accounts")->fetchAll(PDO::FETCH_ASSOC);
+            $accounts = $pdo->query("SELECT id, username, telegram_bot_token, telegram_chat_id, expire_date FROM system_accounts")->fetchAll(PDO::FETCH_ASSOC);
 
             if (empty($accounts)) return false;
 
@@ -142,6 +142,38 @@ if (!function_exists('send_telegram_notification')) {
                              . "━━━━━━━━━━━━━━━━━━━━\n"
                              . "🕐 Cập nhật lúc: {$time}";
                     _tg_send($acc['telegram_bot_token'], $acc['telegram_chat_id'], $tg_message);
+                }
+
+                // 3. KIỂM TRA SẮP HẾT HẠN (CẢNH BÁO)
+                if (!empty($acc['expire_date'])) {
+                    $now = time();
+                    $expire_time = strtotime($acc['expire_date']);
+                    $diff_seconds = $expire_time - $now;
+
+                    // Chỉ báo cáo nếu còn <= 5 ngày
+                    if ($diff_seconds > 0 && $diff_seconds <= (5 * 24 * 3600)) {
+                        $days_left = floor($diff_seconds / (24 * 3600));
+                        if ($days_left == 0) $days_left = 1; // Chưa tới 1 ngày
+                        
+                        $warning_msg = "Bạn còn {$days_left} ngày để sử dụng. Liên hệ admin 0967849934 để gia hạn.";
+                        
+                        // Lưu vào chuông
+                        try {
+                            $sys_page_id = 'SYSTEM_ACCOUNT_' . $acc['id'];
+                            $notif_snippet = json_encode([
+                                'type' => 'expire',
+                                'content' => $warning_msg
+                            ], JSON_UNESCAPED_UNICODE);
+                            $pdo->prepare("INSERT INTO page_notifications (page_id, type, sender_name, snippet) VALUES (?, 'report', 'Cảnh báo', ?)")
+                                ->execute([$sys_page_id, $notif_snippet]);
+                        } catch (Exception $e) {}
+                        
+                        // Gửi qua telegram
+                        if (!empty($acc['telegram_bot_token']) && !empty($acc['telegram_chat_id'])) {
+                            $tg_warning = "⚠️ <b>CẢNH BÁO: SẮP HẾT HẠN SỬ DỤNG</b>\n{$warning_msg}";
+                            _tg_send($acc['telegram_bot_token'], $acc['telegram_chat_id'], $tg_warning);
+                        }
+                    }
                 }
             }
             return true;
