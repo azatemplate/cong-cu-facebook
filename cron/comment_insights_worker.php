@@ -39,6 +39,7 @@ if (!$lock_got) {
 
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
+require_once __DIR__ . '/../includes/telegram.php';
 
 echo "\n=== Comment Insights Worker ===\n";
 echo "Thời gian: " . date('Y-m-d H:i:s') . "\n";
@@ -286,6 +287,9 @@ foreach ($rows as $row) {
         echo "  🎉 Bình luận thành công! Comment ID: {$response['data']['id']}\n";
         echo "  📝 Nội dung: \"$comment_text\"\n\n";
 
+        // Gửi thông báo Telegram
+        send_telegram_notification($pdo, "<b>Video đủ điều kiện bình luận!</b>\n🎬 Video: {$fb_post_id}\n📊 View: {$current_views}, Like: {$current_likes}, Comment: {$current_comments_count}\n📝 Bình luận: \"{$comment_text}\"", 'comment');
+
         // Gửi thông báo lên chuông (bell notification)
         try {
             $notif_snippet = json_encode([
@@ -303,6 +307,10 @@ foreach ($rows as $row) {
         $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'error' WHERE id = ?")
             ->execute([$row['id']]);
         echo "  ✗ Lỗi bình luận: $err\n\n";
+
+        // Gửi thông báo lỗi Telegram
+        $short_err = mb_strimwidth($err, 0, 100, '…');
+        send_telegram_notification($pdo, "<b>Lỗi bình luận!</b>\n🎬 Video: {$fb_post_id}\n❌ Lỗi: {$short_err}", 'error');
 
         // Gửi thông báo lỗi lên chuông
         try {

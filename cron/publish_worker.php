@@ -60,6 +60,7 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/drive_utils.php';
 require_once __DIR__ . '/../includes/ai_rewriter.php';
+require_once __DIR__ . '/../includes/telegram.php';
 
 // Auto-migrate newly required columns
 try {
@@ -967,6 +968,10 @@ foreach ($pending_posts as $post) {
         }
 
         echo " -> Thành công! Post ID: $post_id\n";
+
+        // Gửi thông báo Telegram
+        $tg_page_name = $fanpage_name ?: $post['page_id'];
+        send_telegram_notification($pdo, "<b>Đăng bài thành công!</b>\n📄 Page: {$tg_page_name}\n📝 Loại: {$post['post_type']}\n🆔 Post ID: {$post_id}", 'publish');
     } else {
         $error_msg = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : json_encode($response['data']);
         marKAsFailed($pdo, $post['id'], "Lỗi API: $error_msg", $sys_max_retries, $sys_retry_interval, $has_error_msg, $has_retry_count);
@@ -1022,6 +1027,12 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
     } else {
         $pdo->prepare("UPDATE scheduled_posts SET status='failed' WHERE id=?")
             ->execute([$id]);
+    }
+
+    // Gửi Telegram khi hết số lần thử
+    if ($new_retry > $max_retries) {
+        $short_msg = mb_strimwidth($msg, 0, 150, '…');
+        send_telegram_notification($pdo, "<b>Đăng bài thất bại!</b>\n🆔 Bài ID: {$id}\n💬 Lỗi: {$short_msg}\n🔄 Đã thử: {$new_retry}/{$max_retries} lần", 'error');
     }
 }
 ?>

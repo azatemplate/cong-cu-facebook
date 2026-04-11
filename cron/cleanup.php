@@ -15,6 +15,7 @@ if (file_exists($flag_file)) {
 }
 
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/telegram.php';
 
 echo "\n========================================\n";
 echo "  FB AUTO-CLEANUP — " . date('Y-m-d H:i:s') . "\n";
@@ -205,6 +206,9 @@ echo "  Campaigns trong:       {$stats['campaigns']}\n";
 echo "  Lock/flag files:       {$stats['lock_files']}\n";
 echo "  Thoi gian:             " . date('Y-m-d H:i:s') . "\n";
 echo "========================================\n";
+
+// Gửi báo cáo ngày qua Telegram
+send_telegram_daily_report($pdo);
 
 // Danh dau da chay hom nay
 @file_put_contents($flag_file, date('Y-m-d H:i:s'));
