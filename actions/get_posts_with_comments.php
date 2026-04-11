@@ -110,7 +110,7 @@ if ($merge_all === 1) {
     $token = decryptData($page['access_token']);
     $endpoint = "$page_id/feed";
     $params = [
-        'fields' => 'id,message,created_time,full_picture,comments.summary(true)',
+        'fields' => 'id,message,created_time,full_picture,comments.summary(true),reactions.summary(true)',
         'limit' => 10, // Giảm từ 30 → 10 để tránh lỗi "reduce amount of data"
         'access_token' => $token
     ];
@@ -141,7 +141,7 @@ if ($merge_all === 1) {
         
         if (!$found) {
             $single_res = fb_api_request($full_target_id, [
-                'fields' => 'id,message,created_time,full_picture,comments.summary(true)',
+                'fields' => 'id,message,created_time,full_picture,comments.summary(true),reactions.summary(true)',
                 'access_token' => $token
             ], 'GET');
             if (isset($single_res['data']['id'])) {
@@ -154,8 +154,10 @@ if ($merge_all === 1) {
 foreach ($data as $post) {
     if ($merge_all === 1) {
         $comment_count = $post['comment_count'] ?? 0;
+        $reaction_count = $post['reaction_count'] ?? 0;
     } else {
         $comment_count = $post['comments']['summary']['total_count'] ?? 0;
+        $reaction_count = $post['reactions']['summary']['total_count'] ?? 0;
     }
     
     $formatted_posts[] = [
@@ -164,6 +166,7 @@ foreach ($data as $post) {
         'created_time' => $post['created_time'],
         'picture' => $merge_all === 1 ? ($post['picture'] ?? null) : ($post['full_picture'] ?? null),
         'comment_count' => $comment_count,
+        'reaction_count' => $reaction_count,
         'has_comments' => $comment_count > 0,
         'page_name' => $post['_page_name'] ?? null,
         'is_unread' => in_array($post['id'], $unread_post_ids)

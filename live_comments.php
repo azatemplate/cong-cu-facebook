@@ -564,7 +564,7 @@ function renderComments(commentsList) {
             ${postMedia ? `<div style="background:#f0f2f5;text-align:center;">${postMedia}</div>` : ''}
             
             <div style="padding:10px 16px; display:flex; justify-content:space-between; align-items:center; font-size:15px; color:#65676b;">
-                <div>👍 ❤️ 😆</div>
+                <div>👍 ❤️ 😆 ${post.reaction_count || 0}</div>
                 <div>${post.comment_count} bình luận</div>
             </div>
             

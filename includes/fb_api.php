@@ -221,7 +221,7 @@ function get_fb_posts_multi($pages, $limit = 30, $cursors = []) {
             $token = $p['access_token'];
             $after = $cursors[$page_id] ?? '';
             
-            $url = "https://graph.facebook.com/v19.0/{$page_id}/feed?fields=id,message,created_time,full_picture,comments.summary(1).limit(1)&limit={$limit}&access_token={$token}";
+            $url = "https://graph.facebook.com/v19.0/{$page_id}/feed?fields=id,message,created_time,full_picture,comments.summary(1).limit(1),reactions.summary(1).limit(1)&limit={$limit}&access_token={$token}";
             if ($after) {
                 $url .= "&after=" . urlencode($after);
             }
@@ -267,7 +267,9 @@ function get_fb_posts_multi($pages, $limit = 30, $cursors = []) {
                             // Transform fields to match single API
                             $post['picture'] = $post['full_picture'] ?? null;
                             $cc = $post['comments']['summary']['total_count'] ?? 0;
+                            $rc = $post['reactions']['summary']['total_count'] ?? 0;
                             $post['comment_count'] = $cc;
+                            $post['reaction_count'] = $rc;
                             $post['has_comments'] = $cc > 0;
                             $all_posts[] = $post;
                         }
