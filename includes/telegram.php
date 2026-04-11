@@ -103,19 +103,6 @@ if (!function_exists('send_telegram_notification')) {
                 $p_stmt->execute([$acc['id']]);
                 $active_pages = $p_stmt->fetchColumn();
 
-                // Tính toán lượt xem Reels (Views) trong ngày từ snapshot
-                $v_stmt = $pdo->prepare("SELECT total_views FROM dashboard_snapshots WHERE account_id = ? ORDER BY snapshot_date DESC LIMIT 2");
-                $v_stmt->execute([$acc['id']]);
-                $snapshots = $v_stmt->fetchAll(PDO::FETCH_ASSOC);
-                
-                $views_today = 0;
-                if (count($snapshots) == 2) {
-                    $views_today = max(0, (int)$snapshots[0]['total_views'] - (int)$snapshots[1]['total_views']);
-                } elseif (count($snapshots) == 1) {
-                    $views_today = (int)$snapshots[0]['total_views'];
-                }
-                $views_formatted = number_format($views_today);
-
                 $date = date('d/m/Y');
                 $time = date('H:i');
 
@@ -127,7 +114,6 @@ if (!function_exists('send_telegram_notification')) {
                          . "⏳ Đang chờ: {$pending} bài\n"
                          . "🔄 Đang xử lý: {$processing} bài\n"
                          . "📄 Page hoạt động: {$active_pages}\n"
-                         . "👁 Lượt xem mới: {$views_formatted} view\n"
                          . "━━━━━━━━━━━━━━━━━━━━\n"
                          . "🕐 Cập nhật lúc: {$time}";
 
@@ -153,7 +139,6 @@ if (!function_exists('send_telegram_notification')) {
                              . "⏳ Đang chờ: <b>{$pending}</b> bài\n"
                              . "🔄 Đang xử lý: <b>{$processing}</b> bài\n"
                              . "📄 Page hoạt động: <b>{$active_pages}</b>\n"
-                             . "👁 Lượt xem mới: <b>{$views_formatted}</b> view\n"
                              . "━━━━━━━━━━━━━━━━━━━━\n"
                              . "🕐 Cập nhật lúc: {$time}";
                     _tg_send($acc['telegram_bot_token'], $acc['telegram_chat_id'], $tg_message);
