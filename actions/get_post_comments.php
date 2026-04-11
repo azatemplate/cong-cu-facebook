@@ -41,7 +41,7 @@ $token = decryptData($page['access_token']);
 // Lấy comments theo thứ tự thời gian đảo ngược (mới nhất trước) để giống Live Chat
 $endpoint = "$post_id/comments";
 $params = [
-    'fields' => 'id,message,created_time,from{id,name},attachment,comments.summary(1){id,message,created_time,from{id,name},attachment}',
+    'fields' => 'id,message,created_time,from{id,name,picture},attachment,comments.summary(1){id,message,created_time,from{id,name,picture},attachment}',
     'order' => 'reverse_chronological',
     'limit' => 20,
     'access_token' => $token

@@ -164,6 +164,7 @@ function showInlineAlert(typeClass, msg) {
             <?php foreach ($pages as $p): ?>
             <div class="page-tab" data-page-id="<?php echo htmlspecialchars($p['page_id']); ?>"
                  data-user-id="<?php echo (int)$p['user_id']; ?>"
+                 data-token="<?php echo htmlspecialchars(decryptData($p['access_token'])); ?>"
                  title="<?php echo htmlspecialchars($p['name']); ?> — <?php echo htmlspecialchars($p['user_name']); ?>"
                  style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);transition:background .15s;">
                 <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?php echo htmlspecialchars($p['name']); ?></div>
@@ -273,6 +274,7 @@ let convCursor    = '';
 
 let currentPageId = '<?php echo $selected_page_id; ?>';
 let currentUserId = '';
+let chatToken     = '';
 let selectedPostId= '<?php echo $selected_post_id; ?>'; // Khởi tạo bằng param
 let originalPostId= '';
 
@@ -326,6 +328,9 @@ document.querySelectorAll('.page-tab').forEach(tab => {
         this.classList.add('active');
         currentPageId = this.dataset.pageId;
         currentUserId = this.dataset.userId;
+        chatToken     = this.dataset.token;
+        activePageIdEl.value = currentPageId;
+        activeUserIdEl.value = currentUserId;
         localStorage.setItem('lc_last_page_id', currentPageId);
         localStorage.setItem('lc_last_user_id', currentUserId);
         loadPosts();
@@ -611,7 +616,12 @@ function buildCommentHTML(c, isReply = false) {
     }
     
     let authorAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(authorNameStr)}&background=random&size=64`;
-    if (isSent) {
+    if (c.from && c.from.picture && c.from.picture.data && c.from.picture.data.url) {
+        authorAvatar = c.from.picture.data.url;
+    } else if (c.from && c.from.id) {
+        // Fallback to direct Graph API picture link if we have the ID but no picture field
+        authorAvatar = `https://graph.facebook.com/${c.from.id}/picture?type=square&access_token=${chatToken || ''}`;
+    } else if (isSent) {
         authorAvatar = 'https://ui-avatars.com/api/?name=P&background=0284c7&color=fff&size=64';
     }
 
