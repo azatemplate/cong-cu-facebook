@@ -117,6 +117,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         $alert_type = 'success';
         $alert_message = 'Đã cập nhật cấu hình Telegram Bot thành công.';
+        $account['telegram_bot_token'] = $tg_token;
+        $account['telegram_chat_id'] = $tg_chat_id;
     }
 
     if (isset($_POST['test_telegram'])) {
