@@ -206,7 +206,7 @@ require_once __DIR__ . '/fb_api.php';
                         // Helper: render 1 live_notif item
                         function renderNotifItem(cn) {
                             const isMsg = cn.type === 'message';
-                            const isInsight = cn.type === 'insights_comment';
+                            const isInsight = cn.type === 'insights_comment' || cn.type === 'report';
                             
                             const name  = cn.sender_name || 'Khách hàng';
                             
@@ -266,7 +266,7 @@ require_once __DIR__ . '/fb_api.php';
                                 const bgColor = isReport ? '#f0f9ff' : '#f0fdf4';
                                 const hoverColor = isReport ? '#e0f2fe' : '#dcfce7';
                                 
-                                let link = targetPostId ? `live_comments.php?page_id=${cn.page_id}&post_id=${targetPostId}` : 'manage_posts.php';
+                                let link = targetPostId ? `live_comments.php?page_id=${cn.page_id}&post_id=${targetPostId}` : (isReport ? 'index.php' : 'manage_posts.php');
 
                                 return `<div onclick="readNotif('${cn.id}','${link}')" style="cursor:pointer;padding:10px;margin-bottom:4px;background:${bgColor};border-radius:6px;transition:background 0.2s;" onmouseover="this.style.background='${hoverColor}'" onmouseout="this.style.background='${bgColor}'">
                                     <div style="font-weight:bold;color:${titleColor};font-size:13px;margin-bottom:2px;">${titleText}</div>
