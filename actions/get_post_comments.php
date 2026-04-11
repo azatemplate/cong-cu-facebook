@@ -58,9 +58,43 @@ if (isset($response['data']['error'])) {
 }
 
 $next_cursor = $response['data']['paging']['cursors']['after'] ?? null;
+$comments_data = $response['data']['data'] ?? [];
+
+// Khôi phục tên người dùng bị Facebook API ẩn (Unknown) bằng dữ liệu đã lưu từ Webhook
+if (!empty($comments_data)) {
+    $comment_ids = [];
+    $collect_ids = function($list) use (&$collect_ids, &$comment_ids) {
+        foreach ($list as $c) {
+            $comment_ids[] = $c['id'];
+            if (!empty($c['comments']['data'])) $collect_ids($c['comments']['data']);
+        }
+    };
+    $collect_ids($comments_data);
+
+    if (!empty($comment_ids)) {
+        // Query tên người dùng đã bắt được từ Webhook trong base local
+        $in_placeholders = implode(',', array_fill(0, count($comment_ids), '?'));
+        $stmt = $pdo->prepare("SELECT comment_id, sender_name FROM page_notifications WHERE type = 'comment' AND comment_id IN ($in_placeholders)");
+        $stmt->execute($comment_ids);
+        $local_names = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+        $enrich_names = function(&$list) use (&$enrich_names, $local_names) {
+            foreach ($list as &$c) {
+                if (empty($c['from']) || empty($c['from']['name'])) {
+                    if (isset($local_names[$c['id']])) {
+                        if (!isset($c['from'])) $c['from'] = [];
+                        $c['from']['name'] = $local_names[$c['id']];
+                    }
+                }
+                if (!empty($c['comments']['data'])) $enrich_names($c['comments']['data']);
+            }
+        };
+        $enrich_names($comments_data);
+    }
+}
 
 echo json_encode([
     'status' => 'success',
-    'data' => $response['data']['data'] ?? [],
+    'data' => $comments_data,
     'next_cursor' => $next_cursor
 ]);
