@@ -27,11 +27,11 @@ $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 // Fetch all pages grouped by user
 // Includes owned pages AND shared pages
 $stmt2 = $pdo->prepare("
-    (SELECT p.id, p.page_id, p.name, p.user_id 
+    (SELECT p.id, p.page_id, p.name, p.avatar, p.user_id 
      FROM pages p JOIN users u ON p.user_id = u.id 
      WHERE u.account_id = :aid)
     UNION
-    (SELECT p.id, p.page_id, p.name, u.id as user_id
+    (SELECT p.id, p.page_id, p.name, p.avatar, u.id as user_id
      FROM pages p 
      JOIN page_shares ps ON p.page_id = ps.page_id 
      JOIN users u ON p.user_id = u.id

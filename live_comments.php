@@ -13,11 +13,11 @@ $is_admin   = ($_SESSION['role'] === 'admin');
 
 // Fetch all pages for sidebar
 $stmt2 = $pdo->prepare("
-    (SELECT p.id, p.page_id, p.name, p.user_id, u.name AS user_name
+    (SELECT p.id, p.page_id, p.name, p.avatar, p.access_token, p.user_id, u.name AS user_name
      FROM pages p JOIN users u ON p.user_id = u.id
      WHERE u.account_id = :aid)
     UNION
-    (SELECT p.id, p.page_id, p.name, p.user_id, u.name AS user_name
+    (SELECT p.id, p.page_id, p.name, p.avatar, p.access_token, p.user_id, u.name AS user_name
      FROM pages p
      JOIN page_shares ps ON p.page_id = ps.page_id
      JOIN users u ON p.user_id = u.id
@@ -172,8 +172,17 @@ function showInlineAlert(typeClass, msg) {
                  data-token="<?php echo htmlspecialchars((string)(decryptData($p['access_token'] ?? '') ?? '')); ?>"
                  title="<?php echo htmlspecialchars((string)($p['name'] ?? '')); ?> — <?php echo htmlspecialchars((string)($p['user_name'] ?? '')); ?>"
                  style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);transition:background .15s;">
-                <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?php echo htmlspecialchars((string)($p['name'] ?? '')); ?></div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?php echo htmlspecialchars((string)($p['user_name'] ?? '')); ?></div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <?php if (!empty($p['avatar'])): ?>
+                        <img src="<?php echo htmlspecialchars($p['avatar']); ?>" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+                    <?php else: ?>
+                        <div style="width:28px;height:28px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#64748b;font-weight:bold;flex-shrink:0;"><?php echo mb_strtoupper(mb_substr($p['name'] ?? '', 0, 1)); ?></div>
+                    <?php endif; ?>
+                    <div style="min-width:0;flex:1;">
+                        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?php echo htmlspecialchars((string)($p['name'] ?? '')); ?></div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?php echo htmlspecialchars((string)($p['user_name'] ?? '')); ?></div>
+                    </div>
+                </div>
             </div>
             <?php endforeach; endif; ?>
         </div>

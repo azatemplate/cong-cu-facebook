@@ -6,11 +6,11 @@ $account_id = $_SESSION['account_id'];
 
 // Fetch pages for dropdown
 $stmt2 = $pdo->prepare("
-    (SELECT p.id, p.page_id, p.name, p.user_id
+    (SELECT p.id, p.page_id, p.name, p.avatar, p.user_id
      FROM pages p JOIN users u ON p.user_id = u.id
      WHERE u.account_id = :aid)
     UNION
-    (SELECT p.id, p.page_id, p.name, u.id as user_id
+    (SELECT p.id, p.page_id, p.name, p.avatar, u.id as user_id
      FROM pages p
      JOIN page_shares ps ON p.page_id = ps.page_id
      JOIN users u ON p.user_id = u.id
@@ -217,20 +217,97 @@ function get_post_metric($post, $metric_name) {
         💡 <strong>Content Insights</strong> — Đo lường hiệu suất nội dung: lượt xem video/reels, tương tác (reactions, comments, shares), và chi tiết từng bài đăng hôm nay.
     </div>
 
-    <!-- Page Selector -->
-    <div class="card" style="margin-bottom: 20px; padding: 15px 20px;">
-        <form method="GET" action="insights.php" style="display:flex; align-items:center; gap:10px;">
+    <!-- Page Selector (Custom with avatars) -->
+    <div class="card" style="margin-bottom: 20px; padding: 15px 20px; overflow: visible !important;">
+        <form method="GET" action="insights.php" id="insightsForm" style="display:flex; align-items:center; gap:10px;">
             <label style="font-size:13px; font-weight:600; color:var(--text-main); white-space:nowrap;">Fanpage:</label>
-            <select name="page_id" class="form-control" style="flex:1;" required onchange="this.form.submit()">
-                <option value="">-- Chọn Fanpage --</option>
-                <?php foreach ($pages as $p): ?>
-                    <option value="<?php echo htmlspecialchars($p['page_id']); ?>" <?php echo ($selected_page_id === $p['page_id']) ? 'selected' : ''; ?>>
-                        <?php echo htmlspecialchars($p['name']); ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
+            <input type="hidden" name="page_id" id="selectedPageId" value="<?php echo htmlspecialchars($selected_page_id); ?>">
+            <div style="flex:1; position:relative;" id="customSelectWrap">
+                <div id="customSelectBtn" style="display:flex;align-items:center;gap:10px;padding:8px 14px;border:1px solid var(--border-color);border-radius:6px;cursor:pointer;background:#fff;min-height:40px;box-shadow: 0 1px 2px rgba(0,0,0,0.05);" onclick="togglePageDropdown()">
+                    <?php
+                    $sel_name = '-- Chọn Fanpage --';
+                    $sel_avatar = '';
+                    foreach ($pages as $p) {
+                        if ($selected_page_id === $p['page_id']) {
+                            $sel_name = $p['name'];
+                            $sel_avatar = $p['avatar'] ?? '';
+                            break;
+                        }
+                    }
+                    ?>
+                    <?php if ($sel_avatar): ?>
+                        <img src="<?php echo htmlspecialchars($sel_avatar); ?>" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+                    <?php elseif ($selected_page_id): ?>
+                        <div style="width:28px;height:28px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#64748b;font-weight:bold;flex-shrink:0;"><?php echo mb_strtoupper(mb_substr($sel_name, 0, 1)); ?></div>
+                    <?php endif; ?>
+                    <span style="flex:1;font-size:14px;color:<?php echo $selected_page_id ? 'var(--text-main)' : '#9ca3af'; ?>;"><?php echo htmlspecialchars($sel_name); ?></span>
+                    <span style="color:#9ca3af;font-size:12px;">▼</span>
+                </div>
+                <!-- Dropdown list -->
+                <div id="customSelectDropdown" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:6px;background:#fff;border:1px solid var(--border-color);border-radius:8px;box-shadow:0 10px 25px rgba(0,0,0,0.1);z-index:999;max-height:360px;overflow:hidden;">
+                    <div style="padding:10px;border-bottom:1px solid var(--border-color);background:#f9fafb;">
+                        <input type="text" id="pageSearchInput" placeholder="🔍 Tìm Fanpage..." style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;box-sizing:border-box;outline:none;box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);">
+                    </div>
+                    <div id="pageOptionsList" style="overflow-y:auto;max-height:280px;">
+                        <?php foreach ($pages as $p): ?>
+                        <div class="page-option" data-page-id="<?php echo htmlspecialchars($p['page_id']); ?>" data-name="<?php echo htmlspecialchars($p['name']); ?>" style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;transition:all 0.1s;border-bottom:1px solid #f1f5f9;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+                            <?php if (!empty($p['avatar'])): ?>
+                                <img src="<?php echo htmlspecialchars($p['avatar']); ?>" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <?php else: ?>
+                                <div style="width:32px;height:32px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:13px;color:#64748b;font-weight:bold;flex-shrink:0;"><?php echo mb_strtoupper(mb_substr($p['name'], 0, 1)); ?></div>
+                            <?php endif; ?>
+                            <span style="font-size:13px;font-weight:500;color:var(--text-main);"><?php echo htmlspecialchars($p['name']); ?></span>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
         </form>
     </div>
+    <script>
+    (function(){
+        const dropdown = document.getElementById('customSelectDropdown');
+        const searchInput = document.getElementById('pageSearchInput');
+        const hiddenInput = document.getElementById('selectedPageId');
+        const form = document.getElementById('insightsForm');
+        let isOpen = false;
+
+        window.togglePageDropdown = function() {
+            isOpen = !isOpen;
+            dropdown.style.display = isOpen ? 'block' : 'none';
+            if (isOpen) {
+                searchInput.value = '';
+                filterOptions('');
+                setTimeout(() => searchInput.focus(), 10);
+            }
+        };
+
+        searchInput.addEventListener('input', function() { filterOptions(this.value.trim().toLowerCase()); });
+        searchInput.addEventListener('click', function(e) { e.stopPropagation(); });
+
+        function filterOptions(q) {
+            document.querySelectorAll('.page-option').forEach(opt => {
+                const name = (opt.getAttribute('data-name') || '').toLowerCase();
+                opt.style.display = (!q || name.includes(q)) ? 'flex' : 'none';
+            });
+        }
+
+        document.querySelectorAll('.page-option').forEach(opt => {
+            opt.addEventListener('click', function(e) {
+                e.stopPropagation();
+                hiddenInput.value = this.getAttribute('data-page-id');
+                form.submit();
+            });
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!document.getElementById('customSelectWrap').contains(e.target)) {
+                dropdown.style.display = 'none';
+                isOpen = false;
+            }
+        });
+    })();
+    </script>
 
 <?php if ($error_msg): ?>
     <div class="alert alert-danger"><?php echo htmlspecialchars($error_msg); ?></div>

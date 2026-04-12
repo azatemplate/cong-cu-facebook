@@ -174,6 +174,66 @@ try {
     // Seed default settings silently
     $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1'), ('max_retries', '3'), ('cleanup_retain_days', '7')");
 
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS scraper_pages (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            account_id INT NOT NULL,
+            user_id INT NOT NULL,
+            page_id VARCHAR(255) NOT NULL,
+            page_name VARCHAR(255),
+            followers_count INT DEFAULT 0,
+            access_token TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_scraper_page (account_id, page_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM scraper_pages LIKE 'access_token'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE scraper_pages ADD COLUMN access_token TEXT");
+        }
+        $col = $pdo->query("SHOW COLUMNS FROM scraper_pages LIKE 'post_count'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE scraper_pages ADD COLUMN post_count INT DEFAULT 0");
+        }
+        $col = $pdo->query("SHOW COLUMNS FROM scraper_pages LIKE 'auto_refresh_hours'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE scraper_pages ADD COLUMN auto_refresh_hours INT DEFAULT 0");
+        }
+        $col = $pdo->query("SHOW COLUMNS FROM scraper_pages LIKE 'last_scraped_at'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE scraper_pages ADD COLUMN last_scraped_at DATETIME DEFAULT NULL");
+        }
+    } catch (Exception $e) {}
+
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM pages LIKE 'avatar'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE pages ADD COLUMN avatar TEXT DEFAULT NULL");
+        } else {
+            $colInfo = $col->fetch(PDO::FETCH_ASSOC);
+            if (stripos($colInfo['Type'], 'varchar') !== false) {
+                $pdo->exec("ALTER TABLE pages MODIFY COLUMN avatar TEXT DEFAULT NULL");
+            }
+        }
+    } catch (Exception $e) {}
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS scraper_posts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            page_id VARCHAR(255) NOT NULL,
+            fb_post_id VARCHAR(255) UNIQUE NOT NULL,
+            message TEXT,
+            picture VARCHAR(500),
+            shares INT DEFAULT 0,
+            comments INT DEFAULT 0,
+            likes INT DEFAULT 0,
+            post_created_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
     // ── Performance Indexes (safe to run every boot, IF NOT EXISTS) ─────────
     // idx_cron_dispatch: tăng tốc query của dispatcher mỗi phút
     try {

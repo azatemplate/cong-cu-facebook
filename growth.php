@@ -6,11 +6,11 @@ $account_id = $_SESSION['account_id'];
 
 // Fetch pages for dropdown
 $stmt2 = $pdo->prepare("
-    (SELECT p.id, p.page_id, p.name, p.user_id, p.followers_count, p.followers_diff
+    (SELECT p.id, p.page_id, p.name, p.avatar, p.user_id, p.followers_count, p.followers_diff
      FROM pages p JOIN users u ON p.user_id = u.id
      WHERE u.account_id = :aid)
     UNION
-    (SELECT p.id, p.page_id, p.name, u.id as user_id, p.followers_count, p.followers_diff
+    (SELECT p.id, p.page_id, p.name, p.avatar, u.id as user_id, p.followers_count, p.followers_diff
      FROM pages p
      JOIN page_shares ps ON p.page_id = ps.page_id
      JOIN users u ON p.user_id = u.id
@@ -85,8 +85,15 @@ $period = 'days_28';
                 }
             ?>
             <div style="padding:14px; border:1px solid #e5e7eb; border-radius:8px; background:#fafafa;">
-                <div style="font-size:13px; font-weight:600; color:#374151; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="<?php echo htmlspecialchars($p['name']); ?>">
-                    <?php echo htmlspecialchars($p['name']); ?>
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                    <?php if (!empty($p['avatar'])): ?>
+                        <img src="<?php echo htmlspecialchars($p['avatar']); ?>" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+                    <?php else: ?>
+                        <div style="width:28px;height:28px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#64748b;font-weight:bold;flex-shrink:0;"><?php echo mb_strtoupper(mb_substr($p['name'], 0, 1)); ?></div>
+                    <?php endif; ?>
+                    <div style="font-size:13px; font-weight:600; color:#374151; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="<?php echo htmlspecialchars($p['name']); ?>">
+                        <?php echo htmlspecialchars($p['name']); ?>
+                    </div>
                 </div>
                 <div style="display:flex; align-items:baseline; gap:8px;">
                     <span style="font-size:20px; font-weight:700; color:#1e40af;"><?php echo number_format($p['followers_count'] ?? 0); ?></span>
@@ -118,6 +125,7 @@ $period = 'days_28';
         const tbody = document.getElementById('growth-table-body');
         const nocache = new URLSearchParams(window.location.search).get('nocache');
         const url = 'actions/ajax_insights_all.php' + (nocache ? '?nocache=1' : '');
+        const avatarMap = <?php echo json_encode(array_column($pages, 'avatar', 'page_id')); ?>;
         
         fetch(url)
             .then(res => res.json())
@@ -146,7 +154,7 @@ $period = 'days_28';
                         <tr>
                             <td style="font-weight: 500; color: var(--text-main);">
                                 <span style="display:flex; align-items:center; gap:8px;">
-                                    <span class="icon" style="color:#1e40af;">f</span>
+                                    ${avatarMap[p_id] ? `<img src="${avatarMap[p_id]}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;">` : `<div style="width:28px;height:28px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#64748b;font-weight:bold;flex-shrink:0;">${row.name.charAt(0).toUpperCase()}</div>`}
                                     <a href="insights.php?page_id=${p_id}" target="_blank" style="text-decoration: none; color: inherit;">${row.name}</a>
                                 </span>
                             </td>

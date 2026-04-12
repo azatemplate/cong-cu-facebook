@@ -101,6 +101,7 @@ try {
     $posts_stmt = $pdo->prepare("
         SELECT sp.*, 
                p.name AS page_name,
+               p.avatar AS page_avatar,
                yt.channel_title AS yt_channel_name
         FROM scheduled_posts sp
         LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type != 'YouTube'
@@ -280,14 +281,25 @@ function status_label($s) {
                     <?php endif; ?>
                 </td>
                 <td style="padding:10px 16px;">
-                    <div style="font-weight:500;font-size:13px;"><?php 
-                        if ($post['post_type'] === 'YouTube') {
-                            echo htmlspecialchars($post['yt_channel_name'] ?? '—');
-                        } else {
-                            echo htmlspecialchars($post['page_name'] ?? '—');
-                        }
-                    ?></div>
-                    <div style="font-size:12px;color:var(--text-muted);margin-top:2px;"><?php echo htmlspecialchars($desc_short); ?></div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <?php if ($post['post_type'] !== 'YouTube' && !empty($post['page_avatar'])): ?>
+                            <img src="<?php echo htmlspecialchars($post['page_avatar']); ?>" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;" alt="">
+                        <?php elseif ($post['post_type'] !== 'YouTube'): ?>
+                            <div style="width:28px;height:28px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#64748b;font-weight:bold;flex-shrink:0;">
+                                <?php echo mb_strtoupper(mb_substr($post['page_name'] ?? '—', 0, 1)); ?>
+                            </div>
+                        <?php endif; ?>
+                        <div>
+                            <div style="font-weight:500;font-size:13px;"><?php 
+                                if ($post['post_type'] === 'YouTube') {
+                                    echo htmlspecialchars($post['yt_channel_name'] ?? '—');
+                                } else {
+                                    echo htmlspecialchars($post['page_name'] ?? '—');
+                                }
+                            ?></div>
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;"><?php echo htmlspecialchars($desc_short); ?></div>
+                        </div>
+                    </div>
                     <?php if ($s === 'failed' && !empty($post['error_msg'])): ?>
                     <div style="font-size:11px;color:#dc2626;margin-top:4px;background:#fee2e2;padding:2px 6px;border-radius:4px;"><?php echo htmlspecialchars(mb_strimwidth($post['error_msg'], 0, 120, '…')); ?></div>
                     <?php endif; ?>

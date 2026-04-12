@@ -4,6 +4,11 @@
 
 require_once __DIR__ . '/../includes/db.php';
 
+// Include Scraper Cron Logic (Chạy tự động cùng luồng Dispatcher Publlish)
+echo "--- KHOI DONG SCRAPER WORKER ---\n";
+@include_once __DIR__ . '/start_scraper.php';
+echo "--------------------------------\n\n";
+
 // Auto-migrate newly required columns in case the user missed accessing settings.php
 try {
     $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");

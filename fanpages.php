@@ -121,31 +121,42 @@ endforeach; ?>
                                 <span title="Bạn được chia sẻ Page này, không thể share tiếp"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>
                             <?php endif; ?>
                         </td>
-                        <td style="color: var(--text-muted); font-size: 12px;"><?php echo htmlspecialchars($page['page_id']); ?></td>
+                        <td style="color: var(--text-muted); font-size: 12px;"><a href="https://www.facebook.com/<?php echo htmlspecialchars($page['page_id']); ?>" target="_blank" style="color: var(--text-muted); text-decoration: none;" onmouseover="this.style.color='var(--primary-color)';this.style.textDecoration='underline'" onmouseout="this.style.color='var(--text-muted)';this.style.textDecoration='none'"><?php echo htmlspecialchars($page['page_id']); ?></a></td>
                         <td class="col-name" style="font-weight: 500; color: var(--primary-color);">
-                            <?php echo htmlspecialchars($page['name']); ?>
-                            <?php if ($page['user_name'] === 'Shared'): ?>
-                                <span style="font-size: 10px; background: #e0e7ff; color: #4338ca; padding: 2px 6px; border-radius: 10px; margin-left: 5px;">Được chia sẻ</span>
-                            <?php endif; ?>
-                            
-                            <?php if (!empty($page['shared_to_users'])): ?>
-                                <div style="margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px;">
-                                <?php 
-                                    $shared_users = explode(', ', $page['shared_to_users']);
-                                    foreach ($shared_users as $su) {
-                                        $parts = explode(':', $su);
-                                        if (count($parts) === 2) {
-                                            $s_username = $parts[0];
-                                            $s_id = $parts[1];
-                                            echo '<span style="display: inline-flex; align-items: center; background: #f3f4f6; border: 1px solid #d1d5db; font-size: 11px; padding: 2px 6px; border-radius: 4px; color: #374151;">';
-                                            echo htmlspecialchars($s_username);
-                                            echo '<button onclick="unsharePage(\'' . addslashes($page['page_id']) . '\', ' . (int)$s_id . ', this)" style="background: none; border: none; font-size: 12px; color: #ef4444; margin-left: 4px; cursor: pointer; padding: 0 2px;" title="Xóa quyền">&times;</button>';
-                                            echo '</span>';
-                                        }
-                                    }
-                                ?>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <?php if (!empty($page['avatar'])): ?>
+                                    <img src="<?php echo htmlspecialchars($page['avatar']); ?>" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;" alt="Avatar">
+                                <?php else: ?>
+                                    <div style="width: 32px; height: 32px; border-radius: 50%; background: #e2e8f0; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #64748b; font-weight: bold; flex-shrink: 0;">
+                                        <?php echo mb_strtoupper(mb_substr($page['name'], 0, 1)); ?>
+                                    </div>
+                                <?php endif; ?>
+                                <div>
+                                    <?php echo htmlspecialchars($page['name']); ?>
+                                    <?php if ($page['user_name'] === 'Shared'): ?>
+                                        <span style="font-size: 10px; background: #e0e7ff; color: #4338ca; padding: 2px 6px; border-radius: 10px; margin-left: 5px;">Được chia sẻ</span>
+                                    <?php endif; ?>
+                                    
+                                    <?php if (!empty($page['shared_to_users'])): ?>
+                                        <div style="margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px;">
+                                        <?php 
+                                            $shared_users = explode(', ', $page['shared_to_users']);
+                                            foreach ($shared_users as $su) {
+                                                $parts = explode(':', $su);
+                                                if (count($parts) === 2) {
+                                                    $s_username = $parts[0];
+                                                    $s_id = $parts[1];
+                                                    echo '<span style="display: inline-flex; align-items: center; background: #f3f4f6; border: 1px solid #d1d5db; font-size: 11px; padding: 2px 6px; border-radius: 4px; color: #374151;">';
+                                                    echo htmlspecialchars($s_username);
+                                                    echo '<button onclick="unsharePage(\'' . addslashes($page['page_id']) . '\', ' . (int)$s_id . ', this)" style="background: none; border: none; font-size: 12px; color: #ef4444; margin-left: 4px; cursor: pointer; padding: 0 2px;" title="Xóa quyền">&times;</button>';
+                                                    echo '</span>';
+                                                }
+                                            }
+                                        ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
-                            <?php endif; ?>
+                            </div>
                         </td>
                         <td><span class="status-tag"><?php echo htmlspecialchars($page['category']); ?></span></td>
                         <td style="font-weight: 600;">

@@ -94,10 +94,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $after_cursor = null;
     $has_next = true;
 
+    // Ensure avatar column exists before using it
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM pages LIKE 'avatar'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE pages ADD COLUMN avatar TEXT DEFAULT NULL");
+        } else {
+            // If column exists but is VARCHAR, convert to TEXT
+            $colInfo = $col->fetch(PDO::FETCH_ASSOC);
+            if (stripos($colInfo['Type'], 'varchar') !== false) {
+                $pdo->exec("ALTER TABLE pages MODIFY COLUMN avatar TEXT DEFAULT NULL");
+            }
+        }
+    } catch (Exception $e) {}
+
     // Prepare statements once outside the loop
     $p_check_stmt = $pdo->prepare("SELECT p.id, u.account_id FROM pages p LEFT JOIN users u ON p.user_id = u.id WHERE p.page_id = ?");
-    $p_update_stmt = $pdo->prepare("UPDATE pages SET name = ?, access_token = ?, category = ?, followers_count = ?, user_id = ? WHERE page_id = ?");
-    $p_insert_stmt = $pdo->prepare("INSERT INTO pages (page_id, name, access_token, category, followers_count, user_id) VALUES (?, ?, ?, ?, ?, ?)");
+    $p_update_stmt = $pdo->prepare("UPDATE pages SET name = ?, access_token = ?, category = ?, followers_count = ?, avatar = ?, user_id = ? WHERE page_id = ?");
+    $p_insert_stmt = $pdo->prepare("INSERT INTO pages (page_id, name, access_token, category, followers_count, avatar, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
 
     while ($has_next) {
         $pages_response = get_fb_user_pages($token, $after_cursor);
@@ -111,6 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $page_token = isset($page['access_token']) ? $page['access_token'] : '';
                 $category = isset($page['category']) ? $page['category'] : '';
                 $followers = isset($page['followers_count']) ? $page['followers_count'] : 0;
+                $avatar = isset($page['picture']['data']['url']) ? $page['picture']['data']['url'] : null;
 
                 // Upsert Page
                 $p_check_stmt->execute([$page_id]);
@@ -122,10 +137,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 if ($existing_page) {
-                    $p_update_stmt->execute([$page_name, encryptData($page_token), $category, $followers, $user_db_id, $page_id]);
+                    $p_update_stmt->execute([$page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id, $page_id]);
                     $pages_count++;
                 } else {
-                    $p_insert_stmt->execute([$page_id, $page_name, encryptData($page_token), $category, $followers, $user_db_id]);
+                    $p_insert_stmt->execute([$page_id, $page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id]);
                     $pages_count++;
                 }
             }

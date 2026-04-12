@@ -7,11 +7,11 @@ $is_admin = ($_SESSION['role'] === 'admin');
 
 // Fetch pages for JS dropdown
 $stmt2 = $pdo->prepare("
-    (SELECT p.id, p.page_id, p.name, p.user_id
+    (SELECT p.id, p.page_id, p.name, p.avatar, p.user_id
      FROM pages p JOIN users u ON p.user_id = u.id
      WHERE u.account_id = :aid)
     UNION
-    (SELECT p.id, p.page_id, p.name, u.id as user_id
+    (SELECT p.id, p.page_id, p.name, p.avatar, u.id as user_id
      FROM pages p
      JOIN page_shares ps ON p.page_id = ps.page_id
      JOIN users u ON p.user_id = u.id
@@ -35,19 +35,37 @@ $pages_json = json_encode($pages);
         </button>
     </div>
 
-    <!-- Page Selector Box (matches screenshot) -->
-    <div class="card" style="margin-bottom: 20px; padding: 15px 20px; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-        <label style="font-size:13px; font-weight:600; color:#374151; display:block; margin-bottom:8px;">Chọn pages để track earnings:</label>
-        <div style="display:flex; gap:10px;">
-            <select id="earnings_page_selector" class="form-control" style="flex:1; border:1px solid #d1d5db; border-radius:6px; padding:8px 12px; color:#4b5563;">
-                <option value="">Tìm và chọn pages...</option>
-                <?php foreach ($pages as $p): ?>
-                    <option value="<?php echo htmlspecialchars($p['page_id']); ?>">
-                        <?php echo htmlspecialchars($p['name']); ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
-            <button onclick="fetchEarningsData()" class="btn btn-primary" style="padding: 8px 16px; background:#f3f4f6; color:#9ca3af; border:1px solid #e5e7eb; cursor:not-allowed;" id="btn_fetch_earnings">Fetch Earnings</button>
+    <!-- Page Selector Box (Custom with avatars) -->
+    <div class="card" style="margin-bottom: 20px; padding: 15px 20px; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); overflow: visible !important;">
+        <label style="font-size:13px; font-weight:600; color:#374151; display:block; margin-bottom:12px;">Chọn Fanpage để xem thu nhập:</label>
+        <div style="display:flex; gap:10px; align-items: flex-start;">
+            <input type="hidden" id="earnings_page_selector" value="">
+            <div style="flex:1; position:relative;" id="customSelectWrap">
+                <div id="customSelectBtn" style="display:flex;align-items:center;padding:8px 14px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;background:#fff;min-height:40px;box-shadow: 0 1px 2px rgba(0,0,0,0.05);" onclick="togglePageDropdown()">
+                    <span id="sel_avatar_wrap" style="display:none;margin-right:10px;"></span>
+                    <span id="sel_name_text" style="flex:1;font-size:14px;color:#9ca3af;">Tìm và chọn pages...</span>
+                    <span style="color:#9ca3af;font-size:12px;">▼</span>
+                </div>
+                <!-- Dropdown list -->
+                <div id="customSelectDropdown" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:6px;background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 10px 25px rgba(0,0,0,0.1);z-index:999;max-height:360px;overflow:hidden;">
+                    <div style="padding:10px;border-bottom:1px solid #e5e7eb;background:#f9fafb;">
+                        <input type="text" id="pageSearchInput" placeholder="🔍 Tìm Fanpage..." style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box;outline:none;">
+                    </div>
+                    <div id="pageOptionsList" style="overflow-y:auto;max-height:280px;">
+                        <?php foreach ($pages as $p): ?>
+                        <div class="page-option" data-page-id="<?php echo htmlspecialchars($p['page_id']); ?>" data-name="<?php echo htmlspecialchars($p['name']); ?>" data-avatar="<?php echo htmlspecialchars($p['avatar'] ?? ''); ?>" style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;transition:all 0.1s;border-bottom:1px solid #f1f5f9;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+                            <?php if (!empty($p['avatar'])): ?>
+                                <img src="<?php echo htmlspecialchars($p['avatar']); ?>" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+                            <?php else: ?>
+                                <div style="width:32px;height:32px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:13px;color:#64748b;font-weight:bold;flex-shrink:0;"><?php echo mb_strtoupper(mb_substr($p['name'], 0, 1)); ?></div>
+                            <?php endif; ?>
+                            <span style="font-size:13px;font-weight:500;color:#374151;"><?php echo htmlspecialchars($p['name']); ?></span>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+            <button onclick="fetchEarningsData()" class="btn btn-primary" style="padding: 10px 18px; background:#f3f4f6; color:#9ca3af; border:1px solid #e5e7eb; cursor:not-allowed; border-radius:6px; font-weight:600; font-size:13px;" id="btn_fetch_earnings">Fetch Earnings</button>
         </div>
     </div>
 
@@ -94,21 +112,75 @@ $pages_json = json_encode($pages);
     <script>
     let earningsChartInstance = null;
 
-    document.getElementById('earnings_page_selector').addEventListener('change', function() {
-        const btn = document.getElementById('btn_fetch_earnings');
-        if (this.value) {
-            btn.style.background = '#10b981';
-            btn.style.color = 'white';
-            btn.style.border = '1px solid #059669';
-            btn.style.cursor = 'pointer';
-            fetchEarningsData();
-        } else {
-            btn.style.background = '#f3f4f6';
-            btn.style.color = '#9ca3af';
-            btn.style.border = '1px solid #e5e7eb';
-            btn.style.cursor = 'not-allowed';
+    // Custom Dropdown Logic
+    (function(){
+        const dropdown = document.getElementById('customSelectDropdown');
+        const searchInput = document.getElementById('pageSearchInput');
+        const hiddenSelector = document.getElementById('earnings_page_selector');
+        const selNameText = document.getElementById('sel_name_text');
+        const selAvatarWrap = document.getElementById('sel_avatar_wrap');
+        const fetchBtn = document.getElementById('btn_fetch_earnings');
+        let isOpen = false;
+
+        window.togglePageDropdown = function() {
+            isOpen = !isOpen;
+            dropdown.style.display = isOpen ? 'block' : 'none';
+            if (isOpen) {
+                searchInput.value = '';
+                filterOptions('');
+                setTimeout(() => searchInput.focus(), 10);
+            }
+        };
+
+        function filterOptions(q) {
+            document.querySelectorAll('.page-option').forEach(opt => {
+                const name = (opt.getAttribute('data-name') || '').toLowerCase();
+                opt.style.display = (!q || name.includes(q)) ? 'flex' : 'none';
+            });
         }
-    });
+
+        searchInput.addEventListener('input', function() { filterOptions(this.value.trim().toLowerCase()); });
+        searchInput.addEventListener('click', function(e) { e.stopPropagation(); });
+
+        document.querySelectorAll('.page-option').forEach(opt => {
+            opt.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const pageId = this.getAttribute('data-page-id');
+                const name = this.getAttribute('data-name');
+                const avatar = this.getAttribute('data-avatar');
+
+                hiddenSelector.value = pageId;
+                selNameText.innerText = name;
+                selNameText.style.color = '#1f2937';
+
+                if (avatar) {
+                    selAvatarWrap.innerHTML = `<img src="${avatar}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">`;
+                    selAvatarWrap.style.display = 'block';
+                } else {
+                    selAvatarWrap.innerHTML = `<div style="width:28px;height:28px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#64748b;font-weight:bold;">${name.charAt(0).toUpperCase()}</div>`;
+                    selAvatarWrap.style.display = 'block';
+                }
+
+                // Update Fetch Button Style
+                fetchBtn.style.background = '#10b981';
+                fetchBtn.style.color = 'white';
+                fetchBtn.style.border = '1px solid #059669';
+                fetchBtn.style.cursor = 'pointer';
+
+                dropdown.style.display = 'none';
+                isOpen = false;
+                
+                fetchEarningsData();
+            });
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!document.getElementById('customSelectWrap').contains(e.target)) {
+                dropdown.style.display = 'none';
+                isOpen = false;
+            }
+        });
+    })();
 
     function initChart() {
         const ctx = document.getElementById('earningsChart').getContext('2d');

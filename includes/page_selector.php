@@ -149,6 +149,28 @@
                 div.dataset.pageId = p.page_id;
                 div.innerHTML = `<input type="checkbox" id="${id}" value="${p.page_id}"${checkedIds.has(p.page_id) ? ' checked' : ''}>
                                  <label for="${id}">${escHtml(p.name)}</label>`;
+                // Insert avatar between checkbox and label
+                const avatarEl = document.createElement(p.avatar ? 'img' : 'div');
+                if (p.avatar) {
+                    avatarEl.src = p.avatar;
+                    avatarEl.alt = '';
+                    avatarEl.onerror = function() {
+                        this.style.display = 'none';
+                        const fb = document.createElement('div');
+                        fb.textContent = p.name.charAt(0).toUpperCase();
+                        fb.style.cssText = 'width:24px;height:24px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#64748b;font-weight:bold;flex-shrink:0;';
+                        this.parentNode.insertBefore(fb, this.nextSibling);
+                    };
+                } else {
+                    avatarEl.textContent = p.name.charAt(0).toUpperCase();
+                    avatarEl.style.cssText = 'width:24px;height:24px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#64748b;font-weight:bold;flex-shrink:0;';
+                }
+                avatarEl.style.width = '24px';
+                avatarEl.style.height = '24px';
+                avatarEl.style.borderRadius = '50%';
+                avatarEl.style.objectFit = 'cover';
+                avatarEl.style.flexShrink = '0';
+                div.insertBefore(avatarEl, div.querySelector('label'));
                 div.querySelector('input').addEventListener('change', function() {
                     if (this.checked) { checkedIds.add(p.page_id); div.classList.add('ps-checked'); }
                     else              { checkedIds.delete(p.page_id); div.classList.remove('ps-checked'); }
