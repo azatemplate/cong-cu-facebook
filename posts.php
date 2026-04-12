@@ -6,6 +6,15 @@ require_once __DIR__ . '/includes/header.php';
 $account_id = $_SESSION['account_id'];
 $is_admin = ($_SESSION['role'] === 'admin');
 
+// Đọc cấu hình giới hạn upload
+$disable_local_upload = false;
+try {
+    $stmt_upload = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'disable_local_upload'");
+    $stmt_upload->execute();
+    $row_upload = $stmt_upload->fetch(PDO::FETCH_ASSOC);
+    if ($row_upload && $row_upload['setting_value'] === '1' && !$is_admin) $disable_local_upload = true;
+} catch (Exception $e) {}
+
 $stmt = $pdo->prepare("SELECT id, name FROM users WHERE account_id = ? ORDER BY name ASC");
 $stmt->execute([$account_id]);
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -68,15 +77,30 @@ $pages_json = json_encode($pages);
             <label>2. Chọn Fanpage</label>
             <?php include __DIR__ . '/includes/page_selector.php'; ?>
         </div>
-        <div class="form-group">
-            <label>3. Nội dung bài viết</label>
+        <div class="form-group" style="position: relative;">
+            <label style="display: flex; align-items: center; gap: 8px;">3. Nội dung bài viết
+                <button type="button" id="emojiTriggerPost" class="emoji-picker-trigger">😀 Emoji</button>
+            </label>
+            <div id="emojiPopupPost" class="emoji-picker-popup">
+                <div class="emoji-tabs"></div>
+                <div class="emoji-search-box"><input type="text" class="emoji-search-input" placeholder="Tìm emoji..."></div>
+                <div class="emoji-grid-wrap"></div>
+            </div>
             <textarea id="message" name="message" rows="4" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px;" placeholder="Bạn đang nghĩ gì?" required></textarea>
+            <small style="color: #64748b;">💡 Hỗ trợ Spin: <code>{nội dung 1|nội dung 2|nội dung 3}</code> — hệ thống sẽ random chọn 1 phiên bản mỗi lần đăng.</small>
         </div>
         <div class="form-group">
-            <label>4. Chọn Hình Ảnh (Tùy chọn - Có thể chọn nhiều để random)</label>
+            <label>4. Chọn Hình Ảnh (Tùy chọn<?php echo $disable_local_upload ? ' - Drive' : ' - Có thể chọn nhiều để random'; ?>)</label>
+            <?php if ($disable_local_upload): ?>
+            <div style="padding: 10px 15px; background: #fef3cd; border: 1px solid #ffc107; border-radius: 6px; font-size: 13px; color: #856404; margin-bottom: 10px;">
+                🔒 Admin đã tắt tính năng tải tệp từ máy tính. Vui lòng sử dụng Google Drive.
+            </div>
+            <?php endif; ?>
             <div style="display: flex; gap: 10px; align-items: center; background: #f8fafc; padding: 10px; border: 1px dashed var(--border-color); border-radius: 6px;">
+                <?php if (!$disable_local_upload): ?>
                 <input type="file" id="images" name="images[]" multiple accept="image/*" style="width: 100%; max-width: 250px; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: #fff;" onchange="clearDriveSelection()">
                 <div style="font-weight: bold; color: #64748b;">HOẶC</div>
+                <?php endif; ?>
                 <button type="button" class="btn btn-secondary" onclick="openDriveModal('multiple')" style="background: #fff; border: 1px solid #cbd5e1; color: #334155; display: flex; align-items: center; gap: 5px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
                     Chọn từ Google Drive (Nhiều file)
@@ -88,15 +112,47 @@ $pages_json = json_encode($pages);
             </div>
             <input type="hidden" id="drive_file_id" name="drive_file_id" value="">
         </div>
+
+        <div class="form-group" style="background: #fff7ed; padding: 15px; border-radius: 6px; border: 1px dashed #fed7aa; margin-bottom: 0;">
+            <label style="color: #c2410c; font-weight: 500; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="enable_random_images" name="enable_random_images" value="1" style="width: 16px; height: 16px; accent-color: #ea580c;">
+                🎲 Random lấy X ảnh từ danh sách đã chọn
+            </label>
+            <div id="randomImagesBox" style="display: none; margin-top: 10px;">
+                <p style="font-size: 12px; color: #9a3412; margin-top: 0; margin-bottom: 8px;">Chọn hàng trăm ảnh từ Drive, hệ thống sẽ random lấy X ảnh cho mỗi bài đăng.</p>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 13px; color: #9a3412; white-space: nowrap;">Số ảnh mỗi bài:</label>
+                    <input type="number" id="random_image_count" name="random_image_count" value="5" min="1" max="50" style="width: 80px; padding: 8px; border: 1px solid #fed7aa; border-radius: 6px; font-size: 14px; font-weight: bold; text-align: center;">
+                </div>
+            </div>
+        </div>
         
         <div id="postResult" style="display: none; margin-top: 15px; padding: 10px; border-radius: 4px;"></div>
 
         <div style="display:flex; gap:14px; align-items:stretch; flex-wrap:wrap;">
 
         <div class="form-group" style="flex:1; min-width:300px; background: #f9fafb; padding: 15px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom:0;">
-            <label style="color: var(--primary-color);">Lên lịch tự động đăng (Tùy chọn)</label>
-            <p style="font-size: 12px; color: var(--text-muted); margin-top: 0; margin-bottom: 10px;">Nếu để trống, bài viết sẽ được đăng ngay lập tức. Tính năng này chạy ngầm qua thư mục Cronjob.</p>
-            <input type="datetime-local" id="scheduled_time" name="scheduled_time" style="padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; width:100%;">
+            <label style="color: var(--primary-color);">5. Lên lịch tự động hàng loạt (Tùy chọn)</label>
+            <p style="font-size: 13px; color: var(--text-muted); margin-top: 5px; margin-bottom: 15px;">
+                Chọn khoảng ngày và các khung giờ. Hệ thống sẽ rải đều bài đăng vào các khung giờ. Nếu bạn không nhập lịch, bài viết sẽ được đăng ngay lập tức.
+            </p>
+            <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+                <div style="flex: 1;">
+                    <label style="font-size: 13px;">Từ ngày:</label>
+                    <input type="date" id="start_date" name="start_date" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="font-size: 13px;">Đến ngày:</label>
+                    <input type="date" id="end_date" name="end_date" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
+                </div>
+            </div>
+            <div>
+                <label style="font-size: 13px;">Các khung giờ đăng mỗi ngày (Cách nhau bởi dấu phẩy):</label>
+                <input type="text" id="time_slots" name="time_slots" placeholder="VD: 07:00, 11:30, 15:00, 19:45" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
+            </div>
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--border-color); color: #0369a1; font-size: 12px;">
+                * Ghi chú: Nếu hệ thống tính toán ra cùng lịch cho nhiều bài, chúng sẽ được xếp cách nhau 5 phút.
+            </div>
         </div>
 
         <div class="form-group" style="flex:1; min-width:300px; background:#f0fdf4; padding:15px; border-radius:6px; border:1px solid #bbf7d0; margin-bottom:0;">
@@ -133,6 +189,11 @@ $pages_json = json_encode($pages);
     const btnSubmit = document.getElementById('btnSubmit');
     const postResult = document.getElementById('postResult');
 
+    // Toggle random images box
+    document.getElementById('enable_random_images').addEventListener('change', function() {
+        document.getElementById('randomImagesBox').style.display = this.checked ? 'block' : 'none';
+    });
+
     userSelect.addEventListener('change', function() {
         window.pageSelectorFilterByUser(this.value);
     });
@@ -142,7 +203,7 @@ $pages_json = json_encode($pages);
         if (!window.pageSelectorValidate()) return;
         
         btnSubmit.disabled = true;
-        btnSubmit.textContent = 'Đang đăng bài...';
+        btnSubmit.textContent = 'Đang xử lý (Có thể mất 1-2 phút)...';
         postResult.style.display = 'none';
 
         const formData = new FormData(postForm);
@@ -171,14 +232,14 @@ $pages_json = json_encode($pages);
                 postResult.innerHTML = data.msg;
             }
             btnSubmit.disabled = false;
-            btnSubmit.textContent = 'Đăng Ngay';
+            btnSubmit.textContent = 'Xác nhận / Lên Lịch';
         })
         .catch(error => {
             postResult.style.display = 'block';
             postResult.className = 'alert alert-danger';
             postResult.innerHTML = 'Lỗi mạng hoặc hệ thống.';
             btnSubmit.disabled = false;
-            btnSubmit.textContent = 'Đăng Ngay';
+            btnSubmit.textContent = 'Xác nhận / Lên Lịch';
         });
     });
     
@@ -207,7 +268,8 @@ $pages_json = json_encode($pages);
         }
         
         document.getElementById('drive_file_id').value = idArray.join(',');
-        document.getElementById('images').value = ''; // Xóa local file
+        const imagesEl = document.getElementById('images');
+        if (imagesEl) imagesEl.value = ''; // Xóa local file
         
         document.getElementById('driveSelectedCount').innerText = idArray.length;
         document.getElementById('driveSelectedName').innerText = nameArray.join(', ');
@@ -223,4 +285,6 @@ $pages_json = json_encode($pages);
 </script>
 
 <?php include 'includes/drive_browser.php'; ?>
+<?php include 'includes/emoji_picker.php'; ?>
+<script>initEmojiPicker('emojiTriggerPost', 'emojiPopupPost', 'message');</script>
 <?php include 'includes/footer.php'; ?>

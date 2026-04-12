@@ -142,16 +142,16 @@ function resolve_media_path_video($media, $auto_title, $title_input, $desc_input
 
     if ($media['type'] === 'drive') {
         $media_path = 'drive:' . $media['id'];
-        if ($auto_title) { $t_title = $media['title']; $t_desc = $media['title']; }
+        if ($auto_title) { $t_title = $media['title']; $t_desc = $media['title'] . ($desc_input ? "\n\n" . $desc_input : ''); }
     } elseif ($media['type'] === 'tiktok') {
         $media_path = 'tiktok:' . $media['url'];
-        if ($auto_title) { $t_title = ''; $t_desc = ''; }
+        if ($auto_title) { $t_title = ''; $t_desc = $desc_input; }
     } elseif ($media['type'] === 'local') {
         $media_path = $media['saved_path']; // use pre-copied path
         if ($auto_title) {
             $fn_no_ext = pathinfo($media['name'], PATHINFO_FILENAME);
             $t_title   = $fn_no_ext;
-            $t_desc    = $fn_no_ext;
+            $t_desc    = $fn_no_ext . ($desc_input ? "\n\n" . $desc_input : '');
         }
     }
     return [$media_path, $t_title, $t_desc];

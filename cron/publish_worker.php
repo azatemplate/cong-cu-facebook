@@ -62,6 +62,23 @@ require_once __DIR__ . '/../includes/drive_utils.php';
 require_once __DIR__ . '/../includes/ai_rewriter.php';
 require_once __DIR__ . '/../includes/telegram.php';
 
+// ── Spin Syntax Helper ──────────────────────────────────────────────────────
+// Xử lý cú pháp spin: {nội dung 1|nội dung 2|nội dung 3} → random chọn 1
+function spin_text($text) {
+    if (empty($text) || strpos($text, '{') === false) return $text;
+    // Xử lý từ trong ra ngoài (hỗ trợ nested spin)
+    $max_iterations = 10;
+    $i = 0;
+    while (preg_match('/\{([^{}]+)\}/', $text) && $i < $max_iterations) {
+        $text = preg_replace_callback('/\{([^{}]+)\}/', function($matches) {
+            $options = explode('|', $matches[1]);
+            return trim($options[array_rand($options)]);
+        }, $text);
+        $i++;
+    }
+    return $text;
+}
+
 // Auto-migrate newly required columns
 try {
     $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");
@@ -435,6 +452,10 @@ foreach ($pending_posts as $post) {
             $content_data = [];
 
         // Thêm AI chuẩn SEO (Bao gồm Local, Drive, TikTok)
+        // Apply spin syntax trước khi qua AI
+        if (isset($content_data['description'])) $content_data['description'] = spin_text($content_data['description']);
+        if (isset($content_data['title'])) $content_data['title'] = spin_text($content_data['title']);
+
         if (isset($content_data['use_ai']) && $content_data['use_ai']) {
             $base_text = trim(($content_data['title'] ?? '') . " " . ($content_data['description'] ?? ''));
             if (empty($base_text))
@@ -454,15 +475,21 @@ foreach ($pending_posts as $post) {
             }
         } elseif (isset($content_data['auto_title']) && $content_data['auto_title'] && empty($content_data['title'])) {
             $content_data['title'] = $t_title_override;
-            if (empty($content_data['description']))
+            if (empty($content_data['description'])) {
                 $content_data['description'] = $t_title_override;
+            } elseif (!empty($t_title_override) && strpos($content_data['description'], $t_title_override) !== 0) {
+                $content_data['description'] = $t_title_override . "\n\n" . $content_data['description'];
+            }
         }
 
         // Đảm bảo có fallback nếu tất cả các luồng trên đều không ra title
         if (empty($content_data['title']) && isset($content_data['auto_title']) && $content_data['auto_title']) {
             $content_data['title'] = $t_title_override;
-            if (empty($content_data['description']))
+            if (empty($content_data['description'])) {
                 $content_data['description'] = $t_title_override;
+            } elseif (!empty($t_title_override) && strpos($content_data['description'], $t_title_override) !== 0) {
+                $content_data['description'] = $t_title_override . "\n\n" . $content_data['description'];
+            }
         }
 
         $yt_title = !empty($content_data['title']) ? mb_substr($content_data['title'], 0, 100, 'UTF-8') : (!empty($t_title_override) ? mb_substr($t_title_override, 0, 100, 'UTF-8') : 'YouTube Video');
@@ -674,17 +701,16 @@ foreach ($pending_posts as $post) {
 
     // ── Multi-image post: upload each photo as unpublished, then create feed post ──
     if ($multi_image_paths !== null && ($post['post_type'] === 'Image' || $post['post_type'] === 'Status')) {
-        // Parse content / AI rewrite
         $parsed_content = @json_decode($post['content'], true);
         $p_desc = '';
         if (is_array($parsed_content) && isset($parsed_content['description'])) {
-            $p_desc = $parsed_content['description'];
+            $p_desc = spin_text($parsed_content['description']);
             $use_ai = isset($parsed_content['use_ai']) && $parsed_content['use_ai'];
             if ($use_ai && !empty($p_desc)) {
                 $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
             }
         } else {
-            $p_desc = $post['content'];
+            $p_desc = spin_text($post['content']);
         }
         $post['content'] = $p_desc;
 
@@ -828,7 +854,7 @@ foreach ($pending_posts as $post) {
 
         $parsed_content = @json_decode($post['content'], true);
         if (is_array($parsed_content) && isset($parsed_content['description'])) {
-            $p_desc = $parsed_content['description'];
+            $p_desc = spin_text($parsed_content['description']);
             $use_ai = isset($parsed_content['use_ai']) && $parsed_content['use_ai'];
 
             if ($use_ai && !empty($p_desc)) {
@@ -837,7 +863,7 @@ foreach ($pending_posts as $post) {
             $post_data['message'] = $p_desc;
             $post['content'] = $p_desc;
         } else {
-            $post_data['message'] = $post['content'];
+            $post_data['message'] = spin_text($post['content']);
         }
     } elseif ($post_type === 'Video' || $post_type === 'Reel') {
         $endpoint = $post['page_id'] . '/videos';
@@ -845,14 +871,19 @@ foreach ($pending_posts as $post) {
         if ($post['content']) {
             $content_data = json_decode($post['content'], true);
             if (is_array($content_data)) {
-                $p_desc = isset($content_data['description']) ? $content_data['description'] : '';
-                $p_title = isset($content_data['title']) ? $content_data['title'] : '';
+                $p_desc = isset($content_data['description']) ? spin_text($content_data['description']) : '';
+                $p_title = isset($content_data['title']) ? spin_text($content_data['title']) : '';
                 $is_auto = isset($content_data['auto_title']) && $content_data['auto_title'];
                 $use_ai = isset($content_data['use_ai']) && $content_data['use_ai'];
 
                 if ($is_auto) {
-                    if (empty($p_desc) && !empty($t_title_override))
-                        $p_desc = $t_title_override;
+                    if (!empty($t_title_override)) {
+                        if (empty($p_desc)) {
+                            $p_desc = $t_title_override;
+                        } elseif (strpos($p_desc, $t_title_override) !== 0) {
+                            $p_desc = $t_title_override . "\n\n" . $p_desc;
+                        }
+                    }
                     // Không tự động gán text dài vào $p_title để tránh bị Facebook Graph API cắt bớt hiển thị "..."
                     if (empty($p_title) && !empty($t_title_override))
                         $p_title = '';
@@ -873,7 +904,7 @@ foreach ($pending_posts as $post) {
                 // Keep content intact for history reference
                 $post['content'] = $p_desc;
             } else {
-                $p_desc = !empty($post['content']) ? $post['content'] : $t_title_override;
+                $p_desc = !empty($post['content']) ? spin_text($post['content']) : $t_title_override;
                 if (!empty($p_desc))
                     $post_data['description'] = $p_desc;
                 $post['content'] = $p_desc;

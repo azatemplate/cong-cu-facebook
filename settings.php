@@ -11,6 +11,7 @@ try {
     )");
     $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1')");
     $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_retries', '3')");
+    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('disable_local_upload', '0')");
 } catch (Exception $e) {}
 
 // Auto-migrate Telegram columns per-user
@@ -121,6 +122,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $account['telegram_chat_id'] = $tg_chat_id;
     }
 
+    if (isset($_POST['update_upload_restriction']) && $_SESSION['role'] === 'admin') {
+        $disable_val = isset($_POST['disable_local_upload']) ? '1' : '0';
+        $u_stmt = $pdo->prepare("UPDATE system_settings SET setting_value = ? WHERE setting_key = 'disable_local_upload'");
+        $u_stmt->execute([$disable_val]);
+        $alert_type = 'success';
+        $alert_message = 'Đã cập nhật cấu hình giới hạn tải tệp thành công.';
+    }
+
     if (isset($_POST['test_telegram'])) {
         require_once __DIR__ . '/includes/telegram.php';
         $ok = send_telegram_notification($pdo, $_SESSION['account_id'], "<b>🔔 Thông báo thử nghiệm</b>\nHệ thống Facebook Automation đã kết nối Telegram thành công!\n\n🕐 Thời gian: " . date('d/m/Y H:i:s'), 'general');
@@ -148,6 +157,15 @@ $tg_bot_token = $account['telegram_bot_token'] ?? '';
 $tg_chat_id = $account['telegram_chat_id'] ?? '';
 
 $is_admin = ($_SESSION['role'] === 'admin');
+
+// Đọc cấu hình giới hạn upload
+$disable_local_upload = '0';
+try {
+    $stmt_upload = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'disable_local_upload'");
+    $stmt_upload->execute();
+    $row_upload = $stmt_upload->fetch(PDO::FETCH_ASSOC);
+    if ($row_upload) $disable_local_upload = $row_upload['setting_value'];
+} catch (Exception $e) {}
 ?>
 
 <div class="page-title" style="display: flex; justify-content: space-between; align-items: center;">
@@ -273,6 +291,26 @@ $is_admin = ($_SESSION['role'] === 'admin');
                 <input type="password" name="fb_app_secret" value="<?php echo htmlspecialchars($account['fb_app_secret'] ?? ''); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
             </div>
             <button type="submit" name="update_fb_app" class="btn btn-primary">Lưu Cấu Hình</button>
+        </form>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($is_admin): ?>
+    <div class="card" style="margin: 0; box-sizing: border-box;">
+        <h3 style="margin-bottom: 10px;">🔒 Giới Hạn Tải Tệp Cho User</h3>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 15px;">
+            Khi bật tùy chọn này, User thường (không phải Admin) sẽ <strong>không thể tải file từ máy tính</strong> lên hệ thống.
+            Họ chỉ có thể sử dụng <strong>Google Drive</strong> hoặc <strong>Link TikTok</strong> để cung cấp media cho các trang Reels, Story, Videos và Posts.
+        </p>
+        <form method="POST" action="settings.php">
+            <?php echo csrf_field(); ?>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 12px 15px; background: <?php echo $disable_local_upload === '1' ? '#fef2f2' : '#f0fdf4'; ?>; border: 1px solid <?php echo $disable_local_upload === '1' ? '#fecaca' : '#bbf7d0'; ?>; border-radius: 8px; transition: all 0.2s;">
+                <input type="checkbox" name="disable_local_upload" value="1" <?php echo $disable_local_upload === '1' ? 'checked' : ''; ?> style="width: 18px; height: 18px; accent-color: #dc2626;">
+                <span style="font-weight: 500; color: <?php echo $disable_local_upload === '1' ? '#dc2626' : '#15803d'; ?>;">
+                    <?php echo $disable_local_upload === '1' ? '🚫 Đã vô hiệu hóa tải tệp từ máy tính cho User' : '✅ User được phép tải tệp từ máy tính'; ?>
+                </span>
+            </label>
+            <button type="submit" name="update_upload_restriction" class="btn btn-primary" style="margin-top: 12px; background: #dc2626; border-color: #dc2626;">💾 Lưu Cấu Hình</button>
         </form>
     </div>
     <?php endif; ?>

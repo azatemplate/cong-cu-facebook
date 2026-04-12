@@ -6,6 +6,15 @@ require_once __DIR__ . '/includes/header.php';
 $account_id = $_SESSION['account_id'];
 $is_admin = ($_SESSION['role'] === 'admin');
 
+// Đọc cấu hình giới hạn upload
+$disable_local_upload = false;
+try {
+    $stmt_upload = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'disable_local_upload'");
+    $stmt_upload->execute();
+    $row_upload = $stmt_upload->fetch(PDO::FETCH_ASSOC);
+    if ($row_upload && $row_upload['setting_value'] === '1' && !$is_admin) $disable_local_upload = true;
+} catch (Exception $e) {}
+
 $stmt = $pdo->prepare("SELECT id, name FROM users WHERE account_id = ? ORDER BY name ASC");
 $stmt->execute([$account_id]);
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -80,12 +89,19 @@ $pages_json = json_encode($pages);
                 2 ô nhập Tiêu đề/Mô tả bên dưới)</p>
         </div>
 
-        <div class="form-group">
-            <label>3. Mô tả Reels chung (Tùy chọn)</label>
+        <div class="form-group" style="position: relative;">
+            <label style="display: flex; align-items: center; gap: 8px;">3. Mô tả Reels chung (Tùy chọn)
+                <button type="button" id="emojiTriggerReels" class="emoji-picker-trigger">😀 Emoji</button>
+            </label>
+            <div id="emojiPopupReels" class="emoji-picker-popup">
+                <div class="emoji-tabs"></div>
+                <div class="emoji-search-box"><input type="text" class="emoji-search-input" placeholder="Tìm emoji..."></div>
+                <div class="emoji-grid-wrap"></div>
+            </div>
             <textarea id="description" name="description" rows="3"
                 style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px;"
                 placeholder="Nhập mô tả chung..."></textarea>
-            <small style="color: #64748b;">(Reels chủ yếu sử dụng Mô tả làm text hiển thị)</small>
+            <small style="color: #64748b;">(Reels chủ yếu sử dụng Mô tả làm text hiển thị) · 💡 Hỗ trợ Spin: <code>{nd1|nd2|nd3}</code> — random mỗi lần đăng.</small>
         </div>
         <div class="form-group"
             style="background: #fdf2f8; padding: 15px; border-radius: 6px; border: 1px dashed #fbcfe8; margin-bottom: 20px;">
@@ -99,13 +115,20 @@ $pages_json = json_encode($pages);
                 style="width: 100%; padding: 10px; border: 1px solid #f9a8d4; border-radius: 6px;"></textarea>
         </div>
         <div class="form-group">
-            <label>4. Tải lên Reels từ máy (hoặc Drive)</label>
+            <label>4. Tải lên Reels <?php echo $disable_local_upload ? '(Drive / TikTok)' : 'từ máy (hoặc Drive)'; ?></label>
+            <?php if ($disable_local_upload): ?>
+            <div style="padding: 10px 15px; background: #fef3cd; border: 1px solid #ffc107; border-radius: 6px; font-size: 13px; color: #856404; margin-bottom: 10px;">
+                🔒 Admin đã tắt tính năng tải tệp từ máy tính. Vui lòng sử dụng Google Drive hoặc Link TikTok.
+            </div>
+            <?php endif; ?>
             <div
                 style="display: flex; gap: 10px; align-items: center; background: #f8fafc; padding: 10px; border: 1px dashed var(--border-color); border-radius: 6px;">
+                <?php if (!$disable_local_upload): ?>
                 <input type="file" id="video" name="video[]" multiple accept="video/mp4,video/x-m4v,video/*"
                     style="width: 100%; max-width: 250px; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: #fff;"
                     onchange="clearDriveSelection()">
                 <div style="font-weight: bold; color: #64748b;">HOẶC</div>
+                <?php endif; ?>
                 <button type="button" class="btn btn-secondary" onclick="openDriveModal()"
                     style="background: #fff; border: 1px solid #cbd5e1; color: #334155; display: flex; align-items: center; gap: 5px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -283,7 +306,8 @@ $pages_json = json_encode($pages);
         e.preventDefault();
 
         const tiktokUrls = document.getElementById('tiktok_urls').value.trim();
-        const videoFiles = document.getElementById('video').files.length;
+        const videoEl = document.getElementById('video');
+        const videoFiles = videoEl ? videoEl.files.length : 0;
         const driveFileId = document.getElementById('drive_file_id').value.trim();
 
         if (!tiktokUrls && videoFiles === 0 && !driveFileId) {
@@ -359,4 +383,6 @@ $pages_json = json_encode($pages);
 </script>
 
 <?php include 'includes/drive_browser.php'; ?>
+<?php include 'includes/emoji_picker.php'; ?>
+<script>initEmojiPicker('emojiTriggerReels', 'emojiPopupReels', 'description');</script>
 <?php include 'includes/footer.php'; ?>

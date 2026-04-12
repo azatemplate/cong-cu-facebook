@@ -43,6 +43,10 @@ $comment_lines = isset($_POST['enable_comment']) && !empty(trim($_POST['comment_
     ? trim($_POST['comment_lines'])
     : null;
 
+// Random image count feature
+$enable_random_images = isset($_POST['enable_random_images']) && $_POST['enable_random_images'] == '1';
+$random_image_count   = isset($_POST['random_image_count']) ? max(1, intval($_POST['random_image_count'])) : 5;
+
 if (!$user_id || empty($page_ids) || empty($message)) {
     echo json_encode(['status' => 'error', 'msg' => 'Vui lòng điền đầy đủ các thông tin bắt buộc.']);
     exit;
@@ -85,9 +89,29 @@ $content_data = json_encode([
     'auto_title'  => false
 ]);
 
-$scheduled_time = isset($_POST['scheduled_time']) && !empty(trim($_POST['scheduled_time']))
-    ? trim($_POST['scheduled_time'])
-    : date('Y-m-d H:i:s');
+// ── Schedule Matrix Parsing (giống reels.php) ─────────────────────────────
+$start_date  = trim($_POST['start_date'] ?? '');
+$end_date    = trim($_POST['end_date'] ?? '');
+$time_slots  = trim($_POST['time_slots'] ?? '');
+$schedule_dates = [];
+
+if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
+    $slots   = array_filter(array_map('trim', explode(',', $time_slots)));
+    $current = strtotime($start_date);
+    $end     = strtotime($end_date);
+    if ($current && $end && $current <= $end) {
+        while ($current <= $end) {
+            $date_str = date('Y-m-d', $current);
+            foreach ($slots as $slot) {
+                $schedule_dates[] = $date_str . ' ' . $slot . ':00';
+            }
+            $current = strtotime('+1 day', $current);
+        }
+    }
+}
+
+// Fallback: nếu không có schedule matrix, đăng ngay
+$scheduled_time = date('Y-m-d H:i:s');
 
 if (!is_dir($upload_dir)) {
     mkdir($upload_dir, 0755, true);
@@ -96,10 +120,18 @@ if (!is_dir($upload_dir)) {
 // ── Create Campaign (fault-tolerant: works even if table doesn't exist yet) ──
 $campaign_id   = null;
 $page_count    = count($page_ids);
-$campaign_name = $post_type . ' — ' . $page_count . ' Pages — ' . date('d/m/Y H:i');
+$total_posts   = !empty($schedule_dates) ? count($schedule_dates) * $page_count : $page_count;
+$campaign_name = $post_type . ' — ' . $page_count . ' Pages';
+if (!empty($schedule_dates)) {
+    $campaign_name .= ' — ' . date('d/m', strtotime($start_date)) . '→' . date('d/m/Y', strtotime($end_date));
+} else {
+    $campaign_name .= ' — ' . date('d/m/Y H:i');
+}
+
 try {
     $camp_stmt = $pdo->prepare("INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time) VALUES (?, ?, ?, ?, ?)");
-    $camp_stmt->execute([$account_id, $campaign_name, $post_type, $page_count, $scheduled_time]);
+    $first_time = !empty($schedule_dates) ? $schedule_dates[0] : $scheduled_time;
+    $camp_stmt->execute([$account_id, $campaign_name, $post_type, $total_posts, $first_time]);
     $campaign_id = $pdo->lastInsertId();
 } catch (PDOException $e) {
     // Table may not exist yet — run migrate.php to create it. Scheduling continues without campaign.
@@ -133,15 +165,21 @@ foreach ($media_pool as $idx => $media) {
 
 /**
  * Build media_path for one page.
+ * - With random images enabled: randomly pick X images from pool
  * - If multiple images: shuffle and return JSON array of paths → publish_worker will do multi-photo post
  * - If single image: return single path string (backward compatible)
  */
-function build_media_path_shuffled($media_pool, $saved_local_files) {
+function build_media_path_shuffled($media_pool, $saved_local_files, $enable_random = false, $random_count = 5) {
     if (empty($media_pool)) return null;
 
     // Shuffle a copy of the pool for this page
     $pool = $media_pool;
     shuffle($pool);
+
+    // If random images enabled, only take X images from the pool
+    if ($enable_random && count($pool) > $random_count) {
+        $pool = array_slice($pool, 0, $random_count);
+    }
 
     $paths = [];
     foreach ($pool as $media) {
@@ -167,22 +205,41 @@ function build_media_path_shuffled($media_pool, $saved_local_files) {
 $success_count = 0;
 try {
     $pdo->beginTransaction();
-    foreach ($page_ids as $p_id) {
-        $media_path = build_media_path_shuffled($media_pool, $saved_local_files);
-        if ($campaign_id !== null && $s_stmt_with !== null) {
-            $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $scheduled_time, $campaign_id, $comment_lines]);
-        } else {
-            $s_stmt_without->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $scheduled_time]);
+
+    if (!empty($schedule_dates)) {
+        // Scheduled matrix mode (giống reels.php)
+        foreach ($schedule_dates as $datetime) {
+            foreach ($page_ids as $p_id) {
+                $media_path = build_media_path_shuffled($media_pool, $saved_local_files, $enable_random_images, $random_image_count);
+                if ($campaign_id !== null && $s_stmt_with !== null) {
+                    $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $datetime, $campaign_id, $comment_lines]);
+                } else {
+                    $s_stmt_without->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $datetime]);
+                }
+                $success_count++;
+            }
         }
-        $success_count++;
-    }
-    $pdo->commit();
-    
-    $is_scheduled = strtotime($scheduled_time) > time();
-    if ($is_scheduled) {
-        echo json_encode(['status' => 'success', 'msg' => "Đã lên lịch thành công cho $success_count Fanpage.", 'campaign_id' => $campaign_id]);
+        $pdo->commit();
+        echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} bài vào hàng đợi lên lịch hàng loạt!", 'campaign_id' => $campaign_id]);
     } else {
-        echo json_encode(['status' => 'success', 'msg' => "Đã đưa $success_count bài đăng vào hàng đợi xử lý ngay lập tức.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
+        // Immediate queue mode
+        foreach ($page_ids as $p_id) {
+            $media_path = build_media_path_shuffled($media_pool, $saved_local_files, $enable_random_images, $random_image_count);
+            if ($campaign_id !== null && $s_stmt_with !== null) {
+                $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $scheduled_time, $campaign_id, $comment_lines]);
+            } else {
+                $s_stmt_without->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $scheduled_time]);
+            }
+            $success_count++;
+        }
+        $pdo->commit();
+
+        $is_scheduled = false;
+        if ($is_scheduled) {
+            echo json_encode(['status' => 'success', 'msg' => "Đã lên lịch thành công cho $success_count Fanpage.", 'campaign_id' => $campaign_id]);
+        } else {
+            echo json_encode(['status' => 'success', 'msg' => "Đã đưa $success_count bài đăng vào hàng đợi xử lý ngay lập tức.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
+        }
     }
 } catch (Exception $e) {
     if ($pdo->inTransaction()) {

@@ -6,6 +6,15 @@ require_once __DIR__ . '/includes/header.php';
 $account_id = $_SESSION['account_id'];
 $is_admin = ($_SESSION['role'] === 'admin');
 
+// Đọc cấu hình giới hạn upload
+$disable_local_upload = false;
+try {
+    $stmt_upload = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'disable_local_upload'");
+    $stmt_upload->execute();
+    $row_upload = $stmt_upload->fetch(PDO::FETCH_ASSOC);
+    if ($row_upload && $row_upload['setting_value'] === '1' && !$is_admin) $disable_local_upload = true;
+} catch (Exception $e) {}
+
 $stmt = $pdo->prepare("SELECT id, name FROM users WHERE account_id = ? ORDER BY name ASC");
 $stmt->execute([$account_id]);
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -69,10 +78,17 @@ $pages_json = json_encode($pages);
             <?php include __DIR__ . '/includes/page_selector.php'; ?>
         </div>
         <div class="form-group">
-            <label>3. Tải lên Ảnh/Video cho Story</label>
+            <label>3. Tải lên Ảnh/Video cho Story <?php echo $disable_local_upload ? '(Drive)' : ''; ?></label>
+            <?php if ($disable_local_upload): ?>
+            <div style="padding: 10px 15px; background: #fef3cd; border: 1px solid #ffc107; border-radius: 6px; font-size: 13px; color: #856404; margin-bottom: 10px;">
+                🔒 Admin đã tắt tính năng tải tệp từ máy tính. Vui lòng sử dụng Google Drive.
+            </div>
+            <?php endif; ?>
             <div style="display: flex; gap: 10px; align-items: center; background: #f8fafc; padding: 10px; border: 1px dashed var(--border-color); border-radius: 6px;">
+                <?php if (!$disable_local_upload): ?>
                 <input type="file" id="media" name="media[]" multiple accept="image/*,video/mp4,video/x-m4v" style="width: 100%; max-width: 250px; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: #fff;" onchange="clearDriveSelection()">
                 <div style="font-weight: bold; color: #64748b;">HOẶC</div>
+                <?php endif; ?>
                 <button type="button" class="btn btn-secondary" onclick="openDriveModal()" style="background: #fff; border: 1px solid #cbd5e1; color: #334155; display: flex; align-items: center; gap: 5px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
                     Chọn từ Google Drive
@@ -131,7 +147,8 @@ $pages_json = json_encode($pages);
     storyForm.addEventListener('submit', function(e) {
         e.preventDefault();
         
-        const mediaFile = document.getElementById('media').files.length;
+        const mediaEl = document.getElementById('media');
+        const mediaFile = mediaEl ? mediaEl.files.length : 0;
         const driveFile = document.getElementById('drive_file_id').value.trim();
         
         if (mediaFile === 0 && !driveFile) {

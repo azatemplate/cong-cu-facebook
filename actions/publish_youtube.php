@@ -105,10 +105,10 @@ function resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $
 
     if ($media['type'] === 'drive') {
         $media_path = 'drive:' . $media['id'];
-        if ($auto_title && empty($t_title)) { $t_title = $media['title']; $t_desc = $media['title']; }
+        if ($auto_title && empty($t_title)) { $t_title = $media['title']; $t_desc = $media['title'] . ($desc_input ? "\n\n" . $desc_input : ''); }
     } elseif ($media['type'] === 'tiktok') {
         $media_path = 'tiktok:' . $media['url'];
-        if ($auto_title && empty($t_title)) { $t_title = ''; $t_desc = ''; }
+        if ($auto_title && empty($t_title)) { $t_title = ''; $t_desc = $desc_input; }
     } elseif ($media['type'] === 'local') {
         $ext        = pathinfo($media['name'], PATHINFO_EXTENSION) ?: 'mp4';
         $filename   = uniqid('yt_') . '.' . $ext;
@@ -117,7 +117,7 @@ function resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $
         if ($auto_title && empty($t_title)) {
             $fn_no_ext = pathinfo($media['name'], PATHINFO_FILENAME);
             $t_title   = $fn_no_ext;
-            $t_desc    = $fn_no_ext;
+            $t_desc    = $fn_no_ext . ($desc_input ? "\n\n" . $desc_input : '');
         }
     }
     return [$media_path, $t_title, $t_desc];
