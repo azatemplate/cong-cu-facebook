@@ -9,9 +9,17 @@ set_time_limit(0);
 
 // Hỗ trợ test report
 if (isset($_GET['test_report']) && $_GET['test_report'] == '1') {
+    require_once __DIR__ . '/../includes/db.php';
     require_once __DIR__ . '/../includes/telegram.php';
     send_telegram_daily_report($pdo);
-    echo "Đã test gửi báo cáo thành công!";
+    echo "Đã gửi thử báo cáo thủ công qua Telegram và Chuông!";
+    exit;
+}
+
+if (isset($_GET['reset_report']) && $_GET['reset_report'] == '1') {
+    require_once __DIR__ . '/../includes/db.php';
+    $pdo->query("DELETE FROM system_settings WHERE setting_key = 'last_daily_report_date'");
+    echo "Đã XÓA cờ báo cáo của hôm nay. Hệ thống sẽ tự động gửi lại báo cáo ở chu kỳ phút tiếp theo!";
     exit;
 }
 
