@@ -7,6 +7,15 @@
 ignore_user_abort(true);
 set_time_limit(0);
 
+// Hỗ trợ test report
+if (isset($_GET['test_report']) && $_GET['test_report'] == '1') {
+    require_once __DIR__ . '/../includes/telegram.php';
+    send_telegram_daily_report($pdo);
+    echo "Đã test gửi báo cáo thành công!";
+    exit;
+}
+
+
 $target_page_id = isset($argv[1]) ? trim($argv[1]) : '';
 if (empty($target_page_id) && isset($_GET['page_id'])) {
     $target_page_id = trim($_GET['page_id']);
@@ -61,6 +70,24 @@ require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/drive_utils.php';
 require_once __DIR__ . '/../includes/ai_rewriter.php';
 require_once __DIR__ . '/../includes/telegram.php';
+
+// --- ĐẢM BẢO BÁO CÁO HÀNG NGÀY CHẠY ĐÚNG (Sử dụng worker luôn chạy để tránh miss crontab server) ---
+try {
+    $today = date('Y-m-d');
+    $stmt_rep = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'last_daily_report_date'");
+    $last_report = $stmt_rep ? $stmt_rep->fetchColumn() : '';
+    
+    // Nếu chưa chạy hôm nay và bây giờ >= 06:00
+    if ($last_report !== $today && date('H') >= 6) {
+        $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('last_daily_report_date', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
+            ->execute([$today, $today]);
+        send_telegram_daily_report($pdo);
+        
+        // Chạy kèm dọn dẹp hệ thống 1 lần/ngày
+        require_once __DIR__ . '/cleanup.php';
+    }
+} catch (Exception $e) {}
+
 
 // ── Spin Syntax Helper ──────────────────────────────────────────────────────
 // Xử lý cú pháp spin: {nội dung 1|nội dung 2|nội dung 3} → random chọn 1
@@ -1049,6 +1076,28 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
     // Build dynamic UPDATE based on available columns
     if ($has_error_msg && $has_retry_count) {
         if ($new_retry <= $max_retries) {
+            
+            // --- TÍNH NĂNG TỰ ĐỘNG ĐỔI NỘI DUNG KHI LỖI TẢI TỆP ---
+            try {
+                $p_stmt = $pdo->prepare("SELECT campaign_id, media_path FROM scheduled_posts WHERE id = ?");
+                $p_stmt->execute([$id]);
+                $p = $p_stmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($p && !empty($p['campaign_id'])) {
+                    if (stripos($msg, 'Unable to fetch video') !== false || stripos($msg, 'API tải video TikTok') !== false || stripos($msg, 'tải trực tiếp file') !== false || stripos($msg, 'Google Drive') !== false || stripos($msg, 'file_url') !== false) {
+                        // Tìm 1 media ngẫu nhiên khác trong cùng chiến dịch
+                        $swap_stmt = $pdo->prepare("SELECT media_path FROM scheduled_posts WHERE campaign_id = ? AND media_path != ? ORDER BY RAND() LIMIT 1");
+                        $swap_stmt->execute([$p['campaign_id'], $p['media_path']]);
+                        $new_media = $swap_stmt->fetchColumn();
+                        if ($new_media) {
+                            $pdo->prepare("UPDATE scheduled_posts SET media_path = ? WHERE id = ?")->execute([$new_media, $id]);
+                            echo "   → [AUTO-SWAP] Đã tự động lấy một URL/Tệp khác trong cùng Campaign để thay thế!\n";
+                        }
+                    }
+                }
+            } catch (Exception $e) {}
+            // -----------------------------------------------------
+            
             $pdo->prepare("UPDATE scheduled_posts SET status='failed', error_msg=?, retry_count=?, scheduled_time=DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id=?")
                 ->execute([$msg, $new_retry, $retry_interval, $id]);
         } else {

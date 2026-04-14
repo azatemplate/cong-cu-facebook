@@ -178,6 +178,7 @@ if (!function_exists('send_telegram_notification')) {
             }
             return true;
         } catch (Exception $e) {
+            @file_put_contents(__DIR__ . '/../telegram_error.txt', date('Y-m-d H:i:s') . " - " . $e->getMessage() . "\n", FILE_APPEND);
             return false;
         }
     }

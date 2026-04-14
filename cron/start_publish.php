@@ -34,9 +34,23 @@ try {
     echo "Loi reset stuck posts: " . $e->getMessage() . "\n";
 }
 
+// Cấu hình giới hạn luồng cho máy chủ (Throttling)
+$MAX_WORKERS = 30;
+
+// Đếm số luồng đang chạy (processing)
+$active_workers = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+
+echo "  [THROTTLE] Hien dang co $active_workers luong dang xu ly.\n";
+
+$available_slots = $MAX_WORKERS - $active_workers;
+if ($available_slots <= 0) {
+    echo "He thong dang dat gioi han MAX_WORKERS ($MAX_WORKERS). Cho luot cron ke tiep...\n";
+    exit;
+}
+
 // Tìm các page có bài cần đăng: pending HOẶC failed còn retry (retry_count < max từ accounts)
 $sql = "
-    SELECT DISTINCT sp.page_id 
+    SELECT DISTINCT sp.page_id, sp.account_id 
     FROM scheduled_posts sp
     LEFT JOIN system_accounts sa ON sp.account_id = sa.id
     WHERE sp.scheduled_time <= NOW()
@@ -53,14 +67,42 @@ if (!$stmt) {
 if (!$stmt->execute()) {
     echo "Loi execute SQL"; exit;
 }
-$pages = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-if (empty($pages)) {
+$raw_pages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+if (empty($raw_pages)) {
     echo "Khong co Fanpage nao can dang tai.\n";
     exit;
 }
 
-echo "Co " . count($pages) . " Fanpage dang co bai hen gio dang trung luc. Khoi chay " . count($pages) . " luong doc lap...\n";
+// Nhóm page theo từng định danh User để phân phối Round-Robin
+$pages_by_account = [];
+foreach ($raw_pages as $row) {
+    // Lưu ý: Có trường hợp hiếm hoi account_id null nếu dữ liệu rác, nên fallback
+    $acc_id = $row['account_id'] ?: 'unknown';
+    $pages_by_account[$acc_id][] = $row['page_id'];
+}
+
+// Thuật toán Round-Robin lấy công bằng Page cho tất cả các User đang chờ
+$selected_pages = [];
+$keep_going = true;
+
+while ($keep_going && count($selected_pages) < $available_slots) {
+    $keep_going = false;
+    foreach ($pages_by_account as $acc_id => &$account_pages) {
+        if (!empty($account_pages)) {
+            $selected_pages[] = array_shift($account_pages);
+            $keep_going = true;
+            if (count($selected_pages) >= $available_slots) {
+                break 2;
+            }
+        }
+    }
+}
+
+$pages = $selected_pages; // Gán lại mảng cho vòng lặp exec bên dưới
+
+echo "Co " . count($raw_pages) . " Fanpage tren he thong dang cho. Da xuat ra " . count($pages) . " luong cong bang (Round-Robin)...\n";
 
 $is_web = isset($_SERVER['HTTP_HOST']);
 $exec_enabled = function_exists('exec') && strpos(ini_get('disable_functions'), 'exec') === false;

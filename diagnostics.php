@@ -385,7 +385,7 @@ tr:hover td { background: #1e293b55; }
         </table>
     </div>
 
-    <p style="color:#94a3b8;margin-bottom:12px;">Bạn cần <b>3 Cron Job</b>. Chọn loại server của bạn:</p>
+    <p style="color:#94a3b8;margin-bottom:12px;">Bạn cần <b>2 Cron Job</b>. Chọn loại server của bạn:</p>
 
     <!-- Tab switcher -->
     <div style="display:flex;gap:8px;margin-bottom:16px;">
@@ -418,14 +418,6 @@ php <?= htmlspecialchars($cron_dir_path) ?>/start_comment.php >> /tmp/fb_comment
             <pre id="cron2a" style="background:#0a0a14;padding:12px;border-radius:6px;color:#c4b5fd;margin:0;white-space:pre-wrap;word-break:break-all;">php <?= htmlspecialchars($cron_dir_path) ?>/comment_insights_worker.php >> /tmp/fb_comment_insights.log 2>&1</pre>
             <p style="color:#64748b;font-size:12px;margin-top:5px;">AaPanel: <b>N Minutes → 5 Minutes</b> | Type: Shell Script</p>
         </div>
-        <div style="margin-bottom:8px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                <p style="color:#a78bfa;font-weight:bold;margin:0;">③ Cron Job 3 — Dọn dẹp DB (lúc 23:59 mỗi ngày)</p>
-                <button onclick="copyText('cron3a')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 12px;font-size:12px;cursor:pointer;">📋 Copy</button>
-            </div>
-            <pre id="cron3a" style="background:#0a0a14;padding:12px;border-radius:6px;color:#4ade80;margin:0;white-space:pre-wrap;word-break:break-all;">php <?= htmlspecialchars($cron_dir_path) ?>/cleanup.php >> /tmp/fb_cleanup.log 2>&1</pre>
-            <p style="color:#64748b;font-size:12px;margin-top:5px;">AaPanel: <b>N Days → 1 Day → Time: 23:59</b> | Type: Shell Script</p>
-        </div>
     </div>
 
     <!-- Full path tab -->
@@ -448,18 +440,10 @@ php <?= htmlspecialchars($cron_dir_path) ?>/start_comment.php >> /tmp/fb_comment
             <pre id="cron2b" style="background:#0a0a14;padding:12px;border-radius:6px;color:#c4b5fd;margin:0;white-space:pre-wrap;word-break:break-all;"><?= htmlspecialchars($php_bin_full) ?> <?= htmlspecialchars($cron_dir_path) ?>/comment_insights_worker.php >> /tmp/fb_comment_insights.log 2>&1</pre>
             <p style="color:#64748b;font-size:12px;margin-top:5px;">Crontab: <code>*/5 * * * *</code> (mỗi 5 phút)</p>
         </div>
-        <div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                <p style="color:#a78bfa;font-weight:bold;margin:0;">③ Cron Job 3 — Dọn dẹp DB (23:59)</p>
-                <button onclick="copyText('cron3b')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 12px;font-size:12px;cursor:pointer;">📋 Copy</button>
-            </div>
-            <pre id="cron3b" style="background:#0a0a14;padding:12px;border-radius:6px;color:#4ade80;margin:0;white-space:pre-wrap;word-break:break-all;"><?= htmlspecialchars($php_bin_full) ?> <?= htmlspecialchars($cron_dir_path) ?>/cleanup.php >> /tmp/fb_cleanup.log 2>&1</pre>
-            <p style="color:#64748b;font-size:12px;margin-top:5px;">Crontab: <code>59 23 * * *</code></p>
-        </div>
     </div>
 
     <hr style="border-color:#1e293b;margin:16px 0">
-    <p style="color:#94a3b8;font-size:12px;">📂 Xem log: <code>tail -f /tmp/fb_publish.log</code> &nbsp;|&nbsp; <code>tail -f /tmp/fb_comment_insights.log</code> &nbsp;|&nbsp; <code>tail -f /tmp/fb_cleanup.log</code></p>
+    <p style="color:#94a3b8;font-size:12px;">📂 Xem log: <code>tail -f /tmp/fb_publish.log</code> &nbsp;|&nbsp; <code>tail -f /tmp/fb_comment_insights.log</code></p>
 </div>
 
 <script>

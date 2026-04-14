@@ -18,6 +18,19 @@ if (empty($accounts)) {
     exit;
 }
 
+$MAX_COMMENT_WORKERS = 15;
+$active_comments = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
+
+echo "  [THROTTLE] Hiện đang có $active_comments luồng bình luận.\n";
+
+$available_slots = $MAX_COMMENT_WORKERS - $active_comments;
+if ($available_slots <= 0) {
+    echo "Hệ thống đang đạt giới hạn MAX_COMMENT_WORKERS ($MAX_COMMENT_WORKERS). Chờ lượt sau...\n";
+    exit;
+}
+
+$accounts = array_slice($accounts, 0, $available_slots);
+
 echo "Có " . count($accounts) . " user đang có bình luận cần đăng. Khởi chạy " . count($accounts) . " luồng độc lập...\n";
 
 $is_web = isset($_SERVER['HTTP_HOST']);

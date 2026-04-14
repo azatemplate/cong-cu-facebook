@@ -11,7 +11,7 @@ set_time_limit(120);
 $flag_file = sys_get_temp_dir() . '/fb_cleanup_' . date('Y-m-d') . '.done';
 if (file_exists($flag_file)) {
     echo "[" . date('H:i:s') . "] Cleanup da chay hom nay (" . trim(file_get_contents($flag_file)) . "). Bo qua.\n";
-    exit;
+    return;
 }
 
 require_once __DIR__ . '/../includes/db.php';
@@ -207,10 +207,10 @@ echo "  Lock/flag files:       {$stats['lock_files']}\n";
 echo "  Thoi gian:             " . date('Y-m-d H:i:s') . "\n";
 echo "========================================\n";
 
-// Gửi báo cáo ngày qua Telegram
-send_telegram_daily_report($pdo);
+// Gửi báo cáo ngày qua Telegram đã được đưa sang publish_worker.php để đảm bảo luôn chạy
 
 // Danh dau da chay hom nay
 @file_put_contents($flag_file, date('Y-m-d H:i:s'));
+
 
 echo "\n[DONE] Cleanup hoan tat. Flag: $flag_file\n";

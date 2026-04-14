@@ -12,6 +12,8 @@ try {
     $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1')");
     $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_retries', '3')");
     $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('disable_local_upload', '0')");
+    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_publish_workers', '30')");
+    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_comment_workers', '15')");
 } catch (Exception $e) {}
 
 // Auto-migrate Telegram columns per-user
@@ -45,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     $account_id = $_SESSION['account_id'];
     
-    $stmt = $pdo->prepare("SELECT password, fb_app_id, fb_app_secret, gg_client_id, gg_client_secret, gg_refresh_token FROM system_accounts WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT * FROM system_accounts WHERE id = ?");
     $stmt->execute([$account_id]);
     $account = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -107,6 +109,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         $alert_type = 'success';
         $alert_message = 'Đã cập nhật cấu hình Đăng bài thành công.';
+        
+        $account['post_delay_seconds'] = $delay;
+        $account['retry_interval_minutes'] = $interval;
+        $account['max_retries'] = $max_retries;
     }
 
     if (isset($_POST['update_telegram'])) {
@@ -128,6 +134,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $u_stmt->execute([$disable_val]);
         $alert_type = 'success';
         $alert_message = 'Đã cập nhật cấu hình giới hạn tải tệp thành công.';
+    }
+
+    if (isset($_POST['update_server_limits']) && $_SESSION['role'] === 'admin') {
+        $max_pub = isset($_POST['max_publish_workers']) ? (int)$_POST['max_publish_workers'] : 30;
+        $max_com = isset($_POST['max_comment_workers']) ? (int)$_POST['max_comment_workers'] : 15;
+        
+        $u_stmt1 = $pdo->prepare("UPDATE system_settings SET setting_value = ? WHERE setting_key = 'max_publish_workers'");
+        $u_stmt1->execute([$max_pub]);
+        
+        $u_stmt2 = $pdo->prepare("UPDATE system_settings SET setting_value = ? WHERE setting_key = 'max_comment_workers'");
+        $u_stmt2->execute([$max_com]);
+        
+        $alert_type = 'success';
+        $alert_message = 'Đã cập nhật cấu hình Throttling Máy chủ thành công.';
     }
 
     if (isset($_POST['test_telegram'])) {
@@ -165,6 +185,17 @@ try {
     $stmt_upload->execute();
     $row_upload = $stmt_upload->fetch(PDO::FETCH_ASSOC);
     if ($row_upload) $disable_local_upload = $row_upload['setting_value'];
+} catch (Exception $e) {}
+
+// Đọc cấu hình giới hạn tiến trình Server
+$max_publish_workers = '30';
+$max_comment_workers = '15';
+try {
+    $stmt_limit = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('max_publish_workers', 'max_comment_workers')");
+    while ($row_limit = $stmt_limit->fetch(PDO::FETCH_ASSOC)) {
+        if ($row_limit['setting_key'] === 'max_publish_workers') $max_publish_workers = $row_limit['setting_value'];
+        if ($row_limit['setting_key'] === 'max_comment_workers') $max_comment_workers = $row_limit['setting_value'];
+    }
 } catch (Exception $e) {}
 ?>
 
@@ -244,6 +275,30 @@ try {
             <?php endif; ?>
         </div>
     </div>
+
+    <?php if ($is_admin): ?>
+    <div class="card" style="margin: 0; box-sizing: border-box;">
+        <h3 style="margin-bottom: 10px;">⚙️ Cấu Hình Giữ Lửa Server (Throttling)</h3>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 15px;">
+            Hệ thống phân bổ công bằng (Round-Robin). Giới hạn số lượng tiến trình ngầm (Workers) được phép duyệt để đăng bài cùng một thời điểm để chống sập RAM / CPU.
+        </p>
+        <form method="POST" action="settings.php">
+            <?php echo csrf_field(); ?>
+            <div class="form-group">
+                <label>Max Publish Workers (Luồng Đăng tải)</label>
+                <p style="font-size: 11px; color: var(--text-muted); margin-top: -5px; margin-bottom: 5px;">Số luồng đăng bài chạy song song tối đa (khuyến nghị: 30 đối với VPS 4GB RAM).</p>
+                <input type="number" name="max_publish_workers" value="<?php echo htmlspecialchars($max_publish_workers); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="5" max="200">
+            </div>
+            <div class="form-group">
+                <label>Max Comment Workers (Luồng Bình luận)</label>
+                <p style="font-size: 11px; color: var(--text-muted); margin-top: -5px; margin-bottom: 5px;">Số luồng bình luận mồi chạy song song tối đa (khuyến nghị: 15 đối với VPS 4GB RAM).</p>
+                <input type="number" name="max_comment_workers" value="<?php echo htmlspecialchars($max_comment_workers); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="5" max="200">
+            </div>
+            <button type="submit" name="update_server_limits" class="btn btn-primary" style="margin-top: 5px;">💾 Lưu Throttling</button>
+        </form>
+    </div>
+    <?php endif; ?>
+
     </div> <!-- ĐÓNG CỘT TRÁI -->
 
     <!-- CỘT PHẢI -->
@@ -314,6 +369,8 @@ try {
         </form>
     </div>
     <?php endif; ?>
+
+
 
     <div class="card" style="margin: 0; box-sizing: border-box;">
         <h3 style="margin-bottom: 10px;">🤖 Thông Báo Telegram Bot</h3>
