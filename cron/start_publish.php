@@ -9,6 +9,26 @@ echo "--- KHOI DONG SCRAPER WORKER ---\n";
 @include_once __DIR__ . '/start_scraper.php';
 echo "--------------------------------\n\n";
 
+// --- ĐẢM BẢO BÁO CÁO HÀNG NGÀY CHẠY ĐÚNG ---
+try {
+    $today = date('Y-m-d');
+    $stmt_rep = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'last_daily_report_date'");
+    $last_report = $stmt_rep ? $stmt_rep->fetchColumn() : '';
+    $current_h = (int)date('H');
+    $current_m = (int)date('i');
+    
+    // Nếu chưa chạy hôm nay và bây giờ >= 07:30
+    if ($last_report !== $today && ($current_h > 7 || ($current_h === 7 && $current_m >= 30))) {
+        $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('last_daily_report_date', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
+            ->execute([$today, $today]);
+        require_once __DIR__ . '/../includes/telegram.php';
+        send_telegram_daily_report($pdo);
+        
+        // Chạy kèm dọn dẹp hệ thống 1 lần/ngày
+        require_once __DIR__ . '/cleanup.php';
+    }
+} catch (Exception $e) {}
+
 // Auto-migrate newly required columns in case the user missed accessing settings.php
 try {
     $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");
