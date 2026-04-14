@@ -3,6 +3,16 @@ $current_page = 'youtube';
 require_once __DIR__ . '/includes/header.php';
 
 $account_id = $_SESSION['account_id'];
+$is_admin = ($_SESSION['role'] === 'admin');
+
+// Đọc cấu hình giới hạn upload
+$disable_local_upload = false;
+try {
+    $stmt_upload = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'disable_local_upload'");
+    $stmt_upload->execute();
+    $row_upload = $stmt_upload->fetch(PDO::FETCH_ASSOC);
+    if ($row_upload && $row_upload['setting_value'] === '1' && !$is_admin) $disable_local_upload = true;
+} catch (Exception $e) {}
 
 // Get all linked YouTube channels for this account
 $stmt = $pdo->prepare("SELECT id, channel_id, channel_title, channel_avatar FROM youtube_channels WHERE account_id = ? ORDER BY created_at DESC");
@@ -212,10 +222,17 @@ $channels_json = json_encode($channels);
         </div>
         
         <div class="form-group">
-            <label>4. Tải lên Video từ máy (hoặc Drive)</label>
+            <label>4. Tải lên Video <?php echo $disable_local_upload ? '(Drive / TikTok)' : 'từ Máy tính (hoặc Drive)'; ?></label>
+            <?php if ($disable_local_upload): ?>
+            <div style="padding: 10px 15px; background: #fef3cd; border: 1px solid #ffc107; border-radius: 6px; font-size: 13px; color: #856404; margin-bottom: 10px;">
+                🔒 Admin đã tắt tính năng tải tệp từ máy tính. Vui lòng sử dụng Google Drive hoặc Link TikTok.
+            </div>
+            <?php endif; ?>
             <div style="display: flex; gap: 10px; align-items: center; background: #eff6ff; padding: 10px; border: 1px dashed var(--border-color); border-radius: 6px;">
+                <?php if (!$disable_local_upload): ?>
                 <input type="file" id="video" name="video[]" multiple accept="video/mp4,video/x-m4v,video/*" style="width: 100%; max-width: 250px; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: #fff;" onchange="clearDriveSelection()">
                 <div style="font-weight: bold; color: #64748b;">HOẶC</div>
+                <?php endif; ?>
                 <button type="button" class="btn btn-secondary" onclick="openDriveModal()" style="background: #fff; border: 1px solid #cbd5e1; color: #334155; display: flex; align-items: center; gap: 5px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
                     Chọn từ Google Drive
@@ -229,6 +246,7 @@ $channels_json = json_encode($channels);
                 <ul id="driveSelectedList" style="margin: 0; padding-left: 20px; color: #0c4a6e; max-height: 120px; overflow-y: auto; line-height: 1.6;"></ul>
             </div>
             <input type="hidden" id="drive_file_id" name="drive_file_id" value="">
+            <input type="hidden" id="drive_file_names" name="drive_file_names" value="">
         </div>
 
         <div style="display:flex; gap:14px; align-items:stretch; margin-top:4px; flex-wrap:wrap;">
@@ -293,7 +311,8 @@ $channels_json = json_encode($channels);
         e.preventDefault();
         
         const tiktokUrls = document.getElementById('tiktok_urls').value.trim();
-        const videoFiles = document.getElementById('video').files.length;
+        const videoEl = document.getElementById('video');
+        const videoFiles = videoEl ? videoEl.files.length : 0;
         const driveFileId = document.getElementById('drive_file_id').value.trim();
         
         if (typeof window.youtubeSelectorValidate === 'function' && !window.youtubeSelectorValidate()) {
@@ -346,10 +365,14 @@ $channels_json = json_encode($channels);
     
     function onDriveFilesSelected(files) {
         if (files.length === 0) return;
-        const fileIds = files.map(f => f.id).join(','); 
+        const fileIds = files.map(f => f.id).join(',');
+        const fileNames = files.map(f => f.name).join('|||');
         
         document.getElementById('drive_file_id').value = fileIds;
-        document.getElementById('video').value = ''; 
+        document.getElementById('drive_file_names').value = fileNames;
+        if (document.getElementById('video')) {
+            document.getElementById('video').value = ''; 
+        }
         
         const listEl = document.getElementById('driveSelectedList');
         listEl.innerHTML = '';
@@ -365,6 +388,7 @@ $channels_json = json_encode($channels);
     
     function clearDriveSelection() {
         document.getElementById('drive_file_id').value = '';
+        document.getElementById('drive_file_names').value = '';
         document.getElementById('driveSelectionInfo').style.display = 'none';
     }
 </script>

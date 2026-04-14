@@ -51,10 +51,6 @@ $comment_lines   = isset($_POST['enable_comment']) && !empty(trim($_POST['commen
 $media_pool = [];
 $drive_token = null;
 
-if (!empty($drive_file_ids_str)) {
-    $drive_token = get_drive_access_token($pdo, $account_id);
-}
-
 if (!empty($tiktok_urls_str)) {
     foreach (array_filter(array_map('trim', explode("\n", $tiktok_urls_str))) as $url) {
         $media_pool[] = ['type' => 'tiktok', 'url' => $url];
@@ -62,10 +58,19 @@ if (!empty($tiktok_urls_str)) {
 }
 
 if (!empty($drive_file_ids_str)) {
-    foreach (array_filter(array_map('trim', explode(",", $drive_file_ids_str))) as $id) {
+    // Lấy tên file từ frontend (đã có sẵn từ Drive browser) thay vì gọi API cho từng file
+    $drive_names_str = trim($_POST['drive_file_names'] ?? '');
+    $drive_ids_arr = array_filter(array_map('trim', explode(",", $drive_file_ids_str)));
+    $drive_names_arr = !empty($drive_names_str) ? explode("|||", $drive_names_str) : [];
+    
+    foreach ($drive_ids_arr as $idx => $id) {
         $drive_title = '';
-        if ($auto_title && $drive_token) {
-            $drive_name = get_drive_file_name($drive_token, $id);
+        if ($auto_title) {
+            $drive_name = isset($drive_names_arr[$idx]) ? trim($drive_names_arr[$idx]) : '';
+            if (empty($drive_name)) {
+                if (!$drive_token) $drive_token = get_drive_access_token($pdo, $account_id);
+                if ($drive_token) $drive_name = get_drive_file_name($drive_token, $id);
+            }
             if ($drive_name) $drive_title = pathinfo($drive_name, PATHINFO_FILENAME);
         }
         $media_pool[] = ['type' => 'drive', 'id' => $id, 'title' => $drive_title];
@@ -108,7 +113,10 @@ function resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $
         if ($auto_title && empty($t_title)) { $t_title = $media['title']; $t_desc = $media['title'] . ($desc_input ? "\n\n" . $desc_input : ''); }
     } elseif ($media['type'] === 'tiktok') {
         $media_path = 'tiktok:' . $media['url'];
-        if ($auto_title && empty($t_title)) { $t_title = ''; $t_desc = $desc_input; }
+        if ($auto_title && empty($t_title)) { 
+            $t_title = $media['url']; 
+            $t_desc = $media['url'] . ($desc_input ? "\n\n" . $desc_input : ''); 
+        }
     } elseif ($media['type'] === 'local') {
         $ext        = pathinfo($media['name'], PATHINFO_EXTENSION) ?: 'mp4';
         $filename   = uniqid('yt_') . '.' . $ext;

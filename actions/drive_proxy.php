@@ -73,25 +73,45 @@ if ($action === 'list_files') {
     // Fetch only folders or image/video files to keep it relevant
     $q = "'" . $parent_id . "' in parents and trashed = false and (mimeType contains 'image/' or mimeType contains 'video/' or mimeType = 'application/vnd.google-apps.folder')";
     
-    $drive_url = "https://www.googleapis.com/drive/v3/files?q=" . urlencode($q) . "&fields=files(id,name,mimeType,thumbnailLink,size)&orderBy=folder,name";
+    // Phân trang: lặp qua tất cả các trang để lấy toàn bộ file
+    $all_files = [];
+    $page_token = null;
     
-    $ch_drive = curl_init($drive_url);
-    curl_setopt($ch_drive, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch_drive, CURLOPT_HTTPHEADER, [
-        "Authorization: Bearer $access_token"
-    ]);
+    do {
+        $drive_url = "https://www.googleapis.com/drive/v3/files?q=" . urlencode($q) 
+            . "&fields=nextPageToken,files(id,name,mimeType,thumbnailLink,size)"
+            . "&orderBy=folder,name"
+            . "&pageSize=1000";
+        
+        if ($page_token) {
+            $drive_url .= "&pageToken=" . urlencode($page_token);
+        }
+        
+        $ch_drive = curl_init($drive_url);
+        curl_setopt($ch_drive, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch_drive, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer $access_token"
+        ]);
+        
+        $drive_response = curl_exec($ch_drive);
+        curl_close($ch_drive);
+        
+        $files_data = json_decode($drive_response, true);
+        
+        if (isset($files_data['error'])) {
+            echo json_encode(['status' => 'error', 'msg' => 'Lỗi từ Google Drive API: ' . $files_data['error']['message']]);
+            exit;
+        }
+        
+        if (isset($files_data['files'])) {
+            $all_files = array_merge($all_files, $files_data['files']);
+        }
+        
+        $page_token = isset($files_data['nextPageToken']) ? $files_data['nextPageToken'] : null;
+        
+    } while ($page_token);
     
-    $drive_response = curl_exec($ch_drive);
-    curl_close($ch_drive);
-    
-    $files_data = json_decode($drive_response, true);
-    
-    if (isset($files_data['error'])) {
-        echo json_encode(['status' => 'error', 'msg' => 'Lỗi từ Google Drive API: ' . $files_data['error']['message']]);
-        exit;
-    }
-    
-    echo json_encode(['status' => 'success', 'files' => $files_data['files']]);
+    echo json_encode(['status' => 'success', 'files' => $all_files, 'total' => count($all_files)]);
 } else if ($action === 'get_file_info') {
     // Lấy tên và thumbnail của 1 file cụ thể khi user đã chọn
     $file_id = isset($_GET['file_id']) ? $_GET['file_id'] : '';

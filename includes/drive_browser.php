@@ -9,9 +9,23 @@
             <button type="button" onclick="closeDriveModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #64748b;">&times;</button>
         </div>
         
-        <div style="padding: 10px 15px; border-bottom: 1px solid var(--border-color); background: #f1f5f9; display: flex; gap: 10px; align-items: center;">
+        <div style="padding: 10px 15px; border-bottom: 1px solid var(--border-color); background: #f1f5f9; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
             <button type="button" id="driveBtnBack" onclick="driveNavigateUp()" class="btn btn-secondary" style="padding: 5px 10px; font-size: 13px;" disabled>&#8592; Quay lại</button>
-            <span id="driveCurrentPath" style="font-size: 13px; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">/ Root</span>
+            <span id="driveCurrentPath" style="font-size: 13px; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">/ Root</span>
+            <span id="driveTotalCount" style="font-size: 12px; color: #64748b; font-weight: 500;"></span>
+        </div>
+
+        <!-- Toolbar: Select All / Deselect All -->
+        <div style="padding: 6px 15px; border-bottom: 1px solid var(--border-color); background: #eff6ff; display: flex; gap: 10px; align-items: center; justify-content: space-between;">
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button type="button" id="driveBtnSelectAll" onclick="driveSelectAllFiles()" class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px; background: #dbeafe; border: 1px solid #93c5fd; color: #1d4ed8; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                    ☑️ Chọn tất cả
+                </button>
+                <button type="button" id="driveBtnDeselectAll" onclick="driveDeselectAllFiles()" class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px; background: #fff; border: 1px solid #e2e8f0; color: #64748b; border-radius: 4px; cursor: pointer; display: none; align-items: center; gap: 4px;">
+                    ✖️ Bỏ chọn tất cả
+                </button>
+            </div>
+            <span id="driveSelectionCount" style="font-size: 12px; color: #1d4ed8; font-weight: 600;">0 đã chọn</span>
         </div>
 
         <div id="driveFileList" style="padding: 15px; overflow-y: auto; flex-grow: 1; min-height: 200px;">
@@ -37,6 +51,9 @@
 }
 .drive-item:hover {
     background: #f1f5f9;
+}
+.drive-item.drive-selected {
+    background: #e0f2fe !important;
 }
 .drive-icon {
     width: 32px;
@@ -71,6 +88,17 @@
     color: #64748b;
     margin-top: 2px;
 }
+.drive-check-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    margin-left: 8px;
+    display: none;
+    color: #2563eb;
+}
+.drive-item.drive-selected .drive-check-icon {
+    display: block;
+}
 </style>
 
 <script>
@@ -78,6 +106,7 @@ let currentFolderId = 'root';
 let folderHistory = [];
 let folderPathNames = ['Root'];
 let driveSelectedFiles = [];
+let currentDriveFiles = []; // Lưu danh sách file (không phải folder) của thư mục hiện tại
 
 function formatBytes(bytes, decimals = 2) {
     if (!+bytes) return '0 Bytes';
@@ -109,6 +138,8 @@ function updateDriveBreadcrumb() {
 function loadDriveFiles(folderId, folderName) {
     const listContainer = document.getElementById('driveFileList');
     listContainer.innerHTML = '<div style="text-align: center; color: #64748b; padding: 20px;">Đang tải danh sách...</div>';
+    currentDriveFiles = []; // Reset
+    document.getElementById('driveTotalCount').textContent = '';
     
     fetch(`actions/drive_proxy.php?action=list_files&parent_id=${folderId}`)
         .then(res => res.json())
@@ -116,10 +147,21 @@ function loadDriveFiles(folderId, folderName) {
             if (data.status === 'success') {
                 listContainer.innerHTML = '';
                 
+                // Hiển thị tổng số file
+                const totalCount = data.total || data.files.length;
+                const fileCount = data.files.filter(f => f.mimeType !== 'application/vnd.google-apps.folder').length;
+                const folderCount = data.files.filter(f => f.mimeType === 'application/vnd.google-apps.folder').length;
+                
+                let countText = `📁 ${folderCount} thư mục · 📄 ${fileCount} file`;
+                document.getElementById('driveTotalCount').textContent = countText;
+                
                 if (data.files.length === 0) {
                     listContainer.innerHTML = '<div style="text-align: center; color: #64748b; padding: 20px;">Thư mục trống.</div>';
                     return;
                 }
+                
+                // Lưu danh sách file (không bao gồm folder)
+                currentDriveFiles = data.files.filter(f => f.mimeType !== 'application/vnd.google-apps.folder');
                 
                 data.files.forEach(file => {
                     const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
@@ -137,9 +179,10 @@ function loadDriveFiles(folderId, folderName) {
 
                     const div = document.createElement('div');
                     div.className = 'drive-item';
+                    div.dataset.fileId = file.id;
                     
                     if (!isFolder && driveSelectedFiles.some(f => f.id === file.id)) {
-                        div.style.background = '#e0f2fe';
+                        div.classList.add('drive-selected');
                     }
                     
                     div.onclick = function() {
@@ -160,9 +203,14 @@ function loadDriveFiles(folderId, folderName) {
                             <div class="drive-name">${file.name}</div>
                             <div class="drive-size">${isFolder ? 'Thư mục' : formatBytes(file.size)}</div>
                         </div>
+                        ${!isFolder ? '<svg class="drive-check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
                     `;
                     listContainer.appendChild(div);
                 });
+                
+                // Cập nhật trạng thái nút select/deselect
+                updateSelectAllButtons();
+                
             } else {
                 listContainer.innerHTML = `<div style="text-align: center; color: red; padding: 20px;">${data.msg}</div>`;
             }
@@ -185,19 +233,87 @@ function toggleDriveFileSelection(file, element) {
     const idx = driveSelectedFiles.findIndex(f => f.id === file.id);
     if (idx > -1) {
         driveSelectedFiles.splice(idx, 1);
-        element.style.background = '';
+        element.classList.remove('drive-selected');
     } else {
         driveSelectedFiles.push({id: file.id, name: file.name});
-        element.style.background = '#e0f2fe';
+        element.classList.add('drive-selected');
     }
     updateDriveSelectionUI();
+    updateSelectAllButtons();
+}
+
+function driveSelectAllFiles() {
+    // Chọn tất cả file (không phải folder) trong thư mục hiện tại
+    currentDriveFiles.forEach(file => {
+        if (!driveSelectedFiles.some(f => f.id === file.id)) {
+            driveSelectedFiles.push({id: file.id, name: file.name});
+        }
+    });
+    
+    // Cập nhật UI cho các item đang hiển thị
+    document.querySelectorAll('#driveFileList .drive-item').forEach(div => {
+        const fileId = div.dataset.fileId;
+        if (fileId && currentDriveFiles.some(f => f.id === fileId)) {
+            div.classList.add('drive-selected');
+        }
+    });
+    
+    updateDriveSelectionUI();
+    updateSelectAllButtons();
+}
+
+function driveDeselectAllFiles() {
+    // Bỏ chọn tất cả file trong thư mục hiện tại
+    currentDriveFiles.forEach(file => {
+        const idx = driveSelectedFiles.findIndex(f => f.id === file.id);
+        if (idx > -1) {
+            driveSelectedFiles.splice(idx, 1);
+        }
+    });
+    
+    // Cập nhật UI
+    document.querySelectorAll('#driveFileList .drive-item').forEach(div => {
+        div.classList.remove('drive-selected');
+    });
+    
+    updateDriveSelectionUI();
+    updateSelectAllButtons();
+}
+
+function updateSelectAllButtons() {
+    const btnSelectAll = document.getElementById('driveBtnSelectAll');
+    const btnDeselectAll = document.getElementById('driveBtnDeselectAll');
+    
+    if (currentDriveFiles.length === 0) {
+        btnSelectAll.style.display = 'none';
+        btnDeselectAll.style.display = 'none';
+        return;
+    }
+    
+    // Kiểm tra xem tất cả file trong thư mục hiện tại đã được chọn chưa
+    const allSelected = currentDriveFiles.every(f => driveSelectedFiles.some(sf => sf.id === f.id));
+    
+    if (allSelected) {
+        btnSelectAll.style.display = 'none';
+        btnDeselectAll.style.display = 'flex';
+    } else {
+        btnSelectAll.style.display = 'flex';
+        btnDeselectAll.style.display = currentDriveFiles.some(f => driveSelectedFiles.some(sf => sf.id === f.id)) ? 'flex' : 'none';
+    }
 }
 
 function updateDriveSelectionUI() {
     const btn = document.getElementById('btnConfirmDriveSelection');
+    const countSpan = document.getElementById('driveSelectionCount');
+    const n = driveSelectedFiles.length;
+    
     if (btn) {
-        btn.innerText = `Xác nhận chọn (${driveSelectedFiles.length})`;
-        btn.disabled = driveSelectedFiles.length === 0;
+        btn.innerText = `Xác nhận chọn (${n})`;
+        btn.disabled = n === 0;
+    }
+    if (countSpan) {
+        countSpan.textContent = n > 0 ? `${n} đã chọn` : '0 đã chọn';
+        countSpan.style.color = n > 0 ? '#1d4ed8' : '#64748b';
     }
 }
 

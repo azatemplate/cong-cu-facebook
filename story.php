@@ -102,6 +102,7 @@ $pages_json = json_encode($pages);
                 <ul id="driveSelectedList" style="margin: 0; padding-left: 20px; color: #0c4a6e; max-height: 120px; overflow-y: auto; line-height: 1.6;"></ul>
             </div>
             <input type="hidden" id="drive_file_id" name="drive_file_id" value="">
+            <input type="hidden" id="drive_file_names" name="drive_file_names" value="">
         </div>
 
         <div class="form-group" style="background: #f9fafb; padding: 15px; border-radius: 6px; border: 1px solid var(--border-color); margin-top: 4px;">
@@ -201,9 +202,12 @@ $pages_json = json_encode($pages);
     function onDriveFilesSelected(files) {
         if (files.length === 0) return;
         const fileIds = files.map(f => f.id).join(',');
+        const fileNames = files.map(f => f.name).join('|||');
         
         document.getElementById('drive_file_id').value = fileIds;
-        document.getElementById('media').value = ''; // Xóa local file
+        document.getElementById('drive_file_names').value = fileNames;
+        const mediaEl2 = document.getElementById('media');
+        if (mediaEl2) mediaEl2.value = ''; // Xóa local file
         
         const listEl = document.getElementById('driveSelectedList');
         listEl.innerHTML = '';
@@ -219,6 +223,7 @@ $pages_json = json_encode($pages);
     
     function clearDriveSelection() {
         document.getElementById('drive_file_id').value = '';
+        document.getElementById('drive_file_names').value = '';
         document.getElementById('driveSelectionInfo').style.display = 'none';
     }
 </script>
