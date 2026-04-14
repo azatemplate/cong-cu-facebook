@@ -53,7 +53,7 @@ $drive_token = null;
 
 if (!empty($tiktok_urls_str)) {
     foreach (array_filter(array_map('trim', explode("\n", $tiktok_urls_str))) as $url) {
-        $media_pool[] = ['type' => 'tiktok', 'url' => $url];
+        $media_pool[] = ['type' => 'tiktok', 'url' => $url, 'title' => $url];
     }
 }
 
@@ -114,8 +114,8 @@ function resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $
     } elseif ($media['type'] === 'tiktok') {
         $media_path = 'tiktok:' . $media['url'];
         if ($auto_title && empty($t_title)) { 
-            $t_title = $media['url']; 
-            $t_desc = $media['url'] . ($desc_input ? "\n\n" . $desc_input : ''); 
+            $t_title = $media['title']; 
+            $t_desc = $media['title'] . ($desc_input ? "\n\n" . $desc_input : ''); 
         }
     } elseif ($media['type'] === 'local') {
         $ext        = pathinfo($media['name'], PATHINFO_EXTENSION) ?: 'mp4';
