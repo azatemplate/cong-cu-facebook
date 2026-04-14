@@ -80,11 +80,11 @@ if (!function_exists('send_telegram_notification')) {
             if (empty($accounts)) return false;
 
             foreach ($accounts as $acc) {
-                // Thống kê hôm nay cho account này
+                // Thống kê hôm qua cho account này
                 $stmt = $pdo->prepare("
                     SELECT status, COUNT(*) as cnt
                     FROM scheduled_posts
-                    WHERE account_id = ? AND DATE(scheduled_time) = CURDATE()
+                    WHERE account_id = ? AND DATE(scheduled_time) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
                     GROUP BY status
                 ");
                 $stmt->execute([$acc['id']]);
@@ -95,15 +95,15 @@ if (!function_exists('send_telegram_notification')) {
                 $pending    = (int)($today_stats['pending'] ?? 0);
                 $processing = (int)($today_stats['processing'] ?? 0);
 
-                // Tổng page hoạt động hôm nay
+                // Tổng page hoạt động hôm qua
                 $p_stmt = $pdo->prepare("
                     SELECT COUNT(DISTINCT page_id) FROM scheduled_posts 
-                    WHERE account_id = ? AND DATE(scheduled_time) = CURDATE() AND status = 'published'
+                    WHERE account_id = ? AND DATE(scheduled_time) = DATE_SUB(CURDATE(), INTERVAL 1 DAY) AND status = 'published'
                 ");
                 $p_stmt->execute([$acc['id']]);
                 $active_pages = $p_stmt->fetchColumn();
 
-                $date = date('d/m/Y');
+                $date = date('d/m/Y', strtotime('-1 day')); // Báo cáo ngày hôm qua
                 $time = date('H:i');
 
                 $message = "📊 BÁO CÁO NGÀY {$date}\n"
