@@ -12,45 +12,50 @@ $id = $_POST['id'] ?? null;
 $post_id = $_POST['post_id'] ?? null;
 $conversation_id = $_POST['conversation_id'] ?? null;
 
+$sys_page_id = 'SYSTEM_ACCOUNT_' . $_SESSION['account_id'];
+
 if ($id) {
     // Only update if it belongs to user's accounts
     $stmt = $pdo->prepare("
         UPDATE page_notifications n
-        JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
-        JOIN users u ON p.user_id = u.id
+        LEFT JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
+        LEFT JOIN users u ON p.user_id = u.id
         SET n.is_read = 1
         WHERE n.id = ? AND (
             u.account_id = ?
             OR EXISTS (SELECT 1 FROM page_shares ps WHERE ps.page_id = p.page_id AND ps.shared_with_account_id = ?)
+            OR n.page_id = ?
         )
     ");
-    $stmt->execute([$id, $_SESSION['account_id'], $_SESSION['account_id']]);
+    $stmt->execute([$id, $_SESSION['account_id'], $_SESSION['account_id'], $sys_page_id]);
     echo json_encode(['status' => 'success']);
 } elseif ($post_id) {
     $stmt = $pdo->prepare("
         UPDATE page_notifications n
-        JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
-        JOIN users u ON p.user_id = u.id
+        LEFT JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
+        LEFT JOIN users u ON p.user_id = u.id
         SET n.is_read = 1
         WHERE n.post_id = ? AND (
             u.account_id = ?
             OR EXISTS (SELECT 1 FROM page_shares ps WHERE ps.page_id = p.page_id AND ps.shared_with_account_id = ?)
+            OR n.page_id = ?
         )
     ");
-    $stmt->execute([$post_id, $_SESSION['account_id'], $_SESSION['account_id']]);
+    $stmt->execute([$post_id, $_SESSION['account_id'], $_SESSION['account_id'], $sys_page_id]);
     echo json_encode(['status' => 'success']);
 } elseif ($conversation_id) {
     $stmt = $pdo->prepare("
         UPDATE page_notifications n
-        JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
-        JOIN users u ON p.user_id = u.id
+        LEFT JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
+        LEFT JOIN users u ON p.user_id = u.id
         SET n.is_read = 1
         WHERE n.conversation_id = ? AND (
             u.account_id = ?
             OR EXISTS (SELECT 1 FROM page_shares ps WHERE ps.page_id = p.page_id AND ps.shared_with_account_id = ?)
+            OR n.page_id = ?
         )
     ");
-    $stmt->execute([$conversation_id, $_SESSION['account_id'], $_SESSION['account_id']]);
+    $stmt->execute([$conversation_id, $_SESSION['account_id'], $_SESSION['account_id'], $sys_page_id]);
     echo json_encode(['status' => 'success']);
 } else {
     echo json_encode(['status' => 'error', 'msg' => 'Missing ID']);
