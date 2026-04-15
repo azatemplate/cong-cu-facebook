@@ -11,9 +11,9 @@ if ($campaign_id) {
         $post_id = intval($_GET['post_id']);
         try {
             if ($act === 'delete') {
-                $pdo->prepare("DELETE FROM scheduled_posts WHERE id = ? AND campaign_id = ? AND status IN ('pending','failed')")->execute([$post_id, $campaign_id]);
+                $pdo->prepare("DELETE FROM scheduled_posts WHERE id = ? AND campaign_id = ? AND status IN ('pending','failed','checkpoint')")->execute([$post_id, $campaign_id]);
             } elseif ($act === 'retry') {
-                $pdo->prepare("UPDATE scheduled_posts SET status='pending', error_msg=NULL WHERE id = ? AND campaign_id = ? AND status='failed'")->execute([$post_id, $campaign_id]);
+                $pdo->prepare("UPDATE scheduled_posts SET status='pending', error_msg=NULL WHERE id = ? AND campaign_id = ? AND status IN ('failed','checkpoint')")->execute([$post_id, $campaign_id]);
             }
         } catch (PDOException $e) { /* ignore */ }
         header("Location: campaign_detail.php?id=$campaign_id" . (isset($_GET['filter']) ? '&filter='.$_GET['filter'] : ''));
@@ -23,7 +23,7 @@ if ($campaign_id) {
     // Retry all (GET)
     if (isset($_GET['action']) && $_GET['action'] === 'retry_all') {
         try {
-            $pdo->prepare("UPDATE scheduled_posts SET status='pending', error_msg=NULL WHERE campaign_id = ? AND status='failed'")->execute([$campaign_id]);
+            $pdo->prepare("UPDATE scheduled_posts SET status='pending', error_msg=NULL WHERE campaign_id = ? AND status IN ('failed','checkpoint')")->execute([$campaign_id]);
         } catch (PDOException $e) { /* ignore */ }
         header("Location: campaign_detail.php?id=$campaign_id");
         exit;
@@ -36,7 +36,7 @@ if ($campaign_id) {
             $in = implode(',', array_fill(0, count($ids), '?'));
             try {
                 $params = array_merge($ids, [$campaign_id]);
-                $pdo->prepare("DELETE FROM scheduled_posts WHERE id IN ($in) AND campaign_id = ? AND status IN ('pending','failed')")->execute($params);
+                $pdo->prepare("DELETE FROM scheduled_posts WHERE id IN ($in) AND campaign_id = ? AND status IN ('pending','failed','checkpoint')")->execute($params);
             } catch (PDOException $e) { /* ignore */ }
         }
         header("Location: campaign_detail.php?id=$campaign_id");
@@ -78,7 +78,7 @@ if (!$campaign) {
 $filter = $_GET['filter'] ?? 'all';
 if ($filter === 'published')     $filter_sql = "AND sp.status = 'published'";
 elseif ($filter === 'pending')   $filter_sql = "AND sp.status IN ('pending','processing')";
-elseif ($filter === 'failed')    $filter_sql = "AND sp.status = 'failed'";
+elseif ($filter === 'failed')    $filter_sql = "AND sp.status IN ('failed','checkpoint')";
 else                             $filter_sql = '';
 
 // Pagination
@@ -129,6 +129,7 @@ try {
         SUM(CASE WHEN status='pending'    THEN 1 ELSE 0 END) AS pend,
         SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS proc,
         SUM(CASE WHEN status='failed'     THEN 1 ELSE 0 END) AS fail,
+        SUM(CASE WHEN status='checkpoint' THEN 1 ELSE 0 END) AS chk,
         COUNT(*) AS total
         FROM scheduled_posts WHERE campaign_id = ?");
     $st->execute([$campaign_id]);
@@ -143,6 +144,7 @@ function status_bg($s) {
     if ($s === 'pending')    return '#fef3c7';
     if ($s === 'processing') return '#e0f2fe';
     if ($s === 'failed')     return '#fee2e2';
+    if ($s === 'checkpoint') return '#fee2e2';
     return '#f3f4f6';
 }
 function status_tc($s) {
@@ -150,6 +152,7 @@ function status_tc($s) {
     if ($s === 'pending')    return '#d97706';
     if ($s === 'processing') return '#0369a1';
     if ($s === 'failed')     return '#dc2626';
+    if ($s === 'checkpoint') return '#991b1b';
     return '#6b7280';
 }
 function status_label($s) {
@@ -157,6 +160,7 @@ function status_label($s) {
     if ($s === 'pending')    return '⏳ Chờ';
     if ($s === 'processing') return '🔄 Đang đăng';
     if ($s === 'failed')     return '❌ Lỗi';
+    if ($s === 'checkpoint') return '🚫 Tài khoản bị checkpoint';
     return htmlspecialchars($s);
 }
 ?>
@@ -189,7 +193,7 @@ function status_label($s) {
             <?php foreach ([
                 ['Đã đăng',  (int)$stats['pub'],  '#d1fae5','#065f46'],
                 ['Đang chờ', (int)$stats['pend']+(int)$stats['proc'], '#fef3c7','#d97706'],
-                ['Thất bại', (int)$stats['fail'], '#fee2e2','#dc2626'],
+                ['Checkpoint/Lỗi', (int)$stats['fail']+(int)($stats['chk'] ?? 0), '#fee2e2','#dc2626'],
             ] as $item):
                 list($lbl, $cnt, $bg, $tc) = $item; ?>
             <div style="background:<?php echo $bg; ?>;padding:12px 20px;border-radius:8px;text-align:center;min-width:80px;">
@@ -200,11 +204,11 @@ function status_label($s) {
         </div>
     </div>
     <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
-        <?php if ((int)$stats['fail'] > 0): ?>
-        <button onclick="showCampaignModal('retry_all', <?php echo $campaign_id; ?>, 'Thử lại tất cả bài lỗi trong chiến dịch này?', false)" style="padding:8px 16px;background:#10b981;color:white;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🔄 Retry tất cả lỗi (<?php echo (int)$stats['fail']; ?>)</button>
+        <?php if ((int)$stats['fail'] > 0 || (int)($stats['chk'] ?? 0) > 0): ?>
+        <button onclick="showCampaignModal('retry_all', <?php echo $campaign_id; ?>, 'Thử lại tất cả bài lỗi trong chiến dịch này?', false)" style="padding:8px 16px;background:#10b981;color:white;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🔄 Retry tất cả lỗi (<?php echo (int)$stats['fail'] + (int)($stats['chk'] ?? 0); ?>)</button>
         <?php endif; ?>
-        <?php if ((int)$stats['pend'] > 0 || (int)$stats['fail'] > 0): ?>
-        <button onclick="showCampaignModal('delete_pending', <?php echo $campaign_id; ?>, 'Xóa toàn bộ bài pending &amp; lỗi trong chiến dịch này?', true)" style="padding:8px 16px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🗑 Xóa bài chưa/lỗi</button>
+        <?php if ((int)$stats['pend'] > 0 || (int)$stats['fail'] > 0 || (int)($stats['chk'] ?? 0) > 0): ?>
+        <button onclick="showCampaignModal('delete_pending', <?php echo $campaign_id; ?>, 'Xóa toàn bộ bài chưa hoàn tất trong chiến dịch này?', true)" style="padding:8px 16px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🗑 Xóa bài chưa/lỗi</button>
         <?php endif; ?>
         <?php if ((int)$stats['total'] === 0): ?>
         <button onclick="showCampaignModal('delete_campaign_empty', <?php echo $campaign_id; ?>, 'Xóa chiến dịch trống này?', true)" style="padding:8px 16px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🗑 Xóa Campaign</button>
@@ -218,7 +222,7 @@ function status_label($s) {
         ['all',       'Tất cả',     (int)$stats['total']],
         ['published', '✅ Đã đăng', (int)$stats['pub']],
         ['pending',   '⏳ Đang chờ',(int)$stats['pend']+(int)$stats['proc']],
-        ['failed',    '❌ Lỗi',     (int)$stats['fail']],
+        ['failed',    '❌ Bị dừng/Lỗi', (int)$stats['fail']+(int)($stats['chk'] ?? 0)],
     ] as $tab):
         list($val, $lbl, $cnt) = $tab;
         $active = ($filter === $val); ?>
@@ -276,7 +280,7 @@ function status_label($s) {
             ?>
             <tr style="border-bottom:1px solid var(--border-color);">
                 <td style="padding:10px 12px;text-align:center;">
-                    <?php if (in_array($s, ['pending','failed'])): ?>
+                    <?php if (in_array($s, ['pending','failed','checkpoint'])): ?>
                     <input type="checkbox" name="post_ids[]" value="<?php echo $post['id']; ?>" class="row-check">
                     <?php endif; ?>
                 </td>
@@ -300,7 +304,7 @@ function status_label($s) {
                             <div style="font-size:12px;color:var(--text-muted);margin-top:2px;"><?php echo htmlspecialchars($desc_short); ?></div>
                         </div>
                     </div>
-                    <?php if ($s === 'failed' && !empty($post['error_msg'])): ?>
+                    <?php if (in_array($s, ['failed', 'checkpoint']) && !empty($post['error_msg'])): ?>
                     <div style="font-size:11px;color:#dc2626;margin-top:4px;background:#fee2e2;padding:2px 6px;border-radius:4px;"><?php echo htmlspecialchars(mb_strimwidth($post['error_msg'], 0, 120, '…')); ?></div>
                     <?php endif; ?>
                     <?php if ($s === 'published' && !empty($post['error_msg'])): ?>
@@ -346,12 +350,12 @@ function status_label($s) {
                         <a href="<?php echo $view_url; ?>" target="_blank"
                            style="font-size:12px;color:var(--primary-color);text-decoration:none;padding:3px 9px;border:1px solid #c7d2fe;border-radius:4px;background:#eef2ff;">Xem</a>
                     <?php endif; ?>
-                    <?php if (in_array($s, ['pending','failed'])): ?>
+                    <?php if (in_array($s, ['pending','failed','checkpoint'])): ?>
                         <a href="#"
                            onclick="showSingleDeleteModal(<?php echo $post['id']; ?>, '<?php echo $filter; ?>'); return false;"
                            style="font-size:12px;color:#dc2626;text-decoration:none;padding:3px 9px;border:1px solid #fca5a5;border-radius:4px;">Xóa</a>
                     <?php endif; ?>
-                    <?php if ($s === 'failed'): ?>
+                    <?php if (in_array($s, ['failed','checkpoint'])): ?>
                         <a href="campaign_detail.php?id=<?php echo $campaign_id; ?>&action=retry&post_id=<?php echo $post['id']; ?>&filter=<?php echo $filter; ?>"
                            style="font-size:12px;color:#059669;text-decoration:none;padding:3px 9px;border:1px solid #6ee7b7;border-radius:4px;">Retry</a>
                     <?php endif; ?>

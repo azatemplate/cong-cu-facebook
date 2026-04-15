@@ -112,6 +112,11 @@ try {
     $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
 } catch (Exception $e) {}
 
+// Auto-migrate status column from ENUM to VARCHAR to support 'checkpoint'
+try {
+    $pdo->exec("ALTER TABLE scheduled_posts MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+} catch (Exception $e) {}
+
 $start_time = microtime(true);
 echo "-------------------------------------------\n";
 echo "Bat dau quet bai viet len lich luc: " . date('Y-m-d H:i:s') . "\n";
@@ -1048,6 +1053,44 @@ if ($lock_fp) {
 
 function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $has_error_msg = true, $has_retry_count = true)
 {
+    // Cắt lỗi Checkpoint ngay từ đầu
+    if (stripos($msg, 'You cannot access the app till you log in') !== false) {
+        file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - [CHECKPOINT] Intercepted message: " . $msg . "\n", FILE_APPEND);
+        try {
+            $p_stmt = $pdo->prepare("SELECT campaign_id FROM scheduled_posts WHERE id = ?");
+            $p_stmt->execute([$id]);
+            $p = $p_stmt->fetch(PDO::FETCH_ASSOC);
+            if ($p && !empty($p['campaign_id'])) {
+                $cid = $p['campaign_id'];
+                // Dừng tất cả pending, processing, failed sang checkpoint trong cùng Campaign
+                $pdo->prepare("UPDATE scheduled_posts SET status='checkpoint', error_msg=? WHERE campaign_id=? AND status IN ('pending', 'processing', 'failed')")
+                    ->execute(["Lỗi API: Checkpoint - Đã dừng do token bị lỗi", $cid]);
+                // Cập nhật riêng cho ID hiện tại để lưu chính xác lỗi gốc
+                $pdo->prepare("UPDATE scheduled_posts SET status='checkpoint', error_msg=? WHERE id=?")
+                    ->execute([$msg, $id]);
+                
+                // Cảnh báo Telegram
+                $short_msg = mb_strimwidth($msg, 0, 150, '…');
+                if (function_exists('send_telegram_notification')) {
+                    send_telegram_notification($pdo, $GLOBALS['_current_account_id'] ?? 0, "<b>🚨 CẢNH BÁO CHECKPOINT!</b>\n🎯 Campaign ID: {$cid}\n💬 Lỗi: {$short_msg}\n⚠️ Đã tự động <b>DỪNG</b> Campaign để bảo vệ tài khoản.", 'error');
+                }
+                echo " -> [CHECKPOINT] Đã dừng toàn bộ Campaign #$cid do Checkpoint API!\n";
+                return;
+            } else {
+                // Không có campaign thì set thẳng node này
+                $pdo->prepare("UPDATE scheduled_posts SET status='checkpoint', error_msg=? WHERE id=?")
+                    ->execute([$msg, $id]);
+                $short_msg = mb_strimwidth($msg, 0, 150, '…');
+                if (function_exists('send_telegram_notification')) {
+                    send_telegram_notification($pdo, $GLOBALS['_current_account_id'] ?? 0, "<b>🚨 CẢNH BÁO CHECKPOINT!</b>\n🆔 Bài ID: {$id}\n💬 Lỗi: {$short_msg}", 'error');
+                }
+                echo " -> [CHECKPOINT] Lỗi Checkpoint API cho bài ID #$id!\n";
+            }
+        } catch (Exception $e) {
+            file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - EXCEPTION: " . $e->getMessage() . "\n", FILE_APPEND);
+        }
+    }
+
     $current_retry = 0;
     if ($has_retry_count) {
         try {

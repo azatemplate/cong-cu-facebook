@@ -5,6 +5,11 @@ if (session_status() === PHP_SESSION_NONE) @session_start();
 $_s_account_id = $_SESSION['account_id'] ?? 0;
 $_s_is_admin   = ($_SESSION['role'] ?? '') === 'admin';
 
+// Auto-migrate status column to support 'checkpoint'
+try {
+    $pdo->exec("ALTER TABLE scheduled_posts MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+} catch (PDOException $e) {}
+
 // POST: bulk delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'], $_POST['post_ids'])) {
     $action   = $_POST['bulk_action'];
@@ -48,7 +53,7 @@ if (isset($_GET['action'], $_GET['id'])) {
             $p = [$id, $_s_account_id];
             
             // Free up local files for the campaign's pending posts before deleting
-            $stmt = $pdo->prepare("SELECT media_path FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed') $auth");
+            $stmt = $pdo->prepare("SELECT media_path FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed','checkpoint') $auth");
             $stmt->execute($p);
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
                 if (!empty($row['media_path']) && strpos($row['media_path'], 'uploads/') !== false) {
@@ -64,11 +69,11 @@ if (isset($_GET['action'], $_GET['id'])) {
                 }
             }
             
-            $pdo->prepare("DELETE FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed') $auth")->execute($p);
+            $pdo->prepare("DELETE FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed','checkpoint') $auth")->execute($p);
             $pdo->prepare("DELETE FROM post_campaigns WHERE id = ? AND account_id = ?")->execute([$id, $_s_account_id]);
         } elseif ($act === 'retry_campaign') {
             $p = [$id, $_s_account_id];
-            $pdo->prepare("UPDATE scheduled_posts SET status='pending', error_msg=NULL WHERE campaign_id = ? AND status='failed' $auth")->execute($p);
+            $pdo->prepare("UPDATE scheduled_posts SET status='pending', error_msg=NULL WHERE campaign_id = ? AND status IN ('failed', 'checkpoint') $auth")->execute($p);
         }
     } catch (PDOException $e) {}
     header('Location: manage_posts.php');
@@ -109,6 +114,7 @@ try {
             SUM(CASE WHEN sp.status='pending'    THEN 1 ELSE 0 END) AS cnt_pending,
             SUM(CASE WHEN sp.status='processing' THEN 1 ELSE 0 END) AS cnt_processing,
             SUM(CASE WHEN sp.status='failed'     THEN 1 ELSE 0 END) AS cnt_failed,
+            SUM(CASE WHEN sp.status='checkpoint' THEN 1 ELSE 0 END) AS cnt_checkpoint,
             COUNT(sp.id) AS cnt_total
         FROM post_campaigns c
         LEFT JOIN scheduled_posts sp ON sp.campaign_id = c.id
@@ -166,10 +172,13 @@ try {
         $pend       = (int)$c['cnt_pending'];
         $proc       = (int)$c['cnt_processing'];
         $fail       = (int)$c['cnt_failed'];
+        $check      = isset($c['cnt_checkpoint']) ? (int)$c['cnt_checkpoint'] : 0;
         $progress   = round($pub / $total * 100);
 
-        // Badge — priority: processing > pending > failed > done > empty
-        if ($proc > 0) {
+        // Badge — priority: checkpoint > processing > pending > failed > done > empty
+        if ($check > 0) {
+            $badge_color = '#fee2e2'; $badge_text_color = '#991b1b'; $badge_label = "🚫 Tài khoản bị checkpoint";
+        } elseif ($proc > 0) {
             $badge_color = '#e0f2fe'; $badge_text_color = '#0369a1'; $badge_label = "🔄 Đang đăng";
         } elseif ($pend > 0) {
             $badge_color = '#fef3c7'; $badge_text_color = '#d97706'; $badge_label = "⏳ $pend chờ";
@@ -209,18 +218,19 @@ try {
                     <?php if ($pend > 0): ?><span style="color:#d97706;">⏳ <?php echo $pend; ?> chờ</span><?php endif; ?>
                     <?php if ($proc > 0): ?><span style="color:#0369a1;">🔄 <?php echo $proc; ?> đang đăng</span><?php endif; ?>
                     <?php if ($fail > 0): ?><span style="color:#dc2626;">❌ <?php echo $fail; ?> lỗi</span><?php endif; ?>
+                    <?php if ($check > 0): ?><span style="color:#991b1b;">🚫 Bị checkpoint, dừng lại (còn <?php echo $check; ?> bài chưa chạy)</span><?php endif; ?>
                     <?php if ($pub > 0): ?><span style="color:#10b981;">✅ <?php echo $pub; ?> đã đăng</span><?php endif; ?>
                 </div>
             </div>
             <!-- Actions -->
             <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
-                <?php if ($fail > 0): ?>
+                <?php if ($fail > 0 || $check > 0): ?>
                 <button onclick="showConfirmModal('retry', <?php echo $c['id']; ?>, 'Thử lại tất cả bài lỗi trong chiến dịch này?')" style="padding:7px 12px;background:#d1fae5;color:#065f46;border-radius:6px;border:none;cursor:pointer;font-size:13px;">
                     Retry
                 </button>
                 <?php endif; ?>
-                <?php if ($pend > 0 || $fail > 0): ?>
-                <button onclick="showConfirmModal('delete', <?php echo $c['id']; ?>, 'Xóa toàn bộ bài pending/lỗi trong chiến dịch này?')" style="padding:7px 12px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;">
+                <?php if ($pend > 0 || $fail > 0 || $check > 0): ?>
+                <button onclick="showConfirmModal('delete', <?php echo $c['id']; ?>, 'Xóa toàn bộ bài chưa hoàn tất trong chiến dịch này?')" style="padding:7px 12px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;">
                     Xóa
                 </button>
                 <?php endif; ?>
