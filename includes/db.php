@@ -205,6 +205,10 @@ try {
         if ($col->rowCount() === 0) {
             $pdo->exec("ALTER TABLE scraper_pages ADD COLUMN last_scraped_at DATETIME DEFAULT NULL");
         }
+        $col = $pdo->query("SHOW COLUMNS FROM scraper_pages LIKE 'only_with_content'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE scraper_pages ADD COLUMN only_with_content TINYINT(1) DEFAULT 0");
+        }
     } catch (Exception $e) {}
 
     try {

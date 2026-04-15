@@ -10,7 +10,7 @@ require_once __DIR__ . '/../includes/fb_api.php';
 
 // Tìm các page có auto_refresh_hours > 0 và cần quét lại
 $sql = "
-    SELECT id, account_id, user_id, page_id, access_token, auto_refresh_hours, last_scraped_at, post_count
+    SELECT id, account_id, user_id, page_id, access_token, auto_refresh_hours, last_scraped_at, post_count, only_with_content
     FROM scraper_pages
     WHERE auto_refresh_hours > 0
       AND access_token IS NOT NULL
@@ -63,29 +63,8 @@ foreach ($pagesToScrape as $pageInfo) {
 
     // Build API request
     $fields = 'id,message,created_time,full_picture,shares,comments.summary(total_count),reactions.summary(total_count)';
-    $limit = $pageInfo['post_count'] > 0 ? $pageInfo['post_count'] : 10; // Quét bằng đúng số bài viết hiện tại, tối thiểu 10 bài
-
-    
-    $res = fb_api_request("{$page_id}/posts", [
-        'access_token' => $token,
-        'fields'       => $fields,
-        'limit'        => $limit
-    ]);
-
-    if ($res['status_code'] !== 200) {
-        $errMsg = $res['data']['error']['message'] ?? 'Loi khong the xac dinh';
-        echo "     [API ERROR] Page $page_id: $errMsg\n";
-        continue;
-    }
-
-    $postsData = $res['data']['data'] ?? [];
-    if (empty($postsData)) {
-        echo "     [INFO] Page $page_id khong co post nao.\n";
-        // Vẫn update last_scraped_at để chu kỳ sau chạy lại
-        $stmtUpd = $pdo->prepare("UPDATE scraper_pages SET last_scraped_at = NOW() WHERE id = :id");
-        $stmtUpd->execute(['id' => $pageInfo['id']]);
-        continue;
-    }
+    $limit = $pageInfo['post_count'] > 0 ? $pageInfo['post_count'] : 10;
+    $only_with_content = intval($pageInfo['only_with_content'] ?? 0);
 
     $stmtPost = $pdo->prepare("
         INSERT INTO scraper_posts (page_id, fb_post_id, message, picture, shares, comments, likes, post_created_at)
@@ -94,32 +73,84 @@ foreach ($pagesToScrape as $pageInfo) {
     ");
 
     $count = 0;
-    foreach ($postsData as $post) {
-        $fbid = $post['id'] ?? '';
-        if (!$fbid) continue;
-        
-        $msg = $post['message'] ?? '';
-        $c_at = $post['created_time'] ? date('Y-m-d H:i:s', strtotime($post['created_time'])) : null;
-        $pic = $post['full_picture'] ?? '';
-        $sha = $post['shares']['count'] ?? 0;
-        $com = $post['comments']['summary']['total_count'] ?? 0;
-        $lik = $post['reactions']['summary']['total_count'] ?? ($post['likes']['summary']['total_count'] ?? 0);
+    $batchSize = 10;
+    $nextUrl = null;
+    $maxPages = 10;
+    $pageNum = 0;
 
-        try {
-            $stmtPost->execute([
-                'pid' => $page_id,
-                'fbid' => $fbid,
-                'msg' => $msg,
-                'pic' => $pic,
-                'sha' => $sha,
-                'com' => $com,
-                'lik' => $lik,
-                'c_at' => $c_at
+    while ($count < $limit && $pageNum < $maxPages) {
+        $pageNum++;
+
+        if ($nextUrl) {
+            $res = fb_api_request_url($nextUrl);
+        } else {
+            $res = fb_api_request("{$page_id}/posts", [
+                'access_token' => $token,
+                'fields'       => $fields,
+                'limit'        => $batchSize
             ]);
-            $count++;
-        } catch (Exception $e) {
-            // Ignore single db insert error and continue
         }
+
+        if ($res['status_code'] !== 200) {
+            if ($pageNum === 1) {
+                $errMsg = $res['data']['error']['message'] ?? 'Loi khong the xac dinh';
+                echo "     [API ERROR] Page $page_id: $errMsg\n";
+            }
+            break;
+        }
+
+        $postsData = $res['data']['data'] ?? [];
+        if (empty($postsData)) {
+            if ($pageNum === 1) {
+                echo "     [INFO] Page $page_id khong co post nao.\n";
+                $stmtUpd = $pdo->prepare("UPDATE scraper_pages SET last_scraped_at = NOW() WHERE id = :id");
+                $stmtUpd->execute(['id' => $pageInfo['id']]);
+            }
+            break;
+        }
+
+        foreach ($postsData as $post) {
+            $fbid = $post['id'] ?? '';
+            if (!$fbid) continue;
+            
+            $msg = $post['message'] ?? '';
+
+            // Lọc bài không có nội dung nếu bật only_with_content
+            if ($only_with_content && trim($msg) === '') {
+                continue;
+            }
+
+            $c_at = $post['created_time'] ? date('Y-m-d H:i:s', strtotime($post['created_time'])) : null;
+            $pic = $post['full_picture'] ?? '';
+            $sha = $post['shares']['count'] ?? 0;
+            $com = $post['comments']['summary']['total_count'] ?? 0;
+            $lik = $post['reactions']['summary']['total_count'] ?? ($post['likes']['summary']['total_count'] ?? 0);
+
+            try {
+                $stmtPost->execute([
+                    'pid' => $page_id,
+                    'fbid' => $fbid,
+                    'msg' => $msg,
+                    'pic' => $pic,
+                    'sha' => $sha,
+                    'com' => $com,
+                    'lik' => $lik,
+                    'c_at' => $c_at
+                ]);
+                $count++;
+            } catch (Exception $e) {
+                // Ignore single db insert error and continue
+            }
+
+            if ($count >= $limit) break;
+        }
+
+        // Đã đủ số lượng thì dừng
+        if ($count >= $limit) break;
+
+        // Lấy URL trang tiếp theo
+        $nextUrl = $res['data']['paging']['next'] ?? null;
+        if (!$nextUrl) break;
     }
 
     // Update scraper_pages post_count and last_scraped_at

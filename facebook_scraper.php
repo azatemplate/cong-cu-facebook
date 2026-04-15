@@ -71,12 +71,13 @@ if (isset($_GET['ajax'])) {
         $user_name = $stmtU->fetchColumn() ?: 'Không rõ';
 
         $auto_refresh_hours = (isset($_POST['auto_refresh']) && $_POST['auto_refresh'] == '1') ? intval($_POST['refresh_hours'] ?? 10) : 0;
+        $only_with_content = (isset($_POST['only_with_content']) && $_POST['only_with_content'] == '1') ? 1 : 0;
 
         // Lưu vào DB bảng scraper_pages
         $stmtPage = $pdo->prepare("
-            INSERT INTO scraper_pages (account_id, user_id, page_id, page_name, followers_count, access_token, auto_refresh_hours) 
-            VALUES (:aid, :uid, :pid, :pname, :followers, :ptoken, :arh)
-            ON DUPLICATE KEY UPDATE user_id = :uid, page_name = :pname, followers_count = :followers, access_token = :ptoken, auto_refresh_hours = :arh
+            INSERT INTO scraper_pages (account_id, user_id, page_id, page_name, followers_count, access_token, auto_refresh_hours, only_with_content) 
+            VALUES (:aid, :uid, :pid, :pname, :followers, :ptoken, :arh, :owc)
+            ON DUPLICATE KEY UPDATE user_id = :uid, page_name = :pname, followers_count = :followers, access_token = :ptoken, auto_refresh_hours = :arh, only_with_content = :owc
         ");
         $stmtPage->execute([
             'aid' => $account_id,
@@ -85,12 +86,13 @@ if (isset($_GET['ajax'])) {
             'pname' => $page_name,
             'followers' => $followers,
             'ptoken' => $encrypted_page_token,
-            'arh' => $auto_refresh_hours
+            'arh' => $auto_refresh_hours,
+            'owc' => $only_with_content
         ]);
 
         echo json_encode([
             'status' => 'success',
-            'data'   => [
+            'data' => [
                 'user_id' => $user_id,
                 'user_name' => $user_name,
                 'page_id' => $res['data']['id'] ?? $page_id,
@@ -105,7 +107,8 @@ if (isset($_GET['ajax'])) {
     if ($ajax === 'get_saved_posts') {
         $page_id = trim($_POST['page_id'] ?? '');
         if ($page_id === '') {
-            echo json_encode(['status' => 'error', 'message' => 'Page ID bị thiếu.']); exit;
+            echo json_encode(['status' => 'error', 'message' => 'Page ID bị thiếu.']);
+            exit;
         }
 
         $stmt = $pdo->prepare("
@@ -141,16 +144,18 @@ if (isset($_GET['ajax'])) {
     if ($ajax === 'toggle_auto') {
         $page_id = trim($_POST['page_id'] ?? '');
         $status = intval($_POST['status'] ?? 0);
-        $hours = $status > 0 ? 10 : 0; // Default 10 hours if checked
+        $hours = $status > 0 ? max(1, intval($_POST['hours'] ?? 10)) : 0;
+        $only_with_content = intval($_POST['only_with_content'] ?? 0);
 
         if ($page_id === '') {
-            echo json_encode(['status' => 'error', 'message' => 'Page ID thiếu.']); exit;
+            echo json_encode(['status' => 'error', 'message' => 'Page ID thiếu.']);
+            exit;
         }
 
-        $stmt = $pdo->prepare("UPDATE scraper_pages SET auto_refresh_hours = :hours WHERE page_id = :pid AND account_id = :aid");
-        $stmt->execute(['hours' => $hours, 'pid' => $page_id, 'aid' => $account_id]);
+        $stmt = $pdo->prepare("UPDATE scraper_pages SET auto_refresh_hours = :hours, only_with_content = :owc WHERE page_id = :pid AND account_id = :aid");
+        $stmt->execute(['hours' => $hours, 'owc' => $only_with_content, 'pid' => $page_id, 'aid' => $account_id]);
 
-        echo json_encode(['status' => 'success', 'hours' => $hours]);
+        echo json_encode(['status' => 'success', 'hours' => $hours, 'only_with_content' => $only_with_content]);
         exit;
     }
 
@@ -159,6 +164,7 @@ if (isset($_GET['ajax'])) {
         $user_id = intval($_POST['user_id'] ?? 0);
         $page_id = trim($_POST['page_id'] ?? '');
         $limit = max(1, min(100, intval($_POST['limit'] ?? 10))); // Max 100 per request
+        $only_with_content = intval($_POST['only_with_content'] ?? 0);
 
         if ($user_id <= 0 || $page_id === '') {
             echo json_encode(['status' => 'error', 'message' => 'User ID hoặc Page ID bị thiếu.']);
@@ -166,7 +172,7 @@ if (isset($_GET['ajax'])) {
         }
 
         // Lấy Page Token từ scraper_pages thay vì dùng User Token
-        $stmt = $pdo->prepare("SELECT access_token FROM scraper_pages WHERE page_id = :pid AND account_id = :aid LIMIT 1");
+        $stmt = $pdo->prepare("SELECT access_token, only_with_content FROM scraper_pages WHERE page_id = :pid AND account_id = :aid LIMIT 1");
         $stmt->execute(['pid' => $page_id, 'aid' => $account_id]);
         $scraper_page = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -176,61 +182,103 @@ if (isset($_GET['ajax'])) {
         }
 
         $token = decryptData($scraper_page['access_token']);
+        // Sử dụng setting only_with_content từ DB nếu frontend không gửi rõ ràng
+        if (!isset($_POST['only_with_content'])) {
+            $only_with_content = intval($scraper_page['only_with_content'] ?? 0);
+        }
 
         // Build API request using /posts (yêu cầu Page Token)
         $fields = 'id,message,created_time,full_picture,shares,comments.summary(total_count),reactions.summary(total_count)';
-        $res = fb_api_request("{$page_id}/posts", [
-            'access_token' => $token,
-            'fields' => $fields,
-            'limit' => $limit
-        ]);
 
-        if ($res['status_code'] !== 200) {
-            $errMsg = $res['data']['error']['message'] ?? 'Lỗi không xác định từ Facebook API.';
-            echo json_encode(['status' => 'error', 'message' => 'Lỗi API: ' . $errMsg]);
-            exit;
-        }
-
-        $postsData = $res['data']['data'] ?? [];
         $result = [];
-
         $stmtPost = $pdo->prepare("
             INSERT INTO scraper_posts (page_id, fb_post_id, message, picture, shares, comments, likes, post_created_at)
             VALUES (:pid, :fbid, :msg, :pic, :sha, :com, :lik, :c_at)
             ON DUPLICATE KEY UPDATE message=:msg, picture=:pic, shares=:sha, comments=:com, likes=:lik
         ");
 
-        foreach ($postsData as $post) {
-            $fbid = $post['id'] ?? '';
-            $msg = $post['message'] ?? '';
-            $c_at = $post['created_time'] ? date('Y-m-d H:i:s', strtotime($post['created_time'])) : null;
-            $pic = $post['full_picture'] ?? '';
-            $sha = $post['shares']['count'] ?? 0;
-            $com = $post['comments']['summary']['total_count'] ?? 0;
-            $lik = $post['reactions']['summary']['total_count'] ?? ($post['likes']['summary']['total_count'] ?? 0);
+        // Quét mỗi lần 10 bài từ API, lọc xong nếu chưa đủ thì phân trang lấy thêm
+        $batchSize = 10;
+        $nextUrl = null;
+        $maxPages = 10; // Giới hạn số lần phân trang để tránh loop vô hạn
+        $pageNum = 0;
 
-            if ($fbid) {
-                $stmtPost->execute([
-                    'pid' => $page_id,
-                    'fbid' => $fbid,
-                    'msg' => $msg,
-                    'pic' => $pic,
-                    'sha' => $sha,
-                    'com' => $com,
-                    'lik' => $lik,
-                    'c_at' => $c_at
+        while (count($result) < $limit && $pageNum < $maxPages) {
+            $pageNum++;
+
+            if ($nextUrl) {
+                // Dùng URL phân trang trực tiếp từ Facebook
+                $res = fb_api_request_url($nextUrl);
+            } else {
+                $res = fb_api_request("{$page_id}/posts", [
+                    'access_token' => $token,
+                    'fields' => $fields,
+                    'limit' => $batchSize
                 ]);
             }
 
-            $result[] = [
-                'id' => $fbid,
-                'message' => $msg,
-                'created_time' => $post['created_time'] ?? '',
-                'picture' => $pic,
-                'shares' => $sha,
-                'comments' => $com,
-                'likes' => $lik,
-            ];
+            if ($res['status_code'] !== 200) {
+                // Nếu là lần đầu thì báo lỗi, còn đã có dữ liệu thì dừng lại
+                if ($pageNum === 1) {
+                    $errMsg = $res['data']['error']['message'] ?? 'Lỗi không xác định từ Facebook API.';
+                    echo json_encode(['status' => 'error', 'message' => 'Lỗi API: ' . $errMsg]);
+                    exit;
+                }
+                break;
+            }
+
+            $postsData = $res['data']['data'] ?? [];
+            if (empty($postsData))
+                break;
+
+            foreach ($postsData as $post) {
+                $fbid = $post['id'] ?? '';
+                $msg = $post['message'] ?? '';
+                $c_at = $post['created_time'] ? date('Y-m-d H:i:s', strtotime($post['created_time'])) : null;
+                $pic = $post['full_picture'] ?? '';
+                $sha = $post['shares']['count'] ?? 0;
+                $com = $post['comments']['summary']['total_count'] ?? 0;
+                $lik = $post['reactions']['summary']['total_count'] ?? ($post['likes']['summary']['total_count'] ?? 0);
+
+                // Lọc bài không có nội dung nếu bật only_with_content
+                if ($only_with_content && trim($msg) === '') {
+                    continue;
+                }
+
+                if ($fbid) {
+                    $stmtPost->execute([
+                        'pid' => $page_id,
+                        'fbid' => $fbid,
+                        'msg' => $msg,
+                        'pic' => $pic,
+                        'sha' => $sha,
+                        'com' => $com,
+                        'lik' => $lik,
+                        'c_at' => $c_at
+                    ]);
+                }
+
+                $result[] = [
+                    'id' => $fbid,
+                    'message' => $msg,
+                    'created_time' => $post['created_time'] ?? '',
+                    'picture' => $pic,
+                    'shares' => $sha,
+                    'comments' => $com,
+                    'likes' => $lik,
+                ];
+
+                // Dừng khi đủ số lượng yêu cầu
+                if (count($result) >= $limit)
+                    break;
+            }
+
+            // Đã đủ số lượng thì dừng
+            if (count($result) >= $limit) break;
+
+            // Lấy URL trang tiếp theo
+            $nextUrl = $res['data']['paging']['next'] ?? null;
+            if (!$nextUrl) break;
         }
 
         $count = count($result);
@@ -265,7 +313,7 @@ $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch saved scraper pages
 $stmtPages = $pdo->prepare("
-    SELECT sp.user_id, sp.page_id, sp.page_name, sp.followers_count, sp.post_count, sp.auto_refresh_hours, u.name as user_name 
+    SELECT sp.user_id, sp.page_id, sp.page_name, sp.followers_count, sp.post_count, sp.auto_refresh_hours, sp.only_with_content, u.name as user_name 
     FROM scraper_pages sp 
     LEFT JOIN users u ON sp.user_id = u.id 
     WHERE sp.account_id = :aid AND sp.page_name IS NOT NULL
@@ -606,8 +654,9 @@ $savedScraperPagesJson = json_encode($savedScraperPages);
                     <option value="">-- Chọn User --</option>
                     <?php foreach ($users as $user): ?>
                         <option value="<?php echo htmlspecialchars($user['id']); ?>">
-                        
-                                <?php echo htmlspecialchars($user['name']); ?></option>
+
+                            <?php echo htmlspecialchars($user['name']); ?>
+                        </option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -654,8 +703,16 @@ $savedScraperPagesJson = json_encode($savedScraperPages);
         <h2 id="scrape-title">Chi tiết Page</h2>
         <div class="scrape-controls">
             <div class="search-field" style="width: 150px;">
-                <label for="scrape-limit">Số bài viết muốn quét</label>
+                <label for="scrape-limit">Số bài muốn quét</label>
                 <input type="number" id="scrape-limit" value="10" min="1" max="100">
+            </div>
+            <div class="search-field">
+                <label style="visibility:hidden;">‎</label>
+                <label
+                    style="display:inline-flex; align-items:center; font-size:12px; gap:5px; cursor:pointer; white-space:nowrap; height:38px; background:rgba(24,119,242,0.06); border:1px solid rgba(24,119,242,0.15); border-radius:8px; padding:0 12px; margin:0;"
+                    title="Chỉ lấy các bài viết có nội dung chữ, bỏ qua bài chỉ có hình/video">
+                    <input type="checkbox" id="scrape-only-content" style="margin:0;"> 📝 Chỉ bài có nội dung
+                </label>
             </div>
             <button class="btn-primary-action" id="btn-do-scrape" onclick="doScrape()">
                 <span id="scrape-btn-icon">⚡</span> Quét bài viết
@@ -707,20 +764,39 @@ $savedScraperPagesJson = json_encode($savedScraperPages);
             const followers = parseInt(page.followers_count || 0).toLocaleString('vi-VN');
             const isAuto = parseInt(page.auto_refresh_hours || 0) > 0;
             const autoChecked = isAuto ? 'checked' : '';
+            const autoHours = parseInt(page.auto_refresh_hours || 10) || 10;
+            const isOnlyContent = parseInt(page.only_with_content || 0) > 0;
+            const onlyContentChecked = isOnlyContent ? 'checked' : '';
+            const pid = escapeHtml(page.page_id);
             return `
         <tr>
             <td>${index + 1}</td>
             <td style="font-weight: 600; color: var(--primary-color);">${escapeHtml(page.page_name || 'Không rõ')}</td>
-            <td style="color: var(--text-muted);">${escapeHtml(page.page_id)}</td>
+            <td style="color: var(--text-muted);">${pid}</td>
             <td><span style="color:#0ea5e9; font-weight: 600;">${escapeHtml(page.user_name || 'Không rõ')}</span></td>
-            <td style="font-weight: 700; color:#10b981; font-size:15px;" id="post-count-cell-${escapeHtml(page.page_id)}">${parseInt(page.post_count || 0).toLocaleString('vi-VN')}</td>
+            <td style="font-weight: 700; color:#10b981; font-size:15px;" id="post-count-cell-${pid}">${parseInt(page.post_count || 0).toLocaleString('vi-VN')}</td>
             <td>${followers}</td>
-            <td style="text-align: right; gap: 8px;">
-                <label style="display:inline-flex; align-items:center; margin-right:8px; font-size:12px; cursor:pointer;" title="Tự quét 10h một lần">
-                    <input type="checkbox" ${autoChecked} onchange="toggleAuto('${escapeHtml(page.page_id)}', this.checked)" style="margin-right:4px;"> Auto
-                </label>
-                <button class="btn-sm btn-info" onclick="openScrape('${escapeHtml(page.page_id)}', '${escapeHtml(page.page_name)}')">Chi tiết</button>
-                <button class="btn-sm btn-danger" onclick="removePage('${escapeHtml(page.page_id)}')">Xóa</button>
+            <td style="text-align: right;">
+                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <label style="display:inline-flex; align-items:center; font-size:12px; cursor:pointer;" title="Tự động quét định kỳ">
+                            <input type="checkbox" ${autoChecked} onchange="toggleAuto('${pid}', this.checked)" style="margin-right:4px;"> Auto
+                        </label>
+                        <button class="btn-sm btn-info" onclick="openScrape('${pid}', '${escapeHtml(page.page_name)}')">Chi tiết</button>
+                        <button class="btn-sm btn-danger" onclick="removePage('${pid}')">Xóa</button>
+                    </div>
+                    <div id="auto-settings-${pid}" style="display:${isAuto ? 'flex' : 'none'}; align-items:center; gap:8px; flex-wrap:wrap; background:rgba(24,119,242,0.05); border:1px solid rgba(24,119,242,0.15); border-radius:8px; padding:6px 10px;">
+                        <label style="display:inline-flex; align-items:center; font-size:11px; gap:4px; color:var(--text-muted); white-space:nowrap;">
+                            ⏱ Mỗi
+                            <input type="number" value="${autoHours}" min="1" max="168" style="width:50px; padding:3px 6px; border:1px solid var(--border-color); border-radius:5px; font-size:12px; text-align:center; background:var(--bg-color); color:var(--text-main);" onchange="updateAutoSettings('${pid}')" id="auto-hours-${pid}">
+                            giờ
+                        </label>
+                        <label style="display:inline-flex; align-items:center; font-size:11px; gap:4px; cursor:pointer; color:var(--text-muted); white-space:nowrap;">
+                            <input type="checkbox" ${onlyContentChecked} id="only-content-${pid}" onchange="updateAutoSettings('${pid}')" style="margin:0;">
+                            📝 Chỉ bài có nội dung
+                        </label>
+                    </div>
+                </div>
             </td>
         </tr>`;
         }).join('');
@@ -776,17 +852,57 @@ $savedScraperPagesJson = json_encode($savedScraperPages);
     }
 
     function toggleAuto(pageId, isChecked) {
+        const settingsEl = document.getElementById('auto-settings-' + pageId);
+        if (settingsEl) {
+            settingsEl.style.display = isChecked ? 'flex' : 'none';
+        }
+
+        const hoursEl = document.getElementById('auto-hours-' + pageId);
+        const onlyContentEl = document.getElementById('only-content-' + pageId);
+        const hours = hoursEl ? parseInt(hoursEl.value) || 10 : 10;
+        const onlyContent = onlyContentEl ? (onlyContentEl.checked ? 1 : 0) : 0;
+
         const fd = new FormData();
         fd.append('page_id', pageId);
         fd.append('status', isChecked ? '1' : '0');
+        fd.append('hours', hours);
+        fd.append('only_with_content', onlyContent);
         fetch('facebook_scraper.php?ajax=toggle_auto', {
             method: 'POST', body: fd
         }).then(r => r.json()).then(res => {
-            if(res.status === 'success') {
+            if (res.status === 'success') {
                 const p = addedPages.find(x => x.page_id === pageId);
-                if(p) p.auto_refresh_hours = res.hours;
+                if (p) {
+                    p.auto_refresh_hours = res.hours;
+                    p.only_with_content = res.only_with_content;
+                }
             } else {
                 alert('Có lỗi khi lưu trạng thái auto: ' + res.message);
+            }
+        });
+    }
+
+    function updateAutoSettings(pageId) {
+        // Gọi toggle_auto với status = 1 khi thay đổi settings
+        const hoursEl = document.getElementById('auto-hours-' + pageId);
+        const onlyContentEl = document.getElementById('only-content-' + pageId);
+        const hours = hoursEl ? Math.max(1, parseInt(hoursEl.value) || 10) : 10;
+        const onlyContent = onlyContentEl ? (onlyContentEl.checked ? 1 : 0) : 0;
+
+        const fd = new FormData();
+        fd.append('page_id', pageId);
+        fd.append('status', '1');
+        fd.append('hours', hours);
+        fd.append('only_with_content', onlyContent);
+        fetch('facebook_scraper.php?ajax=toggle_auto', {
+            method: 'POST', body: fd
+        }).then(r => r.json()).then(res => {
+            if (res.status === 'success') {
+                const p = addedPages.find(x => x.page_id === pageId);
+                if (p) {
+                    p.auto_refresh_hours = res.hours;
+                    p.only_with_content = res.only_with_content;
+                }
             }
         });
     }
@@ -816,6 +932,12 @@ $savedScraperPagesJson = json_encode($savedScraperPages);
         pendingScrapeUserId = pageObj.user_id; // Lưu lại ID
         document.getElementById('scrape-section').style.display = 'block';
         document.getElementById('scrape-title').innerText = 'Chi tiết Page: ' + pageName;
+
+        // Đồng bộ checkbox "Chỉ bài có nội dung" từ settings đã lưu
+        const scrapeOnlyContent = document.getElementById('scrape-only-content');
+        if (scrapeOnlyContent) {
+            scrapeOnlyContent.checked = parseInt(pageObj.only_with_content || 0) > 0;
+        }
 
         // Smooth scroll to scrape section
         document.getElementById('scrape-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -863,7 +985,7 @@ $savedScraperPagesJson = json_encode($savedScraperPages);
                             ${mediaHtml}
                             <div class="post-text">
                                 <div class="post-desc" title="${escapeHtml(post.message)}">${escapeHtml(post.message) || '<span style="color:#9ca3af;font-style:italic;">Không có nội dung chữ</span>'}</div>
-                                <div class="post-time">📅 ${timeStr} | ID: <a href="https://facebook.com/${post.id}" target="_blank" style="color:#0ea5e9;text-decoration:none;">${(post.id+"").split('_')[1] || post.id}</a></div>
+                                <div class="post-time">📅 ${timeStr} | ID: <a href="https://facebook.com/${post.id}" target="_blank" style="color:#0ea5e9;text-decoration:none;">${(post.id + "").split('_')[1] || post.id}</a></div>
                             </div>
                         </div>
                     </td>
@@ -898,6 +1020,8 @@ $savedScraperPagesJson = json_encode($savedScraperPages);
         fd.append('user_id', pendingScrapeUserId);
         fd.append('page_id', pendingScrapePageId);
         fd.append('limit', limitInput);
+        const onlyContentEl = document.getElementById('scrape-only-content');
+        fd.append('only_with_content', onlyContentEl && onlyContentEl.checked ? '1' : '0');
 
         fetch('facebook_scraper.php?ajax=scrape', {
             method: 'POST',
@@ -910,7 +1034,7 @@ $savedScraperPagesJson = json_encode($savedScraperPages);
 
                 if (res.status === 'success') {
                     renderPostsData(res.data);
-                    
+
                     // Update post count dynamically
                     const pObj = addedPages.find(p => p.page_id === pendingScrapePageId);
                     if (pObj && res.post_count !== undefined) {

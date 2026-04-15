@@ -51,6 +51,31 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     ];
 }
 
+/**
+ * Gọi API Facebook bằng URL đầy đủ (dùng cho phân trang - pagination `next` URL).
+ */
+function fb_api_request_url($url) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+    fb_curl_setssl($ch);
+
+    $response  = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_err  = curl_error($ch);
+    curl_close($ch);
+
+    if ($response === false) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => $curl_err]]];
+    }
+
+    return [
+        'status_code' => $http_code,
+        'data'        => json_decode($response, true)
+    ];
+}
+
 function get_fb_user_profile($access_token) {
     return fb_api_request('me', [
         'fields'       => 'id,name',

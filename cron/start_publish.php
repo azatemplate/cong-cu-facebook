@@ -56,6 +56,10 @@ try {
 
 // Cấu hình giới hạn luồng cho máy chủ (Throttling)
 $MAX_WORKERS = 30;
+try {
+    $res_limit = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_publish_workers'")->fetchColumn();
+    if ($res_limit) $MAX_WORKERS = (int)$res_limit;
+} catch (Exception $e) {}
 
 // Đếm số luồng đang chạy (processing)
 $active_workers = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();

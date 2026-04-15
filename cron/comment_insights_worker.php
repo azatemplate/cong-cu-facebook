@@ -44,6 +44,11 @@ require_once __DIR__ . '/../includes/telegram.php';
 echo "\n=== Comment Insights Worker ===\n";
 echo "Thời gian: " . date('Y-m-d H:i:s') . "\n";
 
+// Ghi nhận thời gian chạy vào DB để theo dõi cron
+try {
+    $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('last_insights_cron_run', NOW()) ON DUPLICATE KEY UPDATE setting_value = NOW()")->execute();
+} catch (Exception $e) {}
+
 // Detect if comment_status column exists (for backward compat)
 $has_comment_status = false;
 try {
@@ -65,8 +70,8 @@ try {
           AND sp.comment_done = 0
           AND sp.fb_post_id IS NOT NULL
           AND sp.fb_post_id != ''
-        ORDER BY sp.id ASC
-        LIMIT 100
+        ORDER BY sp.updated_at ASC
+        LIMIT " . (php_sapi_name() === 'cli' ? '100' : '20') . "
     ");
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -96,6 +101,9 @@ foreach ($rows as $row) {
     $threshold_comments = (int)($row['comment_threshold_comments'] ?? 5);
 
     echo "─ ID {$row['id']} | fb_post_id: $fb_post_id\n";
+    
+    // Đánh dấu bài này vừa được kiểm tra (để nó xuống cuối hàng đợi ở lần chạy sau)
+    $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW() WHERE id = ?")->execute([$row['id']]);
     echo "  Ngưỡng: View≥$threshold_views, Like≥$threshold_likes, Comment≥$threshold_comments\n";
 
     // Check expiration (24h)
@@ -126,13 +134,11 @@ foreach ($rows as $row) {
 
     $page_access_token = decryptData($page['access_token']);
 
-    // ── Step 1: Get video_insights for views ──────────────────────────────
-    // For Reels: use blue_reels_play_count (play count excluding replays)
-    // For Videos: use total_video_views
+    // ── Step 1: Get views ──────────────────────────────────────────────
     $is_reel = ($row['post_type'] === 'Reel');
     $view_metric = $is_reel ? 'blue_reels_play_count' : 'total_video_views';
+    $current_views = 0;
 
-    // Query video insights for view count
     $insights_response = fb_api_request(
         $fb_post_id . '/video_insights',
         [
@@ -142,7 +148,6 @@ foreach ($rows as $row) {
         ]
     );
 
-    $current_views = 0;
     if ($insights_response['status_code'] === 200 && !empty($insights_response['data']['data'])) {
         foreach ($insights_response['data']['data'] as $metric) {
             if ($metric['name'] === $view_metric && isset($metric['values'][0]['value'])) {
@@ -151,66 +156,68 @@ foreach ($rows as $row) {
             }
         }
     } else {
-        $err = $insights_response['data']['error']['message'] ?? json_encode($insights_response['data'] ?? []);
-        echo "  ⚠ Lỗi lấy video_insights (views): $err\n";
-        // Try alternate metric if reel metric fails (fallback)
-        if ($is_reel) {
-            $fallback = fb_api_request(
-                $fb_post_id . '/video_insights',
-                ['metric' => 'total_video_views', 'period' => 'lifetime', 'access_token' => $page_access_token]
-            );
-            if ($fallback['status_code'] === 200 && !empty($fallback['data']['data'])) {
-                foreach ($fallback['data']['data'] as $metric) {
-                    if ($metric['name'] === 'total_video_views' && isset($metric['values'][0]['value'])) {
-                        $current_views = (int)$metric['values'][0]['value'];
-                        echo "  ↳ Fallback total_video_views: $current_views\n";
-                        break;
-                    }
+        // Fallback 1: Try alternate metric
+        $alt_metric = $is_reel ? 'total_video_views' : 'blue_reels_play_count';
+        $fallback = fb_api_request(
+            $fb_post_id . '/video_insights',
+            ['metric' => $alt_metric, 'period' => 'lifetime', 'access_token' => $page_access_token]
+        );
+        if ($fallback['status_code'] === 200 && !empty($fallback['data']['data'])) {
+            foreach ($fallback['data']['data'] as $metric) {
+                if ($metric['name'] === $alt_metric && isset($metric['values'][0]['value'])) {
+                    $current_views = (int)$metric['values'][0]['value'];
+                    echo "  ↳ Fallback $alt_metric: $current_views\n";
+                    break;
                 }
             }
         }
     }
 
+    // Fallback 2: Check video object directly for views if still 0
+    if ($current_views === 0) {
+        $vid_res = fb_api_request($fb_post_id, ['fields' => 'views,video_view_count', 'access_token' => $page_access_token]);
+        if ($vid_res['status_code'] === 200) {
+            $v1 = (int)($vid_res['data']['views'] ?? 0);
+            $v2 = (int)($vid_res['data']['video_view_count'] ?? 0);
+            $current_views = max($v1, $v2);
+            if ($current_views > 0) echo "  ↳ Lấy views trực tiếp từ Video object: $current_views\n";
+        }
+    }
+
     // ── Step 2: Get likes and comments from post object ───────────────────
-    // Use the Graph API to get reactions and comments count.
-    // For Videos/Reels, $fb_post_id is just a numeric string. The actual Post ID is usually {page_id}_{video_id}
-    $target_id = $fb_post_id;
-    if (strpos($target_id, '_') === false) {
-        $target_id = $row['page_id'] . '_' . $fb_post_id;
-    }
-
-    $post_response = fb_api_request(
-        $target_id,
-        [
-            'fields' => 'reactions.summary(true),likes.summary(true),comments.summary(true)',
-            'access_token' => $page_access_token
-        ]
-    );
-
-    // If fetching post edge fails (e.g. some api edge cases), try raw video id with likes only
-    if ($post_response['status_code'] !== 200 && strpos($target_id, '_') !== false) {
-        $post_response = fb_api_request(
-            $fb_post_id,
-            [
-                'fields' => 'likes.summary(true),comments.summary(true)',
-                'access_token' => $page_access_token
-            ]
-        );
-    }
-
     $current_likes = 0;
     $current_comments_count = 0;
 
-    if ($post_response['status_code'] === 200) {
-        $reacts = (int)($post_response['data']['reactions']['summary']['total_count'] ?? 0);
-        $likes = (int)($post_response['data']['likes']['summary']['total_count'] ?? 0);
-        $current_likes = max($reacts, $likes); // Lấy số lớn nhất từ likes hoặc reactions
-        $current_comments_count = (int)($post_response['data']['comments']['summary']['total_count'] ?? 0);
-    } else {
-        $err = $post_response['data']['error']['message'] ?? json_encode($post_response['data'] ?? []);
-        echo "  ⚠ Lỗi lấy reactions/comments: $err\n";
+    // Try multiple formats for Post ID
+    $id_formats = [
+        $row['page_id'] . '_' . $fb_post_id, // Format: pageid_videoid
+        $fb_post_id                          // Format: videoid
+    ];
 
-        // Try video-specific insights for likes as fallback
+    foreach ($id_formats as $target_id) {
+        $post_response = fb_api_request(
+            $target_id,
+            [
+                'fields' => 'reactions.summary(true),likes.summary(true),comments.summary(true)',
+                'access_token' => $page_access_token
+            ]
+        );
+
+        if ($post_response['status_code'] === 200) {
+            $reacts = (int)($post_response['data']['reactions']['summary']['total_count'] ?? 0);
+            $likes = (int)($post_response['data']['likes']['summary']['total_count'] ?? 0);
+            $current_likes = max($reacts, $likes);
+            $current_comments_count = (int)($post_response['data']['comments']['summary']['total_count'] ?? 0);
+            
+            if ($current_likes > 0 || $current_comments_count > 0) {
+                echo "  ↳ Lấy được dữ liệu từ ID format: $target_id\n";
+                break;
+            }
+        }
+    }
+
+    // Fallback: Try video-specific insights for social actions
+    if ($current_likes === 0 && $current_comments_count === 0) {
         $like_insights = fb_api_request(
             $fb_post_id . '/video_insights',
             ['metric' => 'post_video_likes_by_reaction_type,post_video_social_actions', 'period' => 'lifetime', 'access_token' => $page_access_token]
@@ -219,24 +226,36 @@ foreach ($rows as $row) {
         if ($like_insights['status_code'] === 200 && !empty($like_insights['data']['data'])) {
             foreach ($like_insights['data']['data'] as $metric) {
                 if ($metric['name'] === 'post_video_likes_by_reaction_type' && isset($metric['values'][0]['value'])) {
-                    // This returns an object like {"like": 5, "love": 2, ...}
                     $reactions = $metric['values'][0]['value'];
-                    if (is_array($reactions)) {
-                        $current_likes = array_sum($reactions);
-                    }
+                    if (is_array($reactions)) $current_likes = array_sum($reactions);
                 }
                 if ($metric['name'] === 'post_video_social_actions' && isset($metric['values'][0]['value'])) {
-                    // This returns {"comment": X, "share": Y}
                     $actions = $metric['values'][0]['value'];
-                    if (is_array($actions)) {
-                        $current_comments_count = (int)($actions['comment'] ?? 0);
-                    }
+                    if (is_array($actions)) $current_comments_count = (int)($actions['comment'] ?? 0);
                 }
             }
+            if ($current_likes > 0) echo "  ↳ Lấy likes từ video_insights fallback: $current_likes\n";
+        } else {
+            $err = $like_insights['data']['error']['message'] ?? json_encode($like_insights['data'] ?? []);
+            echo "  ⚠ Lỗi fallback video_insights: $err\n";
+        }
+    }
+    
+    if ($current_likes === 0) {
+        // Log the failure to help debugging
+        echo "  ⚠ Không lấy được số Like từ bất kỳ phương thức nào (API trả về 0 hoặc lỗi).\n";
+    }
+
+    // Fallback 3: Using 'engagement' field (Universal count)
+    if ($current_likes === 0) {
+        $eng_res = fb_api_request($fb_post_id, ['fields' => 'engagement', 'access_token' => $page_access_token]);
+        if ($eng_res['status_code'] === 200 && isset($eng_res['data']['engagement'])) {
+            $current_likes = (int)($eng_res['data']['engagement']['reaction_count'] ?? 0);
+            if ($current_likes > 0) echo "  ↳ Lấy likes từ engagement field: $current_likes\n";
         }
     }
 
-    echo "  📊 Hiện tại: View=$current_views, Like=$current_likes, Comment=$current_comments_count\n";
+    echo "  📊 Kết quả: View=$current_views, Like=$current_likes, Comment=$current_comments_count\n";
 
     // ── Step 3: Check if all thresholds are met ──────────────────────────
     $views_ok = ($current_views >= $threshold_views);

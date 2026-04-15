@@ -27,6 +27,13 @@ if (!$bypass_ok) {
 $now_php   = date('Y-m-d H:i:s');
 $now_mysql = $pdo->query("SELECT NOW()")->fetchColumn();
 
+// ── Lấy thời gian cron chạy cuối ──────────────────────────────────────────────
+$last_cron_run = 'Chưa từng chạy';
+try {
+    $lcr = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key='last_insights_cron_run'");
+    if ($lcr) $last_cron_run = $lcr->fetchColumn() ?: 'Chưa từng chạy';
+} catch (Exception $e) {}
+
 // ── Lấy max_retries từ settings ──────────────────────────────────────────────
 $max_retries = 3;
 try {
@@ -73,15 +80,17 @@ $stats = $pdo->query("
 
 // ── Bài sẵn sàng đăng (đến/quá giờ) ─────────────────────────────────────────
 $ready_stmt = $pdo->prepare("
-    SELECT id, account_id, page_id, post_type, status, retry_count, scheduled_time,
-           TIMESTAMPDIFF(MINUTE, scheduled_time, NOW()) AS overdue_minutes
-    FROM scheduled_posts
-    WHERE scheduled_time <= NOW()
+    SELECT sp.id, sp.account_id, sp.page_id, sp.post_type, sp.status, sp.retry_count, sp.scheduled_time,
+           TIMESTAMPDIFF(MINUTE, sp.scheduled_time, NOW()) AS overdue_minutes,
+           sa.username AS account_name
+    FROM scheduled_posts sp
+    LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+    WHERE sp.scheduled_time <= NOW()
       AND (
-        status = 'pending'
-        OR (status = 'failed' AND (retry_count IS NULL OR retry_count < ?))
+        sp.status = 'pending'
+        OR (sp.status = 'failed' AND (sp.retry_count IS NULL OR sp.retry_count < ?))
       )
-    ORDER BY scheduled_time ASC
+    ORDER BY sp.scheduled_time ASC
     LIMIT 30
 ");
 $ready_stmt->execute([$max_retries]);
@@ -89,21 +98,40 @@ $ready_posts = $ready_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Bài pending chưa tới giờ ─────────────────────────────────────────────────
 $upcoming = $pdo->query("
-    SELECT id, page_id, post_type, scheduled_time,
-           TIMESTAMPDIFF(MINUTE, NOW(), scheduled_time) AS minutes_left
-    FROM scheduled_posts
-    WHERE status = 'pending' AND scheduled_time > NOW()
-    ORDER BY scheduled_time ASC
+    SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time,
+           TIMESTAMPDIFF(MINUTE, NOW(), sp.scheduled_time) AS minutes_left,
+           sa.username AS account_name
+    FROM scheduled_posts sp
+    LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+    WHERE sp.status = 'pending' AND sp.scheduled_time > NOW()
+    ORDER BY sp.scheduled_time ASC
     LIMIT 10
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Bài đang xử lý (Processing) ──────────────────────────────────────────────
 $processing_posts = $pdo->query("
-    SELECT id, page_id, post_type, scheduled_time, updated_at,
-           TIMESTAMPDIFF(MINUTE, updated_at, NOW()) AS duration_min
-    FROM scheduled_posts
-    WHERE status = 'processing'
-    ORDER BY updated_at ASC
+    SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time, sp.updated_at,
+           TIMESTAMPDIFF(MINUTE, sp.updated_at, NOW()) AS duration_min,
+           sa.username AS account_name
+    FROM scheduled_posts sp
+    LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+    WHERE sp.status = 'processing'
+    ORDER BY sp.updated_at ASC
+")->fetchAll(PDO::FETCH_ASSOC);
+
+// ── Bài chờ điều kiện Insights ──────────────────────────────────────────────
+$insights_waiting = $pdo->query("
+    SELECT sp.id, sp.page_id, sp.fb_post_id, sp.comment_threshold_views, 
+           sp.comment_threshold_likes, sp.comment_threshold_comments,
+           sp.comment_status, sp.scheduled_time,
+           sa.username AS account_name
+    FROM scheduled_posts sp
+    LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+    WHERE sp.status = 'published' 
+      AND sp.comment_mode = 'insights' 
+      AND sp.comment_done = 0
+    ORDER BY sp.id DESC
+    LIMIT 20
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Kiểm tra exec() ──────────────────────────────────────────────────────────
@@ -252,10 +280,11 @@ tr:hover td { background: #1e293b55; }
     <p class="ok">✔ Không có bài nào quá hạn.</p>
     <?php else: ?>
     <table>
-    <tr><th>ID</th><th>Page ID</th><th>Loại</th><th>Trạng thái</th><th>Retry</th><th>Giờ hẹn</th><th>Quá hạn</th></tr>
+    <tr><th>ID</th><th>Account</th><th>Page ID</th><th>Loại</th><th>Trạng thái</th><th>Retry</th><th>Giờ hẹn</th><th>Quá hạn</th></tr>
     <?php foreach ($ready_posts as $p): ?>
     <tr>
         <td><?= $p['id'] ?></td>
+        <td><span style="color:#a78bfa"><?= htmlspecialchars($p['account_name'] ?? 'System') ?></span></td>
         <td><?= $p['page_id'] ?></td>
         <td><?= $p['post_type'] ?></td>
         <td><span class="badge <?= $p['status'] ?>"><?= $p['status'] ?></span></td>
@@ -275,10 +304,11 @@ tr:hover td { background: #1e293b55; }
     <p style="color:#888">Không có bài pending nào trong tương lai.</p>
     <?php else: ?>
     <table>
-    <tr><th>ID</th><th>Page ID</th><th>Loại</th><th>Giờ hẹn</th><th>Còn lại</th></tr>
+    <tr><th>ID</th><th>Account</th><th>Page ID</th><th>Loại</th><th>Giờ hẹn</th><th>Còn lại</th></tr>
     <?php foreach ($upcoming as $u): ?>
     <tr>
         <td><?= $u['id'] ?></td>
+        <td><span style="color:#a78bfa"><?= htmlspecialchars($u['account_name'] ?? 'System') ?></span></td>
         <td><?= $u['page_id'] ?></td>
         <td><?= $u['post_type'] ?></td>
         <td><?= $u['scheduled_time'] ?></td>
@@ -301,10 +331,11 @@ tr:hover td { background: #1e293b55; }
     <?php else: ?>
     <p class="warn">⚠ Lưu ý: Nếu bài ở trạng thái này quá lâu (ví dụ > 20p), có thể tiến trình đã bị treo.</p>
     <table>
-    <tr><th>ID</th><th>Page ID</th><th>Loại</th><th>Giờ hẹn</th><th>Cập nhật cuối</th><th>Đã trôi qua</th></tr>
+    <tr><th>ID</th><th>Account</th><th>Page ID</th><th>Loại</th><th>Giờ hẹn</th><th>Cập nhật cuối</th><th>Đã trôi qua</th></tr>
     <?php foreach ($processing_posts as $p): ?>
     <tr>
         <td><?= $p['id'] ?></td>
+        <td><span style="color:#a78bfa"><?= htmlspecialchars($p['account_name'] ?? 'System') ?></span></td>
         <td><?= $p['page_id'] ?></td>
         <td><?= $p['post_type'] ?></td>
         <td><?= $p['scheduled_time'] ?></td>
@@ -315,6 +346,53 @@ tr:hover td { background: #1e293b55; }
     </table>
     <br>
     <a class="btn" style="background:#e11d48;color:#fff" href="?force_reset=1">🔥 Force Reset To Pending (Giải phóng bài treo)</a>
+    <?php endif; ?>
+</div>
+
+<!-- Bài chờ Insights -->
+<div class="card" style="border-left: 5px solid #10b981;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 style="color: #10b981;">📊 Bài chờ điều kiện Bình luận (Insights - <?= count($insights_waiting) ?> bài)</h2>
+        <div style="text-align:right">
+            <span style="font-size:12px; color:#64748b">Lần cuối Cron chạy:</span>
+            <strong style="color:<?php
+                if ($last_cron_run === 'Chưa từng chạy') {
+                    echo '#64748b';
+                } else {
+                    $diff = time() - strtotime($last_cron_run);
+                    echo ($diff < 300) ? '#10b981' : '#ef4444'; 
+                }
+            ?>"><?= $last_cron_run ?></strong>
+        </div>
+    </div>
+    <p style="font-size:13px;color:#64748b;margin-bottom:15px">Danh sách các bài đã đăng đang được theo dõi View/Like/Comment để tự động bình luận.</p>
+    
+    <?php if (empty($insights_waiting)): ?>
+    <p class="ok">✔ Không có bài nào đang chờ insights.</p>
+    <?php else: ?>
+    <table>
+    <tr><th>ID</th><th>Account</th><th>Post ID</th><th>Ngưỡng (V/L/C)</th><th>Trạng thái</th><th>Giờ đăng</th></tr>
+    <?php foreach ($insights_waiting as $p): ?>
+    <tr>
+        <td>#<?= $p['id'] ?></td>
+        <td><span style="color:#a78bfa"><?= htmlspecialchars($p['account_name'] ?? 'System') ?></span></td>
+        <td><a href="https://facebook.com/<?= $p['fb_post_id'] ?>" target="_blank" style="font-weight:bold"><?= $p['fb_post_id'] ?></a></td>
+        <td>
+            <span style="color:#0369a1">👁️ <?= $p['comment_threshold_views'] ?></span> |
+            <span style="color:#991b1b">👍 <?= $p['comment_threshold_likes'] ?></span> |
+            <span style="color:#166534">💬 <?= $p['comment_threshold_comments'] ?></span>
+        </td>
+        <td>
+            <?php if ($p['comment_status'] === 'waiting_insights'): ?>
+                <span style="color:#0891b2">⏳ Đang theo dõi...</span>
+            <?php else: ?>
+                <span style="color:#64748b"><?= $p['comment_status'] ?></span>
+            <?php endif; ?>
+        </td>
+        <td style="font-size:12px"><?= $p['scheduled_time'] ?></td>
+    </tr>
+    <?php endforeach; ?>
+    </table>
     <?php endif; ?>
 </div>
 

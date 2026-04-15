@@ -19,6 +19,10 @@ if (empty($accounts)) {
 }
 
 $MAX_COMMENT_WORKERS = 15;
+try {
+    $res_limit = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_comment_workers'")->fetchColumn();
+    if ($res_limit) $MAX_COMMENT_WORKERS = (int)$res_limit;
+} catch (Exception $e) {}
 $active_comments = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
 
 echo "  [THROTTLE] Hiện đang có $active_comments luồng bình luận.\n";
