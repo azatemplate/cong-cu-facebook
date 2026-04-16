@@ -67,6 +67,10 @@ endforeach; ?>
             </div>
         </div>
         <div style="display: flex; gap: 10px;">
+            <button class="btn btn-danger" onclick="deleteSelectedPages()" style="height: 42px; background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; display: flex; align-items: center; gap: 5px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                Xóa Page
+            </button>
             <button class="btn btn-secondary" onclick="openShareModal()" style="height: 42px; background: #f8fafc; color: var(--primary-color); border: 1px solid var(--border-color); display: flex; align-items: center; gap: 5px;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
                 Giao việc (Share)
@@ -94,6 +98,20 @@ endforeach; ?>
             <div style="display: flex; justify-content: flex-end; gap: 10px;">
                 <button class="btn btn-secondary" onclick="closeShareModal()">Hủy</button>
                 <button class="btn btn-primary" onclick="submitShare()">Xác nhận Chia sẻ</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirm Modal -->
+    <div id="deleteConfirmModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="background: white; padding: 20px; border-radius: 8px; width: 450px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <h3 style="margin-top: 0; color: #dc2626;">Xác nhận Xóa Fanpage</h3>
+            <p id="deleteConfirmText" style="font-size: 15px; color: #334155; margin-bottom: 15px;">Bạn có chắc chắn muốn XÓA vĩnh viễn các Fanpage đã chọn?</p>
+            <p style="font-size: 13px; color: #64748b; margin-bottom: 20px; background: #fff1f2; padding: 10px; border-left: 4px solid #f43f5e;">⚠️ Mọi bài viết theo lịch và dữ liệu của các Fanpage này cũng sẽ bị xóa và không thể khôi phục.</p>
+            
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-secondary" onclick="closeDeleteModal()">Hủy</button>
+                <button class="btn btn-danger" onclick="submitDelete()" style="background: #ef4444; color: white;">Vẫn Xóa</button>
             </div>
         </div>
     </div>
@@ -269,7 +287,6 @@ function submitShare() {
     .then(r => r.json())
     .then(res => {
         if (res.status === 'success') {
-            alert('Đã chia sẻ thành công!');
             location.reload(); // Reload để hiện badge
         } else {
             alert('Lỗi: ' + res.msg);
@@ -279,6 +296,50 @@ function submitShare() {
         alert('Đã xảy ra lỗi mạng.');
     });
 }
+
+function deleteSelectedPages() {
+    const checked = document.querySelectorAll('.page-checkbox:checked');
+    if (checked.length === 0) {
+        alert('Vui lòng tích chọn ít nhất 1 Fanpage để xóa.');
+        return;
+    }
+    
+    document.getElementById('deleteConfirmText').innerText = `Bạn có chắc chắn muốn XÓA vĩnh viễn ${checked.length} Fanpage đã chọn ra khỏi hệ thống?`;
+    document.getElementById('deleteConfirmModal').style.display = 'flex';
+}
+
+function closeDeleteModal() {
+    document.getElementById('deleteConfirmModal').style.display = 'none';
+}
+
+function submitDelete() {
+    const checked = document.querySelectorAll('.page-checkbox:checked');
+    let pageIds = [];
+    checked.forEach(cb => pageIds.push(cb.value));
+    
+    // Đóng modal xoá
+    closeDeleteModal();
+    
+    const formData = new FormData();
+    formData.append('page_ids', JSON.stringify(pageIds));
+    
+    fetch('actions/delete_fb_pages.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.status === 'success') {
+            location.reload();
+        } else {
+            alert('Lỗi: ' + res.msg);
+        }
+    })
+    .catch(err => {
+        alert('Đã xảy ra lỗi mạng: ' + err.message);
+    });
+}
+
 
 function unsharePage(pageId, targetAccountId, btnElement) {
     if (!confirm('Bạn có chắc chắn muốn XÓA quyền của tài khoản này khỏi Fanpage?')) {

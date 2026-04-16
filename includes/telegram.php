@@ -92,8 +92,17 @@ if (!function_exists('send_telegram_notification')) {
 
                 $published  = (int)($today_stats['published'] ?? 0);
                 $failed     = (int)($today_stats['failed'] ?? 0);
-                $pending    = (int)($today_stats['pending'] ?? 0);
-                $processing = (int)($today_stats['processing'] ?? 0);
+                // Thống kê comment cho bài viết hôm qua
+                $stmt_cmt = $pdo->prepare("
+                    SELECT comment_status, COUNT(*) as cnt
+                    FROM scheduled_posts
+                    WHERE account_id = ? AND DATE(scheduled_time) = DATE_SUB(CURDATE(), INTERVAL 1 DAY) AND comment_status IN ('done', 'error')
+                    GROUP BY comment_status
+                ");
+                $stmt_cmt->execute([$acc['id']]);
+                $cmt_stats = $stmt_cmt->fetchAll(PDO::FETCH_KEY_PAIR);
+                $comment_done  = (int)($cmt_stats['done'] ?? 0);
+                $comment_error = (int)($cmt_stats['error'] ?? 0);
 
                 // Tổng page hoạt động hôm qua
                 $p_stmt = $pdo->prepare("
@@ -111,8 +120,8 @@ if (!function_exists('send_telegram_notification')) {
                          . "👤 Tài khoản: {$acc['username']}\n"
                          . "✅ Đã đăng: {$published} bài\n"
                          . "❌ Lỗi: {$failed} bài\n"
-                         . "⏳ Đang chờ: {$pending} bài\n"
-                         . "🔄 Đang xử lý: {$processing} bài\n"
+                         . "✅ Comment Đã đăng: {$comment_done}\n"
+                         . "❌ Comment lỗi: {$comment_error}\n"
                          . "📄 Page hoạt động: {$active_pages}\n"
                          . "━━━━━━━━━━━━━━━━━━━━\n"
                          . "🕐 Cập nhật lúc: {$time}";
@@ -136,8 +145,8 @@ if (!function_exists('send_telegram_notification')) {
                              . "👤 Tài khoản: <b>{$acc['username']}</b>\n"
                              . "✅ Đã đăng: <b>{$published}</b> bài\n"
                              . "❌ Lỗi: <b>{$failed}</b> bài\n"
-                             . "⏳ Đang chờ: <b>{$pending}</b> bài\n"
-                             . "🔄 Đang xử lý: <b>{$processing}</b> bài\n"
+                             . "✅ Comment Đã đăng: <b>{$comment_done}</b>\n"
+                             . "❌ Comment lỗi: <b>{$comment_error}</b>\n"
                              . "📄 Page hoạt động: <b>{$active_pages}</b>\n"
                              . "━━━━━━━━━━━━━━━━━━━━\n"
                              . "🕐 Cập nhật lúc: {$time}";
