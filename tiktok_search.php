@@ -430,6 +430,10 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="text" id="kw-input" placeholder="Nhập từ khóa..." autocomplete="off">
             </div>
             <div class="search-field">
+                <label for="kw-region">Vùng (Quốc gia)</label>
+                <input type="text" id="kw-region" placeholder="Ví dụ: VN, US..." style="width:140px;">
+            </div>
+            <div class="search-field">
                 <label for="kw-count">Số video <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 300)</span></label>
                 <input type="number" id="kw-count" value="10" min="1" max="300" style="width:110px;">
             </div>
@@ -451,6 +455,10 @@ require_once __DIR__ . '/includes/header.php';
                     <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(không cần #)</span>
                 </label>
                 <input type="text" id="ht-input" placeholder="Ví dụ: viral, xuhuong, dancechallenge..." autocomplete="off">
+            </div>
+            <div class="search-field">
+                <label for="ht-region">Vùng (Quốc gia)</label>
+                <input type="text" id="ht-region" placeholder="Ví dụ: VN, US..." style="width:140px;">
             </div>
             <div class="search-field">
                 <label for="ht-count">Số video / hashtag <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 300)</span></label>
@@ -570,11 +578,12 @@ function doSearchKeyword() {
     const keyword = document.getElementById('kw-input').value.trim();
     if (!keyword) { alert('Vui lòng nhập từ khóa tìm kiếm!'); return; }
     const needed = parseInt(document.getElementById('kw-count').value) || 10;
+    const region = document.getElementById('kw-region').value.trim().toUpperCase();
 
     allVideos = [];
     sortKey = null; sortDir = 'desc';
     resetResults();
-    pgState = { mode: 'keyword', keyword, challengeId: '', challengeName: '', cursor: 0, needed, seenIds: new Set() };
+    pgState = { mode: 'keyword', keyword, challengeId: '', challengeName: '', cursor: 0, needed, region: region, fetchCount: 0, seenIds: new Set() };
     setLoading(true, '🔍 Đang tải video...');
     fetchNextPage();
 }
@@ -632,6 +641,7 @@ function renderHashtagSuggestions(list) {
 function selectHashtag(challenge_id, cha_name) {
     if (!challenge_id) return;
     const needed = parseInt(document.getElementById('ht-count').value) || 10;
+    const region = document.getElementById('ht-region').value.trim().toUpperCase();
 
     // Highlight selected card
     document.querySelectorAll('.ht-suggest-card').forEach(c => c.classList.remove('selected'));
@@ -652,7 +662,7 @@ function selectHashtag(challenge_id, cha_name) {
     allVideos = [];
     sortKey = null; sortDir = 'desc';
     resetResults();
-    pgState = { mode: 'hashtag', keyword: '', challengeId: challenge_id, challengeName: cha_name, cursor: 0, needed, seenIds: new Set() };
+    pgState = { mode: 'hashtag', keyword: '', challengeId: challenge_id, challengeName: cha_name, cursor: 0, needed, region: region, fetchCount: 0, seenIds: new Set() };
     setLoading(true, `🎬 Đang tải video của #${escHtml(cha_name)}...`);
     fetchNextPage();
 }
@@ -662,6 +672,8 @@ function fetchNextPage() {
     if (!pgState) return;
     const s = pgState;
     const thisState = s; // capture reference to detect stale calls
+    
+    s.fetchCount = (s.fetchCount || 0) + 1;
 
     let url;
     if (s.mode === 'keyword') {
@@ -686,6 +698,16 @@ function fetchNextPage() {
             const newVideos = (res.data || []).filter(v => {
                 const id = String(v.video_id || '');
                 if (!id || s.seenIds.has(id)) return false;
+                
+                // Region Filter
+                if (s.region) {
+                    const rList = s.region.split(',').map(x => x.trim().toUpperCase()).filter(x => x);
+                    if (rList.length > 0) {
+                        const vidRegion = String(v.region || '').trim().toUpperCase();
+                        if (!rList.includes(vidRegion)) return false;
+                    }
+                }
+                
                 s.seenIds.add(id);
                 return true;
             });
@@ -707,11 +729,11 @@ function fetchNextPage() {
             const hasMore = res.hasMore && s.cursor > 0;
             const gotEnough = allVideos.length >= s.needed;
 
-            if (!gotEnough && hasMore) {
+            if (!gotEnough && hasMore && s.fetchCount < 50) {
                 // Update progress and fetch next page
                 const infoEl = document.getElementById('result-count');
                 infoEl.innerHTML = `⏳ Đang tải... <strong>${allVideos.length}</strong> / ${s.needed} video`;
-                setLoading(true, `⏳ Đang tải... ${allVideos.length}/${s.needed} video`);
+                setLoading(true, `⏳ Đang quét vùng... tìm được ${allVideos.length}/${s.needed} video`);
                 setTimeout(fetchNextPage, 150); // slight delay to prevent API throttle
             } else {
                 finalizeResults();

@@ -151,17 +151,17 @@ $active_tab = ($openai_conf['is_active'] == 1) ? 'openai' : 'gemini';
             <div style="margin-bottom: 8px; font-weight: 500; color: var(--text-main);">Cấu hình AI cho Lên lịch YouTube (Hệ thống tự động chạy 3 bước riêng biệt)</div>
             <div style="display: flex; gap: 15px; margin-bottom: 15px;">
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label>Prompt Title Youtube (Hỗ trợ <b>{channel_name}</b>)</label>
+                    <label>Prompt Title Youtube (Hỗ trợ <b>{prompt}</b>, <b>{channel_name}</b>)</label>
                     <textarea name="prompt_youtube_title" rows="4" class="form-control" placeholder="- Dài từ 60-90 ký tự...\nNội dung: {prompt}" required style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace;"><?= htmlspecialchars($gemini_conf['prompt_youtube_title'] ?? '') ?></textarea>
                 </div>
                 
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label>Prompt Nội dung Youtube (Hỗ trợ <b>{title}</b>, <b>{channel_name}</b>)</label>
+                    <label>Prompt Nội dung Youtube (Hỗ trợ <b>{prompt}</b>, <b>{title}</b>, <b>{channel_name}</b>)</label>
                     <textarea name="prompt_youtube_desc" rows="4" class="form-control" placeholder="Viết mô tả cho nội dung: {prompt}\nTiêu đề đã đặt là: {title}" required style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace;"><?= htmlspecialchars($gemini_conf['prompt_youtube_desc'] ?? '') ?></textarea>
                 </div>
 
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label>Prompt Tag Youtube (Hỗ trợ <b>{channel_name}</b>)</label>
+                    <label>Prompt Tag Youtube (Hỗ trợ <b>{prompt}</b>, <b>{channel_name}</b>)</label>
                     <textarea name="prompt_youtube_tags" rows="4" class="form-control" placeholder="- Tối thiểu 20 thẻ tags...\nNội dung: {prompt}" required style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace;"><?= htmlspecialchars($gemini_conf['prompt_youtube_tags'] ?? '') ?></textarea>
                 </div>
             </div>
@@ -215,17 +215,17 @@ $active_tab = ($openai_conf['is_active'] == 1) ? 'openai' : 'gemini';
             <div style="margin-bottom: 8px; font-weight: 500; color: var(--text-main);">Cấu hình AI cho Lên lịch YouTube (Hệ thống tự động chạy 3 bước riêng biệt)</div>
             <div style="display: flex; gap: 15px; margin-bottom: 15px;">
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label>Prompt Title Youtube (Hỗ trợ <b>{channel_name}</b>)</label>
+                    <label>Prompt Title Youtube (Hỗ trợ <b>{prompt}</b>, <b>{channel_name}</b>)</label>
                     <textarea name="prompt_youtube_title" rows="4" class="form-control" placeholder="- Dài từ 60-90 ký tự...\nNội dung: {prompt}" required style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace;"><?= htmlspecialchars($openai_conf['prompt_youtube_title'] ?? '') ?></textarea>
                 </div>
                 
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label>Prompt Nội dung Youtube (Hỗ trợ <b>{title}</b>, <b>{channel_name}</b>)</label>
+                    <label>Prompt Nội dung Youtube (Hỗ trợ <b>{prompt}</b>, <b>{title}</b>, <b>{channel_name}</b>)</label>
                     <textarea name="prompt_youtube_desc" rows="4" class="form-control" placeholder="Viết mô tả cho nội dung: {prompt}\nTiêu đề đã đặt là: {title}" required style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace;"><?= htmlspecialchars($openai_conf['prompt_youtube_desc'] ?? '') ?></textarea>
                 </div>
 
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label>Prompt Tag Youtube (Hỗ trợ <b>{channel_name}</b>)</label>
+                    <label>Prompt Tag Youtube (Hỗ trợ <b>{prompt}</b>, <b>{channel_name}</b>)</label>
                     <textarea name="prompt_youtube_tags" rows="4" class="form-control" placeholder="- Tối thiểu 20 thẻ tags...\nNội dung: {prompt}" required style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace;"><?= htmlspecialchars($openai_conf['prompt_youtube_tags'] ?? '') ?></textarea>
                 </div>
             </div>

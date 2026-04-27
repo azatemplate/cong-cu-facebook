@@ -14,17 +14,10 @@ function get_drive_access_token($pdo, $account_id) {
     }
 
     if (empty($account['gg_client_id']) || empty($account['gg_client_secret'])) {
-        $stmt_admin = $pdo->query("SELECT gg_client_id, gg_client_secret FROM system_accounts WHERE id = 1");
-        $admin_account = $stmt_admin->fetch(PDO::FETCH_ASSOC);
-        if (!$admin_account || empty($admin_account['gg_client_id']) || empty($admin_account['gg_client_secret'])) {
-            return false;
-        }
-        $client_id = $admin_account['gg_client_id'];
-        $client_secret = $admin_account['gg_client_secret'];
-    } else {
-        $client_id = $account['gg_client_id'];
-        $client_secret = $account['gg_client_secret'];
+        return false;
     }
+    $client_id = $account['gg_client_id'];
+    $client_secret = $account['gg_client_secret'];
 
     $token_url = 'https://oauth2.googleapis.com/token';
     $post_fields = [

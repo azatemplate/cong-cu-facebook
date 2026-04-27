@@ -245,6 +245,11 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
         if (!empty($config['prompt_youtube_desc'])) $config['prompt_youtube_desc'] = str_replace('{channel_name}', $channel_name, $config['prompt_youtube_desc']);
         if (!empty($config['prompt_youtube_tags'])) $config['prompt_youtube_tags'] = str_replace('{channel_name}', $channel_name, $config['prompt_youtube_tags']);
 
+        // --- {PROMPT} REPLACEMENT trong config của user ---
+        if (!empty($config['prompt_youtube_title'])) $config['prompt_youtube_title'] = str_replace('{prompt}', $content, $config['prompt_youtube_title']);
+        if (!empty($config['prompt_youtube_desc'])) $config['prompt_youtube_desc'] = str_replace('{prompt}', $content, $config['prompt_youtube_desc']);
+        if (!empty($config['prompt_youtube_tags'])) $config['prompt_youtube_tags'] = str_replace('{prompt}', $content, $config['prompt_youtube_tags']);
+
         // --- BƯỚC 1: XÉT PROMPT CHO TITLE ---
         $title_prompt = !empty($config['prompt_youtube_title']) 
             ? "Bạn là một AI chuyên viết Tiêu đề Youtube chuẩn SEO.\nHãy viết tiêu đề dựa trên nội dung sau:\n{prompt}\n\nYÊU CẦU NGHIÊM NGẶT:\n" . $config['prompt_youtube_title'] . "\n\nCHỈ TRẢ VỀ DUY NHẤT ĐOẠN TEXT TIÊU ĐỀ, KHÔNG GIẢI THÍCH, KHÔNG BỔ SUNG."

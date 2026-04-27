@@ -388,12 +388,8 @@ foreach ($pending_posts as $post) {
         $client_secret = $yt_channel['gg_client_secret'];
 
         if (empty($client_id) || empty($client_secret)) {
-            $stmt_admin = $pdo->query("SELECT gg_client_id, gg_client_secret FROM system_accounts WHERE id = 1");
-            $admin_account = $stmt_admin->fetch(PDO::FETCH_ASSOC);
-            if ($admin_account && !empty($admin_account['gg_client_id']) && !empty($admin_account['gg_client_secret'])) {
-                $client_id = $admin_account['gg_client_id'];
-                $client_secret = $admin_account['gg_client_secret'];
-            }
+            marKAsFailed($pdo, $post['id'], "Thiếu cấu hình Google Client ID và Secret của bạn (Vui lòng vào Cài đặt để bổ sung).", $sys_max_retries, $sys_retry_interval);
+            continue;
         }
 
         // Lấy Access Token từ Refresh Token
@@ -479,7 +475,15 @@ foreach ($pending_posts as $post) {
         if (isset($content_data['title'])) $content_data['title'] = spin_text($content_data['title']);
 
         if (isset($content_data['use_ai']) && $content_data['use_ai']) {
-            $base_text = trim(($content_data['title'] ?? '') . " " . ($content_data['description'] ?? ''));
+            $is_auto = isset($content_data['auto_title']) && $content_data['auto_title'];
+            if ($is_auto && !empty($t_title_override)) {
+                // Checkbox auto_title ON: {prompt} = Tên file/Title TikTok + mô tả user nhập (nếu có)
+                $user_desc = trim($content_data['description'] ?? '');
+                $base_text = !empty($user_desc) ? ($t_title_override . "\n\n" . $user_desc) : $t_title_override;
+            } else {
+                // Checkbox auto_title OFF: {prompt} = chỉ nội dung user nhập
+                $base_text = trim(($content_data['title'] ?? '') . " " . ($content_data['description'] ?? ''));
+            }
             if (empty($base_text))
                 $base_text = $t_title_override;
             if (empty($base_text))
@@ -912,8 +916,16 @@ foreach ($pending_posts as $post) {
                 }
 
                 if ($use_ai) {
-                    if (!empty($p_desc))
-                        $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
+                    // Xây dựng {prompt} cho AI dựa trên auto_title
+                    if ($is_auto && !empty($t_title_override)) {
+                        // Checkbox auto_title ON: {prompt} = Tên file/Title TikTok + mô tả user (nếu có)
+                        $ai_input = !empty($p_desc) ? ($t_title_override . "\n\n" . $p_desc) : $t_title_override;
+                    } else {
+                        // Checkbox auto_title OFF: {prompt} = chỉ nội dung user nhập
+                        $ai_input = $p_desc;
+                    }
+                    if (!empty($ai_input))
+                        $p_desc = rewrite_content_with_ai($ai_input, $post['account_id'], false, $fanpage_name);
                     if (!empty($p_title) && $post_type !== 'Reel')
                         $p_title = rewrite_content_with_ai($p_title, $post['account_id'], true, $fanpage_name);
                 }

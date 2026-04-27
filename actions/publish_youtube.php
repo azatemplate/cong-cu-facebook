@@ -53,7 +53,7 @@ $drive_token = null;
 
 if (!empty($tiktok_urls_str)) {
     foreach (array_filter(array_map('trim', explode("\n", $tiktok_urls_str))) as $url) {
-        $media_pool[] = ['type' => 'tiktok', 'url' => $url, 'title' => $url];
+        $media_pool[] = ['type' => 'tiktok', 'url' => $url, 'title' => ''];
     }
 }
 

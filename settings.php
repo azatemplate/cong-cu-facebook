@@ -229,11 +229,12 @@ try {
         </form>
     </div>
 
-    <?php if ($is_admin): ?>
+
     <div class="card" style="margin: 0; box-sizing: border-box;">
-        <h3 style="margin-bottom: 20px;">Cấu hình Google Drive API</h3>
+        <h3 style="margin-bottom: 20px;">Cấu hình Google API (Youtube & Drive)</h3>
         <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px;">
-            Nhập Client ID và Client Secret từ Google Cloud Console để hệ thống có thể kết nối với kho lưu trữ hình ảnh, video của bạn trên Google Drive.
+            Nhập Client ID và Client Secret ứng dụng riêng từ Google Cloud Console để hệ thống có thể liên kết đăng video Youtube và sử dụng chung cho việc duyệt file từ Google Drive. Cấu hình này là độc lập cho mỗi user.<br><br>
+            <a href="https://www.youtube.com/watch?v=i22YCgy90g8" target="_blank" style="color: #ef4444; font-weight: bold; text-decoration: none;">▶️ Xem Hướng Dẫn cách cấu hình Google API</a>
         </p>
         <form method="POST" action="settings.php">
             <?php echo csrf_field(); ?>
@@ -245,10 +246,17 @@ try {
                 <label>Google Client Secret</label>
                 <input type="password" name="gg_client_secret" value="<?php echo htmlspecialchars($account['gg_client_secret'] ?? ''); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
             </div>
-            <button type="submit" name="update_gg_app" class="btn btn-primary">Lưu Cấu Hình Google</button>
+            <button type="submit" name="update_gg_app" class="btn btn-primary" style="margin-bottom: 15px;">Lưu Cấu Hình Google</button>
+            <div style="background: #f8f9fa; border-left: 4px solid #0d6efd; padding: 12px; font-size: 13px; color: #555;">
+                <strong>⚠️ Lưu ý quan trọng khi cấu hình Console của Google:</strong><br>
+                Bạn BẮT BUỘC phải thêm 2 đường link dưới đây vào phần <b>Authorized redirect URIs (URI chuyển hướng được ủy quyền)</b> trong bảng điều khiển Google Cloud. Nếu không, Google sẽ báo lỗi <code>redirect_uri_mismatch</code> khi đăng nhập:
+                <ul style="margin: 8px 0; padding-left: 20px;">
+                    <li><code style="background: #fff; padding: 2px 5px; border-radius: 3px; border: 1px solid #ddd;"><?php echo (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]" . rtrim(dirname($_SERVER['PHP_SELF']), '/\\') . "/youtube_callback.php"; ?></code></li>
+                    <li><code style="background: #fff; padding: 2px 5px; border-radius: 3px; border: 1px solid #ddd;"><?php echo (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]" . rtrim(dirname($_SERVER['PHP_SELF']), '/\\') . "/google_callback.php"; ?></code></li>
+                </ul>
+            </div>
         </form>
     </div>
-    <?php endif; ?>
 
     <div class="card" style="margin: 0; box-sizing: border-box;">
         <h3 style="margin-bottom: 20px;">Kết nối Google Drive</h3>
@@ -263,14 +271,12 @@ try {
             <?php else: ?>
                 <p style="color: #b91c1c; margin-bottom: 10px;">❌ Chưa liên kết tài khoản Drive của bạn.</p>
                 <?php 
-                // Check if admin has set up the google API Client ID (using admin's row ID 1)
-                $stmt_admin = $pdo->query("SELECT gg_client_id FROM system_accounts WHERE id = 1");
-                $admin_gg = $stmt_admin->fetch(PDO::FETCH_ASSOC);
-                if (!empty($admin_gg['gg_client_id']) || !empty($account['gg_client_id'])): 
+                // Check if user has set up the google API Client ID
+                if (!empty($account['gg_client_id'])): 
                 ?>
                     <a href="google_login.php" class="btn btn-primary" style="background: #ea4335; border-color: #ea4335;">🔗 Đăng nhập & Cấp quyền Google Drive</a>
                 <?php else: ?>
-                    <p style="font-size: 13px; color: #be185d;">Hệ thống chưa được điền Google Token. Vui lòng liên hệ Admin.</p>
+                    <p style="font-size: 13px; color: #be185d;">Bạn chưa điền Cấu hình Google API ở bảng phía trên. Vui lòng điền và Lưu lại trước khi sử dụng tính năng này.</p>
                 <?php endif; ?>
             <?php endif; ?>
         </div>

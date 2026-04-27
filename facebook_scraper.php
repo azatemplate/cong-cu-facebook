@@ -40,7 +40,7 @@ if (isset($_GET['ajax'])) {
             exit;
         }
 
-        $is_admin = ($_SESSION['role'] === 'admin');
+        $is_admin = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin');
         $token = getUserToken($pdo, $user_id, $account_id, $is_admin);
 
         if (!$token) {
@@ -51,7 +51,7 @@ if (isset($_GET['ajax'])) {
         // Dùng token user gọi API lấy thông tin trang
         $res = fb_api_request("{$page_id}", [
             'access_token' => $token,
-            'fields' => 'id,name,followers_count,access_token'
+            'fields' => 'id,name,followers_count'
         ]);
 
         if ($res['status_code'] !== 200) {
@@ -62,9 +62,8 @@ if (isset($_GET['ajax'])) {
 
         $page_name = $res['data']['name'] ?? 'Không rõ';
         $followers = $res['data']['followers_count'] ?? 0;
-        $page_token = $res['data']['access_token'] ?? '';
-
-        $encrypted_page_token = encryptData($page_token);
+        
+        $encrypted_page_token = ''; // Khong can Page Token nua
 
         $stmtU = $pdo->prepare("SELECT name FROM users WHERE id = ?");
         $stmtU->execute([$user_id]);
@@ -171,23 +170,34 @@ if (isset($_GET['ajax'])) {
             exit;
         }
 
-        // Lấy Page Token từ scraper_pages thay vì dùng User Token
-        $stmt = $pdo->prepare("SELECT access_token, only_with_content FROM scraper_pages WHERE page_id = :pid AND account_id = :aid LIMIT 1");
+        // Lấy User Token thay vì Page Token
+        $stmt = $pdo->prepare("SELECT user_id, only_with_content FROM scraper_pages WHERE page_id = :pid AND account_id = :aid LIMIT 1");
         $stmt->execute(['pid' => $page_id, 'aid' => $account_id]);
         $scraper_page = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$scraper_page || empty($scraper_page['access_token'])) {
-            echo json_encode(['status' => 'error', 'message' => 'Lỗi: Không tìm thấy Page Token. Bạn hãy Xóa page này bên dưới và Nhập lại để lấy Token mới.']);
+        if (!$scraper_page) {
+            echo json_encode(['status' => 'error', 'message' => 'Lỗi: Không tìm thấy Page được lưu. Bạn hãy Xóa page này bên dưới và Nhập lại.']);
             exit;
         }
 
-        $token = decryptData($scraper_page['access_token']);
+        $is_admin = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin');
+        $token = getUserToken($pdo, $scraper_page['user_id'], $account_id, $is_admin);
+        
+        if (!$token) {
+            echo json_encode(['status' => 'error', 'message' => 'Lỗi: Không tìm thấy User Token hoặc token đã hết hạn.']);
+            exit;
+        }
         // Sử dụng setting only_with_content từ DB nếu frontend không gửi rõ ràng
         if (!isset($_POST['only_with_content'])) {
             $only_with_content = intval($scraper_page['only_with_content'] ?? 0);
         }
 
-        // Build API request using /posts (yêu cầu Page Token)
+        // Fix: Cập nhật tự động độ dài cột picture trong csdl vì có những URL ảnh của Facebook rất dài (hơn 255 ký tự)
+        try {
+            $pdo->exec("ALTER TABLE scraper_posts MODIFY COLUMN picture TEXT");
+        } catch (Exception $e) {}
+
+        // Build API request using /posts (yêu cầu Page Token) // updated: ko can
         $fields = 'id,message,created_time,full_picture,shares,comments.summary(total_count),reactions.summary(total_count)';
 
         $result = [];
@@ -783,7 +793,7 @@ $savedScraperPagesJson = json_encode($savedScraperPages);
                             <input type="checkbox" ${autoChecked} onchange="toggleAuto('${pid}', this.checked)" style="margin-right:4px;"> Auto
                         </label>
                         <button class="btn-sm btn-info" onclick="openScrape('${pid}', '${escapeHtml(page.page_name)}')">Chi tiết</button>
-                        <button class="btn-sm btn-danger" onclick="removePage('${pid}')">Xóa</button>
+                        <button class="btn-sm btn-danger" onclick="removePage('${pid}', this)">Xóa</button>
                     </div>
                     <div id="auto-settings-${pid}" style="display:${isAuto ? 'flex' : 'none'}; align-items:center; gap:8px; flex-wrap:wrap; background:rgba(24,119,242,0.05); border:1px solid rgba(24,119,242,0.15); border-radius:8px; padding:6px 10px;">
                         <label style="display:inline-flex; align-items:center; font-size:11px; gap:4px; color:var(--text-muted); white-space:nowrap;">
@@ -907,8 +917,24 @@ $savedScraperPagesJson = json_encode($savedScraperPages);
         });
     }
 
-    function removePage(pageId) {
-        if (!confirm("Bạn có chắc muốn xóa page này khỏi danh sách?")) return;
+    function removePage(pageId, btnElement) {
+        if (btnElement && !btnElement.classList.contains('confirm-delete')) {
+            const originalText = btnElement.innerHTML;
+            btnElement.innerHTML = 'Chắc chắn muốn xóa?';
+            btnElement.style.background = '#ef4444';
+            btnElement.style.color = '#fff';
+            btnElement.classList.add('confirm-delete');
+            
+            setTimeout(() => {
+                if (document.body.contains(btnElement)) {
+                    btnElement.innerHTML = originalText;
+                    btnElement.style.background = '';
+                    btnElement.style.color = '';
+                    btnElement.classList.remove('confirm-delete');
+                }
+            }, 3000);
+            return;
+        }
 
         addedPages = addedPages.filter(p => p.page_id !== pageId);
         renderPagesTable();
@@ -1027,7 +1053,14 @@ $savedScraperPagesJson = json_encode($savedScraperPages);
             method: 'POST',
             body: fd
         })
-            .then(r => r.json())
+            .then(async r => {
+                const txt = await r.text();
+                try {
+                    return JSON.parse(txt);
+                } catch(e) {
+                    throw new Error(txt);
+                }
+            })
             .then(res => {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
@@ -1050,7 +1083,7 @@ $savedScraperPagesJson = json_encode($savedScraperPages);
             .catch(err => {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 30px;">⚠ Lỗi mạng: ${err.message}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 30px;"><span style="color:#ef4444;">⚠️ Lỗi máy chủ (Vui lòng chụp màn hình gửi lại):</span><br><br><div style="text-align:left; background:#111; color:#0f0; border-radius:6px; padding:12px; font-family:monospace; font-size:13px; overflow-x:auto; white-space:pre-wrap;">${escapeHtml(err.message)}</div></td></tr>`;
             });
     }
 

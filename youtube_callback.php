@@ -7,6 +7,7 @@ if (!isset($_SESSION['account_id'])) {
     exit;
 }
 
+
 if (isset($_GET['error'])) {
     die("Lỗi ủy quyền từ Google: " . htmlspecialchars($_GET['error']));
 }
@@ -24,17 +25,10 @@ $stmt->execute([$account_id]);
 $account = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$account || empty($account['gg_client_id']) || empty($account['gg_client_secret'])) {
-    $stmt_admin = $pdo->query("SELECT gg_client_id, gg_client_secret FROM system_accounts WHERE id = 1");
-    $admin_account = $stmt_admin->fetch(PDO::FETCH_ASSOC);
-    if (!$admin_account || empty($admin_account['gg_client_id']) || empty($admin_account['gg_client_secret'])) {
-        die("Thiếu cấu hình Client ID và Secret (hoặc liên hệ Admin).");
-    }
-    $client_id = $admin_account['gg_client_id'];
-    $client_secret = $admin_account['gg_client_secret'];
-} else {
-    $client_id = $account['gg_client_id'];
-    $client_secret = $account['gg_client_secret'];
+    die("Thiếu cấu hình Cài Đặt Google Client ID và Secret của bạn. Vui lòng cấu hình trước khi kết nối.");
 }
+$client_id = $account['gg_client_id'];
+$client_secret = $account['gg_client_secret'];
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
 $base_dir = rtrim(dirname($_SERVER['PHP_SELF']), '/\\');
 $redirect_uri = $protocol . $_SERVER['HTTP_HOST'] . $base_dir . "/youtube_callback.php";
@@ -88,7 +82,43 @@ curl_close($yt_ch);
 $yt_data = json_decode($yt_response, true);
 
 if (isset($yt_data['error'])) {
-    die("Lỗi lấy thông tin Kênh YouTube: " . htmlspecialchars($yt_data['error']['message']));
+    $err_msg = $yt_data['error']['message'] ?? '';
+    // Thêm logic fallback nếu bị lỗi Quota
+    if (strpos(strtolower($err_msg), 'quota') !== false || (isset($yt_data['error']['errors'][0]['reason']) && $yt_data['error']['errors'][0]['reason'] === 'quotaExceeded')) {
+        // Thử lấy thông tin tài khoản Google cơ bản thay thế
+        $ui_ch = curl_init('https://www.googleapis.com/oauth2/v3/userinfo');
+        curl_setopt($ui_ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ui_ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer $access_token",
+            "Accept: application/json"
+        ]);
+        $ui_response = curl_exec($ui_ch);
+        curl_close($ui_ch);
+        
+        $ui_data = json_decode($ui_response, true);
+        
+        if (isset($ui_data['sub'])) {
+            $yt_data = [
+                'items' => [
+                    [
+                        'id' => 'no_id_' . $ui_data['sub'],
+                        'snippet' => [
+                            'title' => ($ui_data['name'] ?? 'Tài khoản YouTube'),
+                            'thumbnails' => [
+                                'default' => [
+                                    'url' => $ui_data['picture'] ?? ''
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ];
+        } else {
+            die("Lỗi lấy thông tin Kênh: Hệ thống đã chạm ngưỡng giới hạn Quota API của Google. Vui lòng thử đăng nhập lại để làm mới phiên (Profile API), hoặc cấu hình lại Google Client ID cá nhân.");
+        }
+    } else {
+        die("Lỗi lấy thông tin Kênh YouTube: " . htmlspecialchars($err_msg));
+    }
 }
 
 if (empty($yt_data['items'])) {

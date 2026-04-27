@@ -10,13 +10,13 @@ require_once __DIR__ . '/../includes/fb_api.php';
 
 // Tìm các page có auto_refresh_hours > 0 và cần quét lại
 $sql = "
-    SELECT id, account_id, user_id, page_id, access_token, auto_refresh_hours, last_scraped_at, post_count, only_with_content
-    FROM scraper_pages
-    WHERE auto_refresh_hours > 0
-      AND access_token IS NOT NULL
+    SELECT sp.id, sp.account_id, sp.user_id, sp.page_id, sp.auto_refresh_hours, sp.last_scraped_at, sp.post_count, sp.only_with_content, u.access_token as user_token
+    FROM scraper_pages sp
+    JOIN users u ON sp.user_id = u.id
+    WHERE sp.auto_refresh_hours > 0
       AND (
-          last_scraped_at IS NULL 
-          OR last_scraped_at <= DATE_SUB(NOW(), INTERVAL auto_refresh_hours HOUR)
+          sp.last_scraped_at IS NULL 
+          OR sp.last_scraped_at <= DATE_SUB(NOW(), INTERVAL sp.auto_refresh_hours HOUR)
       )
 ";
 
@@ -51,7 +51,7 @@ if (!function_exists('decryptData')) {
 foreach ($pagesToScrape as $pageInfo) {
     $page_id = $pageInfo['page_id'];
     $account_id = $pageInfo['account_id'];
-    $encrypted_token = $pageInfo['access_token'];
+    $encrypted_token = $pageInfo['user_token'];
     
     $token = decryptData($encrypted_token);
     if (!$token) {
@@ -65,6 +65,11 @@ foreach ($pagesToScrape as $pageInfo) {
     $fields = 'id,message,created_time,full_picture,shares,comments.summary(total_count),reactions.summary(total_count)';
     $limit = $pageInfo['post_count'] > 0 ? $pageInfo['post_count'] : 10;
     $only_with_content = intval($pageInfo['only_with_content'] ?? 0);
+
+    // Fix độ dài cột URL tải ảnh
+    try {
+        $pdo->exec("ALTER TABLE scraper_posts MODIFY COLUMN picture TEXT");
+    } catch (Exception $e) {}
 
     $stmtPost = $pdo->prepare("
         INSERT INTO scraper_posts (page_id, fb_post_id, message, picture, shares, comments, likes, post_created_at)

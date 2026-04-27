@@ -133,20 +133,13 @@ foreach ($rows as $row) {
         $client_secret = $yt_channel['gg_client_secret'];
 
         if (empty($client_id) || empty($client_secret)) {
-            $stmt_admin = $pdo->query("SELECT gg_client_id, gg_client_secret FROM system_accounts WHERE id = 1");
-            $admin_account = $stmt_admin->fetch(PDO::FETCH_ASSOC);
-            if ($admin_account && !empty($admin_account['gg_client_id']) && !empty($admin_account['gg_client_secret'])) {
-                $client_id = $admin_account['gg_client_id'];
-                $client_secret = $admin_account['gg_client_secret'];
-            }
-        }
-
-        if (empty($client_id) || empty($client_secret)) {
             $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1" . ($has_comment_status ? ", comment_status = 'error'" : "") . " WHERE id = ?")
                 ->execute([$row['id']]);
-            echo " -> Bỏ qua ID {$row['id']}: Thiếu Google Client ID/Secret (cả User lẫn Admin).\n";
+            echo " -> Bỏ qua ID {$row['id']}: Thiếu Cấu hình Google Client ID/Secret của bạn (Vui lòng vào Cài đặt để bổ sung).\n";
             continue;
         }
+
+
 
         // Đổi Refresh Token lấy Access Token
         $ch_tok = curl_init('https://oauth2.googleapis.com/token');

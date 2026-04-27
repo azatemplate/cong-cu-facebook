@@ -15,15 +15,9 @@ $stmt->execute([$account_id]);
 $account = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$account || empty($account['gg_client_id'])) {
-    $stmt_admin = $pdo->query("SELECT gg_client_id FROM system_accounts WHERE id = 1");
-    $admin_account = $stmt_admin->fetch(PDO::FETCH_ASSOC);
-    if (!$admin_account || empty($admin_account['gg_client_id'])) {
-        die("Vui lòng cấu hình Google Client ID trong mục Cài Đặt trước (hoặc liên hệ Admin).");
-    }
-    $client_id = $admin_account['gg_client_id'];
-} else {
-    $client_id = $account['gg_client_id'];
+    die("Vui lòng nhập Google Client ID trong mục Cài Đặt (Settings) của bạn trước khi kết nối Google Drive.");
 }
+$client_id = $account['gg_client_id'];
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
 $base_dir = rtrim(dirname($_SERVER['PHP_SELF']), '/\\');
 $redirect_uri = $protocol . $_SERVER['HTTP_HOST'] . $base_dir . "/google_callback.php";
