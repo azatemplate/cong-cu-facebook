@@ -277,6 +277,7 @@ function status_label($s) {
                 $content_data = @json_decode($post['content'], true);
                 $desc = is_array($content_data) ? ($content_data['description'] ?? '') : $post['content'];
                 $desc_short = mb_strimwidth($desc, 0, 80, '…');
+                $original_source = is_array($content_data) ? ($content_data['original_source'] ?? '') : '';
             ?>
             <tr style="border-bottom:1px solid var(--border-color);">
                 <td style="padding:10px 12px;text-align:center;">
@@ -301,7 +302,13 @@ function status_label($s) {
                                     echo htmlspecialchars($post['page_name'] ?? '—');
                                 }
                             ?></div>
-                            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;"><?php echo htmlspecialchars($desc_short); ?></div>
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;"><?php 
+                                if (!empty($original_source)) {
+                                    echo htmlspecialchars($original_source);
+                                } else {
+                                    echo htmlspecialchars($desc_short);
+                                }
+                            ?></div>
                         </div>
                     </div>
                     <?php if (in_array($s, ['failed', 'checkpoint']) && !empty($post['error_msg'])): ?>

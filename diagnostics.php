@@ -41,6 +41,21 @@ try {
     if ($mr) $max_retries = (int)($mr->fetchColumn() ?: 3);
 } catch (Exception $e) {}
 
+// ── Lấy cấu hình Throttling từ settings ─────────────────────────────────────
+$max_publish_workers = 30;
+$max_comment_workers = 15;
+try {
+    $stmt_throttle = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('max_publish_workers', 'max_comment_workers')");
+    while ($row_t = $stmt_throttle->fetch(PDO::FETCH_ASSOC)) {
+        if ($row_t['setting_key'] === 'max_publish_workers') $max_publish_workers = (int)$row_t['setting_value'];
+        if ($row_t['setting_key'] === 'max_comment_workers') $max_comment_workers = (int)$row_t['setting_value'];
+    }
+} catch (Exception $e) {}
+
+// ── Đếm số worker đang thực sự chạy (active) ────────────────────────────────
+$active_publish = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+$active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
+
 // ── Kích hoạt thủ công nếu có ?run=1 ─────────────────────────────────────────
 $run_msg = '';
 if (isset($_GET['run'])) {
@@ -257,6 +272,48 @@ tr:hover td { background: #1e293b55; }
     <p class="err">✘ exec() BỊ KHÓA — Vào AaPanel → PHP → Disable Functions → Xóa "exec".</p>
     <p class="warn">Cron sẽ dùng cURL fallback (chậm hơn, cần HTTP reachable).</p>
     <?php endif; ?>
+</div>
+
+<!-- Cấu hình Throttling Server -->
+<div class="card" style="border-left: 5px solid #f59e0b;">
+    <h2 style="color: #f59e0b;">⚡ Cấu hình Throttling Server (từ Settings)</h2>
+    <p style="font-size:13px;color:#64748b;margin-bottom:15px">Giá trị được đọc trực tiếp từ bảng <code>system_settings</code> — thay đổi tại trang <b>Cài Đặt Hệ Thống</b>.</p>
+    <table>
+    <tr>
+        <th>Loại Worker</th>
+        <th>Giới hạn tối đa (Cấu hình)</th>
+        <th>Đang chạy</th>
+        <th>Còn trống</th>
+    </tr>
+    <tr>
+        <td>🚀 <b>Publish Workers</b> (Luồng Đăng tải)</td>
+        <td><span style="color:#7ee8fa;font-size:20px;font-weight:bold"><?= $max_publish_workers ?></span></td>
+        <td><span class="badge processing"><?= $active_publish ?></span></td>
+        <td><span class="<?= ($max_publish_workers - $active_publish) > 0 ? 'ok' : 'err' ?>"><?= max(0, $max_publish_workers - $active_publish) ?></span></td>
+    </tr>
+    <tr>
+        <td>💬 <b>Comment Workers</b> (Luồng Bình luận)</td>
+        <td><span style="color:#7ee8fa;font-size:20px;font-weight:bold"><?= $max_comment_workers ?></span></td>
+        <td><span class="badge processing"><?= $active_comment ?></span></td>
+        <td><span class="<?= ($max_comment_workers - $active_comment) > 0 ? 'ok' : 'err' ?>"><?= max(0, $max_comment_workers - $active_comment) ?></span></td>
+    </tr>
+    </table>
+
+    <!-- Tổng hợp nhanh -->
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid #2d2d4e;">
+        <div style="flex:1;min-width:140px;background:#38bdf811;border:1px solid #38bdf833;border-radius:8px;padding:12px;text-align:center;">
+            <div style="font-size:28px;font-weight:bold;color:#38bdf8;"><?= count($processing_posts) ?></div>
+            <div style="font-size:12px;color:#94a3b8;margin-top:4px;">⏳ Đang xử lý (Processing)</div>
+        </div>
+        <div style="flex:1;min-width:140px;background:#f8717111;border:1px solid #f8717133;border-radius:8px;padding:12px;text-align:center;">
+            <div style="font-size:28px;font-weight:bold;color:#f87171;"><?= count($ready_posts) ?></div>
+            <div style="font-size:12px;color:#94a3b8;margin-top:4px;">🚀 Quá giờ — Cần đăng ngay</div>
+        </div>
+        <div style="flex:1;min-width:140px;background:#10b98111;border:1px solid #10b98133;border-radius:8px;padding:12px;text-align:center;">
+            <div style="font-size:28px;font-weight:bold;color:#10b981;"><?= count($insights_waiting) ?></div>
+            <div style="font-size:12px;color:#94a3b8;margin-top:4px;">📊 Chờ Insights bình luận</div>
+        </div>
+    </div>
 </div>
 
 <!-- Thống kê -->

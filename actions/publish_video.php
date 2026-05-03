@@ -86,16 +86,15 @@ if (!empty($drive_file_ids_str)) {
     
     foreach ($drive_ids_arr as $idx => $id) {
         $drive_title = '';
-        if ($auto_title) {
-            // Ưu tiên lấy tên từ frontend, fallback sang API nếu không có
-            $drive_name = isset($drive_names_arr[$idx]) ? trim($drive_names_arr[$idx]) : '';
-            if (empty($drive_name)) {
-                if (!$drive_token) $drive_token = get_drive_access_token($pdo, $account_id);
-                if ($drive_token) $drive_name = get_drive_file_name($drive_token, $id);
-            }
-            if ($drive_name) $drive_title = pathinfo($drive_name, PATHINFO_FILENAME);
+        $drive_name = isset($drive_names_arr[$idx]) ? trim($drive_names_arr[$idx]) : '';
+        if (empty($drive_name)) {
+            if (!$drive_token) $drive_token = get_drive_access_token($pdo, $account_id);
+            if ($drive_token) $drive_name = get_drive_file_name($drive_token, $id);
         }
-        $media_pool[] = ['type' => 'drive', 'id' => $id, 'title' => $drive_title];
+        if ($drive_name) {
+            $drive_title = pathinfo($drive_name, PATHINFO_FILENAME);
+        }
+        $media_pool[] = ['type' => 'drive', 'id' => $id, 'title' => $drive_title, 'original_name' => $drive_name];
     }
 }
 
@@ -145,25 +144,29 @@ function resolve_media_path_video($media, $auto_title, $title_input, $desc_input
     $t_title = $title_input;
     $t_desc  = $desc_input;
     $media_path = null;
+    $original_source = null;
 
     if ($media['type'] === 'drive') {
         $media_path = 'drive:' . $media['id'];
+        $original_source = isset($media['original_name']) && !empty($media['original_name']) ? $media['original_name'] : $media['title'];
         if ($auto_title) { $t_title = $media['title']; $t_desc = $media['title'] . ($desc_input ? "\n\n" . $desc_input : ''); }
     } elseif ($media['type'] === 'tiktok') {
         $media_path = 'tiktok:' . $media['url'];
+        $original_source = $media['url'];
         if ($auto_title) { 
             $t_title = $media['title']; 
             $t_desc = $media['title'] . ($desc_input ? "\n\n" . $desc_input : ''); 
         }
     } elseif ($media['type'] === 'local') {
         $media_path = $media['saved_path']; // use pre-copied path
+        $original_source = $media['name'];
         if ($auto_title) {
             $fn_no_ext = pathinfo($media['name'], PATHINFO_FILENAME);
             $t_title   = $fn_no_ext;
             $t_desc    = $fn_no_ext . ($desc_input ? "\n\n" . $desc_input : '');
         }
     }
-    return [$media_path, $t_title, $t_desc];
+    return [$media_path, $t_title, $t_desc, $original_source];
 }
 
 // ── Schedule Matrix Parsing ───────────────────────────────────────────────
@@ -250,8 +253,8 @@ try {
         foreach ($schedule_dates as $datetime) {
             foreach ($page_ids as $p_id) {
                 $media = $media_pool[array_rand($media_pool)];
-                [$media_path, $t_title, $t_desc] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input);
-                $content_data = json_encode(['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai]);
+                [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input);
+                $content_data = json_encode(['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source]);
                 insert_sp($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $comment_mode, $comment_threshold_views, $comment_threshold_likes, $comment_threshold_comments, $has_comment_mode, $account_id, $p_id, $post_type, $content_data, $media_path, $datetime);
                 $success_count++;
             }
@@ -263,8 +266,8 @@ try {
         $now = date('Y-m-d H:i:s');
         foreach ($page_ids as $p_id) {
             $media = $media_pool[array_rand($media_pool)];
-            [$media_path, $t_title, $t_desc] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input);
-            $content_data = json_encode(['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai]);
+            [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input);
+            $content_data = json_encode(['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source]);
             insert_sp($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $comment_mode, $comment_threshold_views, $comment_threshold_likes, $comment_threshold_comments, $has_comment_mode, $account_id, $p_id, $post_type, $content_data, $media_path, $now);
             $success_count++;
         }
