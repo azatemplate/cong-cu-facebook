@@ -29,6 +29,33 @@ try {
     }
 } catch (Exception $e) {}
 
+// --- ĐẢM BẢO SNAPSHOT HÀNG NGÀY CHẠY ĐÚNG 6:00 AM và 6:00 PM ---
+try {
+    $today = date('Y-m-d');
+    $current_h = (int)date('H');
+    
+    $stmt_snap = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'last_snapshot_time'");
+    $last_snap = $stmt_snap ? $stmt_snap->fetchColumn() : '';
+    
+    $current_shift = '';
+    if ($current_h >= 6 && $current_h < 18) {
+        $current_shift = 'am';
+    } elseif ($current_h >= 18) {
+        $current_shift = 'pm';
+    }
+    
+    if ($current_shift !== '') {
+        $snap_key = $today . '_' . $current_shift;
+        if ($last_snap !== $snap_key) {
+            $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('last_snapshot_time', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
+                ->execute([$snap_key, $snap_key]);
+            
+            // Tự động lấy snapshot (Followers, Reach, Views) cho toàn bộ user và lưu vào db
+            require_once __DIR__ . '/daily_snapshot.php';
+        }
+    }
+} catch (Exception $e) {}
+
 // Auto-migrate newly required columns in case the user missed accessing settings.php
 try {
     $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");

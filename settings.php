@@ -293,12 +293,12 @@ try {
             <div class="form-group">
                 <label>Max Publish Workers (Luồng Đăng tải)</label>
                 <p style="font-size: 11px; color: var(--text-muted); margin-top: -5px; margin-bottom: 5px;">Số luồng đăng bài chạy song song tối đa (khuyến nghị: 30 đối với VPS 4GB RAM).</p>
-                <input type="number" name="max_publish_workers" value="<?php echo htmlspecialchars($max_publish_workers); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="5" max="200">
+                <input type="number" name="max_publish_workers" value="<?php echo htmlspecialchars($max_publish_workers); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="5">
             </div>
             <div class="form-group">
                 <label>Max Comment Workers (Luồng Bình luận)</label>
                 <p style="font-size: 11px; color: var(--text-muted); margin-top: -5px; margin-bottom: 5px;">Số luồng bình luận mồi chạy song song tối đa (khuyến nghị: 15 đối với VPS 4GB RAM).</p>
-                <input type="number" name="max_comment_workers" value="<?php echo htmlspecialchars($max_comment_workers); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="5" max="200">
+                <input type="number" name="max_comment_workers" value="<?php echo htmlspecialchars($max_comment_workers); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="5">
             </div>
             <button type="submit" name="update_server_limits" class="btn btn-primary" style="margin-top: 5px;">💾 Lưu Throttling</button>
         </form>

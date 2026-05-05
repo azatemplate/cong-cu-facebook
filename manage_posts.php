@@ -115,9 +115,12 @@ try {
             SUM(CASE WHEN sp.status='processing' THEN 1 ELSE 0 END) AS cnt_processing,
             SUM(CASE WHEN sp.status='failed'     THEN 1 ELSE 0 END) AS cnt_failed,
             SUM(CASE WHEN sp.status='checkpoint' THEN 1 ELSE 0 END) AS cnt_checkpoint,
-            COUNT(sp.id) AS cnt_total
+            COUNT(sp.id) AS cnt_total,
+            GROUP_CONCAT(DISTINCT u.name SEPARATOR ', ') as fb_users
         FROM post_campaigns c
         LEFT JOIN scheduled_posts sp ON sp.campaign_id = c.id
+        LEFT JOIN pages p ON sp.page_id = p.page_id AND c.post_type != 'YouTube'
+        LEFT JOIN users u ON p.user_id = u.id
         WHERE 1=1 $auth_where
         GROUP BY c.id, c.name, c.post_type, c.total_posts, c.scheduled_time, c.created_at
         ORDER BY c.created_at DESC
@@ -204,6 +207,9 @@ try {
                     Tạo lúc: <?php echo date('d/m/Y H:i', strtotime($c['created_at'])); ?>
                     <?php if ($c['scheduled_time']): ?>
                     &nbsp;·&nbsp; Hẹn giờ: <?php echo date('d/m/Y H:i', strtotime($c['scheduled_time'])); ?>
+                    <?php endif; ?>
+                    <?php if (!empty($c['fb_users'])): ?>
+                    &nbsp;·&nbsp; <span style="color:var(--primary-color);font-weight:500;">👤 <?php echo htmlspecialchars($c['fb_users']); ?></span>
                     <?php endif; ?>
                 </div>
                 <!-- Progress Bar -->
