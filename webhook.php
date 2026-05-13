@@ -63,12 +63,24 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
         // Kiểm tra xem có field 'messaging' (Tin nhắn mới) không
         if (isset($entry['messaging'])) {
             foreach ($entry['messaging'] as $messaging_event) {
-                if (isset($messaging_event['message']) && !isset($messaging_event['message']['is_echo'])) {
+                $is_message = isset($messaging_event['message']) && !isset($messaging_event['message']['is_echo']);
+                $is_postback = isset($messaging_event['postback']);
+
+                if ($is_message || $is_postback) {
                     $sender_id = $messaging_event['sender']['id'];
-                    $text = $messaging_event['message']['text'] ?? 'Đã gửi một tệp đính kèm';
+                    $text = '';
+                    $is_welcome_trigger = false;
+
+                    if ($is_message) {
+                        $text = $messaging_event['message']['text'] ?? 'Đã gửi một tệp đính kèm';
+                    } elseif ($is_postback) {
+                        $payload = $messaging_event['postback']['payload'] ?? '';
+                        $is_welcome_trigger = true;
+                        $text = '[Hành động: Bấm nút/Bắt đầu]';
+                    }
                     
                     // Lấy thông tin người gửi và conversation_id qua Graph API
-                    $sender_name = null;
+                    $sender_name = 'Khách hàng';
                     $conversation_id = null;
                     try {
                         $ts = $pdo->prepare("SELECT access_token FROM pages WHERE page_id = ?");
@@ -99,12 +111,119 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                         webhook_log("Exception in conv fetch: " . $e->getMessage());
                     }
 
-                    // Lưu trực tiếp vào Database
+                    // Lưu trực tiếp vào Database & Kiểm tra tin nhắn đầu tiên
+                    $is_first_message = false;
                     try {
+                        // Check if it's the very first message!
+                        $stmt_chk = $pdo->prepare("SELECT COUNT(*) FROM page_notifications WHERE page_id=? AND sender_id=? AND type='message'");
+                        $stmt_chk->execute([$page_id, $sender_id]);
+                        $msg_count = (int)$stmt_chk->fetchColumn();
+                        
+                        $is_first_message = ($msg_count === 0);
+
                         $stmt = $pdo->prepare("INSERT INTO page_notifications (page_id, type, sender_id, sender_name, conversation_id, snippet) VALUES (?, 'message', ?, ?, ?, ?)");
                         $r = $stmt->execute([$page_id, $sender_id, $sender_name, $conversation_id, $text]);
                         webhook_log("MSG INSERT: page=$page_id sender=$sender_id result=" . ($r ? 'OK id='.$pdo->lastInsertId() : 'FAIL'));
                     } catch (Exception $e) { webhook_log('MSG DB ERR: ' . $e->getMessage()); }
+
+                    // ===== BẮT ĐẦU BOT CHAT LOGIC =====
+                    try {
+                        // Lấy token và account_id (nếu chưa có ở trên)
+                        $stmt = $pdo->prepare("SELECT p.access_token, u.account_id FROM pages p JOIN users u ON p.user_id = u.id WHERE p.page_id = ?");
+                        $stmt->execute([$page_id]);
+                        $page_info = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                        if ($page_info && !empty($page_info['access_token'])) {
+                            $page_token = decryptData($page_info['access_token']);
+                            $acc_id = $page_info['account_id'];
+
+                            // Hàm xử lý gửi tin nhắn
+                            $send_bot_msg = function($msg_text) use ($sender_id, $sender_name, $page_token) {
+                                $lines = array_filter(explode("\n", str_replace("\r", "", $msg_text)), 'trim');
+                                if (empty($lines)) return;
+                                $chosen_msg = $lines[array_rand($lines)];
+                                $final_msg = str_replace('{name}', $sender_name, $chosen_msg);
+
+                                $url = "https://graph.facebook.com/v22.0/me/messages?access_token={$page_token}";
+                                $post_data = json_encode([
+                                    'recipient' => ['id' => $sender_id],
+                                    'message' => ['text' => $final_msg],
+                                    'messaging_type' => 'RESPONSE'
+                                ]);
+                                
+                                $ch = curl_init($url);
+                                curl_setopt($ch, CURLOPT_POST, 1);
+                                curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
+                                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+                                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                                curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+                                $output = curl_exec($ch);
+                                curl_close($ch);
+                                webhook_log("BOT_CHAT_REPLY: " . $output);
+                            };
+
+                            $matched_rule = false;
+
+                            // 1. Kiểm tra Welcome rule (nếu là tin nhắn đầu tiên hoặc postback)
+                            if ($is_first_message || $is_welcome_trigger) {
+                                $st_rule = $pdo->prepare("SELECT * FROM bot_chat_rules WHERE account_id=? AND is_active=1 AND rule_type='welcome'");
+                                $st_rule->execute([$acc_id]);
+                                $all_rules = $st_rule->fetchAll(PDO::FETCH_ASSOC);
+                                foreach ($all_rules as $r) {
+                                    $match_page = false;
+                                    if ($r['pages_scope'] === 'ALL') {
+                                        $match_page = true;
+                                    } else {
+                                        $scope_arr = @json_decode($r['pages_scope'], true);
+                                        if (is_array($scope_arr) && in_array($page_id, $scope_arr)) {
+                                            $match_page = true;
+                                        }
+                                    }
+                                    if ($match_page) {
+                                        $send_bot_msg($r['message']);
+                                        $matched_rule = true;
+                                        break; // Only apply the first matching welcome rule
+                                    }
+                                }
+                            }
+
+                            // 2. Kiểm tra Keyword rule (nếu không phải welcome và là tin nhắn text)
+                            if (!$matched_rule && $is_message && !empty($text)) {
+                                $text_lower = mb_strtolower($text, 'UTF-8');
+                                $st_kw = $pdo->prepare("SELECT * FROM bot_chat_rules WHERE account_id=? AND is_active=1 AND rule_type='keyword'");
+                                $st_kw->execute([$acc_id]);
+                                $kw_rules_all = $st_kw->fetchAll(PDO::FETCH_ASSOC);
+                                
+                                $kw_rules = [];
+                                foreach ($kw_rules_all as $r) {
+                                    if ($r['pages_scope'] === 'ALL') {
+                                        $kw_rules[] = $r;
+                                    } else {
+                                        $scope_arr = @json_decode($r['pages_scope'], true);
+                                        if (is_array($scope_arr) && in_array($page_id, $scope_arr)) {
+                                            $kw_rules[] = $r;
+                                        }
+                                    }
+                                }
+
+                                foreach ($kw_rules as $rule) {
+                                    $kws = array_filter(array_map('trim', explode(',', $rule['keywords'])));
+                                    $found = false;
+                                    foreach ($kws as $kw) {
+                                        if ($kw !== '' && mb_strpos($text_lower, mb_strtolower($kw, 'UTF-8')) !== false) {
+                                            $found = true;
+                                            break;
+                                        }
+                                    }
+                                    if ($found) {
+                                        $send_bot_msg($rule['message']);
+                                        break; // Chỉ trả lời 1 rule đầu tiên khớp
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception $e) { webhook_log('BOT CHAT LOGIC ERR: ' . $e->getMessage()); }
+                    // ===== KẾT THÚC BOT CHAT LOGIC =====
                 }
             }
         }
@@ -143,12 +262,24 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                 $acc_id = $page_info['account_id'];
 
                                 // Lấy cấu hình tự động của tài khoản
-                                $stmt_acc = $pdo->prepare("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text FROM system_accounts WHERE id = ?");
+                                $stmt_acc = $pdo->prepare("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text, auto_pages_scope FROM system_accounts WHERE id = ?");
                                 $stmt_acc->execute([$acc_id]);
                                 $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC);
 
                                 if ($acc_setup) {
-                                    // 1. Tự động Phản hồi (Public Comment)
+                                    $is_page_allowed = false;
+                                    $scope = $acc_setup['auto_pages_scope'] ?? 'ALL';
+                                    if ($scope === 'ALL') {
+                                        $is_page_allowed = true;
+                                    } else {
+                                        $scope_arr = @json_decode($scope, true);
+                                        if (is_array($scope_arr) && in_array($page_id, $scope_arr)) {
+                                            $is_page_allowed = true;
+                                        }
+                                    }
+
+                                    if ($is_page_allowed) {
+                                        // 1. Tự động Phản hồi (Public Comment)
                                     if (!empty($acc_setup['auto_reply_enabled']) && !empty($acc_setup['auto_reply_text'])) {
                                         // Tách các mẫu câu theo dòng và chọn ngẫu nhiên
                                         $lines = array_filter(explode("\n", str_replace("\r", "", $acc_setup['auto_reply_text'])), 'trim');
@@ -196,9 +327,10 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                         curl_close($ch);
                                         webhook_log("AUTO_INBOX: " . $output);
                                     }
-                                }
+                                 } // End of is_page_allowed
                             }
-                        } catch (Exception $e) { webhook_log('AUTO_REPLY ERR: ' . $e->getMessage()); }
+                        }
+                    } catch (Exception $e) { webhook_log('AUTO_REPLY ERR: ' . $e->getMessage()); }
                     }
                 }
             }

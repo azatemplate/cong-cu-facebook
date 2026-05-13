@@ -223,12 +223,13 @@ try {
         echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} bài vào hàng đợi lên lịch hàng loạt!", 'campaign_id' => $campaign_id]);
     } else {
         // Immediate queue mode
+        $now = date('Y-m-d H:i:s');
         foreach ($page_ids as $p_id) {
             $media_path = build_media_path_shuffled($media_pool, $saved_local_files, $enable_random_images, $random_image_count);
             if ($campaign_id !== null && $s_stmt_with !== null) {
-                $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $scheduled_time, $campaign_id, $comment_lines]);
+                $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $now, $campaign_id, $comment_lines]);
             } else {
-                $s_stmt_without->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $scheduled_time]);
+                $s_stmt_without->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $now]);
             }
             $success_count++;
         }

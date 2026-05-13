@@ -34,21 +34,21 @@ $selected_post_id = $_GET['post_id'] ?? '';
 $selected_page_id = $_GET['page_id'] ?? '';
 
 // Silently ensure columns exist if user forgot to run migrate script
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_reply_enabled TINYINT DEFAULT 0");
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_reply_text TEXT DEFAULT NULL");
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_inbox_enabled TINYINT DEFAULT 0");
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_inbox_text TEXT DEFAULT NULL");
-} catch (Exception $e) {}
+try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_reply_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
+try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_reply_text TEXT DEFAULT NULL"); } catch (Exception $e) {}
+try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_inbox_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
+try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_inbox_text TEXT DEFAULT NULL"); } catch (Exception $e) {}
+try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_pages_scope TEXT"); } catch (Exception $e) {}
 
 // Fetch account auto-reply config
-$stmt_acc = $pdo->prepare("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text FROM system_accounts WHERE id = ?");
+$stmt_acc = $pdo->prepare("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text, auto_pages_scope FROM system_accounts WHERE id = ?");
 $stmt_acc->execute([$account_id]);
 $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC);
 $auto_reply_enabled = (int)($acc_setup['auto_reply_enabled'] ?? 0);
 $auto_reply_text = $acc_setup['auto_reply_text'] ?? '';
 $auto_inbox_enabled = (int)($acc_setup['auto_inbox_enabled'] ?? 0);
 $auto_inbox_text = $acc_setup['auto_inbox_text'] ?? '';
+$auto_pages_scope = $acc_setup['auto_pages_scope'] ?: 'ALL';
 ?>
 
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
@@ -58,10 +58,15 @@ $auto_inbox_text = $acc_setup['auto_inbox_text'] ?? '';
 
 <!-- Modal Cài đặt Tự động -->
 <div id="autoReplyModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
-    <div style="background:#fff; padding:25px; border-radius:10px; width:100%; max-width:500px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+    <div style="background:#fff; padding:25px; border-radius:10px; width:100%; max-width:900px; max-height:90vh; overflow-y:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
         <h3 style="margin-top:0; border-bottom:1px solid #e5e7eb; padding-bottom:10px; color:#1f2937;">🤖 Cài đặt Bot Phản Hồi Tự Động</h3>
-        <p style="font-size:12px; color:#6b7280; margin-bottom:15px;">Bot sẽ tự động hoạt động NGAY LẬP TỨC khi có khách bình luận mới (Áp dụng cho mọi Fanpage).</p>
+        <p style="font-size:13px; color:#6b7280; margin-bottom:20px;">Bot sẽ tự động hoạt động NGAY LẬP TỨC khi có khách bình luận mới.</p>
         <form id="frm_auto_setup" onsubmit="saveAutoSetup(event)">
+            
+            <div style="display:flex; gap:20px; flex-wrap:wrap;">
+                
+                <!-- Cột trái: Cấu hình nội dung -->
+                <div style="flex:1; min-width:350px;">
             <!-- 1. Trả lời bình luận -->
             <div style="margin-bottom: 20px; padding:15px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px;">
                 <label style="display:flex; align-items:center; gap:8px; font-weight:bold; font-size:14px; cursor:pointer; color:#0284c7;">
@@ -88,8 +93,51 @@ Chào {name}, shop đã gửi thông tin qua inbox...
                     <div style="font-size:11px; color:#6b7280; margin-top:4px;">Nhập **mỗi dòng một mẫu câu** để Bot chọn ngẫu nhiên.</div>
                 </div>
             </div>
+            
+            </div> <!-- End Cột trái -->
 
-            <div style="text-align: right;">
+            <!-- Cột phải: Áp dụng cho Fanpage -->
+            <div style="width:380px; flex-shrink:0;">
+                <div style="margin-bottom: 20px; padding:15px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; height:100%; box-sizing:border-box;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:5px;">
+                    <label style="display:block; font-size:14px; font-weight:bold; color:#1f2937;">Áp dụng cho Fanpage</label>
+                    <?php
+                        $unique_users = [];
+                        if(!empty($pages)){
+                            foreach($pages as $p) $unique_users[$p['user_name']] = true;
+                        }
+                        $unique_users = array_keys($unique_users);
+                        sort($unique_users);
+                    ?>
+                    <select id="filter_user" onchange="filterPagesByUser()" style="padding:4px 8px; font-size:12px; border-radius:4px; border:1px solid #d1d5db; background:#fff; color:#374151; cursor:pointer;">
+                        <option value="ALL">-- Tất cả người quản lý --</option>
+                        <?php foreach($unique_users as $u): ?>
+                            <option value="<?php echo htmlspecialchars($u); ?>"><?php echo htmlspecialchars($u); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div style="max-height:320px; overflow-y:auto; border:1px solid #d1d5db; border-radius:6px; padding:10px; background:#fff;">
+                    <label style="display:flex; align-items:center; gap:8px; margin-bottom:8px; font-weight:600; cursor:pointer; color:#0284c7; font-size:13px;">
+                        <input type="checkbox" id="rule_pages_all" onchange="toggleAllPages(this)" checked> Chọn tất cả (theo bộ lọc)
+                    </label>
+                    <div id="rule_pages_list">
+                        <?php if(!empty($pages)): foreach($pages as $p): ?>
+                            <label class="page_item_label" data-user="<?php echo htmlspecialchars($p['user_name']); ?>" style="display:flex; align-items:center; gap:10px; margin-bottom:8px; cursor:pointer; font-size:13px; background:#f9fafb; padding:8px 12px; border:1px solid #e5e7eb; border-radius:6px; transition:all 0.2s;">
+                                <input type="checkbox" class="rule_page_cb" value="<?php echo htmlspecialchars($p['page_id']); ?>" onchange="checkSelectAll()" checked style="margin:0; width:16px; height:16px;">
+                                <img src="<?php echo htmlspecialchars($p['avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($p['name']).'&background=random'); ?>" style="width:28px; height:28px; border-radius:50%; object-fit:cover; border:1px solid #e5e7eb;">
+                                <div style="display:flex; flex-direction:column;">
+                                    <span style="font-weight:600; color:#1f2937; line-height:1.2;"><?php echo htmlspecialchars($p['name']); ?></span>
+                                    <span style="font-size:11px; color:#6b7280; margin-top:2px;">👤 <?php echo htmlspecialchars($p['user_name']); ?></span>
+                                </div>
+                            </label>
+                        <?php endforeach; endif; ?>
+                    </div>
+                </div>
+                </div>
+            </div> <!-- End of right column -->
+            </div> <!-- End of flex row -->
+
+            <div style="text-align: right; margin-top:10px; padding-top:15px; border-top:1px solid #e5e7eb;">
                 <button type="button" onclick="document.getElementById('autoReplyModal').style.display='none';" class="btn" style="background:#f3f4f6; color:#374151; margin-right:10px;">Hủy</button>
                 <button type="submit" class="btn btn-primary" id="btn_save_setup">Lưu Cấu Hình</button>
             </div>
@@ -101,6 +149,19 @@ Chào {name}, shop đã gửi thông tin qua inbox...
 function saveAutoSetup(e) {
     e.preventDefault();
     const btn = document.getElementById('btn_save_setup');
+    
+    let pagesScope = 'ALL';
+    // Lấy danh sách đang hiển thị và được check (hoặc lấy tất cả check)
+    // Nếu chọn tất cả thì để ALL, ngược lại lưu JSON
+    if (!document.getElementById('rule_pages_all').checked) {
+        const checkedVals = Array.from(document.querySelectorAll('.rule_page_cb:checked')).map(el => el.value);
+        pagesScope = JSON.stringify(checkedVals);
+        if (checkedVals.length === 0) {
+            alert('Vui lòng chọn ít nhất 1 Fanpage!');
+            return;
+        }
+    }
+
     btn.disabled = true;
     btn.innerText = 'Đang lưu...';
 
@@ -109,6 +170,7 @@ function saveAutoSetup(e) {
     fd.append('auto_reply_text', document.getElementById('txt_auto_reply').value);
     fd.append('auto_inbox_enabled', document.getElementById('chk_auto_inbox').checked ? 1 : 0);
     fd.append('auto_inbox_text', document.getElementById('txt_auto_inbox').value);
+    fd.append('auto_pages_scope', pagesScope);
 
     fetch('actions/save_auto_reply.php', {
         method: 'POST',
@@ -144,6 +206,64 @@ function showInlineAlert(typeClass, msg) {
     setTimeout(() => {
         alertBox.style.display = 'none';
     }, 3000);
+}
+
+// Checkbox logic
+let savedPagesScope = '<?php echo $auto_pages_scope; ?>';
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (savedPagesScope === 'ALL' || savedPagesScope === '') {
+        document.getElementById('rule_pages_all').checked = true;
+        document.querySelectorAll('.rule_page_cb').forEach(el => el.checked = true);
+    } else {
+        document.getElementById('rule_pages_all').checked = false;
+        document.querySelectorAll('.rule_page_cb').forEach(el => el.checked = false);
+        try {
+            const arr = JSON.parse(savedPagesScope);
+            document.querySelectorAll('.rule_page_cb').forEach(el => {
+                if (arr.includes(el.value)) el.checked = true;
+            });
+            checkSelectAll();
+        } catch(e) {}
+    }
+});
+
+function filterPagesByUser() {
+    const user = document.getElementById('filter_user').value;
+    const labels = document.querySelectorAll('.page_item_label');
+    labels.forEach(lbl => {
+        if (user === 'ALL' || lbl.getAttribute('data-user') === user) {
+            lbl.style.display = 'flex';
+        } else {
+            lbl.style.display = 'none';
+        }
+    });
+    checkSelectAll();
+}
+
+function toggleAllPages(cb) {
+    const labels = document.querySelectorAll('.page_item_label');
+    labels.forEach(lbl => {
+        if (lbl.style.display !== 'none') {
+            lbl.querySelector('.rule_page_cb').checked = cb.checked;
+        }
+    });
+    checkSelectAll();
+}
+
+function checkSelectAll() {
+    let totalVisible = 0;
+    let checkedVisible = 0;
+    const labels = document.querySelectorAll('.page_item_label');
+    labels.forEach(lbl => {
+        if (lbl.style.display !== 'none') {
+            totalVisible++;
+            if (lbl.querySelector('.rule_page_cb').checked) {
+                checkedVisible++;
+            }
+        }
+    });
+    document.getElementById('rule_pages_all').checked = (totalVisible > 0 && totalVisible === checkedVisible);
 }
 </script>
 

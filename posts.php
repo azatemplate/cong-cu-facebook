@@ -243,36 +243,24 @@ $pages_json = json_encode($pages);
         });
     });
     
-    // Hỗ trợ chọn nhiều file từ Drive (giống videos.php)
-    function onDriveFileSelected(fileId, fileName) {
-        let currentIds = document.getElementById('drive_file_id').value;
-        let idArray = currentIds ? currentIds.split(',') : [];
-        
-        let currentNamesText = document.getElementById('driveSelectedName').innerText;
-        let nameArray = currentNamesText ? currentNamesText.split(', ') : [];
-        
-        // Cập nhật giá trị vào mảng
-        if (Array.isArray(fileId)) {
-            idArray = fileId;
-            nameArray = Array.isArray(fileName) ? fileName : [fileName];
-        } else {
-             if(idArray.length === 0 && !Array.isArray(fileId)) {
-                  idArray.push(fileId);
-                  nameArray.push(fileName);
-             } else {
-                 if (!idArray.includes(fileId)) {
-                    idArray.push(fileId);
-                    nameArray.push(fileName);
-                 }
-             }
-        }
+    // Hỗ trợ chọn nhiều file từ Drive - dùng onDriveFilesSelected (plural) để nhận toàn bộ mảng
+    function onDriveFilesSelected(files) {
+        const idArray = files.map(f => f.id);
+        const nameArray = files.map(f => f.name);
         
         document.getElementById('drive_file_id').value = idArray.join(',');
         const imagesEl = document.getElementById('images');
         if (imagesEl) imagesEl.value = ''; // Xóa local file
         
         document.getElementById('driveSelectedCount').innerText = idArray.length;
-        document.getElementById('driveSelectedName').innerText = nameArray.join(', ');
+        // Chỉ hiển thị tối đa 3 tên file, còn lại ghi "và X file khác"
+        let displayName = '';
+        if (nameArray.length <= 3) {
+            displayName = nameArray.join(', ');
+        } else {
+            displayName = nameArray.slice(0, 3).join(', ') + ` và ${nameArray.length - 3} file khác`;
+        }
+        document.getElementById('driveSelectedName').innerText = displayName;
         document.getElementById('driveSelectionInfo').style.display = 'block';
     }
     

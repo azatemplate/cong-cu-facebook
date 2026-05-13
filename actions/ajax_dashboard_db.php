@@ -25,11 +25,10 @@ $end_datetime = $end_date . ' 23:59:59';
 
 // 1. Total Users
 if ($is_admin) {
-    $stmt = $pdo->prepare("SELECT COUNT(*) as total_users FROM users WHERE created_at BETWEEN ? AND ?");
-    $stmt->execute([$start_datetime, $end_datetime]);
+    $stmt = $pdo->query("SELECT COUNT(*) as total_users FROM users");
 } else {
-    $stmt = $pdo->prepare("SELECT COUNT(*) as total_users FROM users WHERE account_id = ? AND created_at BETWEEN ? AND ?");
-    $stmt->execute([$account_id, $start_datetime, $end_datetime]);
+    $stmt = $pdo->prepare("SELECT COUNT(*) as total_users FROM users WHERE account_id = ?");
+    $stmt->execute([$account_id]);
 }
 $total_users = $stmt->fetchColumn();
 

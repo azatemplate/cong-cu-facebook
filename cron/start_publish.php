@@ -99,11 +99,13 @@ if ($available_slots <= 0) {
     exit;
 }
 
-// Tìm các page có bài cần đăng: pending HOẶC failed còn retry (retry_count < max từ accounts)
+// Tìm các bài cần đăng và nhóm theo user_id (Token User) để đảm bảo 1 Token User chỉ chạy 1 worker
+// Mỗi Token User sẽ xử lý tuần tự tất cả các page của mình với delay giữa mỗi post
 $sql = "
-    SELECT DISTINCT sp.page_id, sp.account_id 
+    SELECT DISTINCT sp.page_id, sp.account_id, p.user_id
     FROM scheduled_posts sp
     LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+    LEFT JOIN pages p ON sp.page_id = p.page_id
     WHERE sp.scheduled_time <= NOW()
       AND sp.page_id IS NOT NULL
       AND (
@@ -126,40 +128,46 @@ if (empty($raw_pages)) {
     exit;
 }
 
-// Nhóm page theo từng định danh User để phân phối Round-Robin
-$pages_by_account = [];
+// ── Nhóm page theo user_id (Token User) ──────────────────────────────────
+// Mỗi user_id sẽ chỉ có 1 worker duy nhất, xử lý tuần tự tất cả page của user đó
+$pages_by_user = [];
 foreach ($raw_pages as $row) {
-    // Lưu ý: Có trường hợp hiếm hoi account_id null nếu dữ liệu rác, nên fallback
-    $acc_id = $row['account_id'] ?: 'unknown';
-    $pages_by_account[$acc_id][] = $row['page_id'];
+    $uid = $row['user_id'] ?: ('noid_' . $row['page_id']); // Fallback nếu không có user_id
+    if (!isset($pages_by_user[$uid])) {
+        $pages_by_user[$uid] = [];
+    }
+    $pages_by_user[$uid][] = $row['page_id'];
 }
 
-// Thuật toán Round-Robin lấy công bằng Page cho tất cả các User đang chờ
-$selected_pages = [];
+// Round-Robin chọn user_id để đảm bảo công bằng
+$selected_users = [];
 $keep_going = true;
+$user_keys = array_keys($pages_by_user);
 
-while ($keep_going && count($selected_pages) < $available_slots) {
+while ($keep_going && count($selected_users) < $available_slots) {
     $keep_going = false;
-    foreach ($pages_by_account as $acc_id => &$account_pages) {
-        if (!empty($account_pages)) {
-            $selected_pages[] = array_shift($account_pages);
+    foreach ($user_keys as $uid) {
+        if (!in_array($uid, $selected_users)) {
+            $selected_users[] = $uid;
             $keep_going = true;
-            if (count($selected_pages) >= $available_slots) {
+            if (count($selected_users) >= $available_slots) {
                 break 2;
             }
         }
     }
 }
 
-$pages = $selected_pages; // Gán lại mảng cho vòng lặp exec bên dưới
-
-echo "Co " . count($raw_pages) . " Fanpage tren he thong dang cho. Da xuat ra " . count($pages) . " luong cong bang (Round-Robin)...\n";
+$total_pages = count($raw_pages);
+$total_users = count($selected_users);
+echo "Co {$total_pages} Fanpage tren {$total_users} Token User dang cho. Moi Token User = 1 Worker doc lap...\n";
 
 $is_web = isset($_SERVER['HTTP_HOST']);
 $exec_enabled = function_exists('exec') && strpos(ini_get('disable_functions'), 'exec') === false;
 
-foreach ($pages as $pid) {
-    if (!$pid) continue; // Skip NULL
+foreach ($selected_users as $uid) {
+    $user_page_ids = $pages_by_user[$uid];
+    // Truyền danh sách page_ids cho worker, cách nhau bởi dấu phẩy
+    $page_ids_str = implode(',', $user_page_ids);
     
     if ($exec_enabled) {
         $php_bin = 'php';
@@ -176,27 +184,26 @@ foreach ($pages as $pid) {
         $script_path = __DIR__ . DIRECTORY_SEPARATOR . 'publish_worker.php';
         
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-            pclose(popen("start /B \"\" \"$php_bin\" \"$script_path\" \"$pid\"", "r"));
+            pclose(popen("start /B \"\" \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$uid\"", "r"));
         } else {
-            exec("\"$php_bin\" \"$script_path\" \"$pid\" > /dev/null 2>&1 &");
+            exec("\"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$uid\" > /dev/null 2>&1 &");
         }
-        echo "  -> Da kich hoat luong CLI ($php_bin) cho Page ID: $pid\n";
+        echo "  -> Da kich hoat luong CLI cho Token User #$uid (" . count($user_page_ids) . " pages: $page_ids_str)\n";
     } elseif ($is_web) {
         // Fallback Web-Forking (cURL Async) qua Wrapper goc
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
-        // Attempt to build accurate web path to current cron directory
         $doc_root = $_SERVER['DOCUMENT_ROOT'];
         $root_web_path = rtrim(str_replace('\\', '/', str_replace($doc_root, '', dirname(__DIR__))), '/');
         
-        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . $root_web_path . "/run_worker.php?type=publish&page_id=" . urlencode($pid);
+        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . $root_web_path . "/run_worker.php?type=publish&page_id=" . urlencode($page_ids_str) . "&user_id=" . urlencode($uid);
 
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500); // Tang timeout de webserver kip nhan request kich luong
+        curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500);
         curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
         curl_exec($ch);
         curl_close($ch);
-        echo "  -> Da kich luong WEB-AJAX cho Page ID: $pid\n";
+        echo "  -> Da kich luong WEB-AJAX cho Token User #$uid (" . count($user_page_ids) . " pages)\n";
     } else {
         echo "  -> THAT BAI: Ham exec() bi khoa.\n";
     }

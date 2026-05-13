@@ -261,7 +261,7 @@ function status_label($s) {
             <thead>
                 <tr style="background:var(--card-bg);border-bottom:2px solid var(--border-color);">
                     <th style="width:36px;padding:10px 12px;"></th>
-                    <th style="text-align:left;padding:10px 16px;font-size:13px;color:var(--text-muted);font-weight:500;">Fanpage</th>
+                    <th style="text-align:left;padding:10px 16px;font-size:13px;color:var(--text-muted);font-weight:500;width:300px;max-width:300px;">Fanpage</th>
                     <th style="text-align:left;padding:10px 16px;font-size:13px;color:var(--text-muted);font-weight:500;">Loại</th>
                     <th style="text-align:left;padding:10px 16px;font-size:13px;color:var(--text-muted);font-weight:500;">Thời gian hẹn</th>
                     <th style="text-align:left;padding:10px 16px;font-size:13px;color:var(--text-muted);font-weight:500;">Trạng thái</th>
@@ -285,7 +285,7 @@ function status_label($s) {
                     <input type="checkbox" name="post_ids[]" value="<?php echo $post['id']; ?>" class="row-check">
                     <?php endif; ?>
                 </td>
-                <td style="padding:10px 16px;">
+                <td style="padding:10px 16px;width:300px;max-width:300px;">
                     <div style="display:flex;align-items:center;gap:8px;">
                         <?php if ($post['post_type'] !== 'YouTube' && !empty($post['page_avatar'])): ?>
                             <img src="<?php echo htmlspecialchars($post['page_avatar']); ?>" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;" alt="">
@@ -294,15 +294,15 @@ function status_label($s) {
                                 <?php echo mb_strtoupper(mb_substr($post['page_name'] ?? '—', 0, 1)); ?>
                             </div>
                         <?php endif; ?>
-                        <div>
-                            <div style="font-weight:500;font-size:13px;"><?php 
-                                if ($post['post_type'] === 'YouTube') {
-                                    echo htmlspecialchars($post['yt_channel_name'] ?? '—');
-                                } else {
-                                    echo htmlspecialchars($post['page_name'] ?? '—');
-                                }
+                        <div style="min-width:0;flex:1;">
+                            <?php 
+                                $disp_name = ($post['post_type'] === 'YouTube') ? ($post['yt_channel_name'] ?? '—') : ($post['page_name'] ?? '—');
+                                $disp_desc = !empty($original_source) ? $original_source : $desc;
+                            ?>
+                            <div style="font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="<?php echo htmlspecialchars($disp_name); ?>"><?php 
+                                echo htmlspecialchars($disp_name);
                             ?></div>
-                            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;"><?php 
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;" title="<?php echo htmlspecialchars($disp_desc); ?>"><?php 
                                 if (!empty($original_source)) {
                                     echo htmlspecialchars($original_source);
                                 } else {

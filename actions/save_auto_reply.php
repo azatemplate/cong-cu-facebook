@@ -22,10 +22,11 @@ $auto_reply_enabled = isset($_POST['auto_reply_enabled']) ? intval($_POST['auto_
 $auto_reply_text = isset($_POST['auto_reply_text']) ? trim($_POST['auto_reply_text']) : '';
 $auto_inbox_enabled = isset($_POST['auto_inbox_enabled']) ? intval($_POST['auto_inbox_enabled']) : 0;
 $auto_inbox_text = isset($_POST['auto_inbox_text']) ? trim($_POST['auto_inbox_text']) : '';
+$auto_pages_scope = isset($_POST['auto_pages_scope']) ? $_POST['auto_pages_scope'] : 'ALL';
 
 try {
-    $stmt = $pdo->prepare("UPDATE system_accounts SET auto_reply_enabled = ?, auto_reply_text = ?, auto_inbox_enabled = ?, auto_inbox_text = ? WHERE id = ?");
-    $stmt->execute([$auto_reply_enabled, $auto_reply_text, $auto_inbox_enabled, $auto_inbox_text, $account_id]);
+    $stmt = $pdo->prepare("UPDATE system_accounts SET auto_reply_enabled = ?, auto_reply_text = ?, auto_inbox_enabled = ?, auto_inbox_text = ?, auto_pages_scope = ? WHERE id = ?");
+    $stmt->execute([$auto_reply_enabled, $auto_reply_text, $auto_inbox_enabled, $auto_inbox_text, $auto_pages_scope, $account_id]);
     
     echo json_encode(['status' => 'success', 'msg' => 'Đã lưu cấu hình tự động.']);
 } catch (Exception $e) {

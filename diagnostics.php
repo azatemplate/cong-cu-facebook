@@ -135,6 +135,14 @@ $processing_posts = $pdo->query("
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Bài chờ điều kiện Insights ──────────────────────────────────────────────
+$insights_total_count = (int)$pdo->query("
+    SELECT COUNT(*)
+    FROM scheduled_posts
+    WHERE status = 'published' 
+      AND comment_mode = 'insights' 
+      AND comment_done = 0
+")->fetchColumn();
+
 $insights_waiting = $pdo->query("
     SELECT sp.id, sp.page_id, sp.fb_post_id, sp.comment_threshold_views, 
            sp.comment_threshold_likes, sp.comment_threshold_comments,
@@ -310,7 +318,7 @@ tr:hover td { background: #1e293b55; }
             <div style="font-size:12px;color:#94a3b8;margin-top:4px;">🚀 Quá giờ — Cần đăng ngay</div>
         </div>
         <div style="flex:1;min-width:140px;background:#10b98111;border:1px solid #10b98133;border-radius:8px;padding:12px;text-align:center;">
-            <div style="font-size:28px;font-weight:bold;color:#10b981;"><?= count($insights_waiting) ?></div>
+            <div style="font-size:28px;font-weight:bold;color:#10b981;"><?= $insights_total_count ?></div>
             <div style="font-size:12px;color:#94a3b8;margin-top:4px;">📊 Chờ Insights bình luận</div>
         </div>
     </div>
@@ -409,7 +417,7 @@ tr:hover td { background: #1e293b55; }
 <!-- Bài chờ Insights -->
 <div class="card" style="border-left: 5px solid #10b981;">
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h2 style="color: #10b981;">📊 Bài chờ điều kiện Bình luận (Insights - <?= count($insights_waiting) ?> bài)</h2>
+        <h2 style="color: #10b981;">📊 Bài chờ điều kiện Bình luận (Insights - <?= $insights_total_count ?> bài<?= $insights_total_count > 20 ? ', hiển thị 20 mới nhất' : '' ?>)</h2>
         <div style="text-align:right">
             <span style="font-size:12px; color:#64748b">Lần cuối Cron chạy:</span>
             <strong style="color:<?php

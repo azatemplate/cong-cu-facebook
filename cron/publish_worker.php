@@ -24,26 +24,48 @@ if (isset($_GET['reset_report']) && $_GET['reset_report'] == '1') {
 }
 
 
-$target_page_id = isset($argv[1]) ? trim($argv[1]) : '';
-if (empty($target_page_id) && isset($_GET['page_id'])) {
-    $target_page_id = trim($_GET['page_id']);
+// Nhận danh sách page_ids (phẩy cách) từ dispatcher - tất cả thuộc cùng 1 Token User
+$raw_page_input = isset($argv[1]) ? trim($argv[1]) : '';
+if (empty($raw_page_input) && isset($_GET['page_id'])) {
+    $raw_page_input = trim($_GET['page_id']);
 }
-if (empty($target_page_id)) {
+if (empty($raw_page_input)) {
     echo "Tiến trình gọi thiếu Page ID. Hủy bỏ.\n";
     exit;
 }
+
+// Parse danh sách page_ids
+$target_page_ids = array_filter(array_map('trim', explode(',', $raw_page_input)));
+if (empty($target_page_ids)) {
+    echo "Danh sách Page ID rỗng. Hủy bỏ.\n";
+    exit;
+}
+
+// Nhận user_id từ dispatcher (argv[2] hoặc $_GET['user_id'])
+$user_id_lock = isset($argv[2]) ? trim($argv[2]) : '';
+if (empty($user_id_lock) && isset($_GET['user_id'])) {
+    $user_id_lock = trim($_GET['user_id']);
+}
+
+// Dùng biến $target_page_id cho tương thích ngược (single page fallback)
+$target_page_id = $target_page_ids[0];
 
 $lock_dir = __DIR__ . '/../locks';
 if (!is_dir($lock_dir)) {
     @mkdir($lock_dir, 0777, true);
 }
-$lock_file = $lock_dir . "/publish_page_" . md5($target_page_id) . ".lock";
+
+// Lock theo Token User ID (thay vì page_ids) để ngăn 2 worker cùng user chạy đồng thời
+// Khi cron chạy lại mà worker cũ chưa xong, page set có thể khác → md5(page_ids) khác → lock cũ không chặn
+// Dùng user_id đảm bảo chỉ 1 worker/user bất kể page set nào
+$lock_key = !empty($user_id_lock) ? md5('uid_' . $user_id_lock) : md5($raw_page_input);
+$lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
 
 // Xoá lock file cũ nếu quá 15 phút (worker cũ crash không release)
 $lock_stale_seconds = 15 * 60;
 if (file_exists($lock_file) && (time() - filemtime($lock_file)) > $lock_stale_seconds) {
     @unlink($lock_file);
-    echo "  ⚠ Lock file cũ hơn 15 phút đã được dọn sạch cho Page ID: $target_page_id\n";
+    echo "  ⚠ Lock file cũ hơn 15 phút đã được dọn sạch.\n";
 }
 
 $lock_fp = @fopen($lock_file, 'c');
@@ -65,12 +87,12 @@ while ($lock_wait < 5) {
 }
 
 if (!$lock_got) {
-    echo "Tiến trình Page ID #$target_page_id đang chạy (lock không giải phóng sau 5s), vùi lòng đợi...\n";
+    echo "Worker cho Token User này đang chạy (lock không giải phóng sau 5s), bỏ qua...\n";
     fclose($lock_fp);
     exit;
 }
 
-echo "Tien trinh xu ly thoi gian thuc doc lap cho Page ID: #$target_page_id\n";
+echo "Worker khởi động cho " . count($target_page_ids) . " Pages: " . implode(', ', $target_page_ids) . "\n";
 
 // Khong sleep Thundering Herd (moi worker la 1 process doc lap per-page, khong tranh chap)
 require_once __DIR__ . '/../includes/db.php';
@@ -288,23 +310,28 @@ class TokenLocker {
     }
 }
 
-// 1. Fetch pending posts where scheduled_time <= NOW() AND page_id matches
+// 1. Fetch pending posts for ALL page_ids of this Token User
 $retry_clause = $has_retry_count
     ? "OR (sp.status = 'failed' AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3)))"
     : '';
-$stmt = $pdo->prepare("
-    SELECT sp.*, sa.max_retries AS sa_max_retries, sa.retry_interval_minutes AS sa_retry_interval 
+
+// Build placeholders cho IN clause
+$placeholders = implode(',', array_fill(0, count($target_page_ids), '?'));
+$sql = "
+    SELECT sp.*, sa.max_retries AS sa_max_retries, sa.retry_interval_minutes AS sa_retry_interval, sa.post_delay_seconds AS sa_delay
     FROM scheduled_posts sp 
     LEFT JOIN system_accounts sa ON sp.account_id = sa.id 
     WHERE (sp.status = 'pending' $retry_clause) 
       AND sp.scheduled_time <= NOW() 
-      AND sp.page_id = ?
-");
+      AND sp.page_id IN ($placeholders)
+    ORDER BY sp.scheduled_time ASC
+";
+$stmt = $pdo->prepare($sql);
 if (!$stmt) {
     file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - Prepare Error: " . print_r($pdo->errorInfo(), true) . "\n", FILE_APPEND);
     exit;
 }
-if (!$stmt->execute([$target_page_id])) {
+if (!$stmt->execute($target_page_ids)) {
     file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - Execute Error: " . print_r($stmt->errorInfo(), true) . "\n", FILE_APPEND);
     exit;
 }
@@ -320,20 +347,33 @@ if (!empty($pending_posts)) {
 }
 
 if (empty($pending_posts)) {
-    echo "Không có bài viết nào cần đăng cho Page ID: $target_page_id.\n";
+    echo "Không có bài viết nào cần đăng cho " . count($target_page_ids) . " Pages.\n";
     echo "-------------------------------------------\n";
     exit;
 }
 
-// Xáo trộn ngẫu nhiên tất cả bài đăng chờ trong nội bộ Account để công bằng giữa các Page.
+// Lấy delay cấu hình từ DB (đã có sẵn từ query)
+$user_delay_sec = 15;
+if (isset($pending_posts[0]['sa_delay']) && $pending_posts[0]['sa_delay'] !== null) {
+    $user_delay_sec = (int)$pending_posts[0]['sa_delay'];
+}
+
+// Xáo trộn ngẫu nhiên để công bằng giữa các Page trong cùng Token User
 shuffle($pending_posts);
 
-echo "Tìm thấy " . count($pending_posts) . " bài viết cần đăng.\n";
+echo "Tìm thấy " . count($pending_posts) . " bài viết cần đăng (Delay: {$user_delay_sec}s giữa mỗi post).\n";
 
 $account_published_today = [];
 $account_limits = [];
+$post_index = 0; // Đếm số post đã xử lý để áp dụng delay
 
 foreach ($pending_posts as $post) {
+    // ── Delay giữa mỗi post (bỏ qua post đầu tiên) ──────────────────────
+    if ($post_index > 0 && $user_delay_sec > 0) {
+        echo "   → Chờ {$user_delay_sec}s trước khi đăng post tiếp theo (Token User delay)...\n";
+        sleep($user_delay_sec);
+    }
+    $post_index++;
     echo "Đang xử lý bài đăng ID: {$post['id']} - Loại: {$post['post_type']}\n";
 
     // Lưu account_id cho hàm marKAsFailed có thể gửi Telegram
@@ -411,6 +451,19 @@ foreach ($pending_posts as $post) {
             continue;
         }
         $access_token = $token_data['access_token'];
+
+        // Khởi tạo Lock cho YouTube API dựa trên ID Kênh (Channel ID)
+        $yt_delay_sec = 15;
+        if ($post['account_id'] > 0) {
+            try {
+                $stmt_d = $pdo->prepare("SELECT post_delay_seconds FROM system_accounts WHERE id = ?");
+                $stmt_d->execute([$post['account_id']]);
+                $d = $stmt_d->fetchColumn();
+                if ($d !== false) $yt_delay_sec = (int)$d;
+            } catch (Exception $ed) {}
+        }
+        $yt_lock_id = "yt_channel_" . $post['page_id'];
+        $yt_locker = new TokenLocker($yt_lock_id, $yt_delay_sec);
 
         // Download Media (nếu là Tiktok hoặc Drive)
         $raw_media = $post['media_path'];
@@ -491,14 +544,25 @@ foreach ($pending_posts as $post) {
 
             $channel_title = isset($yt_channel['channel_title']) ? $yt_channel['channel_title'] : '';
             $ai_json = rewrite_youtube_with_ai($base_text, $post['account_id'], $channel_title);
-            if ($ai_json && is_array($ai_json)) {
-                if (!empty($ai_json['title']))
-                    $content_data['title'] = $ai_json['title'];
-                if (!empty($ai_json['description']))
-                    $content_data['description'] = $ai_json['description'];
-                if (!empty($ai_json['tags']))
-                    $content_data['tags'] = $ai_json['tags'];
+            // Nếu AI thất bại (null), thử lại 1 lần sau 3 giây
+            if (!$ai_json || !is_array($ai_json)) {
+                echo "   → AI YouTube lần 1 thất bại, thử lại sau 3s...\n";
+                sleep(3);
+                $ai_json = rewrite_youtube_with_ai($base_text, $post['account_id'], $channel_title);
             }
+            // Nếu vẫn thất bại → đánh dấu failed để tránh đăng nội dung trùng lặp (filename)
+            if (!$ai_json || !is_array($ai_json)) {
+                echo "   → AI YouTube vẫn thất bại sau 2 lần thử. Bỏ qua bài này.\n";
+                marKAsFailed($pdo, $post['id'], "AI không thể viết nội dung YouTube (API lỗi/quá tải). Sẽ thử lại lượt cron tiếp theo.", $sys_max_retries, $sys_retry_interval);
+                if ($temp_drive_file && file_exists($temp_drive_file)) @unlink($temp_drive_file);
+                continue;
+            }
+            if (!empty($ai_json['title']))
+                $content_data['title'] = $ai_json['title'];
+            if (!empty($ai_json['description']))
+                $content_data['description'] = $ai_json['description'];
+            if (!empty($ai_json['tags']))
+                $content_data['tags'] = $ai_json['tags'];
         } elseif (isset($content_data['auto_title']) && $content_data['auto_title'] && empty($content_data['title'])) {
             $content_data['title'] = $t_title_override;
             if (empty($content_data['description'])) {
@@ -683,20 +747,8 @@ foreach ($pending_posts as $post) {
     $page_access_token = decryptData($page['access_token']);
     $fanpage_name = isset($page['name']) ? $page['name'] : '';
 
-    // Khởi tạo Lock dựa trên token. Chỉ 1 process cùng token được chạy qua đoạn này tại 1 thời điểm.
-    $token_user_id = $page['user_id'] ?? 0;
-    $acc_id = $page['account_id'] ?? $post['account_id'] ?? 0;
-    
-    $delay_sec = 15;
-    if ($acc_id > 0) {
-        try {
-            $stmt_d = $pdo->prepare("SELECT post_delay_seconds FROM system_accounts WHERE id = ?");
-            $stmt_d->execute([$acc_id]);
-            $d = $stmt_d->fetchColumn();
-            if ($d !== false) $delay_sec = (int)$d;
-        } catch (Exception $ed) {}
-    }
-    $locker = new TokenLocker($token_user_id, $delay_sec);
+    // Delay đã được xử lý ở đầu vòng lặp (sleep $user_delay_sec giữa mỗi post)
+    // Không cần TokenLocker nữa vì 1 Token User = 1 Worker duy nhất
 
     // 4. Prepare payload
     $endpoint = '';
@@ -733,7 +785,17 @@ foreach ($pending_posts as $post) {
             $p_desc = spin_text($parsed_content['description']);
             $use_ai = isset($parsed_content['use_ai']) && $parsed_content['use_ai'];
             if ($use_ai && !empty($p_desc)) {
+                $ai_original = $p_desc;
                 $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
+                if ($p_desc === $ai_original) {
+                    echo "   → AI lần 1 thất bại (multi-image), thử lại sau 3s...\n";
+                    sleep(3);
+                    $p_desc = rewrite_content_with_ai($ai_original, $post['account_id'], false, $fanpage_name);
+                }
+                if ($p_desc === $ai_original) {
+                    marKAsFailed($pdo, $post['id'], "AI không thể viết nội dung (API lỗi). Sẽ thử lại lượt cron tiếp theo.", $sys_max_retries, $sys_retry_interval);
+                    continue;
+                }
             }
         } else {
             $p_desc = spin_text($post['content']);
@@ -884,7 +946,18 @@ foreach ($pending_posts as $post) {
             $use_ai = isset($parsed_content['use_ai']) && $parsed_content['use_ai'];
 
             if ($use_ai && !empty($p_desc)) {
+                $ai_original = $p_desc;
                 $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
+                if ($p_desc === $ai_original) {
+                    echo "   → AI lần 1 thất bại (Status/Image), thử lại sau 3s...\n";
+                    sleep(3);
+                    $p_desc = rewrite_content_with_ai($ai_original, $post['account_id'], false, $fanpage_name);
+                }
+                if ($p_desc === $ai_original) {
+                    marKAsFailed($pdo, $post['id'], "AI không thể viết nội dung (API lỗi). Sẽ thử lại lượt cron tiếp theo.", $sys_max_retries, $sys_retry_interval);
+                    if ($temp_drive_file && file_exists($temp_drive_file)) @unlink($temp_drive_file);
+                    continue;
+                }
             }
             $post_data['message'] = $p_desc;
             $post['content'] = $p_desc;
@@ -924,8 +997,23 @@ foreach ($pending_posts as $post) {
                         // Checkbox auto_title OFF: {prompt} = chỉ nội dung user nhập
                         $ai_input = $p_desc;
                     }
-                    if (!empty($ai_input))
+                    if (!empty($ai_input)) {
+                        $ai_original = $ai_input;
                         $p_desc = rewrite_content_with_ai($ai_input, $post['account_id'], false, $fanpage_name);
+                        // Nếu AI trả về nguyên bản (nghĩa là lỗi API), thử lại 1 lần sau 3 giây
+                        if ($p_desc === $ai_original) {
+                            echo "   → AI lần 1 thất bại, thử lại sau 3s...\n";
+                            sleep(3);
+                            $p_desc = rewrite_content_with_ai($ai_input, $post['account_id'], false, $fanpage_name);
+                        }
+                        // Nếu vẫn thất bại → đánh dấu failed để tránh đăng nội dung trùng lặp (filename)
+                        if ($p_desc === $ai_original) {
+                            echo "   → AI vẫn thất bại sau 2 lần thử. Bỏ qua bài này.\n";
+                            marKAsFailed($pdo, $post['id'], "AI không thể viết nội dung (API lỗi/quá tải). Sẽ thử lại lượt cron tiếp theo.", $sys_max_retries, $sys_retry_interval);
+                            if ($temp_drive_file && file_exists($temp_drive_file)) @unlink($temp_drive_file);
+                            continue;
+                        }
+                    }
                     if (!empty($p_title) && $post_type !== 'Reel')
                         $p_title = rewrite_content_with_ai($p_title, $post['account_id'], true, $fanpage_name);
                 }
@@ -1162,5 +1250,7 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
         $short_msg = mb_strimwidth($msg, 0, 150, '…');
         send_telegram_notification($pdo, $GLOBALS['_current_account_id'] ?? 0, "<b>Đăng bài thất bại!</b>\n🆔 Bài ID: {$id}\n💬 Lỗi: {$short_msg}\n🔄 Đã thử: {$new_retry}/{$max_retries} lần", 'error');
     }
+
+    if (isset($yt_locker)) unset($yt_locker);
 }
 ?>
