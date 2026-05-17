@@ -354,13 +354,14 @@ require_once __DIR__ . '/fb_api.php';
                                     if (data.failed_posts.length > 0) {
                                         html += `<div style="font-weight:bold;font-size:12px;margin-bottom:5px;color:#b91c1c;">Lỗi bài viết (${data.failed_posts.length})</div>`;
                                         data.failed_posts.forEach(fp => {
-                                            html += `<a href="manage_posts.php?status=failed" style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-color);text-decoration:none;color:inherit;">
+                                            const fpLink = fp.campaign_id ? `campaign_detail.php?id=${fp.campaign_id}` : `manage_posts.php?status=failed`;
+                                            html += `<div onclick="readNotif('fp_${fp.id}', '${fpLink}')" style="cursor:pointer;display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-color);text-decoration:none;color:inherit;">
                                                 <div style="font-size:16px;">⚠️</div>
                                                 <div style="flex:1;">
                                                     <div style="font-weight:500;color:#b91c1c;margin-bottom:2px;">${fp.page_name}</div>
                                                     <div style="font-size:11px;color:var(--text-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${fp.error_msg}</div>
                                                 </div>
-                                            </a>`;
+                                            </div>`;
                                         });
                                     }
                                     if (data.live_notifs.length > 0) {

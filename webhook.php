@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/fb_api.php';
+require_once __DIR__ . '/includes/ai_rewriter.php';
 
 // Cấu hình mã xác minh (Verify Token) cho Webhook
 $verify_token = 'HVP_WEBHOOK_VERIFY_TOKEN_2026'; // Bạn có thể đổi mã này và nhập vào form cấu hình Webhook trên Facebook App
@@ -217,7 +218,118 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                     }
                                     if ($found) {
                                         $send_bot_msg($rule['message']);
+                                        $matched_rule = true;
                                         break; // Chỉ trả lời 1 rule đầu tiên khớp
+                                    }
+                                }
+                            }
+
+                            // 3. Kiểm tra AI Reply rule (nếu không phải welcome và không khớp keyword)
+                            if (!$matched_rule && $is_message && !empty($text)) {
+                                $st_ai = $pdo->prepare("SELECT * FROM bot_chat_rules WHERE account_id=? AND is_active=1 AND rule_type='ai_reply'");
+                                $st_ai->execute([$acc_id]);
+                                $ai_rules_all = $st_ai->fetchAll(PDO::FETCH_ASSOC);
+                                
+                                $ai_rule = null;
+                                foreach ($ai_rules_all as $r) {
+                                    if ($r['pages_scope'] === 'ALL') {
+                                        $ai_rule = $r; break;
+                                    } else {
+                                        $scope_arr = @json_decode($r['pages_scope'], true);
+                                        if (is_array($scope_arr) && in_array($page_id, $scope_arr)) {
+                                            $ai_rule = $r; break;
+                                        }
+                                    }
+                                }
+
+                                if ($ai_rule) {
+                                    $delay_s = (int)($ai_rule['delay_seconds'] ?? 0);
+                                    
+                                    // Bắt đầu gộp tin nhắn nếu có thời gian chờ
+                                    if ($delay_s > 0) {
+                                        // Kiểm tra xem đã có tiến trình nào đang chờ gộp tin cho user này chưa
+                                        $stmt_lock = $pdo->prepare("SELECT expire_at FROM bot_chat_locks WHERE page_id=? AND sender_id=? AND expire_at > NOW()");
+                                        $stmt_lock->execute([$page_id, $sender_id]);
+                                        if ($stmt_lock->fetch()) {
+                                            // Đã có process đang sleep. Process này chỉ lưu tin (đã làm) và dừng lại.
+                                            http_response_code(200);
+                                            echo "EVENT_RECEIVED";
+                                            if (function_exists('fastcgi_finish_request')) {
+                                                fastcgi_finish_request();
+                                            }
+                                            exit;
+                                        } else {
+                                            // Tạo lock mới cho tiến trình này
+                                            $stmt_ins_lock = $pdo->prepare("INSERT INTO bot_chat_locks (page_id, sender_id, expire_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND)) ON DUPLICATE KEY UPDATE expire_at = DATE_ADD(NOW(), INTERVAL ? SECOND)");
+                                            $stmt_ins_lock->execute([$page_id, $sender_id, $delay_s, $delay_s]);
+                                            
+                                            // Ngắt HTTP connection sớm để FB không bị chờ
+                                            http_response_code(200);
+                                            echo "EVENT_RECEIVED";
+                                            if (function_exists('fastcgi_finish_request')) {
+                                                fastcgi_finish_request();
+                                            }
+                                            
+                                            // Tiến hành ngủ để gom các tin nhắn tới sau
+                                            sleep($delay_s);
+                                            
+                                            // Thức dậy: Xóa lock
+                                            $stmt_del_lock = $pdo->prepare("DELETE FROM bot_chat_locks WHERE page_id=? AND sender_id=?");
+                                            $stmt_del_lock->execute([$page_id, $sender_id]);
+                                            
+                                            // Gom toàn bộ tin nhắn của user này trong khoảng X giây qua
+                                            // Cộng thêm 3 giây trừ hao thời gian truy vấn
+                                            $stmt_msgs = $pdo->prepare("SELECT snippet FROM page_notifications WHERE page_id=? AND sender_id=? AND type='message' AND created_at >= DATE_SUB(NOW(), INTERVAL ? SECOND) ORDER BY id ASC");
+                                            $stmt_msgs->execute([$page_id, $sender_id, $delay_s + 3]);
+                                            $all_snippets = [];
+                                            while($m_row = $stmt_msgs->fetch()) {
+                                                if (!empty($m_row['snippet'])) {
+                                                    $all_snippets[] = trim($m_row['snippet']);
+                                                }
+                                            }
+                                            if (!empty($all_snippets)) {
+                                                $text = implode("\n", $all_snippets);
+                                            }
+                                        }
+                                    }
+
+                                    $page_name = '';
+                                    $stmt_page = $pdo->prepare("SELECT name FROM pages WHERE page_id=?");
+                                    $stmt_page->execute([$page_id]);
+                                    if($p_row = $stmt_page->fetch(PDO::FETCH_ASSOC)) {
+                                        $page_name = $p_row['name'];
+                                    }
+
+                                    // Lấy lịch sử trò chuyện (tối đa N tin nhắn gần nhất)
+                                    $history_count = (int)($ai_rule['history_count'] ?? 6);
+                                    $history_text = '';
+                                    if ($history_count > 0 && !empty($conversation_id) && !empty($page_token)) {
+                                        $msg_res = fb_api_request($conversation_id . '/messages', [
+                                            'fields' => 'message,from',
+                                            'limit' => $history_count,
+                                            'access_token' => $page_token
+                                        ], 'GET');
+                                        
+                                        if ($msg_res['status_code'] === 200 && !empty($msg_res['data']['data'])) {
+                                            $msgs = array_reverse($msg_res['data']['data']);
+                                            foreach ($msgs as $m) {
+                                                if (empty($m['message'])) continue;
+                                                $role = ($m['from']['id'] === $page_id) ? "Bạn (Cửa hàng)" : "Khách hàng";
+                                                $history_text .= "$role: " . $m['message'] . "\n";
+                                            }
+                                        }
+                                    }
+
+                                    $ai_reply_text = generate_chat_reply_with_ai($text, $ai_rule['message'], $acc_id, $page_name, $history_text);
+                                    if (!empty($ai_reply_text)) {
+                                        $send_bot_msg($ai_reply_text);
+                                        $matched_rule = true;
+                                    }
+                                    
+                                    // Nếu process này đã gộp (đã sleep), thì sau khi gửi tin nhắn ta nên kết thúc script luôn
+                                    // Vì đã gửi response 200 OK ở trên rồi
+                                    if ($delay_s > 0) {
+                                        exit;
                                     }
                                 }
                             }

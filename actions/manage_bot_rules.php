@@ -24,6 +24,8 @@ if ($action === 'save') {
     $message = $_POST['message'] ?? '';
     $pages_scope = $_POST['pages_scope'] ?? 'ALL';
     $is_active = intval($_POST['is_active'] ?? 1);
+    $delay_seconds = intval($_POST['delay_seconds'] ?? 0);
+    $history_count = intval($_POST['history_count'] ?? 6);
 
     if (empty($message)) {
         echo json_encode(['status' => 'error', 'msg' => 'Vui lòng nhập nội dung phản hồi']);
@@ -37,11 +39,11 @@ if ($action === 'save') {
 
     try {
         if ($id > 0) {
-            $stmt = $pdo->prepare("UPDATE bot_chat_rules SET rule_type=?, keywords=?, message=?, pages_scope=?, is_active=? WHERE id=? AND account_id=?");
-            $stmt->execute([$rule_type, $keywords, $message, $pages_scope, $is_active, $id, $account_id]);
+            $stmt = $pdo->prepare("UPDATE bot_chat_rules SET rule_type=?, keywords=?, message=?, delay_seconds=?, history_count=?, pages_scope=?, is_active=? WHERE id=? AND account_id=?");
+            $stmt->execute([$rule_type, $keywords, $message, $delay_seconds, $history_count, $pages_scope, $is_active, $id, $account_id]);
         } else {
-            $stmt = $pdo->prepare("INSERT INTO bot_chat_rules (account_id, rule_type, keywords, message, pages_scope, is_active) VALUES (?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$account_id, $rule_type, $keywords, $message, $pages_scope, $is_active]);
+            $stmt = $pdo->prepare("INSERT INTO bot_chat_rules (account_id, rule_type, keywords, message, delay_seconds, history_count, pages_scope, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$account_id, $rule_type, $keywords, $message, $delay_seconds, $history_count, $pages_scope, $is_active]);
         }
         echo json_encode(['status' => 'success']);
     } catch (Exception $e) {

@@ -93,7 +93,27 @@ $stats = $pdo->query("
     GROUP BY status
 ")->fetchAll(PDO::FETCH_KEY_PAIR);
 
+// ── Đếm bài theo trạng thái HÔM NAY ──────────────────────────────────────────
+$stats_today = $pdo->query("
+    SELECT status, COUNT(*) as cnt
+    FROM scheduled_posts
+    WHERE DATE(scheduled_time) = CURDATE()
+    GROUP BY status
+")->fetchAll(PDO::FETCH_KEY_PAIR);
+
 // ── Bài sẵn sàng đăng (đến/quá giờ) ─────────────────────────────────────────
+$ready_total_stmt = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM scheduled_posts
+    WHERE scheduled_time <= NOW()
+      AND (
+        status = 'pending'
+        OR (status = 'failed' AND (retry_count IS NULL OR retry_count < ?))
+      )
+");
+$ready_total_stmt->execute([$max_retries]);
+$ready_total_count = (int)$ready_total_stmt->fetchColumn();
+
 $ready_stmt = $pdo->prepare("
     SELECT sp.id, sp.account_id, sp.page_id, sp.post_type, sp.status, sp.retry_count, sp.scheduled_time,
            TIMESTAMPDIFF(MINUTE, sp.scheduled_time, NOW()) AS overdue_minutes,
@@ -105,8 +125,8 @@ $ready_stmt = $pdo->prepare("
         sp.status = 'pending'
         OR (sp.status = 'failed' AND (sp.retry_count IS NULL OR sp.retry_count < ?))
       )
-    ORDER BY sp.scheduled_time ASC
-    LIMIT 30
+    ORDER BY sp.id DESC
+    LIMIT 20
 ");
 $ready_stmt->execute([$max_retries]);
 $ready_posts = $ready_stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -314,7 +334,7 @@ tr:hover td { background: #1e293b55; }
             <div style="font-size:12px;color:#94a3b8;margin-top:4px;">⏳ Đang xử lý (Processing)</div>
         </div>
         <div style="flex:1;min-width:140px;background:#f8717111;border:1px solid #f8717133;border-radius:8px;padding:12px;text-align:center;">
-            <div style="font-size:28px;font-weight:bold;color:#f87171;"><?= count($ready_posts) ?></div>
+            <div style="font-size:28px;font-weight:bold;color:#f87171;"><?= $ready_total_count ?></div>
             <div style="font-size:12px;color:#94a3b8;margin-top:4px;">🚀 Quá giờ — Cần đăng ngay</div>
         </div>
         <div style="flex:1;min-width:140px;background:#10b98111;border:1px solid #10b98133;border-radius:8px;padding:12px;text-align:center;">
@@ -328,11 +348,12 @@ tr:hover td { background: #1e293b55; }
 <div class="card">
     <h2>📊 Tổng quan bài đăng</h2>
     <table>
-    <tr><th>Trạng thái</th><th>Số bài</th></tr>
+    <tr><th>Trạng thái</th><th>Tổng</th><th>Hôm nay</th></tr>
     <?php foreach (['pending','processing','published','failed'] as $s): ?>
     <tr>
         <td><span class="badge <?= $s ?>"><?= strtoupper($s) ?></span></td>
         <td><b><?= number_format($stats[$s] ?? 0) ?></b></td>
+        <td><b style="color:<?= ($stats_today[$s] ?? 0) > 0 ? ($s === 'failed' ? '#f87171' : ($s === 'published' ? '#4ade80' : '#facc15')) : '#64748b' ?>"><?= number_format($stats_today[$s] ?? 0) ?></b></td>
     </tr>
     <?php endforeach; ?>
     </table>
@@ -340,7 +361,7 @@ tr:hover td { background: #1e293b55; }
 
 <!-- Bài sẵn sàng đăng -->
 <div class="card">
-    <h2>🚀 Bài đến/quá giờ — Cần đăng ngay (<?= count($ready_posts) ?> bài)</h2>
+    <h2>🚀 Bài đến/quá giờ — Cần đăng ngay (<?= $ready_total_count ?> bài<?= $ready_total_count > 20 ? ', hiển thị 20 mới nhất' : '' ?>)</h2>
     <?php if (empty($ready_posts)): ?>
     <p class="ok">✔ Không có bài nào quá hạn.</p>
     <?php else: ?>

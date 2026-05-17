@@ -14,16 +14,21 @@ $offset      = max(0, intval($_GET['offset'] ?? 0));
 $limit       = 20; // số thông báo mỗi lần tải
 session_write_close(); // Giải phóng session lock sớm để các request khác không bị block
 
-// 1. Fetch Post Errors — chỉ lần đầu (offset = 0)
+// 1. Auto add is_read column to scheduled_posts if missing
+try {
+    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN is_read TINYINT(1) DEFAULT 0");
+} catch (Exception $e) {}
+
+// 2. Fetch Post Errors — chỉ lần đầu (offset = 0)
 $failed_posts = [];
 if ($offset === 0) {
     try {
         $stmt1 = $pdo->prepare("
-            SELECT sp.id, sp.error_msg, sp.scheduled_time, p.name as page_name, p.page_id
+            SELECT sp.id, sp.error_msg, sp.scheduled_time, p.name as page_name, p.page_id, sp.campaign_id
             FROM scheduled_posts sp
             JOIN pages p ON sp.page_id = p.page_id
             JOIN users u ON p.user_id = u.id
-            WHERE sp.status = 'failed' AND u.account_id = ?
+            WHERE sp.status = 'failed' AND sp.is_read = 0 AND u.account_id = ?
             ORDER BY sp.scheduled_time DESC
             LIMIT 10
         ");

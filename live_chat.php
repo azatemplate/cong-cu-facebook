@@ -50,6 +50,7 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
         <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:1px solid #e5e7eb; padding-bottom:10px;">
             <button id="tab_welcome" onclick="switchBotTab('welcome')" style="padding:8px 16px; border:none; background:#0284c7; color:#fff; border-radius:6px; cursor:pointer; font-weight:600;">Tin nhắn chào mừng</button>
             <button id="tab_keyword" onclick="switchBotTab('keyword')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Tin nhắn theo từ khóa</button>
+            <button id="tab_ai_reply" onclick="switchBotTab('ai_reply')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Chat bot AI tự trả lời</button>
         </div>
 
         <!-- Nội dung Tab 1: Tin nhắn chào mừng -->
@@ -70,6 +71,15 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
             <button onclick="openRuleForm('keyword')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed #d1d5db; background:#f9fafb; color:#374151; border-radius:6px;">+ Thêm cấu hình từ khóa mới</button>
         </div>
 
+        <!-- Nội dung Tab 3: Chat bot AI tự trả lời -->
+        <div id="content_ai_reply" style="display:none;">
+            <p style="font-size:13px; color:#6b7280; margin-top:0;">Bot sẽ sử dụng AI để tự động trả lời khách hàng dựa trên Prompt bạn cấu hình. <b>Lưu ý:</b> Cần cài đặt API Key AI ở trang Cài đặt AI.</p>
+            <div id="ai_reply_rules_list" style="margin-bottom:15px; max-height: 250px; overflow-y:auto;">
+                <div style="text-align:center; padding:10px; color:#9ca3af; font-size:13px;">Đang tải...</div>
+            </div>
+            <button onclick="openRuleForm('ai_reply')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed #d1d5db; background:#f9fafb; color:#374151; border-radius:6px;">+ Thêm cấu hình Bot AI mới</button>
+        </div>
+
     </div>
 </div>
 
@@ -86,10 +96,25 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
                 <input type="text" id="rule_keywords" placeholder="VD: inbox, giá, bao nhiêu" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;">
             </div>
 
+            <div id="rule_delay_group" style="margin-bottom:15px; display:none;">
+                <div style="display:flex; gap:15px;">
+                    <div style="flex:1;">
+                        <label style="display:block; font-size:13px; font-weight:600; margin-bottom:5px;">Thời gian chờ (giây)</label>
+                        <input type="number" id="rule_delay_seconds" min="0" max="60" value="10" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;">
+                        <div style="font-size:11px; color:#6b7280; margin-top:4px;">Chờ X giây để gom nhiều tin nhắn. Mặc định 10s. Để 0 để trả lời ngay.</div>
+                    </div>
+                    <div style="flex:1;">
+                        <label style="display:block; font-size:13px; font-weight:600; margin-bottom:5px;">Lịch sử cuộc gọi (Tin nhắn)</label>
+                        <input type="number" id="rule_history_count" min="0" max="20" value="6" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;">
+                        <div style="font-size:11px; color:#6b7280; margin-top:4px;">Lấy X tin nhắn gần nhất làm ngữ cảnh. Mặc định 6 tin.</div>
+                    </div>
+                </div>
+            </div>
+
             <div style="margin-bottom:15px;">
-                <label style="display:block; font-size:13px; font-weight:600; margin-bottom:5px;">Nội dung phản hồi <span style="color:red;">*</span></label>
+                <label id="lbl_rule_message" style="display:block; font-size:13px; font-weight:600; margin-bottom:5px;">Nội dung phản hồi <span style="color:red;">*</span></label>
                 <textarea id="rule_message" rows="4" required placeholder="Nhập tin nhắn..." style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box; resize:vertical;"></textarea>
-                <div style="font-size:11px; color:#6b7280; margin-top:4px;">Bạn có thể dùng {name} để gọi tên khách. Mỗi dòng 1 mẫu câu để chọn ngẫu nhiên.</div>
+                <div id="hint_rule_message" style="font-size:11px; color:#6b7280; margin-top:4px;">Bạn có thể dùng {name} để gọi tên khách. Mỗi dòng 1 mẫu câu để chọn ngẫu nhiên.</div>
             </div>
 
             <div style="margin-bottom:15px;">
@@ -152,21 +177,22 @@ function openBotSettings() {
 }
 
 function switchBotTab(tab) {
-    if (tab === 'welcome') {
-        document.getElementById('tab_welcome').style.background = '#0284c7';
-        document.getElementById('tab_welcome').style.color = '#fff';
-        document.getElementById('tab_keyword').style.background = '#f3f4f6';
-        document.getElementById('tab_keyword').style.color = '#374151';
-        document.getElementById('content_welcome').style.display = 'block';
-        document.getElementById('content_keyword').style.display = 'none';
-    } else {
-        document.getElementById('tab_keyword').style.background = '#0284c7';
-        document.getElementById('tab_keyword').style.color = '#fff';
-        document.getElementById('tab_welcome').style.background = '#f3f4f6';
-        document.getElementById('tab_welcome').style.color = '#374151';
-        document.getElementById('content_keyword').style.display = 'block';
-        document.getElementById('content_welcome').style.display = 'none';
-    }
+    const tabs = ['welcome', 'keyword', 'ai_reply'];
+    tabs.forEach(t => {
+        const btn = document.getElementById('tab_' + t);
+        const content = document.getElementById('content_' + t);
+        if(btn && content) {
+            if (t === tab) {
+                btn.style.background = '#0284c7';
+                btn.style.color = '#fff';
+                content.style.display = 'block';
+            } else {
+                btn.style.background = '#f3f4f6';
+                btn.style.color = '#374151';
+                content.style.display = 'none';
+            }
+        }
+    });
 }
 
 function loadBotRules() {
@@ -177,6 +203,7 @@ function loadBotRules() {
                 botRules = res.data;
                 renderBotRules('welcome');
                 renderBotRules('keyword');
+                renderBotRules('ai_reply');
             } else {
                 alert('Lỗi tải cấu hình: ' + res.msg);
             }
@@ -247,10 +274,24 @@ function openRuleForm(type, rule = null) {
         document.getElementById('rule_keywords').required = false;
     }
 
+    if (type === 'ai_reply') {
+        document.getElementById('rule_delay_group').style.display = 'block';
+        document.getElementById('lbl_rule_message').innerHTML = 'Prompt cho AI <span style="color:red;">*</span>';
+        document.getElementById('rule_message').placeholder = 'Ví dụ: Bạn là một chuyên gia tư vấn thời trang. Hãy trả lời ngắn gọn, lịch sự...';
+        document.getElementById('hint_rule_message').innerHTML = 'Nhập prompt chi tiết để AI có thể tự động đọc và trả lời khách hàng.';
+    } else {
+        document.getElementById('rule_delay_group').style.display = 'none';
+        document.getElementById('lbl_rule_message').innerHTML = 'Nội dung phản hồi <span style="color:red;">*</span>';
+        document.getElementById('rule_message').placeholder = 'Nhập tin nhắn...';
+        document.getElementById('hint_rule_message').innerHTML = 'Bạn có thể dùng {name} để gọi tên khách. Mỗi dòng 1 mẫu câu để chọn ngẫu nhiên.';
+    }
+
     if (rule) {
         document.getElementById('rule_form_title').innerText = 'Sửa cấu hình';
         document.getElementById('rule_keywords').value = rule.keywords || '';
         document.getElementById('rule_message').value = rule.message || '';
+        document.getElementById('rule_delay_seconds').value = rule.delay_seconds !== undefined ? rule.delay_seconds : 10;
+        document.getElementById('rule_history_count').value = rule.history_count !== undefined ? rule.history_count : 6;
         if (rule.pages_scope === 'ALL') {
             document.getElementById('rule_pages_all').checked = true;
             document.querySelectorAll('.rule_page_cb').forEach(el => el.checked = true);
@@ -267,7 +308,15 @@ function openRuleForm(type, rule = null) {
         }
         document.getElementById('rule_is_active').checked = parseInt(rule.is_active) === 1;
     } else {
-        document.getElementById('rule_form_title').innerText = type === 'welcome' ? 'Thêm Lời chào' : 'Thêm Từ khóa';
+        let title = 'Thêm cấu hình';
+        if(type === 'welcome') title = 'Thêm Lời chào';
+        if(type === 'keyword') title = 'Thêm Từ khóa';
+        if(type === 'ai_reply') title = 'Thêm Bot AI';
+        document.getElementById('rule_form_title').innerText = title;
+        document.getElementById('rule_message').value = '';
+        document.getElementById('rule_keywords').value = '';
+        document.getElementById('rule_delay_seconds').value = '10';
+        document.getElementById('rule_history_count').value = '6';
         document.getElementById('rule_pages_all').checked = true;
         document.querySelectorAll('.rule_page_cb').forEach(el => el.checked = true);
         document.getElementById('rule_is_active').checked = true;
@@ -338,9 +387,12 @@ function saveBotRule(e) {
     e.preventDefault();
     const btn = document.getElementById('btn_save_rule');
     
+    const totalCbs = document.querySelectorAll('.rule_page_cb');
+    const checkedCbs = document.querySelectorAll('.rule_page_cb:checked');
+    
     let pagesScope = 'ALL';
-    if (!document.getElementById('rule_pages_all').checked) {
-        const checkedVals = Array.from(document.querySelectorAll('.rule_page_cb:checked')).map(el => el.value);
+    if (totalCbs.length !== checkedCbs.length) {
+        const checkedVals = Array.from(checkedCbs).map(el => el.value);
         pagesScope = JSON.stringify(checkedVals);
         if (checkedVals.length === 0) {
             alert('Vui lòng chọn ít nhất 1 Fanpage!');
@@ -356,6 +408,8 @@ function saveBotRule(e) {
     fd.append('rule_type', document.getElementById('rule_type').value);
     fd.append('keywords', document.getElementById('rule_keywords').value);
     fd.append('message', document.getElementById('rule_message').value);
+    fd.append('delay_seconds', document.getElementById('rule_delay_seconds').value);
+    fd.append('history_count', document.getElementById('rule_history_count').value);
     fd.append('pages_scope', pagesScope);
     fd.append('is_active', document.getElementById('rule_is_active').checked ? 1 : 0);
 

@@ -72,6 +72,10 @@ $migrations = [
     // Telegram per-user columns
     ["ALTER TABLE system_accounts ADD COLUMN telegram_bot_token VARCHAR(255) DEFAULT NULL", "system_accounts.telegram_bot_token"],
     ["ALTER TABLE system_accounts ADD COLUMN telegram_chat_id VARCHAR(100) DEFAULT NULL", "system_accounts.telegram_chat_id"],
+
+    // Email login columns
+    ["ALTER TABLE system_accounts ADD COLUMN email VARCHAR(255) DEFAULT NULL", "system_accounts.email"],
+    ["ALTER TABLE system_accounts ADD COLUMN login_by_email TINYINT(1) DEFAULT 0", "system_accounts.login_by_email"],
 ];
 
 // Default system settings seed

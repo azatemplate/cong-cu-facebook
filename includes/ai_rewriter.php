@@ -193,6 +193,79 @@ function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanp
     }
 }
 
+function generate_chat_reply_with_ai($user_message, $system_prompt, $account_id, $fanpage_name = '', $history_text = '') {
+    global $pdo;
+    if (empty(trim($user_message))) return '';
+
+    try {
+        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, model FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
+        $stmt->execute([$account_id]);
+        $config = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$config) {
+            ai_log("AI Config is not active or not found for account $account_id");
+            return '';
+        }
+        
+        $selected_ai = $config['provider'];
+        $selected_model = $config['model'];
+        $endpoint = $config['endpoint'];
+        $api_keys_raw = decryptData($config['api_keys']);
+        
+        $prompt_vaitro = $system_prompt;
+        if (!empty($fanpage_name)) {
+            $prompt_vaitro = str_replace('{fanpage_name}', $fanpage_name, $prompt_vaitro);
+        }
+        
+        if (strpos($prompt_vaitro, '{prompt}') === false) {
+            $prompt_vaitro .= "\n\nTin nhắn của khách hàng:\n{prompt}";
+        }
+        
+        if (!empty($history_text)) {
+            if (strpos($prompt_vaitro, '{history}') !== false) {
+                $prompt_vaitro = str_replace('{history}', $history_text, $prompt_vaitro);
+            } else {
+                $prompt_vaitro .= "\n\n--- LỊCH SỬ TRÒ CHUYỆN GẦN ĐÂY ĐỂ AI HIỂU NGỮ CẢNH ---\n" . $history_text . "--------------------------------------------------\nLưu ý: Chỉ dựa vào ngữ cảnh trên để trả lời câu hỏi hiện tại, không lặp lại lịch sử.";
+            }
+        }
+        
+        $api_keys = [];
+        $api_keys_raw = trim($api_keys_raw);
+        if (substr($api_keys_raw, 0, 1) === '[' || substr($api_keys_raw, 0, 1) === '(') {
+            $cleaned = trim($api_keys_raw, "()[]");
+            $parts = explode(',', $cleaned);
+            foreach ($parts as $p) {
+                $p = trim($p, " '\"\n\r\t");
+                if ($p) $api_keys[] = $p;
+            }
+        } else {
+            $parts = explode(',', $api_keys_raw);
+            foreach ($parts as $p) {
+                $p = trim($p);
+                if ($p) $api_keys[] = $p;
+            }
+        }
+        
+        if (empty($api_keys)) {
+            ai_log("No API keys configured");
+            return '';
+        }
+        
+        $rewritten_text = "";
+        if ($selected_ai === "Gemini") {
+            $rewritten_text = rewrite_content_with_gemini($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model);
+        } elseif ($selected_ai === "OpenAI") {
+            $rewritten_text = rewrite_content_with_openai($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model);
+        }
+        
+        return clean_markdown($rewritten_text);
+        
+    } catch (Exception $e) {
+        ai_log("Error in generate_chat_reply_with_ai: " . $e->getMessage());
+        return '';
+    }
+}
+
 function clean_json_response($text) {
     // Tìm đoạn text nằm giữa { và } hoặc [ và ]
     preg_match('/\{.*\}/s', $text, $matches);

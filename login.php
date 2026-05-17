@@ -24,9 +24,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!rate_limit_check($client_ip, 5, 900)) {
         $error = "Bạn đã nhập sai quá nhiều lần. Vui lòng thử lại sau 15 phút.";
     } else {
-        $stmt = $pdo->prepare("SELECT id, username, password, role, expire_date FROM system_accounts WHERE username = ?");
+        // Try login by username first (only for accounts NOT using login_by_email)
+        $stmt = $pdo->prepare("SELECT id, username, password, role, expire_date, login_by_email FROM system_accounts WHERE username = ? AND (login_by_email = 0 OR login_by_email IS NULL)");
         $stmt->execute([$username]);
         $account = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // If not found by username, try login by email (for accounts using login_by_email)
+        if (!$account) {
+            $stmt2 = $pdo->prepare("SELECT id, username, password, role, expire_date, login_by_email FROM system_accounts WHERE email = ? AND login_by_email = 1");
+            $stmt2->execute([$username]);
+            $account = $stmt2->fetch(PDO::FETCH_ASSOC);
+        }
 
         if ($account && password_verify($password, $account['password'])) {
             // Kiểm tra thời hạn
@@ -452,10 +460,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php echo csrf_field(); ?>
                 
                 <div class="form-group">
-                    <label><span>*</span> USERNAME</label>
+                    <label><span>*</span> USERNAME / EMAIL</label>
                     <div class="input-wrapper">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                        <input type="text" name="username" required placeholder="Enter your username" autocomplete="username">
+                        <input type="text" name="username" required placeholder="Username hoặc Email" autocomplete="username">
                     </div>
                 </div>
 

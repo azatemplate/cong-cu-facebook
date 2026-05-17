@@ -30,6 +30,14 @@ try {
 } catch (Exception $e) {}
 
 try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN email VARCHAR(255) DEFAULT NULL");
+} catch (Exception $e) {}
+
+try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN login_by_email TINYINT(1) DEFAULT 0");
+} catch (Exception $e) {}
+
+try {
     $pdo->exec("ALTER TABLE system_accounts ADD COLUMN retry_interval_minutes INT DEFAULT 1");
 } catch (Exception $e) {}
 
@@ -62,6 +70,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $alert_type = 'danger';
             $alert_message = 'Mật khẩu hiện tại không đúng.';
         }
+    }
+
+    if (isset($_POST['update_email'])) {
+        $new_email = trim($_POST['email'] ?? '');
+        $login_by_email = isset($_POST['login_by_email']) ? 1 : 0;
+        
+        // Validate email if login_by_email is enabled
+        if ($login_by_email && empty($new_email)) {
+            $alert_type = 'danger';
+            $alert_message = 'Bạn phải nhập Email trước khi bật đăng nhập bằng Email.';
+        } elseif (!empty($new_email) && !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+            $alert_type = 'danger';
+            $alert_message = 'Địa chỉ email không hợp lệ.';
+        } else {
+            // Check email uniqueness (if not empty)
+            if (!empty($new_email)) {
+                $chk = $pdo->prepare("SELECT id FROM system_accounts WHERE email = ? AND id != ?");
+                $chk->execute([$new_email, $account_id]);
+                if ($chk->fetch()) {
+                    $alert_type = 'danger';
+                    $alert_message = 'Email này đã được sử dụng bởi tài khoản khác.';
+                    goto skip_email_update;
+                }
+            }
+            $u_stmt = $pdo->prepare("UPDATE system_accounts SET email = ?, login_by_email = ? WHERE id = ?");
+            $u_stmt->execute([empty($new_email) ? null : $new_email, $login_by_email, $account_id]);
+            $alert_type = 'success';
+            $alert_message = 'Cập nhật cấu hình Email thành công.';
+            $account['email'] = $new_email;
+            $account['login_by_email'] = $login_by_email;
+        }
+        skip_email_update:
     }
     
     if (isset($_POST['update_fb_app']) && $_SESSION['role'] === 'admin') {
@@ -163,7 +203,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 } else {
     $account_id = $_SESSION['account_id'];
-    $stmt = $pdo->prepare("SELECT fb_app_id, fb_app_secret, gg_client_id, gg_client_secret, gg_refresh_token, post_delay_seconds, retry_interval_minutes, max_retries, telegram_bot_token, telegram_chat_id FROM system_accounts WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT fb_app_id, fb_app_secret, gg_client_id, gg_client_secret, gg_refresh_token, post_delay_seconds, retry_interval_minutes, max_retries, telegram_bot_token, telegram_chat_id, email, login_by_email FROM system_accounts WHERE id = ?");
     $stmt->execute([$account_id]);
     $account = $stmt->fetch(PDO::FETCH_ASSOC);
 }
@@ -229,6 +269,30 @@ try {
         </form>
     </div>
 
+    <div class="card" style="margin: 0; box-sizing: border-box;">
+        <h3 style="margin-bottom: 20px;">📧 Cấu hình Email & Đăng nhập</h3>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 15px;">
+            Thêm email vào tài khoản của bạn. Khi bật "Đăng nhập bằng Email", bạn sẽ chỉ đăng nhập được bằng email thay vì username.
+        </p>
+        <form method="POST" action="settings.php">
+            <?php echo csrf_field(); ?>
+            <div class="form-group">
+                <label>Địa chỉ Email</label>
+                <input type="email" name="email" value="<?php echo htmlspecialchars($account['email'] ?? ''); ?>" placeholder="example@gmail.com" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
+            </div>
+            <?php 
+            $is_login_by_email = !empty($account['login_by_email']);
+            ?>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 12px 15px; background: <?php echo $is_login_by_email ? '#eff6ff' : '#f0fdf4'; ?>; border: 1px solid <?php echo $is_login_by_email ? '#bfdbfe' : '#bbf7d0'; ?>; border-radius: 8px; transition: all 0.2s; margin-bottom: 15px;">
+                <input type="checkbox" name="login_by_email" value="1" <?php echo $is_login_by_email ? 'checked' : ''; ?> style="width: 18px; height: 18px; accent-color: #2563eb;">
+                <span style="font-weight: 500; color: <?php echo $is_login_by_email ? '#2563eb' : '#15803d'; ?>;">
+                    <?php echo $is_login_by_email ? '📧 Đang đăng nhập bằng Email (Username bị vô hiệu)' : '👤 Đang đăng nhập bằng Username (mặc định)'; ?>
+                </span>
+            </label>
+            <small style="color: #ef4444; display: block; margin-bottom: 15px;">⚠️ Khi bật đăng nhập bằng Email, Username sẽ không thể đăng nhập được nữa. Chỉ Email + Mật khẩu mới có hiệu lực.</small>
+            <button type="submit" name="update_email" class="btn btn-primary" style="background: #2563eb; border-color: #2563eb;">💾 Lưu Cấu Hình Email</button>
+        </form>
+    </div>
 
     <div class="card" style="margin: 0; box-sizing: border-box;">
         <h3 style="margin-bottom: 20px;">Cấu hình Google API (Youtube & Drive)</h3>

@@ -15,6 +15,21 @@ $conversation_id = $_POST['conversation_id'] ?? null;
 $sys_page_id = 'SYSTEM_ACCOUNT_' . $_SESSION['account_id'];
 
 if ($id) {
+    if (strpos($id, 'fp_') === 0) {
+        $sp_id = substr($id, 3);
+        // Only update if it belongs to user's accounts
+        $stmt = $pdo->prepare("
+            UPDATE scheduled_posts sp
+            JOIN pages p ON sp.page_id = p.page_id
+            JOIN users u ON p.user_id = u.id
+            SET sp.is_read = 1
+            WHERE sp.id = ? AND u.account_id = ?
+        ");
+        $stmt->execute([$sp_id, $_SESSION['account_id']]);
+        echo json_encode(['status' => 'success']);
+        exit;
+    }
+
     // Only update if it belongs to user's accounts
     $stmt = $pdo->prepare("
         UPDATE page_notifications n

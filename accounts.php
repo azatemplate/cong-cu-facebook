@@ -54,6 +54,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'reset_password') {
+    verify_csrf();
+    $reset_id = intval($_POST['reset_id']);
+    $default_password = password_hash('123456', PASSWORD_DEFAULT);
+    $r_stmt = $pdo->prepare("UPDATE system_accounts SET password = ? WHERE id = ?");
+    $r_stmt->execute([$default_password, $reset_id]);
+    $alert_type = 'success';
+    $alert_message = 'Đã reset mật khẩu về mặc định: 123456';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_account') {
     verify_csrf();
     $del_id = intval($_POST['del_id']);
@@ -254,6 +264,13 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <button onclick="openEditModal(<?php echo $acc['id']; ?>, '<?php echo htmlspecialchars($acc['username']); ?>', '<?php echo empty($acc['expire_date']) ? '' : date('Y-m-d\TH:i', strtotime($acc['expire_date'])); ?>', <?php echo (int)$acc['page_limit']; ?>)" style="background: none; border: none; color: var(--primary-color); cursor: pointer; padding: 0; margin-right: 10px; font-size: 13px; text-decoration: underline;">Sửa LH</button>
                         <?php endif; ?>
                         
+                        <form method="POST" action="accounts.php" style="display:inline;" onsubmit="return confirm('Reset mật khẩu về 123456?');">
+                            <input type="hidden" name="action" value="reset_password">
+                            <input type="hidden" name="reset_id" value="<?php echo $acc['id']; ?>">
+                            <?php echo csrf_field(); ?>
+                            <button type="submit" style="background:none; border:none; color:#f59e0b; cursor:pointer; font-size:13px; padding:0; margin-right:10px; text-decoration:underline;">Reset Pass</button>
+                        </form>
+
                         <?php if ($acc['id'] !== $_SESSION['account_id']): ?>
                             <form method="POST" action="accounts.php" style="display:inline;" onsubmit="return confirm('Xóa tài khoản này?');">
                                 <input type="hidden" name="action" value="delete_account">

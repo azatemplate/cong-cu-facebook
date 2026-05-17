@@ -17,6 +17,31 @@ try {
     
     $pdo->exec($sql);
     echo "Tạo bảng bot_chat_rules thành công.\n";
+    
+    // Add delay_seconds column if it does not exist
+    try {
+        $pdo->exec("ALTER TABLE bot_chat_rules ADD COLUMN delay_seconds INT DEFAULT 0 AFTER is_active;");
+    } catch (PDOException $e) {
+        // column likely exists
+    }
+
+    // Add history_count column if it does not exist
+    try {
+        $pdo->exec("ALTER TABLE bot_chat_rules ADD COLUMN history_count INT DEFAULT 6 AFTER delay_seconds;");
+    } catch (PDOException $e) {
+        // column likely exists
+    }
+
+    $sql_lock = "CREATE TABLE IF NOT EXISTS bot_chat_locks (
+        page_id VARCHAR(50) NOT NULL,
+        sender_id VARCHAR(50) NOT NULL,
+        expire_at TIMESTAMP NOT NULL,
+        PRIMARY KEY (page_id, sender_id),
+        INDEX idx_expire (expire_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
+    $pdo->exec($sql_lock);
+    echo "Tạo bảng bot_chat_locks thành công.\n";
+
 } catch (PDOException $e) {
     echo "Lỗi: " . $e->getMessage() . "\n";
 }
