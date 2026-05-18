@@ -102,7 +102,7 @@ $pages_json = json_encode($pages);
         <div style="padding:20px; height: 350px; position: relative;">
             <div id="earnings_loader" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.8); z-index:10; justify-content:center; align-items:center; flex-direction:column;">
                 <span style="display:inline-block; width:30px; height:30px; border:3px solid #e5e7eb; border-top-color:#10b981; border-radius:50%; animation: spin 1s linear infinite; margin-bottom:10px;"></span>
-                <span id="earnings_loader_text" style="color:#6b7280; font-size:13px; font-weight:500;">Đang lấy dữ liệu từ Facebook Ads... (Gồm 30 video gần nhất)</span>
+                <span id="earnings_loader_text" style="color:#6b7280; font-size:13px; font-weight:500;">Đang lấy dữ liệu Content Monetization từ Facebook...</span>
             </div>
             <canvas id="earningsChart"></canvas>
         </div>

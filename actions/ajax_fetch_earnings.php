@@ -33,40 +33,16 @@ if (!$t_row || empty($t_row['access_token'])) {
 
 $page_token = decryptData($t_row['access_token']);
 
-// 1. Fetch latest videos (Up to 30)
-$videos_res = fb_api_request("{$page_id}/videos", [
-    'fields' => 'id,created_time',
-    'limit' => 30,
-    'access_token' => $page_token
-], 'GET');
+// Fetch Page Content Monetization Earnings (Last 28 days)
+$since = date('Y-m-d', strtotime('-28 days'));
+$until = date('Y-m-d', strtotime('+1 day')); // +1 day to ensure we get today's data depending on timezone
 
-$video_ids = [];
-if (isset($videos_res['data']['data'])) {
-    foreach ($videos_res['data']['data'] as $v) {
-        $video_ids[] = $v['id'];
-    }
-}
-
-// 2. Build Batch Request for Video Insights
-// Metrics: total_video_ad_break_earnings
-// (This metric might return an object with "value" = double)
-if (empty($video_ids)) {
-    // Không có video nào
-    return_empty_success();
-}
-
-$batch = [];
-foreach ($video_ids as $vid) {
-    $batch[] = [
-        'method' => 'GET',
-        'relative_url' => "{$vid}/video_insights/total_video_ad_break_earnings"
-    ];
-}
-
-$batch_res = fb_api_request('', [
+$insights_res = fb_api_request("{$page_id}/insights/content_monetization_earnings", [
     'access_token' => $page_token,
-    'batch' => json_encode($batch)
-], 'POST');
+    'period' => 'day',
+    'since' => $since,
+    'until' => $until
+], 'GET');
 
 $total_earnings = 0.0;
 $daily_earnings = [];
@@ -77,24 +53,32 @@ for ($i=27; $i>=0; $i--) {
     $daily_earnings[$day] = 0.0;
 }
 
-if (isset($batch_res['data']) && is_array($batch_res['data'])) {
-    foreach ($batch_res['data'] as $index => $node) {
-        if ($node['code'] === 200) {
-            $body = json_decode($node['body'], true);
-            if (isset($body['data'][0]['values'][0]['value'])) {
-                // value is usually string/float
-                $val = floatval($body['data'][0]['values'][0]['value']);
-                $total_earnings += $val;
-                
-                // Thu nhập được tính dồn vào ngày tạo video do Facebook trả về tổng.
-                // Nếu muốn daily chính xác thì API của bên FB không hỗ trợ breakdown theo từng ngày cho video cụ thể,
-                // Do đó fallback (tạm tính dồn vào ngày tạo video)
-                if (isset($videos_res['data']['data'][$index]['created_time'])) {
-                    $day_created = date('Y-m-d', strtotime($videos_res['data']['data'][$index]['created_time']));
-                    if (isset($daily_earnings[$day_created])) {
-                        $daily_earnings[$day_created] += $val;
-                    }
+if (isset($insights_res['data']['data']) && is_array($insights_res['data']['data']) && count($insights_res['data']['data']) > 0) {
+    $values = $insights_res['data']['data'][0]['values'] ?? [];
+    foreach ($values as $val_data) {
+        if (isset($val_data['end_time']) && isset($val_data['value'])) {
+            $val = 0.0;
+            if (is_array($val_data['value'])) {
+                if (isset($val_data['value']['microAmount'])) {
+                    $val = floatval($val_data['value']['microAmount']) / 1000000; // Facebook uses micro amounts (1/1,000,000)
+                } elseif (isset($val_data['value']['amount'])) {
+                    $val = floatval($val_data['value']['amount']);
                 }
+            } else {
+                $val = floatval($val_data['value']);
+            }
+            
+            // Facebook daily insights end_time is usually the start of the next day in PST/PDT.
+            // Subtracting 1 day from end_time gives the actual day the insight represents.
+            $day_key = date('Y-m-d', strtotime("-1 day", strtotime($val_data['end_time'])));
+            $day_exact = date('Y-m-d', strtotime($val_data['end_time']));
+            
+            if (isset($daily_earnings[$day_key])) {
+                $daily_earnings[$day_key] += $val;
+                $total_earnings += $val;
+            } elseif (isset($daily_earnings[$day_exact])) {
+                $daily_earnings[$day_exact] += $val;
+                $total_earnings += $val;
             }
         }
     }

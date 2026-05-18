@@ -128,6 +128,14 @@ foreach ($chart_days as $day) {
         </div>
         <div class="stat-subtitle" style="margin-top: 10px;">Tổng views video/reels theo dữ liệu (<?php echo htmlspecialchars($period); ?>)</div>
     </div>
+    
+    <div class="stat-card">
+        <div class="stat-title"><?php echo $is_admin ? 'Total Post Today (All Users)' : 'Công Suất Bài/Ngày'; ?></div>
+        <div class="stat-value color-primary" style="display:flex; align-items:center; color: #0284c7;">
+            <span class="icon" style="margin-right:10px;">📝</span> <span id="ajax-posts-today">—</span>
+        </div>
+        <div class="stat-subtitle">Tổng số bài viết đã đăng trong ngày hôm nay</div>
+    </div>
 </div>
 
 <!-- AJAX: Load all dashboard metrics asynchronously -->
@@ -152,6 +160,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     reelsText += ' <span style="font-size:14px; color:var(--text-muted); margin-left:10px; font-weight: normal;">(0 failed)</span>';
                 }
                 document.getElementById('ajax-reels').innerHTML = reelsText;
+            }
+            if (data.total_posts_today !== undefined) {
+                let postsHtml = Number(data.total_posts_today).toLocaleString();
+                if (data.page_limit > 0) {
+                    let color = (data.total_posts_today >= data.page_limit) ? '#ef4444' : 'inherit';
+                    postsHtml = '<span style="color:' + color + ';">' + postsHtml + ' / ' + Number(data.page_limit).toLocaleString() + '</span>';
+                }
+                document.getElementById('ajax-posts-today').innerHTML = postsHtml;
             }
             // Load recent pages table
             if (data.recent_pages && data.recent_pages.length > 0) {

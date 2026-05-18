@@ -94,6 +94,21 @@ if ($is_admin) {
 }
 $recent_pages = $stmt3->fetchAll(PDO::FETCH_ASSOC);
 
+// 6. Total Posts Today and Page Limit
+if ($is_admin) {
+    $stmt_posts = $pdo->query("SELECT COUNT(id) as total_posts FROM scheduled_posts WHERE status = 'published' AND DATE(scheduled_time) = CURDATE()");
+    $total_posts_today = $stmt_posts->fetchColumn() ?: 0;
+    $page_limit = 0; // Admin has no limit
+} else {
+    $stmt_posts = $pdo->prepare("SELECT COUNT(id) as total_posts FROM scheduled_posts WHERE account_id = ? AND status = 'published' AND DATE(scheduled_time) = CURDATE()");
+    $stmt_posts->execute([$account_id]);
+    $total_posts_today = $stmt_posts->fetchColumn() ?: 0;
+    
+    $stmt_limit = $pdo->prepare("SELECT page_limit FROM system_accounts WHERE id = ?");
+    $stmt_limit->execute([$account_id]);
+    $page_limit = (int)$stmt_limit->fetchColumn();
+}
+
 echo json_encode([
     'total_users' => $total_users,
     'total_pages' => $total_pages,
@@ -101,5 +116,7 @@ echo json_encode([
     'followers_diff_html' => $followers_diff_html,
     'total_reels_today' => $reels_data['total_reels'] ?: 0,
     'failed_reels_today' => $reels_data['failed_reels'] ?: 0,
-    'recent_pages' => $recent_pages
+    'recent_pages' => $recent_pages,
+    'total_posts_today' => (int)$total_posts_today,
+    'page_limit' => $page_limit
 ]);

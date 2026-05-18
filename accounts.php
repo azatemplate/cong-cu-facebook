@@ -162,7 +162,8 @@ $stmt = $pdo->query("
     SELECT sa.*, 
            (SELECT COUNT(*) FROM users u WHERE u.account_id = sa.id) as total_users,
            (SELECT COUNT(*) FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = sa.id) as total_pages,
-           (SELECT COUNT(*) FROM youtube_channels yt WHERE yt.account_id = sa.id) as total_youtube
+           (SELECT COUNT(*) FROM youtube_channels yt WHERE yt.account_id = sa.id) as total_youtube,
+           (SELECT COUNT(id) FROM scheduled_posts sp WHERE sp.account_id = sa.id AND sp.status = 'published' AND DATE(sp.scheduled_time) = CURDATE()) as posts_today
     FROM system_accounts sa 
     ORDER BY sa.id ASC
 ");
@@ -248,7 +249,10 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         if ($acc['role'] === 'admin') {
                             echo '<span style="color: #6b7280;">&infin;</span>';
                         } else {
-                            echo '<span style="font-weight: bold;">' . (int)$acc['page_limit'] . '</span>';
+                            $posts_today = (int)$acc['posts_today'];
+                            $limit = (int)$acc['page_limit'];
+                            $color = ($posts_today >= $limit && $limit > 0) ? '#ef4444' : '#374151';
+                            echo '<span style="font-weight: bold; color: ' . $color . ';">' . $posts_today . ' / ' . $limit . '</span>';
                         }
                         ?>
                     </td>
