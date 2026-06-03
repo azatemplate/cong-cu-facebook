@@ -10,11 +10,11 @@ $end_date = date('Y-m-d');
 $start_date = date('Y-m-d', strtotime('-28 days'));
 
 $sub_msg = $is_admin 
-    ? "🛡 Super Admin — Dữ liệu tài khoản cá nhân" 
+    ? "🛡 Super Admin — Global View · Dữ liệu toàn hệ thống" 
     : "👤 Thành viên — Dữ liệu tài khoản cá nhân";
 
 // ── Chart data from snapshots (lightweight DB query, always fast) ────────────
-$snap_account_id = $account_id;
+$snap_account_id = $is_admin ? 0 : $account_id;
 $today_date = date('Y-m-d');
 $chart_days = [];
 for ($i = 6; $i >= 0; $i--) {
@@ -76,65 +76,65 @@ foreach ($chart_days as $day) {
 <!-- Stats Grid: All values loaded via AJAX for instant page render -->
 <div class="stats-grid">
     <div class="stat-card">
-        <div class="stat-title">Connected FB Profiles</div>
+        <div class="stat-title"><?php echo $is_admin ? "Connected Accounts (All Users)" : "Connected FB Profiles"; ?></div>
         <div class="stat-value color-primary" style="display:flex; align-items:center;">
             <span class="icon" style="margin-right:10px;">👥</span> <span id="ajax-users">—</span>
         </div>
-        <div class="stat-subtitle">Số tài khoản Facebook đã liên kết</div>
+        <div class="stat-subtitle"><?php echo $is_admin ? "Tổng tài khoản FB đã kết nối" : "Số tài khoản Facebook đã liên kết"; ?></div>
     </div>
     
     <div class="stat-card">
-        <div class="stat-title">Total Fanpages</div>
+        <div class="stat-title"><?php echo $is_admin ? "Total Fanpages (All Users)" : "Total Fanpages"; ?></div>
         <div class="stat-value color-blue" style="display:flex; align-items:center;">
             <span class="icon" style="margin-right:10px;">f</span> <span id="ajax-pages">—</span>
         </div>
-        <div class="stat-subtitle">Tổng fanpage sở hữu & chia sẻ</div>
+        <div class="stat-subtitle"><?php echo $is_admin ? "Tổng fanpage trên toàn hệ thống" : "Tổng fanpage sở hữu & chia sẻ"; ?></div>
     </div>
 
     <div class="stat-card">
-        <div class="stat-title">Total Reach</div>
+        <div class="stat-title"><?php echo $is_admin ? "Total Reach (All Users)" : "Total Reach"; ?></div>
         <div class="stat-value color-red" style="display:flex; align-items:center; flex-wrap:wrap;">
             <span class="icon" style="margin-right:10px;">👁️</span> 
             <span id="ajax-reach">—</span> 
             <span id="ajax-reach-diff" style="display:none;"></span>
         </div>
-        <div class="stat-subtitle" style="margin-top: 10px;">Tổng tiếp cận fanpage (<?php echo htmlspecialchars($period); ?>)</div>
+        <div class="stat-subtitle" style="margin-top: 10px;"><?php echo $is_admin ? "Tổng reach từ page insights" : "Tổng tiếp cận fanpage"; ?> (<?php echo htmlspecialchars($period); ?>)</div>
     </div>
     
     <div class="stat-card">
-        <div class="stat-title">Total Followers</div>
+        <div class="stat-title"><?php echo $is_admin ? "Total Flow (All Followers)" : "Total Followers"; ?></div>
         <div class="stat-value color-green" style="display:flex; align-items:center; flex-wrap:wrap;">
             <span class="icon" style="margin-right:10px;">👍</span> 
             <span id="ajax-followers">—</span>
             <span id="ajax-followers-diff" style="display:none;"></span>
         </div>
-        <div class="stat-subtitle" style="margin-top: 10px;">Tổng người theo dõi các fanpage</div>
+        <div class="stat-subtitle" style="margin-top: 10px;"><?php echo $is_admin ? "Tổng người theo dõi toàn bộ fanpage" : "Tổng người theo dõi các fanpage"; ?></div>
     </div>
     
     <div class="stat-card">
-        <div class="stat-title">Reels Uploaded Today</div>
+        <div class="stat-title"><?php echo $is_admin ? "Reels Uploaded Today (All Users)" : "Reels Uploaded Today"; ?></div>
         <div class="stat-value color-orange" style="display:flex; align-items:center; color: #f97316;">
             <span class="icon" style="margin-right:10px;">📹</span> <span id="ajax-reels">—</span>
         </div>
-        <div class="stat-subtitle">Tổng Reels đã đăng hôm nay</div>
+        <div class="stat-subtitle"><?php echo $is_admin ? "Tổng reels đã upload hôm nay (giờ VN)" : "Tổng Reels đã đăng hôm nay"; ?></div>
     </div>
     
     <div class="stat-card">
-        <div class="stat-title">Total Views</div>
+        <div class="stat-title"><?php echo $is_admin ? "Total Views (All Users)" : "Total Views"; ?></div>
         <div class="stat-value color-purple" style="display:flex; align-items:center; color: #8b5cf6; flex-wrap:wrap;">
             <span class="icon" style="margin-right:10px;">▶</span> 
             <span id="ajax-views">—</span> 
             <span id="ajax-views-diff" style="display:none;"></span>
         </div>
-        <div class="stat-subtitle" style="margin-top: 10px;">Tổng lượt xem video/reels (<?php echo htmlspecialchars($period); ?>)</div>
+        <div class="stat-subtitle" style="margin-top: 10px;"><?php echo $is_admin ? "Tổng views video/reels theo dữ liệu" : "Tổng lượt xem video/reels"; ?> (<?php echo htmlspecialchars($period); ?>)</div>
     </div>
     
     <div class="stat-card">
-        <div class="stat-title">Total Posts Today</div>
+        <div class="stat-title"><?php echo $is_admin ? 'Total Post Today (All Users)' : 'Total Posts Today'; ?></div>
         <div class="stat-value color-primary" style="display:flex; align-items:center; color: #0284c7;">
             <span class="icon" style="margin-right:10px;">📝</span> <span id="ajax-posts-today">—</span>
         </div>
-        <div class="stat-subtitle">Tổng số bài viết đã đăng hôm nay</div>
+        <div class="stat-subtitle"><?php echo $is_admin ? 'Tổng số bài viết đã đăng trong ngày hôm nay' : 'Tổng số bài viết đã đăng hôm nay'; ?></div>
     </div>
 </div>
 

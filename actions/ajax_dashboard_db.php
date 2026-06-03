@@ -24,26 +24,34 @@ $start_datetime = $start_date . ' 00:00:00';
 $end_datetime = $end_date . ' 23:59:59';
 
 // 1. Total Users (Connected Facebook Accounts)
-$stmt = $pdo->prepare("SELECT COUNT(*) as total_users FROM users WHERE account_id = ?");
-$stmt->execute([$account_id]);
+if ($is_admin) {
+    $stmt = $pdo->query("SELECT COUNT(*) as total_users FROM users");
+} else {
+    $stmt = $pdo->prepare("SELECT COUNT(*) as total_users FROM users WHERE account_id = ?");
+    $stmt->execute([$account_id]);
+}
 $total_users = $stmt->fetchColumn();
 
 // 2. Total Pages + Followers (Owned and Shared Pages)
-$stmt2 = $pdo->prepare("
-    SELECT COUNT(DISTINCT combined.id) as total_pages, SUM(combined.followers_count) as total_followers
-    FROM (
-        SELECT p.id, p.followers_count FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = :aid
-        UNION
-        SELECT p.id, p.followers_count FROM pages p JOIN page_shares ps ON p.page_id = ps.page_id WHERE ps.shared_with_account_id = :aid2
-    ) as combined
-");
-$stmt2->execute(['aid' => $account_id, 'aid2' => $account_id]);
+if ($is_admin) {
+    $stmt2 = $pdo->query("SELECT COUNT(id) as total_pages, SUM(followers_count) as total_followers FROM pages");
+} else {
+    $stmt2 = $pdo->prepare("
+        SELECT COUNT(DISTINCT combined.id) as total_pages, SUM(combined.followers_count) as total_followers
+        FROM (
+            SELECT p.id, p.followers_count FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = :aid
+            UNION
+            SELECT p.id, p.followers_count FROM pages p JOIN page_shares ps ON p.page_id = ps.page_id WHERE ps.shared_with_account_id = :aid2
+        ) as combined
+    ");
+    $stmt2->execute(['aid' => $account_id, 'aid2' => $account_id]);
+}
 $pages_data = $stmt2->fetch(PDO::FETCH_ASSOC);
 $total_pages = $pages_data['total_pages'] ?: 0;
 $total_followers = $pages_data['total_followers'] ?: 0;
 
 // 3. Followers diff from snapshot (Filtered by logged-in account_id)
-$snap_account_id = $account_id;
+$snap_account_id = $is_admin ? 0 : $account_id;
 $yesterday_date = date('Y-m-d', strtotime('-1 days'));
 $yest_followers = 0;
 try {
@@ -64,18 +72,28 @@ $followers_diff_html = $followers_diff_pct >= 0
     : '<span style="color: #ef4444; font-size: 14px; margin-left:10px; font-weight: 500;">&darr; ' . abs($followers_diff_pct) . '%</span>';
 
 // 4. Reels today (Filtered by logged-in account_id)
-$stmt_reels = $pdo->prepare("SELECT COUNT(id) as total_reels, SUM(IF(status = 'failed', 1, 0)) as failed_reels FROM scheduled_posts WHERE account_id = ? AND post_type = 'Reel' AND DATE(scheduled_time) = CURDATE()");
-$stmt_reels->execute([$account_id]);
+if ($is_admin) {
+    $stmt_reels = $pdo->query("SELECT COUNT(id) as total_reels, SUM(IF(status = 'failed', 1, 0)) as failed_reels FROM scheduled_posts WHERE post_type = 'Reel' AND DATE(scheduled_time) = CURDATE()");
+} else {
+    $stmt_reels = $pdo->prepare("SELECT COUNT(id) as total_reels, SUM(IF(status = 'failed', 1, 0)) as failed_reels FROM scheduled_posts WHERE account_id = ? AND post_type = 'Reel' AND DATE(scheduled_time) = CURDATE()");
+    $stmt_reels->execute([$account_id]);
+}
 $reels_data = $stmt_reels->fetch(PDO::FETCH_ASSOC);
 
 // 5. Total Posts Today and Page Limit (Filtered by logged-in account_id)
-$stmt_posts = $pdo->prepare("SELECT COUNT(id) as total_posts FROM scheduled_posts WHERE account_id = ? AND status = 'published' AND DATE(scheduled_time) = CURDATE()");
-$stmt_posts->execute([$account_id]);
-$total_posts_today = $stmt_posts->fetchColumn() ?: 0;
-
-$stmt_limit = $pdo->prepare("SELECT page_limit FROM system_accounts WHERE id = ?");
-$stmt_limit->execute([$account_id]);
-$page_limit = (int)$stmt_limit->fetchColumn();
+if ($is_admin) {
+    $stmt_posts = $pdo->query("SELECT COUNT(id) as total_posts FROM scheduled_posts WHERE status = 'published' AND DATE(scheduled_time) = CURDATE()");
+    $total_posts_today = $stmt_posts->fetchColumn() ?: 0;
+    $page_limit = 0; // Admin has no limit
+} else {
+    $stmt_posts = $pdo->prepare("SELECT COUNT(id) as total_posts FROM scheduled_posts WHERE account_id = ? AND status = 'published' AND DATE(scheduled_time) = CURDATE()");
+    $stmt_posts->execute([$account_id]);
+    $total_posts_today = $stmt_posts->fetchColumn() ?: 0;
+    
+    $stmt_limit = $pdo->prepare("SELECT page_limit FROM system_accounts WHERE id = ?");
+    $stmt_limit->execute([$account_id]);
+    $page_limit = (int)$stmt_limit->fetchColumn();
+}
 
 echo json_encode([
     'total_users' => $total_users,
