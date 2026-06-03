@@ -175,6 +175,16 @@ try {
     $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1'), ('max_retries', '3'), ('cleanup_retain_days', '7')");
 
     $pdo->exec("
+        CREATE TABLE IF NOT EXISTS data_deletion_requests (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            confirmation_code VARCHAR(100) UNIQUE NOT NULL,
+            fb_user_id VARCHAR(255) NOT NULL,
+            status VARCHAR(50) DEFAULT 'completed',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    $pdo->exec("
         CREATE TABLE IF NOT EXISTS scraper_pages (
             id INT AUTO_INCREMENT PRIMARY KEY,
             account_id INT NOT NULL,

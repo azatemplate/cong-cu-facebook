@@ -10,11 +10,11 @@ $end_date = date('Y-m-d');
 $start_date = date('Y-m-d', strtotime('-28 days'));
 
 $sub_msg = $is_admin 
-    ? "🛡 Super Admin — Global View · Auto-Sync 12PM ICT" 
-    : "👤 User View — Hiển thị dữ liệu của riêng bạn";
+    ? "🛡 Super Admin — Dữ liệu tài khoản cá nhân" 
+    : "👤 Thành viên — Dữ liệu tài khoản cá nhân";
 
 // ── Chart data from snapshots (lightweight DB query, always fast) ────────────
-$snap_account_id = $is_admin ? 0 : $account_id;
+$snap_account_id = $account_id;
 $today_date = date('Y-m-d');
 $chart_days = [];
 for ($i = 6; $i >= 0; $i--) {
@@ -76,71 +76,114 @@ foreach ($chart_days as $day) {
 <!-- Stats Grid: All values loaded via AJAX for instant page render -->
 <div class="stats-grid">
     <div class="stat-card">
-        <div class="stat-title">Connected Accounts (All Users)</div>
+        <div class="stat-title">Connected FB Profiles</div>
         <div class="stat-value color-primary" style="display:flex; align-items:center;">
             <span class="icon" style="margin-right:10px;">👥</span> <span id="ajax-users">—</span>
         </div>
-        <div class="stat-subtitle">Tổng tài khoản FB đã kết nối</div>
+        <div class="stat-subtitle">Số tài khoản Facebook đã liên kết</div>
     </div>
     
     <div class="stat-card">
-        <div class="stat-title">Total Fanpages (All Users)</div>
+        <div class="stat-title">Total Fanpages</div>
         <div class="stat-value color-blue" style="display:flex; align-items:center;">
             <span class="icon" style="margin-right:10px;">f</span> <span id="ajax-pages">—</span>
         </div>
-        <div class="stat-subtitle">Tổng fanpage trên toàn hệ thống</div>
+        <div class="stat-subtitle">Tổng fanpage sở hữu & chia sẻ</div>
     </div>
 
     <div class="stat-card">
-        <div class="stat-title">Total Reach (All Users)</div>
+        <div class="stat-title">Total Reach</div>
         <div class="stat-value color-red" style="display:flex; align-items:center; flex-wrap:wrap;">
             <span class="icon" style="margin-right:10px;">👁️</span> 
             <span id="ajax-reach">—</span> 
             <span id="ajax-reach-diff" style="display:none;"></span>
         </div>
-        <div class="stat-subtitle" style="margin-top: 10px;">Tổng reach từ page insights (<?php echo htmlspecialchars($period); ?>)</div>
+        <div class="stat-subtitle" style="margin-top: 10px;">Tổng tiếp cận fanpage (<?php echo htmlspecialchars($period); ?>)</div>
     </div>
     
     <div class="stat-card">
-        <div class="stat-title">Total Flow (All Followers)</div>
+        <div class="stat-title">Total Followers</div>
         <div class="stat-value color-green" style="display:flex; align-items:center; flex-wrap:wrap;">
             <span class="icon" style="margin-right:10px;">👍</span> 
             <span id="ajax-followers">—</span>
             <span id="ajax-followers-diff" style="display:none;"></span>
         </div>
-        <div class="stat-subtitle" style="margin-top: 10px;">Tổng người theo dõi toàn bộ fanpage</div>
+        <div class="stat-subtitle" style="margin-top: 10px;">Tổng người theo dõi các fanpage</div>
     </div>
     
     <div class="stat-card">
-        <div class="stat-title">Reels Uploaded Today (All Users)</div>
+        <div class="stat-title">Reels Uploaded Today</div>
         <div class="stat-value color-orange" style="display:flex; align-items:center; color: #f97316;">
             <span class="icon" style="margin-right:10px;">📹</span> <span id="ajax-reels">—</span>
         </div>
-        <div class="stat-subtitle">Tổng reels đã upload hôm nay (giờ VN)</div>
+        <div class="stat-subtitle">Tổng Reels đã đăng hôm nay</div>
     </div>
     
     <div class="stat-card">
-        <div class="stat-title">Total Views (All Users)</div>
+        <div class="stat-title">Total Views</div>
         <div class="stat-value color-purple" style="display:flex; align-items:center; color: #8b5cf6; flex-wrap:wrap;">
             <span class="icon" style="margin-right:10px;">▶</span> 
             <span id="ajax-views">—</span> 
             <span id="ajax-views-diff" style="display:none;"></span>
         </div>
-        <div class="stat-subtitle" style="margin-top: 10px;">Tổng views video/reels theo dữ liệu (<?php echo htmlspecialchars($period); ?>)</div>
+        <div class="stat-subtitle" style="margin-top: 10px;">Tổng lượt xem video/reels (<?php echo htmlspecialchars($period); ?>)</div>
     </div>
     
     <div class="stat-card">
-        <div class="stat-title"><?php echo $is_admin ? 'Total Post Today (All Users)' : 'Công Suất Bài/Ngày'; ?></div>
+        <div class="stat-title">Total Posts Today</div>
         <div class="stat-value color-primary" style="display:flex; align-items:center; color: #0284c7;">
             <span class="icon" style="margin-right:10px;">📝</span> <span id="ajax-posts-today">—</span>
         </div>
-        <div class="stat-subtitle">Tổng số bài viết đã đăng trong ngày hôm nay</div>
+        <div class="stat-subtitle">Tổng số bài viết đã đăng hôm nay</div>
     </div>
 </div>
 
 <!-- AJAX: Load all dashboard metrics asynchronously -->
 <script>
+function formatPostType(type) {
+    switch(type) {
+        case 'Reel': return '📹 Reel';
+        case 'Video': return '🎥 Video';
+        case 'Image': return '🖼️ Ảnh';
+        case 'Status': return '💬 Status';
+        case 'Story': return '📖 Story';
+        default: return type;
+    }
+}
+
+function formatTimeRemaining(seconds) {
+    if (seconds <= 0) return '<span style="color: var(--secondary-color); font-weight: 500;">Sắp đăng...</span>';
+    if (seconds < 60) return seconds + ' giây';
+    const mins = Math.floor(seconds / 60);
+    if (mins < 60) return mins + ' phút';
+    const hours = Math.floor(mins / 60);
+    const remainingMins = mins % 60;
+    if (hours < 24) {
+        return hours + ' giờ ' + remainingMins + ' phút';
+    }
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    return days + ' ngày ' + remainingHours + ' giờ';
+}
+
+function startCountdown() {
+    setInterval(() => {
+        const countdownEls = document.querySelectorAll('.countdown-timer');
+        countdownEls.forEach(el => {
+            let seconds = parseInt(el.getAttribute('data-seconds'), 10);
+            if (!isNaN(seconds)) {
+                seconds = Math.max(0, seconds - 1);
+                el.setAttribute('data-seconds', seconds);
+                el.innerHTML = formatTimeRemaining(seconds);
+            }
+        });
+    }, 1000);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Start countdown timer
+    startCountdown();
+
     // 1. Fast DB metrics (users, pages, followers, reels) — should return in <100ms
     fetch('actions/ajax_dashboard_db.php')
         .then(res => res.json())
@@ -168,22 +211,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     postsHtml = '<span style="color:' + color + ';">' + postsHtml + ' / ' + Number(data.page_limit).toLocaleString() + '</span>';
                 }
                 document.getElementById('ajax-posts-today').innerHTML = postsHtml;
-            }
-            // Load recent pages table
-            if (data.recent_pages && data.recent_pages.length > 0) {
-                let html = '';
-                data.recent_pages.forEach(p => {
-                    html += `<tr>
-                        <td style="color: var(--text-muted); font-size: 12px;">${p.page_id}</td>
-                        <td style="font-weight: 500; color: var(--primary-color);">${p.name}</td>
-                        <td><span class="status-tag">${p.category || ''}</span></td>
-                        <td style="font-weight: 600;">${Number(p.followers_count).toLocaleString()}</td>
-                        <td>${p.user_name}</td>
-                    </tr>`;
-                });
-                document.getElementById('recent-pages-body').innerHTML = html;
-            } else {
-                document.getElementById('recent-pages-body').innerHTML = '<tr><td colspan="5" style="text-align:center; color:#6b7280;">Chưa có Fanpage nào được tải. Vui lòng thêm Token.</td></tr>';
             }
         })
         .catch(() => {
@@ -220,6 +247,81 @@ document.addEventListener('DOMContentLoaded', function() {
         .catch(err => {
             document.getElementById('ajax-reach').textContent = 'Lỗi API';
             document.getElementById('ajax-views').textContent = 'Lỗi API';
+        });
+
+    // 3. Load post queue and recent post activity
+    fetch('actions/ajax_dashboard_queue.php')
+        .then(res => res.json())
+        .then(data => {
+            // Load recent posts
+            let recentHtml = '';
+            if (data.recent && data.recent.length > 0) {
+                data.recent.forEach(p => {
+                    let badgeClass = 'badge-published';
+                    let statusText = 'Đã đăng ✅';
+                    let titleAttr = '';
+                    if (p.status === 'failed') {
+                        badgeClass = 'badge-failed';
+                        statusText = 'Thất bại ❌';
+                        titleAttr = `title="${p.error_msg.replace(/"/g, '&quot;')}"`;
+                    }
+                    
+                    let linkStart = '';
+                    let linkEnd = '';
+                    if (p.status === 'published' && p.fb_post_id) {
+                        if (p.fb_post_id.startsWith('http://') || p.fb_post_id.startsWith('https://')) {
+                            linkStart = `<a href="${p.fb_post_id}" target="_blank" style="text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:4px;">`;
+                            linkEnd = ` <span style="font-size:10px; color:var(--text-muted);">↗</span></a>`;
+                        } else if (p.post_type === 'YouTube') {
+                            let postUrl = `https://www.youtube.com/watch?v=${p.fb_post_id}`;
+                            linkStart = `<a href="${postUrl}" target="_blank" style="text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:4px;">`;
+                            linkEnd = ` <span style="font-size:10px; color:var(--text-muted);">↗</span></a>`;
+                        } else {
+                            let postUrl = `https://facebook.com/${p.fb_post_id}`;
+                            linkStart = `<a href="${postUrl}" target="_blank" style="text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:4px;">`;
+                            linkEnd = ` <span style="font-size:10px; color:var(--text-muted);">↗</span></a>`;
+                        }
+                    }
+                    
+                    recentHtml += `<tr>
+                        <td style="font-weight: 500; color: var(--primary-color);">${linkStart}${p.page_name}${linkEnd}</td>
+                        <td><span style="font-size: 13px; font-weight:500;">${formatPostType(p.post_type)}</span></td>
+                        <td style="font-size: 13px; color: var(--text-muted);">${p.scheduled_time}</td>
+                        <td><span class="badge ${badgeClass}" ${titleAttr}>${statusText}</span></td>
+                    </tr>`;
+                });
+                document.getElementById('recent-posts-body').innerHTML = recentHtml;
+            } else {
+                document.getElementById('recent-posts-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">Không có bài viết nào gần đây.</td></tr>';
+            }
+
+            // Load upcoming posts
+            let upcomingHtml = '';
+            if (data.upcoming && data.upcoming.length > 0) {
+                data.upcoming.forEach(p => {
+                    let badgeClass = p.status === 'processing' ? 'badge-processing' : 'badge-pending';
+                    let statusText = p.status === 'processing' ? 'Đang gửi...' : 'Đang chờ';
+                    
+                    upcomingHtml += `<tr>
+                        <td style="font-weight: 500; color: var(--primary-color);">${p.page_name}</td>
+                        <td><span style="font-size: 13px; font-weight:500;">${formatPostType(p.post_type)}</span></td>
+                        <td style="font-size: 13px; color: var(--text-muted);">${p.scheduled_time}</td>
+                        <td>
+                            <span class="countdown-timer" data-seconds="${p.seconds_left}">
+                                ${formatTimeRemaining(p.seconds_left)}
+                            </span>
+                            <span class="badge ${badgeClass}" style="margin-left: 6px; font-size:10px; padding: 2px 6px;">${statusText}</span>
+                        </td>
+                    </tr>`;
+                });
+                document.getElementById('upcoming-queue-body').innerHTML = upcomingHtml;
+            } else {
+                document.getElementById('upcoming-queue-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">Không có bài viết nào đang chờ đăng.</td></tr>';
+            }
+        })
+        .catch(err => {
+            document.getElementById('recent-posts-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:#ef4444; padding:20px;">Lỗi tải dữ liệu.</td></tr>';
+            document.getElementById('upcoming-queue-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:#ef4444; padding:20px;">Lỗi tải dữ liệu.</td></tr>';
         });
 });
 </script>
@@ -311,26 +413,108 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<div class="card">
-    <h3 style="margin-bottom: 15px;">Danh sách Fanpage Gần Đây</h3>
-    <table style="min-width:650px;">
-        <thead>
-            <tr>
-                <th>Page ID</th>
-                <th>Tên Fanpage</th>
-                <th>Danh mục</th>
-                <th>Người theo dõi</th>
-                <th>Tài khoản quản lý</th>
-            </tr>
-        </thead>
-        <tbody id="recent-pages-body">
-            <tr><td colspan="5" style="text-align:center; color:#6b7280; padding:20px;">
-                <span style="display:inline-block; width:14px; height:14px; border:2px solid #e5e7eb; border-top-color:var(--primary-color); border-radius:50%; animation: spin 1s linear infinite;"></span>
-                Đang tải...
-            </td></tr>
-        </tbody>
-    </table>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 20px;">
+    <!-- Card 1: Lịch sử đăng gần đây -->
+    <div class="card" style="margin-bottom: 0;">
+        <h3 style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
+            <span>🕒</span> Lịch sử đăng gần đây
+        </h3>
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; min-width: 400px; border-collapse: collapse;">
+                <thead>
+                    <tr>
+                        <th>Kênh / Fanpage</th>
+                        <th>Loại bài</th>
+                        <th>Thời gian</th>
+                        <th>Trạng thái</th>
+                    </tr>
+                </thead>
+                <tbody id="recent-posts-body">
+                    <tr>
+                        <td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">
+                            <span style="display:inline-block; width:14px; height:14px; border:2px solid #e5e7eb; border-top-color:var(--primary-color); border-radius:50%; animation: spin 1s linear infinite;"></span>
+                            Đang tải...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Card 2: Hàng chờ đăng sắp tới -->
+    <div class="card" style="margin-bottom: 0;">
+        <h3 style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
+            <span>📅</span> Hàng chờ đăng sắp tới
+        </h3>
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; min-width: 400px; border-collapse: collapse;">
+                <thead>
+                    <tr>
+                        <th>Kênh / Fanpage</th>
+                        <th>Loại bài</th>
+                        <th>Dự kiến đăng</th>
+                        <th>Thời gian chờ</th>
+                    </tr>
+                </thead>
+                <tbody id="upcoming-queue-body">
+                    <tr>
+                        <td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">
+                            <span style="display:inline-block; width:14px; height:14px; border:2px solid #e5e7eb; border-top-color:var(--primary-color); border-radius:50%; animation: spin 1s linear infinite;"></span>
+                            Đang tải...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
-<style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
+
+<style>
+@keyframes spin { 100% { transform: rotate(360deg); } }
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
+}
+.badge-published {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+.badge-failed {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    cursor: help;
+}
+.badge-pending {
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.2);
+}
+.badge-processing {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
+
+/* Responsive adjustment for grid tables on mobile */
+@media (max-width: 768px) {
+    div[style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+    }
+}
+</style>
 
 <?php include 'includes/footer.php'; ?>

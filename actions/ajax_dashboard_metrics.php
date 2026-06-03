@@ -15,7 +15,7 @@ $is_admin = ($_SESSION['role'] === 'admin');
 // Giải phóng session lock sớm — cho phép ajax_dashboard_db.php chạy song song
 session_write_close();
 
-$snap_account_id = $is_admin ? 0 : $account_id;
+$snap_account_id = $account_id;
 
 $display_total_reach = 0;
 $display_total_views = 0;
