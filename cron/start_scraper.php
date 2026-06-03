@@ -13,7 +13,9 @@ $sql = "
     SELECT sp.id, sp.account_id, sp.user_id, sp.page_id, sp.auto_refresh_hours, sp.last_scraped_at, sp.post_count, sp.only_with_content, u.access_token as user_token
     FROM scraper_pages sp
     JOIN users u ON sp.user_id = u.id
+    JOIN system_accounts sa ON sp.account_id = sa.id
     WHERE sp.auto_refresh_hours > 0
+      AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
       AND (
           sp.last_scraped_at IS NULL 
           OR sp.last_scraped_at <= DATE_SUB(NOW(), INTERVAL sp.auto_refresh_hours HOUR)

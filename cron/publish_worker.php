@@ -323,6 +323,7 @@ $sql = "
     LEFT JOIN system_accounts sa ON sp.account_id = sa.id 
     WHERE (sp.status = 'pending' $retry_clause) 
       AND sp.scheduled_time <= NOW() 
+      AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
       AND sp.page_id IN ($placeholders)
     ORDER BY sp.scheduled_time ASC
 ";

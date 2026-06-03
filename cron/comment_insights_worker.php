@@ -59,6 +59,7 @@ try {
                sp.comment_threshold_views, sp.comment_threshold_likes, sp.comment_threshold_comments,
                sp.account_id, sp.scheduled_time
         FROM scheduled_posts sp
+        JOIN system_accounts sa ON sp.account_id = sa.id
         WHERE sp.status = 'published'
           AND sp.comment_mode = 'insights'
           AND sp.comment_status = 'waiting_insights'
@@ -66,6 +67,7 @@ try {
           AND sp.comment_done = 0
           AND sp.fb_post_id IS NOT NULL
           AND sp.fb_post_id != ''
+          AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
         ORDER BY sp.id ASC
     ");
     $stmt->execute();

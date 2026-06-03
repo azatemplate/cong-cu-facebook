@@ -108,6 +108,7 @@ $sql = "
     LEFT JOIN pages p ON sp.page_id = p.page_id
     WHERE sp.scheduled_time <= NOW()
       AND sp.page_id IS NOT NULL
+      AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
       AND (
         sp.status = 'pending'
         OR (sp.status = 'failed' AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3)))

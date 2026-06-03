@@ -4,13 +4,15 @@
 
 require_once __DIR__ . '/../includes/db.php';
 
-// Tìm các user có bình luận pending cần đăng ngay lúc này
-$stmt = $pdo->query("SELECT DISTINCT account_id FROM scheduled_posts 
-                     WHERE status = 'published'
-                       AND comment_lines IS NOT NULL
-                       AND comment_at IS NOT NULL
-                       AND comment_at <= NOW()
-                       AND comment_done = 0");
+// Tìm các user có bình luận pending cần đăng ngay lúc này (chưa hết hạn)
+$stmt = $pdo->query("SELECT DISTINCT sp.account_id FROM scheduled_posts sp
+                     JOIN system_accounts sa ON sp.account_id = sa.id
+                     WHERE sp.status = 'published'
+                       AND sp.comment_lines IS NOT NULL
+                       AND sp.comment_at IS NOT NULL
+                       AND sp.comment_at <= NOW()
+                       AND sp.comment_done = 0
+                       AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())");
 $accounts = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
 if (empty($accounts)) {
