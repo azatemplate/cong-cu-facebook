@@ -298,7 +298,7 @@ try {
         <h3 style="margin-bottom: 20px;">Cấu hình Google API (Youtube & Drive)</h3>
         <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px;">
             Nhập Client ID và Client Secret ứng dụng riêng từ Google Cloud Console để hệ thống có thể liên kết đăng video Youtube và sử dụng chung cho việc duyệt file từ Google Drive. Cấu hình này là độc lập cho mỗi user.<br><br>
-            <a href="https://www.youtube.com/watch?v=i22YCgy90g8" target="_blank" style="color: #ef4444; font-weight: bold; text-decoration: none;">▶️ Xem Hướng Dẫn cách cấu hình Google API</a>
+            <a href="https://www.youtube.com/watch?v=_So6OX0MCzk" target="_blank" style="color: #ef4444; font-weight: bold; text-decoration: none;">▶️ Xem Hướng Dẫn cách cấu hình Google API</a>
         </p>
         <form method="POST" action="settings.php">
             <?php echo csrf_field(); ?>

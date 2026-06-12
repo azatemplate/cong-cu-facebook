@@ -44,7 +44,7 @@ try {
             if ($res['status_code'] === 200 && isset($res['data']['data'])) {
                 foreach ($res['data']['data'] as $page) {
                     if (isset($page['picture']['data']['url']) && !empty($page['picture']['data']['url'])) {
-                        $avatar_url = $page['picture']['data']['url'];
+                        $avatar_url = "avatar.php?id=" . $page['id'];
                         $update_stmt->execute([$avatar_url, $page['id']]);
                         $updated++;
                     }

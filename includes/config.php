@@ -69,4 +69,3 @@ if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.gc_maxlifetime', '28800');
     ini_set('session.cookie_lifetime', '28800');
 }
-?>

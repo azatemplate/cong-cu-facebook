@@ -114,6 +114,9 @@ $pages_json = json_encode($pages);
                 Dán nhiều link TikTok vào đây (Mỗi link 1 dòng) để hệ thống tự động tải Reels và lấy Tiêu đề gốc của
                 TikTok.
             </p>
+            <p style="font-size: 12px; color: #ef4444; font-weight: bold; margin-top: -5px; margin-bottom: 10px;">
+                ⚠️ Lưu ý: Tính năng này có thể chạy lâu dài sẽ không ổn định, khuyến nghị kết nối drive
+            </p>
             <textarea id="tiktok_urls" name="tiktok_urls" rows="4"
                 placeholder="VD:&#10;https://www.tiktok.com/@user/video/123...&#10;https://www.tiktok.com/@user/video/456..."
                 style="width: 100%; padding: 10px; border: 1px solid #f9a8d4; border-radius: 6px;"></textarea>
@@ -144,6 +147,7 @@ $pages_json = json_encode($pages);
                     Chọn từ Google Drive
                 </button>
             </div>
+            <div id="localUploadStatus" style="margin-top: 10px; display: none; padding: 8px 12px; border-radius: 4px; font-size: 13px;"></div>
             <div id="driveSelectionInfo"
                 style="margin-top: 10px; display: none; padding: 10px 15px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 6px; font-size: 13px;">
                 <div
@@ -309,6 +313,62 @@ $pages_json = json_encode($pages);
         window.pageSelectorFilterByUser(this.value);
     });
 
+    function uploadLocalFilesPromise(inputEl, progressCallback) {
+        return new Promise((resolve, reject) => {
+            if (!inputEl || !inputEl.files || inputEl.files.length === 0) {
+                resolve(null);
+                return;
+            }
+
+            const files = Array.from(inputEl.files);
+            const uploadedResults = [];
+            
+            function uploadNext(index) {
+                if (index >= files.length) {
+                    resolve(uploadedResults);
+                    return;
+                }
+
+                const file = files[index];
+                if (progressCallback) {
+                    progressCallback(`⏳ Đang tải file ${index + 1}/${files.length} lên Google Drive: ${file.name}...`);
+                }
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                fetch('actions/drive_proxy.php?action=upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(async response => {
+                    const text = await response.text();
+                    if (!response.ok) {
+                        throw new Error(`Mạng hoặc máy chủ gặp sự cố khi tải file ${file.name} (HTTP ${response.status}): ${text}`);
+                    }
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        throw new Error(`Lỗi phản hồi từ server (không phải JSON): ${text.substring(0, 500)}`);
+                    }
+                })
+                .then(data => {
+                    if (data.status === 'success' && data.files && data.files.length > 0) {
+                        uploadedResults.push(...data.files);
+                        uploadNext(index + 1);
+                    } else {
+                        reject(data.msg || `Lỗi tải file ${file.name} lên Google Drive.`);
+                    }
+                })
+                .catch(error => {
+                    reject(error.message || error || `Lỗi kết nối khi tải file ${file.name}.`);
+                });
+            }
+
+            uploadNext(0);
+        });
+    }
+
     reelsForm.addEventListener('submit', function (e) {
         e.preventDefault();
 
@@ -327,41 +387,85 @@ $pages_json = json_encode($pages);
         btnSubmit.textContent = 'Đang tải lên và thực hiện (Có thể mất đến 1-2 phút)...';
         reelsResult.style.display = 'none';
 
-        const formData = new FormData(reelsForm);
+        const localStatus = document.getElementById('localUploadStatus');
+        if (localStatus) {
+            localStatus.style.display = 'none';
+            localStatus.innerText = '';
+        }
 
-        fetch('actions/publish_video.php', {
-            method: 'POST',
-            body: formData
+        uploadLocalFilesPromise(videoEl, function(msg) {
+            if (localStatus) {
+                localStatus.style.display = 'block';
+                localStatus.className = 'alert alert-warning';
+                localStatus.style.background = '#fef3cd';
+                localStatus.style.color = '#856404';
+                localStatus.style.border = '1px solid #ffeeba';
+                localStatus.innerText = msg;
+            }
+            btnSubmit.textContent = 'Đang tải file lên Google Drive...';
         })
-            .then(response => response.json())
-            .then(data => {
-                reelsResult.style.display = 'block';
-                if (data.status === 'success') {
-                    reelsResult.className = 'alert alert-success';
-                    reelsResult.innerHTML = data.msg;
-                    if (data.redirect) {
-                        setTimeout(() => {
-                            window.location.href = data.redirect;
-                        }, 1500);
-                    } else if (data.post_id) {
-                        reelsResult.innerHTML += ' <a href="https://facebook.com/' + data.post_id + '" target="_blank">Xem Reels</a>';
-                    }
-                    reelsForm.reset();
-                    window.pageSelectorFilterByUser('');
-                } else {
-                    reelsResult.className = 'alert alert-danger';
-                    reelsResult.innerHTML = data.msg;
+        .then(uploadedFiles => {
+            if (uploadedFiles && uploadedFiles.length > 0) {
+                if (localStatus) {
+                    localStatus.className = 'alert alert-success';
+                    localStatus.style.background = '#d4edda';
+                    localStatus.style.color = '#155724';
+                    localStatus.style.border = '1px solid #c3e6cb';
+                    localStatus.innerText = '✅ Tải lên Google Drive thành công! Đang tiến hành lên lịch...';
                 }
-                btnSubmit.disabled = false;
-                btnSubmit.textContent = 'Xác nhận Đăng / Lên Lịch';
-            })
-            .catch(error => {
-                reelsResult.style.display = 'block';
-                reelsResult.className = 'alert alert-danger';
-                reelsResult.innerHTML = 'Lỗi mạng hoặc hệ thống.';
-                btnSubmit.disabled = false;
-                btnSubmit.textContent = 'Xác nhận Đăng / Lên Lịch';
+                
+                const fileIds = uploadedFiles.map(f => f.id).join(',');
+                const fileNames = uploadedFiles.map(f => f.name).join('|||');
+                
+                document.getElementById('drive_file_id').value = fileIds;
+                document.getElementById('drive_file_names').value = fileNames;
+                
+                if (videoEl) videoEl.value = '';
+            }
+
+            btnSubmit.textContent = 'Đang xử lý đăng bài (Có thể mất đến 1-2 phút)...';
+            const formData = new FormData(reelsForm);
+
+            return fetch('actions/publish_video.php', {
+                method: 'POST',
+                body: formData
             });
+        })
+        .then(response => {
+            if (response instanceof Response) {
+                return response.json();
+            }
+            throw new Error('Không nhận được phản hồi hợp lệ từ máy chủ.');
+        })
+        .then(data => {
+            reelsResult.style.display = 'block';
+            if (data.status === 'success') {
+                reelsResult.className = 'alert alert-success';
+                reelsResult.innerHTML = data.msg;
+                if (data.redirect) {
+                    setTimeout(() => {
+                        window.location.href = data.redirect;
+                    }, 1500);
+                } else if (data.post_id) {
+                    reelsResult.innerHTML += ' <a href="https://facebook.com/' + data.post_id + '" target="_blank">Xem Reels</a>';
+                }
+                reelsForm.reset();
+                window.pageSelectorFilterByUser('');
+                if (localStatus) localStatus.style.display = 'none';
+            } else {
+                reelsResult.className = 'alert alert-danger';
+                reelsResult.innerHTML = data.msg;
+            }
+            btnSubmit.disabled = false;
+            btnSubmit.textContent = 'Xác nhận Đăng / Lên Lịch';
+        })
+        .catch(error => {
+            reelsResult.style.display = 'block';
+            reelsResult.className = 'alert alert-danger';
+            reelsResult.innerHTML = 'Lỗi: ' + (error.message || error || 'Lỗi mạng hoặc hệ thống.');
+            btnSubmit.disabled = false;
+            btnSubmit.textContent = 'Xác nhận Đăng / Lên Lịch';
+        });
     });
 
     function onDriveFilesSelected(files) {
@@ -390,6 +494,12 @@ $pages_json = json_encode($pages);
         document.getElementById('drive_file_id').value = '';
         document.getElementById('drive_file_names').value = '';
         document.getElementById('driveSelectionInfo').style.display = 'none';
+        
+        const localStatus = document.getElementById('localUploadStatus');
+        if (localStatus) {
+            localStatus.style.display = 'none';
+            localStatus.innerText = '';
+        }
     }
 </script>
 

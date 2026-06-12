@@ -94,10 +94,11 @@ $pages_json = json_encode($pages);
                     Chọn từ Google Drive
                 </button>
             </div>
+            <div id="localUploadStatus" style="margin-top: 10px; display: none; padding: 8px 12px; border-radius: 4px; font-size: 13px;"></div>
             <div id="driveSelectionInfo" style="margin-top: 10px; display: none; padding: 10px 15px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 6px; font-size: 13px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; color: #0369a1; font-weight: bold;">
                     <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> Đã chọn <span id="driveSelectedCount">0</span> file từ Google Drive:</span>
-                    <button type="button" onclick="clearDriveSelection()" style="background: none; border: none; color: #dc2626; cursor: pointer; text-decoration: underline; font-size: 12px;">Hủy / Xoá hết</button>
+                    <button type="button" onclick="clearDriveSelection()" style="margin-left: 10px; background: none; border: none; color: #dc2626; cursor: pointer; text-decoration: underline; font-size: 12px;">Hủy / Xoá hết</button>
                 </div>
                 <ul id="driveSelectedList" style="margin: 0; padding-left: 20px; color: #0c4a6e; max-height: 120px; overflow-y: auto; line-height: 1.6;"></ul>
             </div>
@@ -145,6 +146,62 @@ $pages_json = json_encode($pages);
         window.pageSelectorFilterByUser(this.value);
     });
 
+    function uploadLocalFilesPromise(inputEl, progressCallback) {
+        return new Promise((resolve, reject) => {
+            if (!inputEl || !inputEl.files || inputEl.files.length === 0) {
+                resolve(null);
+                return;
+            }
+
+            const files = Array.from(inputEl.files);
+            const uploadedResults = [];
+            
+            function uploadNext(index) {
+                if (index >= files.length) {
+                    resolve(uploadedResults);
+                    return;
+                }
+
+                const file = files[index];
+                if (progressCallback) {
+                    progressCallback(`⏳ Đang tải file ${index + 1}/${files.length} lên Google Drive: ${file.name}...`);
+                }
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                fetch('actions/drive_proxy.php?action=upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(async response => {
+                    const text = await response.text();
+                    if (!response.ok) {
+                        throw new Error(`Mạng hoặc máy chủ gặp sự cố khi tải file ${file.name} (HTTP ${response.status}): ${text}`);
+                    }
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        throw new Error(`Lỗi phản hồi từ server (không phải JSON): ${text.substring(0, 500)}`);
+                    }
+                })
+                .then(data => {
+                    if (data.status === 'success' && data.files && data.files.length > 0) {
+                        uploadedResults.push(...data.files);
+                        uploadNext(index + 1);
+                    } else {
+                        reject(data.msg || `Lỗi tải file ${file.name} lên Google Drive.`);
+                    }
+                })
+                .catch(error => {
+                    reject(error.message || error || `Lỗi kết nối khi tải file ${file.name}.`);
+                });
+            }
+
+            uploadNext(0);
+        });
+    }
+
     storyForm.addEventListener('submit', function(e) {
         e.preventDefault();
         
@@ -159,16 +216,59 @@ $pages_json = json_encode($pages);
         if (!window.pageSelectorValidate()) return;
         
         btnSubmit.disabled = true;
-        btnSubmit.textContent = 'Đang tải lên và đăng Story...';
+        btnSubmit.textContent = 'Đang tải lên và thực hiện...';
         storyResult.style.display = 'none';
 
-        const formData = new FormData(storyForm);
+        const localStatus = document.getElementById('localUploadStatus');
+        if (localStatus) {
+            localStatus.style.display = 'none';
+            localStatus.innerText = '';
+        }
 
-        fetch('actions/publish_story.php', {
-            method: 'POST',
-            body: formData
+        uploadLocalFilesPromise(mediaEl, function(msg) {
+            if (localStatus) {
+                localStatus.style.display = 'block';
+                localStatus.className = 'alert alert-warning';
+                localStatus.style.background = '#fef3cd';
+                localStatus.style.color = '#856404';
+                localStatus.style.border = '1px solid #ffeeba';
+                localStatus.innerText = msg;
+            }
+            btnSubmit.textContent = 'Đang tải file lên Google Drive...';
         })
-        .then(response => response.json())
+        .then(uploadedFiles => {
+            if (uploadedFiles && uploadedFiles.length > 0) {
+                if (localStatus) {
+                    localStatus.className = 'alert alert-success';
+                    localStatus.style.background = '#d4edda';
+                    localStatus.style.color = '#155724';
+                    localStatus.style.border = '1px solid #c3e6cb';
+                    localStatus.innerText = '✅ Tải lên Google Drive thành công! Đang tiến hành lên lịch...';
+                }
+                
+                const fileIds = uploadedFiles.map(f => f.id).join(',');
+                const fileNames = uploadedFiles.map(f => f.name).join('|||');
+                
+                document.getElementById('drive_file_id').value = fileIds;
+                document.getElementById('drive_file_names').value = fileNames;
+                
+                if (mediaEl) mediaEl.value = '';
+            }
+
+            btnSubmit.textContent = 'Đang xử lý đăng bài (Có thể mất đến 1-2 phút)...';
+            const formData = new FormData(storyForm);
+
+            return fetch('actions/publish_story.php', {
+                method: 'POST',
+                body: formData
+            });
+        })
+        .then(response => {
+            if (response instanceof Response) {
+                return response.json();
+            }
+            throw new Error('Không nhận được phản hồi hợp lệ từ máy chủ.');
+        })
         .then(data => {
             storyResult.style.display = 'block';
             if (data.status === 'success') {
@@ -183,19 +283,20 @@ $pages_json = json_encode($pages);
                 }
                 storyForm.reset();
                 window.pageSelectorFilterByUser('');
+                if (localStatus) localStatus.style.display = 'none';
             } else {
                 storyResult.className = 'alert alert-danger';
                 storyResult.innerHTML = data.msg;
             }
             btnSubmit.disabled = false;
-            btnSubmit.textContent = 'Đăng Story Ngay';
+            btnSubmit.textContent = 'Xác nhận Đăng / Lên Lịch';
         })
         .catch(error => {
             storyResult.style.display = 'block';
             storyResult.className = 'alert alert-danger';
-            storyResult.innerHTML = 'Lỗi mạng hoặc hệ thống.';
+            storyResult.innerHTML = 'Lỗi: ' + (error.message || error || 'Lỗi mạng hoặc hệ thống.');
             btnSubmit.disabled = false;
-            btnSubmit.textContent = 'Đăng Story Ngay';
+            btnSubmit.textContent = 'Xác nhận Đăng / Lên Lịch';
         });
     });
     
@@ -225,6 +326,12 @@ $pages_json = json_encode($pages);
         document.getElementById('drive_file_id').value = '';
         document.getElementById('drive_file_names').value = '';
         document.getElementById('driveSelectionInfo').style.display = 'none';
+        
+        const localStatus = document.getElementById('localUploadStatus');
+        if (localStatus) {
+            localStatus.style.display = 'none';
+            localStatus.innerText = '';
+        }
     }
 </script>
 

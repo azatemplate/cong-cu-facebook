@@ -106,6 +106,7 @@ $pages_json = json_encode($pages);
                     Chọn từ Google Drive (Nhiều file)
                 </button>
             </div>
+            <div id="localUploadStatus" style="margin-top: 10px; display: none; padding: 8px 12px; border-radius: 4px; font-size: 13px;"></div>
             <div id="driveSelectionInfo" style="margin-top: 10px; display: none; padding: 8px 12px; background: #e0f2fe; color: #0369a1; border-radius: 4px; font-size: 13px;">
                 Đã chọn <strong id="driveSelectedCount">0</strong> file từ Drive. <span id="driveSelectedName"></span>
                 <button type="button" onclick="clearDriveSelection()" style="margin-left: 10px; background: none; border: none; color: #dc2626; cursor: pointer; text-decoration: underline;">Hủy</button>
@@ -198,21 +199,119 @@ $pages_json = json_encode($pages);
         window.pageSelectorFilterByUser(this.value);
     });
 
+    function uploadLocalFilesPromise(inputEl, progressCallback) {
+        return new Promise((resolve, reject) => {
+            if (!inputEl || !inputEl.files || inputEl.files.length === 0) {
+                resolve(null);
+                return;
+            }
+
+            const files = Array.from(inputEl.files);
+            const uploadedResults = [];
+            
+            function uploadNext(index) {
+                if (index >= files.length) {
+                    resolve(uploadedResults);
+                    return;
+                }
+
+                const file = files[index];
+                if (progressCallback) {
+                    progressCallback(`⏳ Đang tải file ${index + 1}/${files.length} lên Google Drive: ${file.name}...`);
+                }
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                fetch('actions/drive_proxy.php?action=upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(async response => {
+                    const text = await response.text();
+                    if (!response.ok) {
+                        throw new Error(`Mạng hoặc máy chủ gặp sự cố khi tải file ${file.name} (HTTP ${response.status}): ${text}`);
+                    }
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        throw new Error(`Lỗi phản hồi từ server (không phải JSON): ${text.substring(0, 500)}`);
+                    }
+                })
+                .then(data => {
+                    if (data.status === 'success' && data.files && data.files.length > 0) {
+                        uploadedResults.push(...data.files);
+                        uploadNext(index + 1);
+                    } else {
+                        reject(data.msg || `Lỗi tải file ${file.name} lên Google Drive.`);
+                    }
+                })
+                .catch(error => {
+                    reject(error.message || error || `Lỗi kết nối khi tải file ${file.name}.`);
+                });
+            }
+
+            uploadNext(0);
+        });
+    }
+
     postForm.addEventListener('submit', function(e) {
         e.preventDefault();
         if (!window.pageSelectorValidate()) return;
         
         btnSubmit.disabled = true;
-        btnSubmit.textContent = 'Đang xử lý (Có thể mất 1-2 phút)...';
+        btnSubmit.textContent = 'Đang xử lý...';
         postResult.style.display = 'none';
 
-        const formData = new FormData(postForm);
+        const localStatus = document.getElementById('localUploadStatus');
+        if (localStatus) {
+            localStatus.style.display = 'none';
+            localStatus.innerText = '';
+        }
 
-        fetch('actions/publish_post.php', {
-            method: 'POST',
-            body: formData
+        const imagesEl = document.getElementById('images');
+
+        uploadLocalFilesPromise(imagesEl, function(msg) {
+            if (localStatus) {
+                localStatus.style.display = 'block';
+                localStatus.className = 'alert alert-warning';
+                localStatus.style.background = '#fef3cd';
+                localStatus.style.color = '#856404';
+                localStatus.style.border = '1px solid #ffeeba';
+                localStatus.innerText = msg;
+            }
+            btnSubmit.textContent = 'Đang tải file lên Google Drive...';
         })
-        .then(response => response.json())
+        .then(uploadedFiles => {
+            if (uploadedFiles && uploadedFiles.length > 0) {
+                if (localStatus) {
+                    localStatus.className = 'alert alert-success';
+                    localStatus.style.background = '#d4edda';
+                    localStatus.style.color = '#155724';
+                    localStatus.style.border = '1px solid #c3e6cb';
+                    localStatus.innerText = '✅ Tải lên Google Drive thành công! Đang tiến hành lên lịch...';
+                }
+                
+                const fileIds = uploadedFiles.map(f => f.id).join(',');
+                document.getElementById('drive_file_id').value = fileIds;
+                
+                if (imagesEl) imagesEl.value = '';
+            }
+
+            btnSubmit.textContent = 'Đang xử lý đăng bài (Có thể mất 1-2 phút)...';
+            const formData = new FormData(postForm);
+
+            return fetch('actions/publish_post.php', {
+                method: 'POST',
+                body: formData
+            });
+        })
+        .then(response => {
+            if (response instanceof Response) {
+                return response.json();
+            }
+            throw new Error('Không nhận được phản hồi hợp lệ từ máy chủ.');
+        })
         .then(data => {
             postResult.style.display = 'block';
             if (data.status === 'success') {
@@ -227,6 +326,7 @@ $pages_json = json_encode($pages);
                 }
                 postForm.reset();
                 window.pageSelectorFilterByUser('');
+                if (localStatus) localStatus.style.display = 'none';
             } else {
                 postResult.className = 'alert alert-danger';
                 postResult.innerHTML = data.msg;
@@ -237,7 +337,7 @@ $pages_json = json_encode($pages);
         .catch(error => {
             postResult.style.display = 'block';
             postResult.className = 'alert alert-danger';
-            postResult.innerHTML = 'Lỗi mạng hoặc hệ thống.';
+            postResult.innerHTML = 'Lỗi: ' + (error.message || error || 'Lỗi mạng hoặc hệ thống.');
             btnSubmit.disabled = false;
             btnSubmit.textContent = 'Xác nhận / Lên Lịch';
         });
@@ -269,6 +369,12 @@ $pages_json = json_encode($pages);
         document.getElementById('driveSelectedCount').innerText = '0';
         document.getElementById('driveSelectedName').innerText = '';
         document.getElementById('driveSelectionInfo').style.display = 'none';
+        
+        const localStatus = document.getElementById('localUploadStatus');
+        if (localStatus) {
+            localStatus.style.display = 'none';
+            localStatus.innerText = '';
+        }
     }
 </script>
 

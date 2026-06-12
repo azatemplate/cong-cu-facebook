@@ -196,6 +196,28 @@ foreach (glob($tmp_dir . '/fb_cleanup_*.done') ?: [] as $f) {
 }
 echo "  -> Da xoa: {$stats['lock_files']} file cu trong /tmp/\n";
 
+// ── BUOC 8: Don dep records mo coi (orphan records) ─────────────────────────
+echo "\n[STEP 8] Don dep cac dong mo coi (orphan)...\n";
+try {
+    // Xoa youtube_channels co account_id khong ton tai
+    $del_yt = $pdo->exec("DELETE FROM youtube_channels WHERE account_id NOT IN (SELECT id FROM system_accounts)");
+    echo "  -> Da xoa: $del_yt youtube_channels mo coi\n";
+    
+    // Xoa pages co user_id khong ton tai
+    $del_pg = $pdo->exec("DELETE FROM pages WHERE user_id NOT IN (SELECT id FROM users)");
+    echo "  -> Da xoa: $del_pg pages mo coi\n";
+    
+    // Xoa users co account_id khong ton tai
+    $del_usr = $pdo->exec("DELETE FROM users WHERE account_id NOT IN (SELECT id FROM system_accounts)");
+    echo "  -> Da xoa: $del_usr users mo coi\n";
+    
+    // Xoa posts_history thuoc ve Fanpage khong con ton tai
+    $del_hist = $pdo->exec("DELETE FROM posts_history WHERE page_id NOT IN (SELECT page_id FROM pages)");
+    echo "  -> Da xoa: $del_hist posts_history mo coi\n";
+} catch (Exception $e) {
+    echo "  [LOI] Orphan cleanup: " . $e->getMessage() . "\n";
+}
+
 // ── BAO CAO TONG KET ─────────────────────────────────────────────────────────
 echo "\n========================================\n";
 echo "  TONG KET CLEANUP\n";

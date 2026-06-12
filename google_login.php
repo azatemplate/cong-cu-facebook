@@ -22,9 +22,10 @@ $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVE
 $base_dir = rtrim(dirname($_SERVER['PHP_SELF']), '/\\');
 $redirect_uri = $protocol . $_SERVER['HTTP_HOST'] . $base_dir . "/google_callback.php";
 
-// Scopes cần thiết để đọc danh sách file và tải nội dung từ Google Drive
+// Scopes cần thiết để đọc danh sách file và tải nội dung từ Google Drive, cũng như tạo thư mục/upload file
 $scopes = [
-    'https://www.googleapis.com/auth/drive.readonly'
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/drive.file'
 ];
 
 $auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" . http_build_query([
@@ -38,4 +39,3 @@ $auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" . http_build_query([
 
 header("Location: $auth_url");
 exit;
-?>

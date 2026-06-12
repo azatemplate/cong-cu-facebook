@@ -130,9 +130,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             // 8. Xóa users
             $pdo->prepare("DELETE FROM users WHERE account_id = ?")->execute([$del_id]);
 
-            // 9. Xóa saved_replies, ai_configs
+            // 9. Xóa saved_replies, ai_configs, youtube_channels
             try { $pdo->prepare("DELETE FROM saved_replies WHERE account_id = ?")->execute([$del_id]); } catch (PDOException $e) {}
             try { $pdo->prepare("DELETE FROM ai_configs WHERE account_id = ?")->execute([$del_id]); } catch (PDOException $e) {}
+            try { $pdo->prepare("DELETE FROM youtube_channels WHERE account_id = ?")->execute([$del_id]); } catch (PDOException $e) {}
 
             // 10. Cuối cùng xóa system_account
             $pdo->prepare("DELETE FROM system_accounts WHERE id = ?")->execute([$del_id]);

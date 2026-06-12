@@ -72,6 +72,9 @@ try {
     $stmt_ai = $pdo->query("DELETE FROM ai_configs WHERE account_id NOT IN (SELECT id FROM system_accounts)");
     $stats['ai_configs'] = $stmt_ai->rowCount();
 
+    $stmt_yt = $pdo->query("DELETE FROM youtube_channels WHERE account_id NOT IN (SELECT id FROM system_accounts)");
+    $stats['youtube_channels'] = $stmt_yt->rowCount();
+
     $pdo->commit();
 
     $total_cleaned = array_sum($stats);
@@ -88,4 +91,3 @@ try {
     }
     echo json_encode(['status' => 'error', 'msg' => 'Lỗi DB: ' . $e->getMessage()]);
 }
-?>

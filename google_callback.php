@@ -69,4 +69,3 @@ if ($refresh_token) {
     // Falls back if user revoked directly from Google account settings and re-granted without refresh block clearing.
     die("Google không trả về Refresh Token. Thử ngắt kết nối trong Cài đặt tài khoản Google của bạn và thử lại.");
 }
-?>

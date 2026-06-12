@@ -168,14 +168,20 @@ function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanp
         }
         
         if (empty($api_keys)) {
-            ai_log("No API keys configured");
-            return $content;
+            if ($selected_ai === "GeminiFree") {
+                $api_keys = ['free']; // dummy key so it proceeds
+            } else {
+                ai_log("No API keys configured");
+                return $content;
+            }
         }
         
         $rewritten_text = "";
         if ($selected_ai === "Gemini") {
             $rewritten_text = rewrite_content_with_gemini($content, $api_keys, $endpoint, $prompt_vaitro, $selected_model);
         } elseif ($selected_ai === "OpenAI") {
+            $rewritten_text = rewrite_content_with_openai($content, $api_keys, $endpoint, $prompt_vaitro, $selected_model);
+        } elseif ($selected_ai === "GeminiFree") {
             $rewritten_text = rewrite_content_with_openai($content, $api_keys, $endpoint, $prompt_vaitro, $selected_model);
         } else {
             $rewritten_text = $content;
@@ -247,14 +253,20 @@ function generate_chat_reply_with_ai($user_message, $system_prompt, $account_id,
         }
         
         if (empty($api_keys)) {
-            ai_log("No API keys configured");
-            return '';
+            if ($selected_ai === "GeminiFree") {
+                $api_keys = ['free'];
+            } else {
+                ai_log("No API keys configured");
+                return '';
+            }
         }
         
         $rewritten_text = "";
         if ($selected_ai === "Gemini") {
             $rewritten_text = rewrite_content_with_gemini($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model);
         } elseif ($selected_ai === "OpenAI") {
+            $rewritten_text = rewrite_content_with_openai($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model);
+        } elseif ($selected_ai === "GeminiFree") {
             $rewritten_text = rewrite_content_with_openai($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model);
         }
         
@@ -312,7 +324,13 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
             }
         }
         
-        if (empty($api_keys)) return null;
+        if (empty($api_keys)) {
+            if ($selected_ai === "GeminiFree") {
+                $api_keys = ['free'];
+            } else {
+                return null;
+            }
+        }
         // --- {CHANNEL_NAME} REPLACEMENT ---
         if (!empty($config['prompt_youtube_title'])) $config['prompt_youtube_title'] = str_replace('{channel_name}', $channel_name, $config['prompt_youtube_title']);
         if (!empty($config['prompt_youtube_desc'])) $config['prompt_youtube_desc'] = str_replace('{channel_name}', $channel_name, $config['prompt_youtube_desc']);
@@ -343,6 +361,8 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
             if ($selected_ai === "Gemini") {
                 return rewrite_content_with_gemini($content_input, $api_keys, $endpoint, $system_instruction, $selected_model);
             } elseif ($selected_ai === "OpenAI") {
+                return rewrite_content_with_openai($content_input, $api_keys, $endpoint, $system_instruction, $selected_model);
+            } elseif ($selected_ai === "GeminiFree") {
                 return rewrite_content_with_openai($content_input, $api_keys, $endpoint, $system_instruction, $selected_model);
             }
             return "";

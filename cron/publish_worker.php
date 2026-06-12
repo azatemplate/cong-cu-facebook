@@ -186,86 +186,106 @@ try {
 } catch (Exception $e) {
 }
 
-// Helper: Tải thông tin video TikTok (logic giống api-dow-tik.php)
-function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?array
-{
-    // Nếu admin cấu hình API riêng (tiktok_api_url), dùng trực tiếp
-    if (!empty($custom_api_url)) {
-        $resp = @file_get_contents(rtrim($custom_api_url, '?&') . '?url=' . urlencode($tiktok_url));
-        $data = json_decode($resp, true);
-        if ($data && isset($data['download_url']))
-            return $data;
-    }
-
-    // Bước 1: Lấy video ID qua TikTok oEmbed (không cần API key, giống logic gốc)
-    $oembed_url = (strpos($tiktok_url, 'tiktok.com/oembed') === false)
-        ? 'https://www.tiktok.com/oembed?url=' . urlencode($tiktok_url)
-        : $tiktok_url;
-
-    $ch = curl_init();
-    curl_setopt_array($ch, [
-        CURLOPT_URL => $oembed_url,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_HTTPHEADER => [
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            'Accept: application/json',
-        ],
+// Thứ tự ưu tiên: Custom API → TikWM → Direct Scrape (Cách 3) → oEmbed fallback
+function getApi22Data($videoId) {
+    if (empty($videoId)) return null;
+    $apiUrl = "https://api22-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id=" . $videoId . "&iid=7318518857994389254&device_id=7318517321748022790&channel=googleplay&app_name=musical_ly&version_code=300904&device_platform=android&device_type=ASUS_Z01QD&os_version=9";
+    $ch = curl_init($apiUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'User-Agent: com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; ru_RU; Rootkit; Build/NJH47F; Cronet/TTNetVersion:b4d74d15 2020-04-23 QuicVersion:0144d138 2020-03-24)'
     ]);
-    $resp = curl_exec($ch);
+    $res = curl_exec($ch);
     curl_close($ch);
-
-    $json = json_decode($resp, true);
-    if (!$json || empty($json['embed_product_id']))
-        return null;
-
-    $video_id = $json['embed_product_id'];
-    $title = preg_replace('/[\/\\\\:\*\?"<>\|]/u', '', $json['title'] ?? 'tiktok_video');
-
-    // Bước 2: Build link CDN tikwm.com (HD → SD → fallback)
-    $hd_url = "https://www.tikwm.com/video/media/hdplay/{$video_id}.mp4";
-    $sd_url = "https://www.tikwm.com/video/media/play/{$video_id}.mp4";
-
-    $download_url = _tiktok_resolve_cdn($hd_url)
-        ?: _tiktok_resolve_cdn($sd_url)
-        ?: $hd_url; // fallback giữ nguyên link HD
-
-    return [
-        'download_url' => $download_url,
-        'title' => $title,
-        'video_id' => $video_id,
-    ];
-}
-
-// Helper: Lấy URL cuối cùng sau redirect (kiểm tra tiktokcdn)
-function _tiktok_resolve_cdn(string $url): ?string
-{
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS => 10,
-        CURLOPT_TIMEOUT => 20,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_NOBODY => true,
-        CURLOPT_HEADER => true,
-        CURLOPT_HTTPHEADER => [
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            'Accept: video/mp4,video/*',
-        ],
-    ]);
-    curl_exec($ch);
-    $final = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    if ($code >= 200 && $code < 400 && $final && strpos($final, 'tiktokcdn') !== false) {
-        return $final;
+    if ($res) {
+        $data = json_decode($res, true);
+        if (isset($data['aweme_list'][0])) {
+            return $data['aweme_list'][0];
+        }
     }
     return null;
 }
 
+function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?array
+{
+    $tiktok_url = trim($tiktok_url);
+    // ==================== Logic 1: API App nội bộ (Tích hợp từ video.php) ====================
+    preg_match('/video\/(\d+)/', $tiktok_url, $match);
+    $videoId = $match[1] ?? '';
+
+    if (empty($videoId)) {
+        $ch = curl_init($tiktok_url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HEADER, true);
+        curl_setopt($ch, CURLOPT_NOBODY, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+            'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language: vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+        ]);
+        $response = curl_exec($ch);
+        $finalUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+        curl_close($ch);
+        preg_match('/video\/(\d+)/', $finalUrl, $match);
+        $videoId = $match[1] ?? '';
+        if (empty($videoId)) {
+            preg_match('/v=(\d+)/', $finalUrl, $match);
+            $videoId = $match[1] ?? '';
+        }
+    }
+
+    if (!empty($videoId)) {
+        $apiData = getApi22Data($videoId);
+        if ($apiData) {
+            $video = $apiData['video'] ?? [];
+            $playAddr = $video['play_addr']['url_list'][0] ?? null;
+            if (empty($playAddr)) {
+                $playAddr = $video['download_addr']['url_list'][0] ?? null;
+            }
+            if (!empty($playAddr)) {
+                return [
+                    'download_url' => $playAddr,
+                    'title'        => $apiData['desc'] ?? 'tiktok_video',
+                    'video_id'     => $videoId,
+                ];
+            }
+        }
+    }
+
+    // ==================== Logic 2: TikWM API GET Mặc định (Nếu App API lỗi) ====================
+    $tikwm_url = 'https://www.tikwm.com/api/?url=' . urlencode($tiktok_url);
+    $ch = curl_init($tikwm_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 25);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+        'Referer: https://tikwm.com/',
+        'Origin: https://tikwm.com',
+        'Accept: application/json, text/plain, */*'
+    ]);
+    $resp = curl_exec($ch);
+    curl_close($ch);
+
+    $data = json_decode($resp, true);
+    if ($data && isset($data['code']) && $data['code'] === 0 && isset($data['data'])) {
+        $d = $data['data'];
+        if (!empty($d['play'])) {
+            return [
+                'download_url' => $d['play'],
+                'title'        => $d['title'] ?? 'tiktok_video',
+                'video_id'     => $d['id'] ?? null,
+            ];
+        }
+    }
+
+    return null;
+}
 // Lớp hỗ trợ lock tài nguyên Token (đảm bảo 1 token chỉ đăng 1 post 1 lúc, và có delay)
 class TokenLocker {
     private $fp = null;
@@ -1155,7 +1175,13 @@ if ($lock_fp) {
 function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $has_error_msg = true, $has_retry_count = true)
 {
     // Cắt lỗi Checkpoint ngay từ đầu
-    if (stripos($msg, 'You cannot access the app till you log in') !== false) {
+    $is_checkpoint = (stripos($msg, 'You cannot access the app till you log in') !== false) || 
+                     (stripos($msg, 'Error validating access token') !== false) ||
+                     (stripos($msg, 'changed their password') !== false) ||
+                     (stripos($msg, 'session has been invalidated') !== false);
+
+    if ($is_checkpoint) {
+        $checkpoint_msg = "TK Bị Checkpoint hoặc cần kết nối lại";
         file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - [CHECKPOINT] Intercepted message: " . $msg . "\n", FILE_APPEND);
         try {
             $p_stmt = $pdo->prepare("SELECT campaign_id FROM scheduled_posts WHERE id = ?");
@@ -1165,27 +1191,26 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
                 $cid = $p['campaign_id'];
                 // Dừng tất cả pending, processing, failed sang checkpoint trong cùng Campaign
                 $pdo->prepare("UPDATE scheduled_posts SET status='checkpoint', error_msg=? WHERE campaign_id=? AND status IN ('pending', 'processing', 'failed')")
-                    ->execute(["Lỗi API: Checkpoint - Đã dừng do token bị lỗi", $cid]);
-                // Cập nhật riêng cho ID hiện tại để lưu chính xác lỗi gốc
+                    ->execute([$checkpoint_msg, $cid]);
+                // Cập nhật riêng cho ID hiện tại
                 $pdo->prepare("UPDATE scheduled_posts SET status='checkpoint', error_msg=? WHERE id=?")
-                    ->execute([$msg, $id]);
+                    ->execute([$checkpoint_msg, $id]);
                 
                 // Cảnh báo Telegram
-                $short_msg = mb_strimwidth($msg, 0, 150, '…');
                 if (function_exists('send_telegram_notification')) {
-                    send_telegram_notification($pdo, $GLOBALS['_current_account_id'] ?? 0, "<b>🚨 CẢNH BÁO CHECKPOINT!</b>\n🎯 Campaign ID: {$cid}\n💬 Lỗi: {$short_msg}\n⚠️ Đã tự động <b>DỪNG</b> Campaign để bảo vệ tài khoản.", 'error');
+                    send_telegram_notification($pdo, $GLOBALS['_current_account_id'] ?? 0, "<b>🚨 CẢNH BÁO CHECKPOINT!</b>\n🎯 Campaign ID: {$cid}\n💬 Lỗi: {$checkpoint_msg}\n⚠️ Đã tự động <b>DỪNG</b> Campaign để bảo vệ tài khoản.", 'error');
                 }
                 echo " -> [CHECKPOINT] Đã dừng toàn bộ Campaign #$cid do Checkpoint API!\n";
                 return;
             } else {
                 // Không có campaign thì set thẳng node này
                 $pdo->prepare("UPDATE scheduled_posts SET status='checkpoint', error_msg=? WHERE id=?")
-                    ->execute([$msg, $id]);
-                $short_msg = mb_strimwidth($msg, 0, 150, '…');
+                    ->execute([$checkpoint_msg, $id]);
                 if (function_exists('send_telegram_notification')) {
-                    send_telegram_notification($pdo, $GLOBALS['_current_account_id'] ?? 0, "<b>🚨 CẢNH BÁO CHECKPOINT!</b>\n🆔 Bài ID: {$id}\n💬 Lỗi: {$short_msg}", 'error');
+                    send_telegram_notification($pdo, $GLOBALS['_current_account_id'] ?? 0, "<b>🚨 CẢNH BÁO CHECKPOINT!</b>\n🆔 Bài ID: {$id}\n💬 Lỗi: {$checkpoint_msg}", 'error');
                 }
                 echo " -> [CHECKPOINT] Lỗi Checkpoint API cho bài ID #$id!\n";
+                return;
             }
         } catch (Exception $e) {
             file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - EXCEPTION: " . $e->getMessage() . "\n", FILE_APPEND);

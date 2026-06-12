@@ -284,7 +284,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $page_token = isset($page['access_token']) ? $page['access_token'] : '';
         $category = isset($page['category']) ? $page['category'] : '';
         $followers = isset($page['followers_count']) ? $page['followers_count'] : 0;
-        $avatar = isset($page['picture']['data']['url']) ? $page['picture']['data']['url'] : null;
+        $avatar = "avatar.php?id=" . $page_id;
 
         // Skip logic if conflict action is skip
         if (isset($conflict_map[$page_id]) && $conflict_action === 'skip') {
