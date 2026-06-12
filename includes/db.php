@@ -122,7 +122,7 @@ try {
         CREATE TABLE IF NOT EXISTS ai_configs (
             id INT AUTO_INCREMENT PRIMARY KEY,
             account_id INT NOT NULL,
-            provider ENUM('OpenAI', 'Gemini') DEFAULT 'Gemini',
+            provider ENUM('OpenAI', 'Gemini', 'Claude') DEFAULT 'Gemini',
             endpoint VARCHAR(255) DEFAULT '',
             api_keys TEXT,
             model VARCHAR(100) DEFAULT '',
@@ -252,6 +252,14 @@ try {
         $col = $pdo->query("SHOW COLUMNS FROM ai_configs LIKE 'timeout_seconds'");
         if ($col->rowCount() === 0) {
             $pdo->exec("ALTER TABLE ai_configs ADD COLUMN timeout_seconds INT DEFAULT 120");
+        }
+        
+        $col = $pdo->query("SHOW COLUMNS FROM ai_configs LIKE 'provider'");
+        if ($col) {
+            $colInfo = $col->fetch(PDO::FETCH_ASSOC);
+            if ($colInfo && strpos($colInfo['Type'], 'Claude') === false) {
+                $pdo->exec("ALTER TABLE ai_configs MODIFY COLUMN provider ENUM('OpenAI', 'Gemini', 'Claude') DEFAULT 'Gemini'");
+            }
         }
     } catch (Exception $e) {}
 

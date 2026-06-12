@@ -163,6 +163,87 @@ function rewrite_content_with_openai($prompt, $api_keys, $endpoint, $prompt_vait
     return '';
 }
 
+function rewrite_content_with_claude($prompt, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries = 2, $timeout_seconds = 120) {
+    $url = $endpoint ?: "https://api.anthropic.com/v1/messages";
+    
+    // Parse models list
+    $models = array_map('trim', explode(',', $selected_model));
+    $models = array_filter($models);
+    if (empty($models)) {
+        $models = [$selected_model];
+    }
+    
+    $timeout = max(5, intval($timeout_seconds));
+    $retries_limit = max(0, intval($max_retries));
+    
+    foreach ($models as $model) {
+        foreach ($api_keys as $key) {
+            for ($attempt = 0; $attempt <= $retries_limit; $attempt++) {
+                try {
+                    $headers = [
+                        "x-api-key: " . $key,
+                        "anthropic-version: 2023-06-01",
+                        "content-type: application/json"
+                    ];
+                    
+                    $system = "";
+                    if ($prompt_vaitro) {
+                        $system = str_replace("{prompt}", $prompt, $prompt_vaitro);
+                    }
+                    
+                    $data = [
+                        "model" => $model,
+                        "max_tokens" => 4000,
+                        "messages" => [
+                            ["role" => "user", "content" => $prompt]
+                        ]
+                    ];
+                    if ($system !== "") {
+                        $data["system"] = $system;
+                    }
+                    
+                    $ch = curl_init($url);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_POST, true);
+                    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+                    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                    
+                    $response = curl_exec($ch);
+                    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    
+                    if (curl_errno($ch)) {
+                        $curl_err = curl_error($ch);
+                        curl_close($ch);
+                        throw new Exception("cURL error: " . $curl_err);
+                    }
+                    curl_close($ch);
+                    
+                    if ($http_code == 200) {
+                        $response_data = json_decode($response, true);
+                        $rewritten_text = $response_data['content'][0]['text'] ?? '';
+                        $rewritten_text = trim($rewritten_text);
+                        
+                        if (!empty($rewritten_text)) {
+                            return $rewritten_text;
+                        }
+                    } else {
+                        ai_log("Claude API error with key $key, model $model (Attempt $attempt): HTTP $http_code - $response");
+                    }
+                } catch (Exception $e) {
+                    ai_log("Claude fetch exception with key $key, model $model (Attempt $attempt): " . $e->getMessage());
+                }
+                
+                if ($attempt < $retries_limit) {
+                    sleep(1);
+                }
+            }
+        }
+    }
+    return '';
+}
+
 function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanpage_name = '') {
     global $pdo;
     
@@ -225,6 +306,8 @@ function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanp
             $rewritten_text = rewrite_content_with_gemini($content, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
         } elseif ($selected_ai === "OpenAI") {
             $rewritten_text = rewrite_content_with_openai($content, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
+        } elseif ($selected_ai === "Claude") {
+            $rewritten_text = rewrite_content_with_claude($content, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
         } else {
             $rewritten_text = $content;
         }
@@ -306,6 +389,8 @@ function generate_chat_reply_with_ai($user_message, $system_prompt, $account_id,
             $rewritten_text = rewrite_content_with_gemini($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
         } elseif ($selected_ai === "OpenAI") {
             $rewritten_text = rewrite_content_with_openai($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
+        } elseif ($selected_ai === "Claude") {
+            $rewritten_text = rewrite_content_with_claude($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
         }
         
         return clean_markdown($rewritten_text);
@@ -396,6 +481,8 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
                 return rewrite_content_with_gemini($content_input, $api_keys, $endpoint, $system_instruction, $selected_model, $max_retries, $timeout_seconds);
             } elseif ($selected_ai === "OpenAI") {
                 return rewrite_content_with_openai($content_input, $api_keys, $endpoint, $system_instruction, $selected_model, $max_retries, $timeout_seconds);
+            } elseif ($selected_ai === "Claude") {
+                return rewrite_content_with_claude($content_input, $api_keys, $endpoint, $system_instruction, $selected_model, $max_retries, $timeout_seconds);
             }
             return "";
         };
