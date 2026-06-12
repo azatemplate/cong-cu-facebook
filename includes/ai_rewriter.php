@@ -20,98 +20,144 @@ function ai_log($msg) {
     file_put_contents(__DIR__ . '/../error_log', date('Y-m-d H:i:s') . " - AI DEBUG: " . $msg . "\n", FILE_APPEND);
 }
 
-function rewrite_content_with_gemini($prompt, $api_keys, $endpoint, $prompt_vaitro, $selected_model) {
+function rewrite_content_with_gemini($prompt, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries = 2, $timeout_seconds = 120) {
     $base_url = rtrim($endpoint ?: "https://generativelanguage.googleapis.com/v1beta/models", '/');
     
-    foreach ($api_keys as $key) {
-        try {
-            $url = $base_url . "/" . $selected_model . ":generateContent?key=" . $key;
-            $combined_prompt = $prompt_vaitro ? str_replace("{prompt}", $prompt, $prompt_vaitro) : $prompt;
-            
-            $data = [
-                "contents" => [
-                    ["parts" => [["text" => $combined_prompt]]]
-                ]
-            ];
-            
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json"]);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            
-            $response = curl_exec($ch);
-            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-            
-            if ($http_code == 200) {
-                $response_data = json_decode($response, true);
-                $rewritten_text = $response_data['candidates'][0]['content']['parts'][0]['text'] ?? '';
-                $rewritten_text = trim($rewritten_text);
-                
-                if (!empty($rewritten_text)) {
-                    return $rewritten_text;
+    // Parse models list
+    $models = array_map('trim', explode(',', $selected_model));
+    $models = array_filter($models);
+    if (empty($models)) {
+        $models = [$selected_model];
+    }
+    
+    $timeout = max(5, intval($timeout_seconds));
+    $retries_limit = max(0, intval($max_retries));
+    
+    foreach ($models as $model) {
+        foreach ($api_keys as $key) {
+            for ($attempt = 0; $attempt <= $retries_limit; $attempt++) {
+                try {
+                    $url = $base_url . "/" . $model . ":generateContent?key=" . $key;
+                    $combined_prompt = $prompt_vaitro ? str_replace("{prompt}", $prompt, $prompt_vaitro) : $prompt;
+                    
+                    $data = [
+                        "contents" => [
+                            ["parts" => [["text" => $combined_prompt]]]
+                        ]
+                    ];
+                    
+                    $ch = curl_init($url);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_POST, true);
+                    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json"]);
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+                    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                    
+                    $response = curl_exec($ch);
+                    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    
+                    if (curl_errno($ch)) {
+                        $curl_err = curl_error($ch);
+                        curl_close($ch);
+                        throw new Exception("cURL error: " . $curl_err);
+                    }
+                    curl_close($ch);
+                    
+                    if ($http_code == 200) {
+                        $response_data = json_decode($response, true);
+                        $rewritten_text = $response_data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+                        $rewritten_text = trim($rewritten_text);
+                        
+                        if (!empty($rewritten_text)) {
+                            return $rewritten_text;
+                        }
+                    } else {
+                        ai_log("Gemini API error with key $key, model $model (Attempt $attempt): HTTP $http_code - $response");
+                    }
+                } catch (Exception $e) {
+                    ai_log("Gemini fetch exception with key $key, model $model (Attempt $attempt): " . $e->getMessage());
                 }
-            } else {
-                ai_log("Gemini API error with key $key: HTTP $http_code - $response");
+                
+                if ($attempt < $retries_limit) {
+                    sleep(1);
+                }
             }
-        } catch (Exception $e) {
-            ai_log("Gemini fetch exception with key $key: " . $e->getMessage());
-            continue;
         }
     }
     return '';
 }
 
-function rewrite_content_with_openai($prompt, $api_keys, $endpoint, $prompt_vaitro, $selected_model) {
+function rewrite_content_with_openai($prompt, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries = 2, $timeout_seconds = 120) {
     $url = $endpoint ?: "https://api.openai.com/v1/chat/completions";
     
-    foreach ($api_keys as $key) {
-        try {
-            $headers = [
-                "Authorization: Bearer " . $key,
-                "Content-Type: application/json"
-            ];
-            
-            $messages = [];
-            if ($prompt_vaitro) {
-                $messages[] = ["role" => "system", "content" => str_replace("{prompt}", $prompt, $prompt_vaitro)];
-            }
-            $messages[] = ["role" => "user", "content" => $prompt];
-            
-            $data = [
-                "model" => $selected_model,
-                "messages" => $messages
-            ];
-            
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            
-            $response = curl_exec($ch);
-            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-            
-            if ($http_code == 200) {
-                $response_data = json_decode($response, true);
-                $rewritten_text = $response_data['choices'][0]['message']['content'] ?? '';
-                $rewritten_text = trim($rewritten_text);
-                
-                if (!empty($rewritten_text)) {
-                    return $rewritten_text;
+    // Parse models list
+    $models = array_map('trim', explode(',', $selected_model));
+    $models = array_filter($models);
+    if (empty($models)) {
+        $models = [$selected_model];
+    }
+    
+    $timeout = max(5, intval($timeout_seconds));
+    $retries_limit = max(0, intval($max_retries));
+    
+    foreach ($models as $model) {
+        foreach ($api_keys as $key) {
+            for ($attempt = 0; $attempt <= $retries_limit; $attempt++) {
+                try {
+                    $headers = [
+                        "Authorization: Bearer " . $key,
+                        "Content-Type: application/json"
+                    ];
+                    
+                    $messages = [];
+                    if ($prompt_vaitro) {
+                        $messages[] = ["role" => "system", "content" => str_replace("{prompt}", $prompt, $prompt_vaitro)];
+                    }
+                    $messages[] = ["role" => "user", "content" => $prompt];
+                    
+                    $data = [
+                        "model" => $model,
+                        "messages" => $messages
+                    ];
+                    
+                    $ch = curl_init($url);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_POST, true);
+                    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+                    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                    
+                    $response = curl_exec($ch);
+                    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    
+                    if (curl_errno($ch)) {
+                        $curl_err = curl_error($ch);
+                        curl_close($ch);
+                        throw new Exception("cURL error: " . $curl_err);
+                    }
+                    curl_close($ch);
+                    
+                    if ($http_code == 200) {
+                        $response_data = json_decode($response, true);
+                        $rewritten_text = $response_data['choices'][0]['message']['content'] ?? '';
+                        $rewritten_text = trim($rewritten_text);
+                        
+                        if (!empty($rewritten_text)) {
+                            return $rewritten_text;
+                        }
+                    } else {
+                        ai_log("OpenAI API error with key $key, model $model (Attempt $attempt): HTTP $http_code - $response");
+                    }
+                } catch (Exception $e) {
+                    ai_log("OpenAI fetch exception with key $key, model $model (Attempt $attempt): " . $e->getMessage());
                 }
-            } else {
-                ai_log("OpenAI API error with key $key: HTTP $http_code - $response");
+                
+                if ($attempt < $retries_limit) {
+                    sleep(1);
+                }
             }
-        } catch (Exception $e) {
-            ai_log("OpenAI fetch exception with key $key: " . $e->getMessage());
-            continue;
         }
     }
     return '';
@@ -123,7 +169,7 @@ function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanp
     if (empty(trim($content))) return $content;
 
     try {
-        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, model, prompt_content, prompt_title FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
+        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, model, prompt_content, prompt_title, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
         $stmt->execute([$account_id]);
         $config = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -136,6 +182,8 @@ function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanp
         $selected_model = $config['model'];
         $endpoint = $config['endpoint'];
         $api_keys_raw = decryptData($config['api_keys']);
+        $max_retries = isset($config['max_retries']) ? intval($config['max_retries']) : 2;
+        $timeout_seconds = isset($config['timeout_seconds']) ? intval($config['timeout_seconds']) : 120;
         
         $prompt_vaitro = $is_title ? $config['prompt_title'] : $config['prompt_content'];
         
@@ -174,9 +222,9 @@ function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanp
         
         $rewritten_text = "";
         if ($selected_ai === "Gemini") {
-            $rewritten_text = rewrite_content_with_gemini($content, $api_keys, $endpoint, $prompt_vaitro, $selected_model);
+            $rewritten_text = rewrite_content_with_gemini($content, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
         } elseif ($selected_ai === "OpenAI") {
-            $rewritten_text = rewrite_content_with_openai($content, $api_keys, $endpoint, $prompt_vaitro, $selected_model);
+            $rewritten_text = rewrite_content_with_openai($content, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
         } else {
             $rewritten_text = $content;
         }
@@ -198,7 +246,7 @@ function generate_chat_reply_with_ai($user_message, $system_prompt, $account_id,
     if (empty(trim($user_message))) return '';
 
     try {
-        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, model FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
+        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, model, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
         $stmt->execute([$account_id]);
         $config = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -211,6 +259,8 @@ function generate_chat_reply_with_ai($user_message, $system_prompt, $account_id,
         $selected_model = $config['model'];
         $endpoint = $config['endpoint'];
         $api_keys_raw = decryptData($config['api_keys']);
+        $max_retries = isset($config['max_retries']) ? intval($config['max_retries']) : 2;
+        $timeout_seconds = isset($config['timeout_seconds']) ? intval($config['timeout_seconds']) : 120;
         
         $prompt_vaitro = $system_prompt;
         if (!empty($fanpage_name)) {
@@ -253,9 +303,9 @@ function generate_chat_reply_with_ai($user_message, $system_prompt, $account_id,
         
         $rewritten_text = "";
         if ($selected_ai === "Gemini") {
-            $rewritten_text = rewrite_content_with_gemini($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model);
+            $rewritten_text = rewrite_content_with_gemini($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
         } elseif ($selected_ai === "OpenAI") {
-            $rewritten_text = rewrite_content_with_openai($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model);
+            $rewritten_text = rewrite_content_with_openai($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
         }
         
         return clean_markdown($rewritten_text);
@@ -281,7 +331,7 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
     if (empty(trim($content))) return null;
 
     try {
-        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, model, prompt_youtube_title, prompt_youtube_desc, prompt_youtube_tags FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
+        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, model, prompt_youtube_title, prompt_youtube_desc, prompt_youtube_tags, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
         $stmt->execute([$account_id]);
         $config = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -294,6 +344,8 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
         $selected_model = $config['model'];
         $endpoint = $config['endpoint'];
         $api_keys_raw = decryptData($config['api_keys']);
+        $max_retries = isset($config['max_retries']) ? intval($config['max_retries']) : 2;
+        $timeout_seconds = isset($config['timeout_seconds']) ? intval($config['timeout_seconds']) : 120;
         
         $api_keys = [];
         $api_keys_raw = trim($api_keys_raw);
@@ -339,11 +391,11 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
             : "Viết mô tả chi tiết cho video Youtube về nội dung sau:\n{prompt}";
 
         // HÀM CHẠY AI DÙNG CHUNG CHO 3 BƯỚC
-        $run_ai_step = function($system_instruction, $content_input) use ($selected_ai, $api_keys, $endpoint, $selected_model) {
+        $run_ai_step = function($system_instruction, $content_input) use ($selected_ai, $api_keys, $endpoint, $selected_model, $max_retries, $timeout_seconds) {
             if ($selected_ai === "Gemini") {
-                return rewrite_content_with_gemini($content_input, $api_keys, $endpoint, $system_instruction, $selected_model);
+                return rewrite_content_with_gemini($content_input, $api_keys, $endpoint, $system_instruction, $selected_model, $max_retries, $timeout_seconds);
             } elseif ($selected_ai === "OpenAI") {
-                return rewrite_content_with_openai($content_input, $api_keys, $endpoint, $system_instruction, $selected_model);
+                return rewrite_content_with_openai($content_input, $api_keys, $endpoint, $system_instruction, $selected_model, $max_retries, $timeout_seconds);
             }
             return "";
         };

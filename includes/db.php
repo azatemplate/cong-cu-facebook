@@ -129,6 +129,8 @@ try {
             prompt_content TEXT,
             prompt_title TEXT,
             is_active TINYINT(1) DEFAULT 0,
+            max_retries INT DEFAULT 2,
+            timeout_seconds INT DEFAULT 120,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (account_id) REFERENCES system_accounts(id) ON DELETE CASCADE
@@ -230,6 +232,26 @@ try {
             if (stripos($colInfo['Type'], 'varchar') !== false) {
                 $pdo->exec("ALTER TABLE pages MODIFY COLUMN avatar TEXT DEFAULT NULL");
             }
+        }
+    } catch (Exception $e) {}
+
+    // Auto-convert old HTTP avatars to local proxy to prevent expiration
+    try {
+        $stmt = $pdo->query("SELECT id FROM pages WHERE avatar LIKE 'http%' LIMIT 1");
+        if ($stmt && $stmt->fetch()) {
+            $pdo->exec("UPDATE pages SET avatar = CONCAT('avatar.php?id=', page_id) WHERE avatar LIKE 'http%'");
+        }
+    } catch (Exception $e) {}
+
+    // Migrate ai_configs to support max_retries and timeout_seconds
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM ai_configs LIKE 'max_retries'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE ai_configs ADD COLUMN max_retries INT DEFAULT 2");
+        }
+        $col = $pdo->query("SHOW COLUMNS FROM ai_configs LIKE 'timeout_seconds'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE ai_configs ADD COLUMN timeout_seconds INT DEFAULT 120");
         }
     } catch (Exception $e) {}
 
@@ -392,4 +414,34 @@ if (!function_exists('encryptData')) {
         return $data;
     }
 }
-?>
+
+// ── Global mime_content_type Polyfill (for servers without fileinfo) ────────
+if (!function_exists('mime_content_type')) {
+    function mime_content_type($filename) {
+        // Test if it's a valid image using getimagesize
+        $img_info = @getimagesize($filename);
+        if ($img_info && isset($img_info['mime'])) {
+            return $img_info['mime'];
+        }
+
+        // Fallback to extension mapping if filename contains an extension
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        $map = [
+            'jpg'  => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png'  => 'image/png',
+            'gif'  => 'image/gif',
+            'webp' => 'image/webp',
+            'mp4'  => 'video/mp4',
+            'mov'  => 'video/quicktime',
+            'avi'  => 'video/x-msvideo',
+            'mkv'  => 'video/x-matroska',
+            'webm' => 'video/webm'
+        ];
+        if (isset($map[$ext])) {
+            return $map[$ext];
+        }
+
+        return 'application/octet-stream';
+    }
+}

@@ -29,6 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $prompt_youtube_desc = trim($_POST['prompt_youtube_desc']);
         $prompt_youtube_tags = trim($_POST['prompt_youtube_tags']);
         $is_active = isset($_POST['is_active']) ? 1 : 0;
+        $max_retries = isset($_POST['max_retries']) ? intval($_POST['max_retries']) : 2;
+        $timeout_seconds = isset($_POST['timeout_seconds']) ? intval($_POST['timeout_seconds']) : 120;
         
         // Upsert logic for current account and provider
         $check_stmt = $pdo->prepare("SELECT id FROM ai_configs WHERE account_id = ? AND provider = ?");
@@ -36,11 +38,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $existing = $check_stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($existing) {
-            $u_stmt = $pdo->prepare("UPDATE ai_configs SET endpoint=?, api_keys=?, model=?, prompt_content=?, prompt_title=?, prompt_youtube_title=?, prompt_youtube_desc=?, prompt_youtube_tags=? WHERE id=?");
-            $u_stmt->execute([$endpoint, encryptData($api_keys), $model, $prompt_content, $prompt_title, $prompt_youtube_title, $prompt_youtube_desc, $prompt_youtube_tags, $existing['id']]);
+            $u_stmt = $pdo->prepare("UPDATE ai_configs SET endpoint=?, api_keys=?, model=?, prompt_content=?, prompt_title=?, prompt_youtube_title=?, prompt_youtube_desc=?, prompt_youtube_tags=?, max_retries=?, timeout_seconds=? WHERE id=?");
+            $u_stmt->execute([$endpoint, encryptData($api_keys), $model, $prompt_content, $prompt_title, $prompt_youtube_title, $prompt_youtube_desc, $prompt_youtube_tags, $max_retries, $timeout_seconds, $existing['id']]);
         } else {
-            $i_stmt = $pdo->prepare("INSERT INTO ai_configs (account_id, provider, endpoint, api_keys, model, prompt_content, prompt_title, prompt_youtube_title, prompt_youtube_desc, prompt_youtube_tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $i_stmt->execute([$account_id, $provider, $endpoint, encryptData($api_keys), $model, $prompt_content, $prompt_title, $prompt_youtube_title, $prompt_youtube_desc, $prompt_youtube_tags]);
+            $i_stmt = $pdo->prepare("INSERT INTO ai_configs (account_id, provider, endpoint, api_keys, model, prompt_content, prompt_title, prompt_youtube_title, prompt_youtube_desc, prompt_youtube_tags, max_retries, timeout_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $i_stmt->execute([$account_id, $provider, $endpoint, encryptData($api_keys), $model, $prompt_content, $prompt_title, $prompt_youtube_title, $prompt_youtube_desc, $prompt_youtube_tags, $max_retries, $timeout_seconds]);
         }
         
         // If this one is set as active, deactivate the other
@@ -66,7 +68,9 @@ $gemini_conf = [
     'prompt_youtube_title' => '- Dài từ 60-90 ký tự, chứa từ khóa chính ngay từ đầu.\n- Ngắn gọn, hấp dẫn, gây tò mò, không quá chung chung.',
     'prompt_youtube_desc' => 'Bố cục description bắt buộc gồm Mô tả, Hashtags và Keywords...\n{prompt}',
     'prompt_youtube_tags' => 'Tối thiểu 20 thẻ tags...',
-    'is_active' => 0
+    'is_active' => 0,
+    'max_retries' => 2,
+    'timeout_seconds' => 120
 ];
 $openai_conf = [
     'endpoint' => '', 'api_keys' => '', 'model' => 'gpt-4o',
@@ -75,7 +79,9 @@ $openai_conf = [
     'prompt_youtube_title' => '- Dài từ 60-90 ký tự, chứa từ khóa chính ngay từ đầu.\n- Ngắn gọn, hấp dẫn, gây tò mò, không quá chung chung.',
     'prompt_youtube_desc' => 'Bố cục description bắt buộc gồm Mô tả, Hashtags và Keywords...\n{prompt}',
     'prompt_youtube_tags' => 'Tối thiểu 20 thẻ tags...',
-    'is_active' => 0
+    'is_active' => 0,
+    'max_retries' => 2,
+    'timeout_seconds' => 120
 ];
 
 foreach ($configs_db as &$c) {
@@ -88,6 +94,7 @@ foreach ($configs_db as &$c) {
         $openai_conf = array_merge($openai_conf, $c);
     }
 }
+
 
 // Determine active tab
 $active_tab = ($openai_conf['is_active'] == 1) ? 'openai' : 'gemini';
@@ -134,6 +141,18 @@ $active_tab = ($openai_conf['is_active'] == 1) ? 'openai' : 'gemini';
             <div class="form-group">
                 <label>Model</label>
                 <input type="text" name="model" value="<?= htmlspecialchars($gemini_conf['model']) ?>" placeholder="gemini-1.5-pro, gemini-1.5-flash..." class="form-control" required style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
+                <small style="color:var(--text-muted); display:block; margin-top:5px;">Hỗ trợ nhập nhiều Model phân cách bằng dấu phẩy. Ưu tiên thử model đầu tiên, nếu lỗi sẽ tự động chuyển sang model tiếp theo.</small>
+            </div>
+            
+            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                    <label>Số lần thử lại khi lỗi</label>
+                    <input type="number" name="max_retries" value="<?= htmlspecialchars($gemini_conf['max_retries'] ?? 2) ?>" min="0" max="10" required class="form-control" style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
+                </div>
+                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                    <label>Timeout kết nối (giây)</label>
+                    <input type="number" name="timeout_seconds" value="<?= htmlspecialchars($gemini_conf['timeout_seconds'] ?? 120) ?>" min="5" max="600" required class="form-control" style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
+                </div>
             </div>
             
             <div style="display: flex; gap: 15px; margin-bottom: 15px;">
@@ -198,6 +217,18 @@ $active_tab = ($openai_conf['is_active'] == 1) ? 'openai' : 'gemini';
             <div class="form-group">
                 <label>Model (Ví dụ: gpt-4o, gpt-3.5-turbo)</label>
                 <input type="text" name="model" value="<?= htmlspecialchars($openai_conf['model']) ?>" class="form-control" required style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
+                <small style="color:var(--text-muted); display:block; margin-top:5px;">Hỗ trợ nhập nhiều Model phân cách bằng dấu phẩy. Ưu tiên thử model đầu tiên, nếu lỗi sẽ tự động chuyển sang model tiếp theo.</small>
+            </div>
+            
+            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                    <label>Số lần thử lại khi lỗi</label>
+                    <input type="number" name="max_retries" value="<?= htmlspecialchars($openai_conf['max_retries'] ?? 2) ?>" min="0" max="10" required class="form-control" style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
+                </div>
+                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                    <label>Timeout kết nối (giây)</label>
+                    <input type="number" name="timeout_seconds" value="<?= htmlspecialchars($openai_conf['timeout_seconds'] ?? 120) ?>" min="5" max="600" required class="form-control" style="width:100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
+                </div>
             </div>
             
             <div style="display: flex; gap: 15px; margin-bottom: 15px;">
