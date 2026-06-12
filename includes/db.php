@@ -122,7 +122,7 @@ try {
         CREATE TABLE IF NOT EXISTS ai_configs (
             id INT AUTO_INCREMENT PRIMARY KEY,
             account_id INT NOT NULL,
-            provider ENUM('OpenAI', 'Gemini', 'GeminiFree') DEFAULT 'Gemini',
+            provider ENUM('OpenAI', 'Gemini') DEFAULT 'Gemini',
             endpoint VARCHAR(255) DEFAULT '',
             api_keys TEXT,
             model VARCHAR(100) DEFAULT '',
@@ -229,25 +229,6 @@ try {
             $colInfo = $col->fetch(PDO::FETCH_ASSOC);
             if (stripos($colInfo['Type'], 'varchar') !== false) {
                 $pdo->exec("ALTER TABLE pages MODIFY COLUMN avatar TEXT DEFAULT NULL");
-            }
-        }
-    } catch (Exception $e) {}
-
-    // Auto-convert old HTTP avatars to local proxy to prevent expiration
-    try {
-        $stmt = $pdo->query("SELECT id FROM pages WHERE avatar LIKE 'http%' LIMIT 1");
-        if ($stmt && $stmt->fetch()) {
-            $pdo->exec("UPDATE pages SET avatar = CONCAT('avatar.php?id=', page_id) WHERE avatar LIKE 'http%'");
-        }
-    } catch (Exception $e) {}
-
-    // Migrate ai_configs provider enum to support GeminiFree
-    try {
-        $col = $pdo->query("SHOW COLUMNS FROM ai_configs LIKE 'provider'");
-        if ($col) {
-            $colInfo = $col->fetch(PDO::FETCH_ASSOC);
-            if ($colInfo && strpos($colInfo['Type'], 'GeminiFree') === false) {
-                $pdo->exec("ALTER TABLE ai_configs MODIFY COLUMN provider ENUM('OpenAI', 'Gemini', 'GeminiFree') DEFAULT 'Gemini'");
             }
         }
     } catch (Exception $e) {}
@@ -411,34 +392,4 @@ if (!function_exists('encryptData')) {
         return $data;
     }
 }
-
-// ── Global mime_content_type Polyfill (for servers without fileinfo) ────────
-if (!function_exists('mime_content_type')) {
-    function mime_content_type($filename) {
-        // Test if it's a valid image using getimagesize
-        $img_info = @getimagesize($filename);
-        if ($img_info && isset($img_info['mime'])) {
-            return $img_info['mime'];
-        }
-
-        // Fallback to extension mapping if filename contains an extension
-        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-        $map = [
-            'jpg'  => 'image/jpeg',
-            'jpeg' => 'image/jpeg',
-            'png'  => 'image/png',
-            'gif'  => 'image/gif',
-            'webp' => 'image/webp',
-            'mp4'  => 'video/mp4',
-            'mov'  => 'video/quicktime',
-            'avi'  => 'video/x-msvideo',
-            'mkv'  => 'video/x-matroska',
-            'webm' => 'video/webm'
-        ];
-        if (isset($map[$ext])) {
-            return $map[$ext];
-        }
-
-        return 'application/octet-stream';
-    }
-}
+?>
