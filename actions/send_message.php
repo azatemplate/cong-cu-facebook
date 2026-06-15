@@ -108,8 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $post_data_text = [
             'recipient' => json_encode(['id' => $recipient_id]),
             'message' => json_encode(['text' => $message]),
-            'messaging_type' => 'MESSAGE_TAG',
-            'tag' => 'ACCOUNT_UPDATE'
+            'messaging_type' => 'RESPONSE'
         ];
 
         $params = ['access_token' => $page_access_token];
