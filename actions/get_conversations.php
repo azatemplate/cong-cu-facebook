@@ -74,6 +74,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         
         $next_cursor = !empty($_SESSION['merge_cursors']) ? 'merging' : '';
 
+        // Đính kèm trạng thái SĐT từ DB
+        attach_phone_status_to_conversations($merged_conversations, $pdo);
+
         echo json_encode(['status' => 'success', 'data' => $merged_conversations, 'next_cursor' => $next_cursor, 'merged' => true]);
         exit;
     }
@@ -155,12 +158,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         if (isset($response['data']['paging']['cursors']['after'])) {
             $next_cursor = $response['data']['paging']['cursors']['after'];
         }
-        echo json_encode(['status' => 'success', 'data' => $response['data']['data'], 'next_cursor' => $next_cursor]);
+        
+        $conv_data = $response['data']['data'] ?? [];
+        // Đính kèm trạng thái SĐT từ DB
+        attach_phone_status_to_conversations($conv_data, $pdo, $page_id);
+        
+        echo json_encode(['status' => 'success', 'data' => $conv_data, 'next_cursor' => $next_cursor]);
     } else {
         $error_msg = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : 'Lỗi không xác định';
         echo json_encode(['status' => 'error', 'msg' => $error_msg]);
     }
 } else {
     echo json_encode(['status' => 'error', 'msg' => 'Method not allowed']);
+}
+
+/**
+ * Đính kèm thông tin và trạng thái số điện thoại từ DB cho danh sách cuộc hội thoại
+ */
+function attach_phone_status_to_conversations(&$conversations, $pdo, $currentPageId = '') {
+    if (empty($conversations)) return;
+    
+    $sender_ids = [];
+    foreach ($conversations as $c) {
+        $page_id = isset($c['_page_id']) ? $c['_page_id'] : $currentPageId;
+        if (isset($c['participants']['data'])) {
+            foreach ($c['participants']['data'] as $p) {
+                if ($p['id'] !== $page_id) {
+                    $sender_ids[] = $p['id'];
+                }
+            }
+        }
+    }
+    
+    if (empty($sender_ids)) return;
+    
+    // Loại bỏ các ID trùng lặp
+    $sender_ids = array_unique($sender_ids);
+    
+    // Tạo placeholders cho câu SQL IN
+    $placeholders = implode(',', array_fill(0, count($sender_ids), '?'));
+    $sql = "SELECT page_id, sender_id, phone FROM fb_customers WHERE phone IS NOT NULL AND phone != '' AND sender_id IN ($placeholders)";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(array_values($sender_ids));
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    $has_phone_map = [];
+    foreach ($rows as $row) {
+        $key = $row['page_id'] . '_' . $row['sender_id'];
+        $has_phone_map[$key] = $row['phone'];
+    }
+    
+    // Gán lại cho conversations
+    foreach ($conversations as &$c) {
+        $page_id = isset($c['_page_id']) ? $c['_page_id'] : $currentPageId;
+        $c['has_phone'] = false;
+        $c['phone_number'] = '';
+        if (isset($c['participants']['data'])) {
+            foreach ($c['participants']['data'] as $p) {
+                if ($p['id'] !== $page_id) {
+                    $key = $page_id . '_' . $p['id'];
+                    if (isset($has_phone_map[$key])) {
+                        $c['has_phone'] = true;
+                        $c['phone_number'] = $has_phone_map[$key];
+                    }
+                }
+            }
+        }
+    }
 }
 ?>

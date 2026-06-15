@@ -948,10 +948,7 @@ function renderConversations() {
     let filtered = currentConversations;
     if (currentFilter === 'unread') filtered = filtered.filter(c => c.unread_count > 0);
     else if (currentFilter === 'phone') {
-        filtered = filtered.filter(c => {
-            if (!c.messages || !c.messages.data) return false;
-            return c.messages.data.some(m => m.from && m.from.id !== currentPageId && phoneRegex.test(m.message));
-        });
+        filtered = filtered.filter(c => c.has_phone === true);
     }
 
     const hasUnread = currentConversations.some(c => c.unread_count > 0);
