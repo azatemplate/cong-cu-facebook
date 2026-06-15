@@ -141,7 +141,6 @@ try {
             $stmt_ins->execute([$oa_id, $sender_id, $cust_name, $cust_avatar, $cust_phone, $cust_province, $cust_notes]);
         }
     }
-
     // 5. Update Conversation Snippet & Unread Count in zalo_messages
     $stmt_msg = $pdo->prepare("
         INSERT INTO zalo_messages (oa_id, sender_id, sender_name, type, snippet, unread_count, updated_time)
@@ -153,6 +152,17 @@ try {
             updated_time = CURRENT_TIMESTAMP
     ");
     $stmt_msg->execute([$oa_id, $sender_id, $cust_name, $snippet]);
+
+    // 5b. Insert Zalo Message Notification for the Header bell
+    try {
+        $stmt_notif = $pdo->prepare("
+            INSERT INTO page_notifications (page_id, type, sender_id, sender_name, conversation_id, snippet) 
+            VALUES (?, 'message', ?, ?, ?, ?)
+        ");
+        $stmt_notif->execute([$oa_id, $sender_id, $cust_name, $sender_id, $snippet]);
+    } catch (Exception $e) {
+        error_log("Failed to insert Zalo notification: " . $e->getMessage());
+    }
 
     // 6. Check Chatbot lock (Manual hand-off)
     $stmt_lock = $pdo->prepare("SELECT expire_at FROM zalo_chat_locks WHERE oa_id = ? AND sender_id = ? AND expire_at > NOW()");

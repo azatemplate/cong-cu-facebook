@@ -35,14 +35,16 @@ if ($id) {
         UPDATE page_notifications n
         LEFT JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
         LEFT JOIN users u ON p.user_id = u.id
+        LEFT JOIN zalo_oas zo ON n.page_id COLLATE utf8mb4_0900_ai_ci = zo.oa_id
         SET n.is_read = 1
         WHERE n.id = ? AND (
             u.account_id = ?
             OR EXISTS (SELECT 1 FROM page_shares ps WHERE ps.page_id = p.page_id AND ps.shared_with_account_id = ?)
+            OR zo.account_id = ?
             OR n.page_id = ?
         )
     ");
-    $stmt->execute([$id, $_SESSION['account_id'], $_SESSION['account_id'], $sys_page_id]);
+    $stmt->execute([$id, $_SESSION['account_id'], $_SESSION['account_id'], $_SESSION['account_id'], $sys_page_id]);
     echo json_encode(['status' => 'success']);
 } elseif ($post_id) {
     $stmt = $pdo->prepare("
@@ -63,14 +65,16 @@ if ($id) {
         UPDATE page_notifications n
         LEFT JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
         LEFT JOIN users u ON p.user_id = u.id
+        LEFT JOIN zalo_oas zo ON n.page_id COLLATE utf8mb4_0900_ai_ci = zo.oa_id
         SET n.is_read = 1
         WHERE n.conversation_id = ? AND (
             u.account_id = ?
             OR EXISTS (SELECT 1 FROM page_shares ps WHERE ps.page_id = p.page_id AND ps.shared_with_account_id = ?)
+            OR zo.account_id = ?
             OR n.page_id = ?
         )
     ");
-    $stmt->execute([$conversation_id, $_SESSION['account_id'], $_SESSION['account_id'], $sys_page_id]);
+    $stmt->execute([$conversation_id, $_SESSION['account_id'], $_SESSION['account_id'], $_SESSION['account_id'], $sys_page_id]);
     echo json_encode(['status' => 'success']);
 } else {
     echo json_encode(['status' => 'error', 'msg' => 'Missing ID']);

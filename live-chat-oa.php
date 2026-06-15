@@ -949,17 +949,27 @@ $pages_json = json_encode($pages);
                     }
                 });
                 
-                // If there's only one active OA, select it automatically
-                const activeOas = res.data.filter(o => o.is_active == 1);
-                if (activeOas.length === 1) {
-                    selector.value = activeOas[0].oa_id;
-                    loadConversations();
+                // Check if redirected with specific oa_id and sender_id in URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const queryOaId = urlParams.get('oa_id');
+                const querySenderId = urlParams.get('sender_id');
+                
+                if (queryOaId) {
+                    selector.value = queryOaId;
+                    loadConversations(querySenderId);
+                } else {
+                    // If there's only one active OA, select it automatically
+                    const activeOas = res.data.filter(o => o.is_active == 1);
+                    if (activeOas.length === 1) {
+                        selector.value = activeOas[0].oa_id;
+                        loadConversations();
+                    }
                 }
             }
         });
     }
 
-    function loadConversations() {
+    function loadConversations(autoSelectSenderId = '') {
         const selector = document.getElementById('selected_oa');
         activeOaId = selector.value;
         activeSenderId = ''; // reset chatbox
@@ -983,6 +993,14 @@ $pages_json = json_encode($pages);
             if (res.status === 'success') {
                 conversationsCache = res.data;
                 renderConversations();
+                
+                // Auto select a specific customer chat if passed
+                if (autoSelectSenderId) {
+                    selectConversation(autoSelectSenderId);
+                    // Clear the URL query parameters so page refresh behaves normally
+                    const newUrl = window.location.pathname;
+                    window.history.replaceState({}, document.title, newUrl);
+                }
             } else {
                 showToast(res.msg, 'error');
                 container.innerHTML = `<div style="text-align:center; padding:20px; color:#ef4444; font-size:13px;">${res.msg}</div>`;

@@ -283,7 +283,11 @@ require_once __DIR__ . '/fb_api.php';
 
                             let link = '';
                             if (isMsg) {
-                                link = `live_chat.php?page_id=${cn.page_id}&conv_id=${cn.conversation_id || ''}&sender_id=${cn.sender_id || ''}`;
+                                if (cn.platform === 'zalo') {
+                                    link = `live-chat-oa.php?oa_id=${cn.page_id}&sender_id=${cn.sender_id || ''}`;
+                                } else {
+                                    link = `live_chat.php?page_id=${cn.page_id}&conv_id=${cn.conversation_id || ''}&sender_id=${cn.sender_id || ''}`;
+                                }
                             } else {
                                 link = `live_comments.php?page_id=${cn.page_id}&post_id=${cn.post_id || ''}`;
                             }

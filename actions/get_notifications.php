@@ -75,22 +75,26 @@ try {
     $fetch_limit = $limit + 1;
     $sys_page_id = 'SYSTEM_ACCOUNT_' . $account_id;
     $stmt2 = $pdo->prepare("
-        SELECT n.*, COALESCE(p.name, 'Thông báo Hệ thống') as page_name
+        SELECT n.*, 
+               COALESCE(p.name, zo.name, 'Thông báo Hệ thống') as page_name,
+               CASE WHEN zo.oa_id IS NOT NULL THEN 'zalo' ELSE 'facebook' END as platform
         FROM page_notifications n
         LEFT JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
         LEFT JOIN users u ON p.user_id = u.id
+        LEFT JOIN zalo_oas zo ON n.page_id COLLATE utf8mb4_0900_ai_ci = zo.oa_id
         WHERE (
             u.account_id = ?
             OR EXISTS (
                 SELECT 1 FROM page_shares ps
                 WHERE ps.page_id = p.page_id AND ps.shared_with_account_id = ?
             )
+            OR zo.account_id = ?
             OR n.page_id = ?
         ) {$read_condition}
         ORDER BY n.created_at DESC
         LIMIT {$fetch_limit} OFFSET {$offset}
     ");
-    $stmt2->execute([$account_id, $account_id, $sys_page_id]);
+    $stmt2->execute([$account_id, $account_id, $account_id, $sys_page_id]);
     $rows = $stmt2->fetchAll(PDO::FETCH_ASSOC);
 
     if (count($rows) > $limit) {
