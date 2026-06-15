@@ -2,6 +2,39 @@
 // live-chat-oa.php
 $current_page = 'live_chat_zalo';
 require_once __DIR__ . '/includes/header.php';
+
+$account_id = $_SESSION['account_id'];
+
+// 1. Fetch FB Pages
+$stmt_fb = $pdo->prepare("
+    (SELECT page_id, name, avatar, 'Facebook' AS user_name
+     FROM pages p JOIN users u ON p.user_id = u.id
+     WHERE u.account_id = :aid)
+    UNION
+    (SELECT p.page_id, p.name, p.avatar, 'Facebook' AS user_name
+     FROM pages p
+     JOIN page_shares ps ON p.page_id = ps.page_id
+     JOIN users u ON p.user_id = u.id
+     WHERE ps.shared_with_account_id = :aid2)
+");
+$stmt_fb->bindValue(':aid',  $account_id, PDO::PARAM_INT);
+$stmt_fb->bindValue(':aid2', $account_id, PDO::PARAM_INT);
+$stmt_fb->execute();
+$fb_pages = $stmt_fb->fetchAll(PDO::FETCH_ASSOC);
+
+// 2. Fetch Zalo OAs
+$stmt_zalo = $pdo->prepare("
+    SELECT oa_id AS page_id, name, avatar, 'Zalo' AS user_name
+    FROM zalo_oas
+    WHERE account_id = :aid AND is_active = 1
+");
+$stmt_zalo->bindValue(':aid', $account_id, PDO::PARAM_INT);
+$stmt_zalo->execute();
+$zalo_oas_list = $stmt_zalo->fetchAll(PDO::FETCH_ASSOC);
+
+// 3. Merge lists
+$pages = array_merge($fb_pages, $zalo_oas_list);
+$pages_json = json_encode($pages);
 ?>
 
 <!-- Custom CSS for Premium Zalo Live Chat interface -->
@@ -447,9 +480,10 @@ require_once __DIR__ . '/includes/header.php';
 <!-- Page Header Title -->
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
     <div class="page-title" style="margin-bottom:0;">💬 Zalo OA Live Chat & Kênh</div>
+    <button onclick="openBotSettings()" class="btn btn-secondary" style="background:#f59e0b; color:#fff; border:none; display:flex; align-items:center; gap:5px; font-weight:600;"><span style="font-size:16px;">⚙️</span> Cài đặt Bot Tự Động</button>
 </div>
 
-<!-- 3 Tabs Navigation -->
+<!-- 4 Tabs Navigation -->
 <div class="zalo-tabs">
     <button class="zalo-tab-btn active" data-target="tab-livechat">
         <span>💬</span> Live Chat
@@ -459,6 +493,9 @@ require_once __DIR__ . '/includes/header.php';
     </button>
     <button class="zalo-tab-btn" data-target="tab-config">
         <span>⚙️</span> Cấu hình App
+    </button>
+    <button class="zalo-tab-btn" data-target="tab-bot-settings">
+        <span>🤖</span> Bot Tự Động
     </button>
 </div>
 
@@ -622,6 +659,49 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
+<!-- ==================== TAB 4: BOT TỰ ĐỘNG ==================== -->
+<div id="tab-bot-settings" class="zalo-tab-content">
+    <div class="card" style="max-width:800px; margin:0 auto;">
+        <div style="font-weight:600; font-size:17px; border-bottom:1px solid var(--border-color); padding-bottom:12px; margin-bottom:20px;">
+            🤖 Cài đặt Bot Tự Động (Zalo OA & Fanpage)
+        </div>
+        
+        <!-- Bot Tabs -->
+        <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:1px solid var(--border-color); padding-bottom:10px;">
+            <button id="tab_welcome" onclick="switchBotTab('welcome')" style="padding:8px 16px; border:none; background:#0068ff; color:#fff; border-radius:6px; cursor:pointer; font-weight:600;">Tin nhắn chào mừng</button>
+            <button id="tab_keyword" onclick="switchBotTab('keyword')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Tin nhắn theo từ khóa</button>
+            <button id="tab_ai_reply" onclick="switchBotTab('ai_reply')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Chat bot AI tự trả lời</button>
+        </div>
+
+        <!-- Nội dung Tab 1: Tin nhắn chào mừng -->
+        <div id="content_welcome">
+            <p style="font-size:13px; color:var(--text-muted); margin-top:0; text-align:left; margin-bottom:12px;">Tin nhắn sẽ tự động gửi khi khách hàng gửi tin nhắn đầu tiên.</p>
+            <div id="welcome_rules_list" style="margin-bottom:15px; max-height:350px; overflow-y:auto;">
+                <div style="text-align:center; padding:10px; color:var(--text-muted); font-size:13px;">Đang tải...</div>
+            </div>
+            <button onclick="openRuleForm('welcome')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed var(--border-color); background:var(--bg-color); color:var(--text-main); border-radius:6px; font-weight:600;">+ Thêm cấu hình chào mừng mới</button>
+        </div>
+
+        <!-- Nội dung Tab 2: Tin nhắn theo từ khóa -->
+        <div id="content_keyword" style="display:none;">
+            <p style="font-size:13px; color:var(--text-muted); margin-top:0; text-align:left; margin-bottom:12px;">Tin nhắn sẽ tự động gửi nếu câu nói của khách hàng có chứa các từ khóa dưới đây.</p>
+            <div id="keyword_rules_list" style="margin-bottom:15px; max-height:350px; overflow-y:auto;">
+                <div style="text-align:center; padding:10px; color:var(--text-muted); font-size:13px;">Đang tải...</div>
+            </div>
+            <button onclick="openRuleForm('keyword')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed var(--border-color); background:var(--bg-color); color:var(--text-main); border-radius:6px; font-weight:600;">+ Thêm cấu hình từ khóa mới</button>
+        </div>
+
+        <!-- Nội dung Tab 3: Chat bot AI tự trả lời -->
+        <div id="content_ai_reply" style="display:none;">
+            <p style="font-size:13px; color:var(--text-muted); margin-top:0; text-align:left; margin-bottom:12px;">Bot sẽ sử dụng AI để tự động trả lời khách hàng dựa trên Prompt bạn cấu hình. <b>Lưu ý:</b> Cần cài đặt API Key AI ở trang Cài đặt AI.</p>
+            <div id="ai_reply_rules_list" style="margin-bottom:15px; max-height:350px; overflow-y:auto;">
+                <div style="text-align:center; padding:10px; color:var(--text-muted); font-size:13px;">Đang tải...</div>
+            </div>
+            <button onclick="openRuleForm('ai_reply')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed var(--border-color); background:var(--bg-color); color:var(--text-main); border-radius:6px; font-weight:600;">+ Thêm cấu hình Bot AI mới</button>
+        </div>
+    </div>
+</div>
+
 <!-- Toast notifications wrapper -->
 <div class="toast-container" id="toast_container"></div>
 
@@ -652,6 +732,9 @@ require_once __DIR__ . '/includes/header.php';
                     loadChannels();
                 } else if (targetId === 'tab-config') {
                     loadConfig();
+                } else if (targetId === 'tab-bot-settings') {
+                    switchBotTab('welcome');
+                    loadBotRules();
                 }
             });
         });
@@ -1356,16 +1439,357 @@ require_once __DIR__ . '/includes/header.php';
         .catch(() => showToast('Lưu thông tin thất bại.', 'error'));
     }
 
-    // ── RESPONSIVE INFO PANEL FOR MOBILE ─────────────────────────────────
-    function toggleInfoPanel() {
-        const panel = document.getElementById('lc_infopanel');
-        if (panel.style.display === 'none' || panel.style.display === '') {
-            panel.style.display = 'flex';
-        } else {
-            panel.style.display = 'none';
+    }
+
+    // ── BOT SETTINGS JS LOGIC ──────────────────────────────────────────
+    const allPages = <?php echo $pages_json; ?>;
+    let botRules = [];
+
+    window.openBotSettings = function() {
+        const tabBtn = document.querySelector('[data-target="tab-bot-settings"]');
+        if (tabBtn) {
+            tabBtn.click();
         }
     }
+
+    window.switchBotTab = function(tab) {
+        const tabs = ['welcome', 'keyword', 'ai_reply'];
+        tabs.forEach(t => {
+            const btn = document.getElementById('tab_' + t);
+            const content = document.getElementById('content_' + t);
+            if(btn && content) {
+                if (t === tab) {
+                    btn.style.background = '#0068ff';
+                    btn.style.color = '#fff';
+                    content.style.display = 'block';
+                } else {
+                    btn.style.background = '#f3f4f6';
+                    btn.style.color = '#374151';
+                    content.style.display = 'none';
+                }
+            }
+        });
+    }
+
+    window.loadBotRules = function() {
+        fetch('actions/manage_bot_rules.php?action=list')
+            .then(r => r.json())
+            .then(res => {
+                if (res.status === 'success') {
+                    botRules = res.data;
+                    renderBotRules('welcome');
+                    renderBotRules('keyword');
+                    renderBotRules('ai_reply');
+                } else {
+                    showToast('Lỗi tải cấu hình bot: ' + res.msg, 'error');
+                }
+            }).catch(e => console.error(e));
+    }
+
+    window.renderBotRules = function(type) {
+        const listDiv = document.getElementById(type + '_rules_list');
+        const rules = botRules.filter(r => r.rule_type === type);
+        
+        if (rules.length === 0) {
+            listDiv.innerHTML = '<div style="padding:15px; text-align:center; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; color:#6b7280; font-size:13px;">Chưa có cấu hình nào.</div>';
+            return;
+        }
+        
+        let html = '';
+        rules.forEach(r => {
+            let pageStr = r.pages_scope === 'ALL' ? '<span style="color:#0068ff;font-weight:600;">Tất cả kênh</span>' : '<span style="color:#10b981;font-weight:600;">Một số kênh</span>';
+            if(r.pages_scope !== 'ALL') {
+                try {
+                    const scopeArr = JSON.parse(r.pages_scope);
+                    if (Array.isArray(scopeArr)) {
+                        let pNames = scopeArr.map(id => {
+                            const p = allPages.find(x => x.page_id == id);
+                            return p ? p.name : id;
+                        });
+                        if (scopeArr.length === 1) {
+                            pageStr = '<span style="color:#10b981;font-weight:600;" title="'+pNames[0]+'">1 kênh</span>';
+                        } else {
+                            pageStr = '<span style="color:#10b981;font-weight:600; cursor:help;" title="'+pNames.join(', ')+'">'+scopeArr.length+' kênh</span>';
+                        }
+                    }
+                } catch(e) {}
+            }
+            let activeStr = parseInt(r.is_active) === 1 ? '<span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;">Bật</span>' : '<span style="background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;">Tắt</span>';
+            
+            let kwHtml = type === 'keyword' ? `<div style="font-size:12px; font-weight:600; color:#b91c1c; margin-bottom:4px;">Từ khóa: ${r.keywords}</div>` : '';
+            
+            html += `<div style="background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:12px; margin-bottom:10px; position:relative; color:#374151;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div style="flex:1; min-width:0; text-align:left;">
+                        ${activeStr} <span style="font-size:11px; color:#6b7280; margin-left:5px;">Áp dụng: ${pageStr}</span>
+                        <div style="margin-top:6px;">
+                            ${kwHtml}
+                            <div style="font-size:13px; color:#374151; white-space:pre-wrap; background:#f3f4f6; padding:8px; border-radius:4px;">${r.message}</div>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:6px; margin-left:10px;">
+                        <button onclick="editBotRule(${r.id})" style="background:none; border:none; font-size:14px; cursor:pointer; color:#0068ff;" title="Sửa">✏️</button>
+                        <button onclick="deleteBotRule(${r.id})" style="background:none; border:none; font-size:14px; cursor:pointer; color:#ef4444;" title="Xóa">🗑️</button>
+                    </div>
+                </div>
+            </div>`;
+        });
+        listDiv.innerHTML = html;
+    }
+
+    window.openRuleForm = function(type, rule = null) {
+        document.getElementById('frm_bot_rule').reset();
+        document.getElementById('rule_type').value = type;
+        document.getElementById('rule_id').value = rule ? rule.id : 0;
+        
+        if (type === 'keyword') {
+            document.getElementById('rule_keyword_group').style.display = 'block';
+            document.getElementById('rule_keywords').required = true;
+        } else {
+            document.getElementById('rule_keyword_group').style.display = 'none';
+            document.getElementById('rule_keywords').required = false;
+        }
+
+        if (type === 'ai_reply') {
+            document.getElementById('rule_delay_group').style.display = 'block';
+            document.getElementById('lbl_rule_message').innerHTML = 'Prompt cho AI <span style="color:red;">*</span>';
+            document.getElementById('rule_message').placeholder = 'Ví dụ: Bạn là một chuyên gia tư vấn. Hãy trả lời ngắn gọn, lịch sự...';
+            document.getElementById('hint_rule_message').innerHTML = 'Nhập prompt chi tiết để AI có thể tự động đọc và trả lời khách hàng.';
+        } else {
+            document.getElementById('rule_delay_group').style.display = 'none';
+            document.getElementById('lbl_rule_message').innerHTML = 'Nội dung phản hồi <span style="color:red;">*</span>';
+            document.getElementById('rule_message').placeholder = 'Nhập tin nhắn...';
+            document.getElementById('hint_rule_message').innerHTML = 'Bạn có thể dùng {name} để gọi tên khách. Mỗi dòng 1 mẫu câu để chọn ngẫu nhiên.';
+        }
+
+        if (rule) {
+            document.getElementById('rule_form_title').innerText = 'Sửa cấu hình';
+            document.getElementById('rule_keywords').value = rule.keywords || '';
+            document.getElementById('rule_message').value = rule.message || '';
+            document.getElementById('rule_delay_seconds').value = rule.delay_seconds !== undefined ? rule.delay_seconds : 10;
+            document.getElementById('rule_history_count').value = rule.history_count !== undefined ? rule.history_count : 6;
+            if (rule.pages_scope === 'ALL') {
+                document.getElementById('rule_pages_all').checked = true;
+                document.querySelectorAll('.rule_page_cb').forEach(el => el.checked = true);
+            } else {
+                document.getElementById('rule_pages_all').checked = false;
+                document.querySelectorAll('.rule_page_cb').forEach(el => el.checked = false);
+                try {
+                    const arr = JSON.parse(rule.pages_scope);
+                    document.querySelectorAll('.rule_page_cb').forEach(el => {
+                        if(arr.includes(el.value)) el.checked = true;
+                    });
+                    checkSelectAll();
+                } catch(e) {}
+            }
+            document.getElementById('rule_is_active').checked = parseInt(rule.is_active) === 1;
+        } else {
+            let title = 'Thêm cấu hình';
+            if(type === 'welcome') title = 'Thêm Lời chào';
+            if(type === 'keyword') title = 'Thêm Từ khóa';
+            if(type === 'ai_reply') title = 'Thêm Bot AI';
+            document.getElementById('rule_form_title').innerText = title;
+            document.getElementById('rule_message').value = '';
+            document.getElementById('rule_keywords').value = '';
+            document.getElementById('rule_delay_seconds').value = '10';
+            document.getElementById('rule_history_count').value = '6';
+            document.getElementById('rule_pages_all').checked = true;
+            document.querySelectorAll('.rule_page_cb').forEach(el => el.checked = true);
+            document.getElementById('rule_is_active').checked = true;
+        }
+
+        document.getElementById('botRuleFormModal').style.display = 'flex';
+    }
+
+    window.editBotRule = function(id) {
+        const r = botRules.find(x => x.id == id);
+        if(r) openRuleForm(r.rule_type, r);
+    }
+
+    window.deleteBotRule = function(id) {
+        if(!confirm('Bạn có chắc muốn xóa cấu hình này?')) return;
+        const fd = new FormData();
+        fd.append('action', 'delete');
+        fd.append('id', id);
+        fetch('actions/manage_bot_rules.php', { method:'POST', body:fd })
+            .then(r=>r.json()).then(res=>{
+                if(res.status==='success') loadBotRules();
+                else showToast(res.msg, 'error');
+            });
+    }
+
+    window.filterPagesByUser = function() {
+        const user = document.getElementById('filter_user').value;
+        const labels = document.querySelectorAll('.page_item_label');
+        
+        labels.forEach(lbl => {
+            if (user === 'ALL' || lbl.getAttribute('data-user') === user) {
+                lbl.style.display = 'flex';
+            } else {
+                lbl.style.display = 'none';
+            }
+        });
+        checkSelectAll();
+    }
+
+    window.toggleAllPages = function(cb) {
+        const labels = document.querySelectorAll('.page_item_label');
+        labels.forEach(lbl => {
+            if (lbl.style.display !== 'none') {
+                lbl.querySelector('.rule_page_cb').checked = cb.checked;
+            }
+        });
+        checkSelectAll();
+    }
+
+    window.checkSelectAll = function() {
+        let totalVisible = 0;
+        let checkedVisible = 0;
+        
+        const labels = document.querySelectorAll('.page_item_label');
+        labels.forEach(lbl => {
+            if (lbl.style.display !== 'none') {
+                totalVisible++;
+                if (lbl.querySelector('.rule_page_cb').checked) {
+                    checkedVisible++;
+                }
+            }
+        });
+        
+        document.getElementById('rule_pages_all').checked = (totalVisible > 0 && totalVisible === checkedVisible);
+    }
+
+    window.saveBotRule = function(e) {
+        e.preventDefault();
+        const btn = document.getElementById('btn_save_rule');
+        
+        const totalCbs = document.querySelectorAll('.rule_page_cb');
+        const checkedCbs = document.querySelectorAll('.rule_page_cb:checked');
+        
+        let pagesScope = 'ALL';
+        if (totalCbs.length !== checkedCbs.length) {
+            const checkedVals = Array.from(checkedCbs).map(el => el.value);
+            pagesScope = JSON.stringify(checkedVals);
+            if (checkedVals.length === 0) {
+                showToast('Vui lòng chọn ít nhất 1 trang hoặc kênh!', 'error');
+                return;
+            }
+        }
+
+        btn.disabled = true; btn.innerText = 'Đang lưu...';
+        
+        const fd = new FormData();
+        fd.append('action', 'save');
+        fd.append('id', document.getElementById('rule_id').value);
+        fd.append('rule_type', document.getElementById('rule_type').value);
+        fd.append('keywords', document.getElementById('rule_keywords').value);
+        fd.append('message', document.getElementById('rule_message').value);
+        fd.append('delay_seconds', document.getElementById('rule_delay_seconds').value);
+        fd.append('history_count', document.getElementById('rule_history_count').value);
+        fd.append('pages_scope', pagesScope);
+        fd.append('is_active', document.getElementById('rule_is_active').checked ? 1 : 0);
+
+        fetch('actions/manage_bot_rules.php', { method:'POST', body:fd })
+            .then(r=>r.json()).then(res=>{
+                if(res.status==='success'){
+                    document.getElementById('botRuleFormModal').style.display='none';
+                    loadBotRules();
+                    showToast('Đã lưu cấu hình thành công.', 'success');
+                }else{
+                    showToast(res.msg, 'error');
+                }
+            }).finally(()=>{
+                btn.disabled=false; btn.innerText='Lưu';
+            });
+    }
+    }
 </script>
+
+<!-- Modal Cài đặt Bot Tự động was moved to Tab 4 -->
+
+<!-- Form Thêm/Sửa Quy tắc Bot -->
+<div id="botRuleFormModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; align-items:center; justify-content:center;">
+    <div style="background:#fff; padding:20px; border-radius:10px; width:100%; max-width:450px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+        <h4 id="rule_form_title" style="margin-top:0; border-bottom:1px solid #e5e7eb; padding-bottom:10px; color:#1f2937;">Thêm quy tắc mới</h4>
+        <form id="frm_bot_rule" onsubmit="saveBotRule(event)">
+            <input type="hidden" id="rule_id" value="0">
+            <input type="hidden" id="rule_type" value="">
+            
+            <div id="rule_keyword_group" style="margin-bottom:15px; display:none;">
+                <label style="display:block; font-size:13px; font-weight:600; margin-bottom:5px; text-align:left; color:#1f2937;">Từ khóa (Cách nhau bằng dấu phẩy)</label>
+                <input type="text" id="rule_keywords" placeholder="VD: inbox, giá, bao nhiêu" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;">
+            </div>
+
+            <div id="rule_delay_group" style="margin-bottom:15px; display:none;">
+                <div style="display:flex; gap:15px;">
+                    <div style="flex:1; text-align:left;">
+                        <label style="display:block; font-size:13px; font-weight:600; margin-bottom:5px; color:#1f2937;">Thời gian chờ (giây)</label>
+                        <input type="number" id="rule_delay_seconds" min="0" max="60" value="10" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;">
+                        <div style="font-size:11px; color:#6b7280; margin-top:4px;">Chờ X giây để gom nhiều tin nhắn. Để 0 để trả lời ngay.</div>
+                    </div>
+                    <div style="flex:1; text-align:left;">
+                        <label style="display:block; font-size:13px; font-weight:600; margin-bottom:5px; color:#1f2937;">Lịch sử trò chuyện (Tin)</label>
+                        <input type="number" id="rule_history_count" min="0" max="20" value="6" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;">
+                        <div style="font-size:11px; color:#6b7280; margin-top:4px;">Lấy X tin nhắn gần nhất làm ngữ cảnh.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-bottom:15px; text-align:left;">
+                <label id="lbl_rule_message" style="display:block; font-size:13px; font-weight:600; margin-bottom:5px; color:#1f2937;">Nội dung phản hồi <span style="color:red;">*</span></label>
+                <textarea id="rule_message" rows="4" required placeholder="Nhập tin nhắn..." style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box; resize:vertical;"></textarea>
+                <div id="hint_rule_message" style="font-size:11px; color:#6b7280; margin-top:4px;">Bạn có thể dùng {name} để gọi tên khách.</div>
+            </div>
+
+            <div style="margin-bottom:15px; text-align:left;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:5px;">
+                    <label style="display:block; font-size:13px; font-weight:600; color:#1f2937;">Áp dụng cho Fanpage / Zalo OA</label>
+                    <?php
+                        $unique_users = [];
+                        if(!empty($pages)){
+                            foreach($pages as $p) $unique_users[$p['user_name']] = true;
+                        }
+                        $unique_users = array_keys($unique_users);
+                        sort($unique_users);
+                    ?>
+                    <select id="filter_user" onchange="filterPagesByUser()" style="padding:4px 8px; font-size:12px; border-radius:4px; border:1px solid #d1d5db; background:#fff; color:#374151; cursor:pointer; width:auto;">
+                        <option value="ALL">-- Tất cả kênh --</option>
+                        <?php foreach($unique_users as $u): ?>
+                            <option value="<?php echo htmlspecialchars($u); ?>"><?php echo htmlspecialchars($u); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div style="max-height:150px; overflow-y:auto; border:1px solid #d1d5db; border-radius:6px; padding:10px; background:#f9fafb;">
+                    <label style="display:flex; align-items:center; gap:8px; margin-bottom:8px; font-weight:600; cursor:pointer; color:#0068ff; font-size:13px;">
+                        <input type="checkbox" id="rule_pages_all" onchange="toggleAllPages(this)" checked> Chọn tất cả (theo bộ lọc)
+                    </label>
+                    <div id="rule_pages_list">
+                        <?php if(!empty($pages)): foreach($pages as $p): ?>
+                            <label class="page_item_label" data-user="<?php echo htmlspecialchars($p['user_name']); ?>" style="display:flex; align-items:center; gap:10px; margin-bottom:8px; cursor:pointer; font-size:13px; background:#fff; padding:8px 12px; border:1px solid #e5e7eb; border-radius:6px; transition:all 0.2s;">
+                                <input type="checkbox" class="rule_page_cb" value="<?php echo htmlspecialchars($p['page_id']); ?>" onchange="checkSelectAll()" checked style="margin:0; width:16px; height:16px;">
+                                <img src="<?php echo htmlspecialchars($p['avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($p['name']).'&background=random'); ?>" style="width:28px; height:28px; border-radius:50%; object-fit:cover; border:1px solid #f3f4f6;">
+                                <div style="display:flex; flex-direction:column; align-items:flex-start;">
+                                    <span style="font-weight:600; color:#1f2937; line-height:1.2; text-align:left;"><?php echo htmlspecialchars($p['name']); ?></span>
+                                    <span style="font-size:11px; color:#6b7280; margin-top:2px;">Platform: <?php echo htmlspecialchars($p['user_name']); ?></span>
+                                </div>
+                            </label>
+                        <?php endforeach; endif; ?>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px; text-align:left;">
+                <input type="checkbox" id="rule_is_active" checked style="width:16px;height:16px;cursor:pointer;">
+                <label for="rule_is_active" style="font-size:13px; font-weight:600; cursor:pointer; color:#1f2937;">Đang bật (Active)</label>
+            </div>
+
+            <div style="text-align: right; display:flex; gap:10px; justify-content:flex-end;">
+                <button type="button" onclick="document.getElementById('botRuleFormModal').style.display='none';" class="btn" style="background:#f3f4f6; color:#374151;">Hủy</button>
+                <button type="submit" class="btn btn-primary" id="btn_save_rule" style="background:#0068ff; border:none;">Lưu</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <?php
 require_once __DIR__ . '/includes/footer.php';
