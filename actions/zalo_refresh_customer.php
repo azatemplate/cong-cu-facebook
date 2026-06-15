@@ -36,7 +36,7 @@ try {
     }
 
     // Call Zalo API to get profile
-    $url = ZALO_API_BASE . 'v2.0/oa/getprofile?data=' . urlencode(json_encode(['user_id' => $sender_id]));
+    $url = ZALO_API_BASE . 'v3.0/oa/user/detail?data=' . urlencode(json_encode(['user_id' => $sender_id]));
     $headers = [
         "access_token: {$access_token}"
     ];
@@ -45,7 +45,7 @@ try {
     if ($res['status_code'] === 200 && isset($res['data']['error'])) {
         if ($res['data']['error'] === 0 && isset($res['data']['data'])) {
             $profile = $res['data']['data'];
-            $name = $profile['displayName'] ?? ($profile['sharedInfo']['name'] ?? 'Khách hàng Zalo');
+            $name = $profile['display_name'] ?? ($profile['displayName'] ?? ($profile['sharedInfo']['name'] ?? 'Khách hàng Zalo'));
             $avatar = $profile['avatar'] ?? '';
             $province = '';
             if (!empty($profile['sharedInfo']['city'])) {

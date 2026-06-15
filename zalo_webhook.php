@@ -124,7 +124,7 @@ try {
         // Fetch from Zalo API
         $profile = zalo_get_customer_profile($access_token, $sender_id);
         if ($profile) {
-            $cust_name = $profile['displayName'] ?? ($profile['sharedInfo']['name'] ?? 'Khách hàng Zalo');
+            $cust_name = $profile['display_name'] ?? ($profile['displayName'] ?? ($profile['sharedInfo']['name'] ?? 'Khách hàng Zalo'));
             $cust_avatar = $profile['avatar'] ?? 'https://ui-avatars.com/api/?name=' . urlencode($cust_name);
             if (empty($cust_province) && !empty($profile['sharedInfo']['city'])) {
                 $cust_province = detect_vietnam_province($profile['sharedInfo']['city']);

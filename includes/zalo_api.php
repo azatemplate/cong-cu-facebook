@@ -149,7 +149,7 @@ function zalo_get_oa_profile($access_token) {
  * Lấy thông tin chi tiết khách hàng nhắn tin (Zalo Profile)
  */
 function zalo_get_customer_profile($access_token, $user_id) {
-    $url = ZALO_API_BASE . 'v2.0/oa/getprofile?data=' . urlencode(json_encode(['user_id' => $user_id]));
+    $url = ZALO_API_BASE . 'v3.0/oa/user/detail?data=' . urlencode(json_encode(['user_id' => $user_id]));
     $headers = [
         "access_token: {$access_token}"
     ];
