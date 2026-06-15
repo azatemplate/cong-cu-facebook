@@ -6,6 +6,13 @@ require_once __DIR__ . '/includes/security.php';
 
 // Log webhook for debugging
 $rawData = file_get_contents('php://input');
+$headers = function_exists('getallheaders') ? getallheaders() : [];
+$logFile = __DIR__ . '/zalo_webhook_debug.log';
+$logEntry = "[" . date('Y-m-d H:i:s') . "] IP: " . ($_SERVER['REMOTE_ADDR'] ?? 'unknown') . "\n";
+$logEntry .= "Headers: " . json_encode($headers) . "\n";
+$logEntry .= "Payload: " . $rawData . "\n\n";
+file_put_contents($logFile, $logEntry, FILE_APPEND);
+
 $data = json_decode($rawData, true);
 
 if (!$data) {

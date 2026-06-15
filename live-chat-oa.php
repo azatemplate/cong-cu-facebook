@@ -7,7 +7,7 @@ $account_id = $_SESSION['account_id'];
 
 // 1. Fetch FB Pages
 $stmt_fb = $pdo->prepare("
-    (SELECT page_id, name, avatar, 'Facebook' AS user_name
+    (SELECT p.page_id, p.name, p.avatar, 'Facebook' AS user_name
      FROM pages p JOIN users u ON p.user_id = u.id
      WHERE u.account_id = :aid)
     UNION
