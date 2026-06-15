@@ -417,12 +417,14 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                     }
 
                                     // Truy vấn thông tin khách hàng hiện tại từ DB
+                                    $cust_name = '';
                                     $cust_phone = '';
                                     $cust_province = '';
                                     $cust_notes = '';
-                                    $st_cust = $pdo->prepare("SELECT phone, province, notes FROM fb_customers WHERE page_id = ? AND sender_id = ?");
+                                    $st_cust = $pdo->prepare("SELECT name, phone, province, notes FROM fb_customers WHERE page_id = ? AND sender_id = ?");
                                     $st_cust->execute([$page_id, $sender_id]);
                                     if ($cust_row = $st_cust->fetch(PDO::FETCH_ASSOC)) {
+                                        $cust_name = $cust_row['name'] ?? '';
                                         $cust_phone = $cust_row['phone'] ?? '';
                                         $cust_province = $cust_row['province'] ?? '';
                                         $cust_notes = $cust_row['notes'] ?? '';
@@ -430,6 +432,7 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
 
                                     // Thiết lập ngữ cảnh thông tin và hướng dẫn thu thập cho AI Chatbot
                                     $info_context = "\n\n--- THÔNG TIN KHÁCH HÀNG ĐÃ CÓ ---\n";
+                                    $info_context .= "- Tên khách hàng: " . ($cust_name ?: "CHƯA CÓ") . "\n";
                                     $info_context .= "- Số điện thoại: " . ($cust_phone ?: "CHƯA CÓ") . "\n";
                                     $info_context .= "- Tỉnh thành: " . ($cust_province ?: "CHƯA CÓ") . "\n";
                                     $info_context .= "- Nhu cầu/Yêu cầu khách hàng: " . ($cust_notes ?: "CHƯA CÓ") . "\n";
