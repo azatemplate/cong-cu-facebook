@@ -123,13 +123,66 @@ try {
     if ($access_token && (!$cust || empty($cust['name']) || $cust['name'] === 'Khách hàng Zalo' || empty($cust['avatar']) || strpos($cust['avatar'], 'ui-avatars.com') !== false)) {
         // Fetch from Zalo API
         $profile = zalo_get_customer_profile($access_token, $sender_id);
+        $fetched_ok = false;
         if ($profile) {
-            $cust_name = $profile['display_name'] ?? ($profile['displayName'] ?? ($profile['sharedInfo']['name'] ?? 'Khách hàng Zalo'));
-            $cust_avatar = $profile['avatar'] ?? 'https://ui-avatars.com/api/?name=' . urlencode($cust_name);
-            if (empty($cust_province) && !empty($profile['sharedInfo']['city'])) {
-                $cust_province = detect_vietnam_province($profile['sharedInfo']['city']);
+            $n = $profile['display_name'] ?? ($profile['displayName'] ?? ($profile['sharedInfo']['name'] ?? ''));
+            if (!empty($n) && $n !== 'Khách hàng Zalo') {
+                $cust_name = $n;
+                $cust_avatar = $profile['avatar'] ?? 'https://ui-avatars.com/api/?name=' . urlencode($cust_name);
+                if (empty($cust_province) && !empty($profile['sharedInfo']['city'])) {
+                    $cust_province = detect_vietnam_province($profile['sharedInfo']['city']);
+                }
+                $fetched_ok = true;
             }
+        }
+
+        if (!$fetched_ok) {
+            // Fallback: Fetch conversation history to extract display name and avatar
+            $data_param = json_encode([
+                'user_id' => $sender_id,
+                'offset' => 0,
+                'count' => 10
+            ]);
+            $history_url = ZALO_API_BASE . 'v2.0/oa/conversation?data=' . urlencode($data_param);
+            $history_headers = ["access_token: {$access_token}"];
+            $history_res = zalo_api_request($history_url, 'GET', $history_headers);
             
+            if ($history_res['status_code'] === 200 && isset($history_res['data']['error']) && $history_res['data']['error'] === 0) {
+                $history_msgs = $history_res['data']['data'] ?? [];
+                $extracted_name = '';
+                $extracted_avatar = '';
+                
+                foreach ($history_msgs as $msg) {
+                    if (isset($msg['src'])) {
+                        if ($msg['src'] == 1) { // From user
+                            $n = $msg['from_display_name'] ?? '';
+                            $a = $msg['from_avatar'] ?? '';
+                        } else { // From OA
+                            $n = $msg['to_display_name'] ?? '';
+                            $a = $msg['to_avatar'] ?? '';
+                        }
+                        
+                        if (!empty($n) && $n !== 'Khách hàng Zalo' && $n !== 'Khách hàng' && empty($extracted_name)) {
+                            $extracted_name = $n;
+                        }
+                        if (!empty($a) && strpos($a, 'ui-avatars.com') === false && empty($extracted_avatar)) {
+                            $extracted_avatar = $a;
+                        }
+                    }
+                    if (!empty($extracted_name) && !empty($extracted_avatar)) {
+                        break;
+                    }
+                }
+                
+                if (!empty($extracted_name)) {
+                    $cust_name = $extracted_name;
+                    $cust_avatar = $extracted_avatar ?: 'https://ui-avatars.com/api/?name=' . urlencode($cust_name);
+                    $fetched_ok = true;
+                }
+            }
+        }
+
+        if ($fetched_ok) {
             $stmt_ins = $pdo->prepare("
                 INSERT INTO zalo_customers (oa_id, sender_id, name, avatar, phone, province, notes)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -139,6 +192,14 @@ try {
                     province = COALESCE(NULLIF(VALUES(province), ''), province)
             ");
             $stmt_ins->execute([$oa_id, $sender_id, $cust_name, $cust_avatar, $cust_phone, $cust_province, $cust_notes]);
+            
+            // Also update zalo_messages sender_name just in case it was stored as default before
+            $stmt_upd_msg = $pdo->prepare("
+                UPDATE zalo_messages 
+                SET sender_name = ? 
+                WHERE oa_id = ? AND sender_id = ?
+            ");
+            $stmt_upd_msg->execute([$cust_name, $oa_id, $sender_id]);
         }
     }
     // 5. Update Conversation Snippet & Unread Count in zalo_messages

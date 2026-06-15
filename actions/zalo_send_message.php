@@ -92,15 +92,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // 2. Handle File Upload
         $send_res = null;
+        $is_image = false;
         if ($has_file) {
             $file_tmp = $_FILES['filedata']['tmp_name'];
             $file_type = $_FILES['filedata']['type'];
             $file_name = $_FILES['filedata']['name'];
+            $file_size = $_FILES['filedata']['size'];
             
-            if (strpos($file_type, 'image/') !== 0) {
-                echo json_encode(['status' => 'error', 'msg' => 'Zalo OA hiện tại chỉ hỗ trợ gửi hình ảnh đính kèm.']);
+            // Check file size under 5MB (Zalo file limit)
+            if ($file_size > 5 * 1024 * 1024) {
+                echo json_encode(['status' => 'error', 'msg' => 'Dung lượng file vượt quá giới hạn 5MB của Zalo OA.']);
                 exit;
             }
+
+            $is_image = (strpos($file_type, 'image/') === 0);
 
             // Temp folder in project structure to avoid open_basedir restrictions
             $tmp_dir = __DIR__ . '/../uploads/tmp';
@@ -115,20 +120,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $file_to_send = $file_tmp;
             }
 
-            // Upload image to Zalo server
-            $attachment_id = zalo_upload_image($access_token, $file_to_send, $file_name, $file_type);
-            
-            if ($file_to_send !== $file_tmp && file_exists($file_to_send)) {
-                @unlink($file_to_send);
-            }
+            if ($is_image) {
+                // Upload image to Zalo server
+                $attachment_id = zalo_upload_image($access_token, $file_to_send, $file_name, $file_type);
+                
+                if ($file_to_send !== $file_tmp && file_exists($file_to_send)) {
+                    @unlink($file_to_send);
+                }
 
-            if (!$attachment_id) {
-                echo json_encode(['status' => 'error', 'msg' => 'Không thể upload ảnh lên Zalo OA server.']);
-                exit;
-            }
+                if (!$attachment_id) {
+                    echo json_encode(['status' => 'error', 'msg' => 'Không thể upload ảnh lên Zalo OA server.']);
+                    exit;
+                }
 
-            // Send image message
-            $send_res = zalo_send_image_message($access_token, $recipient_id, $attachment_id);
+                // Send image message
+                $send_res = zalo_send_image_message($access_token, $recipient_id, $attachment_id);
+            } else {
+                // Upload other files (PDF, DOC, DOCX, CSV, etc.)
+                $file_token = zalo_upload_file($access_token, $file_to_send, $file_name, $file_type);
+
+                if ($file_to_send !== $file_tmp && file_exists($file_to_send)) {
+                    @unlink($file_to_send);
+                }
+
+                if (!$file_token) {
+                    echo json_encode(['status' => 'error', 'msg' => 'Không thể upload tài liệu lên Zalo OA server. Hỗ trợ định dạng PDF, DOC, DOCX, CSV dưới 5MB.']);
+                    exit;
+                }
+
+                // Send file message
+                $send_res = zalo_send_file_message($access_token, $recipient_id, $file_token);
+            }
         } else {
             // Send text message
             $send_res = zalo_send_text_message($access_token, $recipient_id, $message);
@@ -136,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // 3. Process send result
         if (isset($send_res['status_code']) && $send_res['status_code'] === 200 && isset($send_res['data']['error']) && $send_res['data']['error'] === 0) {
-            $snippet = $message ?: '[Hình ảnh]';
+            $snippet = $message ?: ($has_file ? ($is_image ? '[Hình ảnh]' : '[Tài liệu] ' . $file_name) : '');
             
             // Update conversation thread in DB
             $upd_stmt = $pdo->prepare("

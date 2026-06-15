@@ -226,3 +226,47 @@ function zalo_send_image_message($access_token, $recipient_id, $attachment_id) {
 
     return zalo_api_request($url, 'POST', $headers, $body);
 }
+
+/**
+ * Upload file tài liệu lên Zalo OA lấy token để gửi tin nhắn
+ */
+function zalo_upload_file($access_token, $file_path, $file_name, $file_type) {
+    $url = ZALO_API_BASE . 'v2.0/oa/upload/file';
+    $headers = [
+        "access_token: {$access_token}"
+    ];
+    
+    $post_fields = [
+        'file' => new CURLFile($file_path, $file_type, $file_name)
+    ];
+
+    $res = zalo_api_request($url, 'POST', $headers, $post_fields);
+    if ($res['status_code'] === 200 && isset($res['data']['data']['token'])) {
+        return $res['data']['data']['token'];
+    }
+    return null;
+}
+
+/**
+ * Gửi tin nhắn đính kèm file tài liệu cho khách hàng
+ */
+function zalo_send_file_message($access_token, $recipient_id, $file_token) {
+    $url = ZALO_API_BASE . 'v3.0/oa/message/cs';
+    $headers = [
+        "access_token: {$access_token}",
+        "Content-Type: application/json"
+    ];
+    $body = json_encode([
+        'recipient' => ['user_id' => $recipient_id],
+        'message' => [
+            'attachment' => [
+                'type' => 'file',
+                'payload' => [
+                    'token' => $file_token
+                ]
+            ]
+        ]
+    ]);
+
+    return zalo_api_request($url, 'POST', $headers, $body);
+}

@@ -58,6 +58,66 @@ try {
     if ($res['status_code'] === 200 && isset($res['data']['error']) && $res['data']['error'] === 0) {
         $messages = $res['data']['data'] ?? [];
         
+        // Auto-extract name and avatar from conversation history if missing in DB
+        $extracted_name = '';
+        $extracted_avatar = '';
+        foreach ($messages as $msg) {
+            if (isset($msg['src'])) {
+                if ($msg['src'] == 1) { // From user
+                    $n = $msg['from_display_name'] ?? '';
+                    $a = $msg['from_avatar'] ?? '';
+                } else { // From OA
+                    $n = $msg['to_display_name'] ?? '';
+                    $a = $msg['to_avatar'] ?? '';
+                }
+                
+                if (!empty($n) && $n !== 'Khách hàng Zalo' && $n !== 'Khách hàng' && empty($extracted_name)) {
+                    $extracted_name = $n;
+                }
+                if (!empty($a) && strpos($a, 'ui-avatars.com') === false && empty($extracted_avatar)) {
+                    $extracted_avatar = $a;
+                }
+            }
+            if (!empty($extracted_name) && !empty($extracted_avatar)) {
+                break;
+            }
+        }
+        
+        if (!empty($extracted_name)) {
+            $stmt_chk = $pdo->prepare("SELECT name, avatar FROM zalo_customers WHERE oa_id = ? AND sender_id = ?");
+            $stmt_chk->execute([$oa_id, $sender_id]);
+            $cust = $stmt_chk->fetch(PDO::FETCH_ASSOC);
+            
+            $need_update = false;
+            if (!$cust) {
+                $need_update = true;
+            } else {
+                if (empty($cust['name']) || $cust['name'] === 'Khách hàng Zalo' || empty($cust['avatar']) || strpos($cust['avatar'], 'ui-avatars.com') !== false) {
+                    $need_update = true;
+                }
+            }
+            
+            if ($need_update) {
+                $final_avatar = $extracted_avatar ?: ($cust['avatar'] ?? 'https://ui-avatars.com/api/?name=' . urlencode($extracted_name));
+                $stmt_ins = $pdo->prepare("
+                    INSERT INTO zalo_customers (oa_id, sender_id, name, avatar)
+                    VALUES (?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE 
+                        name = VALUES(name),
+                        avatar = VALUES(avatar)
+                ");
+                $stmt_ins->execute([$oa_id, $sender_id, $extracted_name, $final_avatar]);
+                
+                // Also update zalo_messages
+                $stmt_upd_msg = $pdo->prepare("
+                    UPDATE zalo_messages 
+                    SET sender_name = ? 
+                    WHERE oa_id = ? AND sender_id = ?
+                ");
+                $stmt_upd_msg->execute([$extracted_name, $oa_id, $sender_id]);
+            }
+        }
+        
         echo json_encode([
             'status' => 'success',
             'data' => $messages,
