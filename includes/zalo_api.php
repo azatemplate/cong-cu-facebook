@@ -50,10 +50,10 @@ function zalo_api_request($url, $method = 'GET', $headers = [], $post_fields = n
 }
 
 /**
- * Đổi code lấy Access Token và Refresh Token
+ * Đổi code lấy Access Token và Refresh Token sử dụng OAuth v4 (yêu cầu PKCE)
  */
-function zalo_get_tokens_by_code($code, $app_id, $app_secret) {
-    $url = 'https://oauth.zaloapp.com/v3/oa/access_token';
+function zalo_get_tokens_by_code($code, $app_id, $app_secret, $code_verifier) {
+    $url = 'https://oauth.zaloapp.com/v4/oa/access_token';
     $headers = [
         "secret_key: {$app_secret}",
         "Content-Type: application/x-www-form-urlencoded"
@@ -61,13 +61,17 @@ function zalo_get_tokens_by_code($code, $app_id, $app_secret) {
     $fields = http_build_query([
         'code' => $code,
         'app_id' => $app_id,
-        'grant_type' => 'authorization_code'
+        'grant_type' => 'authorization_code',
+        'code_verifier' => $code_verifier
     ]);
 
     $res = zalo_api_request($url, 'POST', $headers, $fields);
     if ($res['status_code'] === 200 && !empty($res['data']['access_token'])) {
         return $res['data'];
     }
+    
+    // Log error for debugging
+    error_log("zalo_get_tokens_by_code failed. Status: " . $res['status_code'] . ", Response: " . json_encode($res['data']));
     return null;
 }
 
@@ -97,7 +101,7 @@ function zalo_get_active_token($oa_id, $pdo) {
     $app_id = $settings['app_id'];
     $app_secret = decryptData($settings['app_secret']);
 
-    $url = 'https://oauth.zaloapp.com/v3/oa/access_token';
+    $url = 'https://oauth.zaloapp.com/v4/oa/access_token';
     $headers = [
         "secret_key: {$app_secret}",
         "Content-Type: application/x-www-form-urlencoded"

@@ -12,9 +12,23 @@ if (!$_s_account_id) {
 
 $code = isset($_GET['code']) ? trim($_GET['code']) : '';
 $oa_id = isset($_GET['oa_id']) ? trim($_GET['oa_id']) : '';
+$state = isset($_GET['state']) ? trim($_GET['state']) : '';
+
+// Verify state
+if (!empty($state) && isset($_SESSION['zalo_auth_state']) && $state !== $_SESSION['zalo_auth_state']) {
+    header('Location: ../live-chat-oa.php?tab=channels&auth=error&msg=' . urlencode('Xác thực trạng thái (state) thất bại. Vui lòng thử lại.'));
+    exit;
+}
 
 if (empty($code) || empty($oa_id)) {
     header('Location: ../live-chat-oa.php?tab=channels&auth=error&msg=' . urlencode('Thiếu thông số phản hồi từ Zalo OAuth.'));
+    exit;
+}
+
+// Retrieve PKCE code_verifier
+$code_verifier = $_SESSION['zalo_code_verifier'] ?? '';
+if (empty($code_verifier)) {
+    header('Location: ../live-chat-oa.php?tab=channels&auth=error&msg=' . urlencode('Phiên xác thực hết hạn (Thiếu code_verifier). Hãy thử lại.'));
     exit;
 }
 
@@ -32,7 +46,7 @@ $app_id = $settings['app_id'];
 $app_secret = decryptData($settings['app_secret']);
 
 // 2. Trao đổi Code lấy Access Token & Refresh Token
-$tokens = zalo_get_tokens_by_code($code, $app_id, $app_secret);
+$tokens = zalo_get_tokens_by_code($code, $app_id, $app_secret, $code_verifier);
 if (!$tokens || empty($tokens['access_token'])) {
     header('Location: ../live-chat-oa.php?tab=channels&auth=error&msg=' . urlencode('Không thể lấy Access Token từ Zalo API.'));
     exit;

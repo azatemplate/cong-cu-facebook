@@ -24,7 +24,6 @@ try {
     $stmt_set->execute([$account_id]);
     $settings = $stmt_set->fetch(PDO::FETCH_ASSOC);
     $app_id = $settings ? $settings['app_id'] : '';
-
     $oauth_url = '';
     if (!empty($app_id)) {
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
@@ -35,8 +34,19 @@ try {
         // If script is in actions/, parent directory is the root
         $parent_dir = rtrim(dirname($script_dir), '/\\');
         $redirect_uri = $protocol . $host . $parent_dir . '/actions/zalo_auth.php';
+
+        // Generate PKCE values
+        $randomBytes = random_bytes(32);
+        $code_verifier = rtrim(strtr(base64_encode($randomBytes), '+/', '-_'), '=');
+        $_SESSION['zalo_code_verifier'] = $code_verifier;
         
-        $oauth_url = "https://oauth.zaloapp.com/v4/oa/permission?app_id=" . urlencode($app_id) . "&redirect_uri=" . urlencode($redirect_uri);
+        $hash = hash('sha256', $code_verifier, true);
+        $code_challenge = rtrim(strtr(base64_encode($hash), '+/', '-_'), '=');
+        
+        $state = bin2hex(random_bytes(8));
+        $_SESSION['zalo_auth_state'] = $state;
+        
+        $oauth_url = "https://oauth.zaloapp.com/v4/oa/permission?app_id=" . urlencode($app_id) . "&redirect_uri=" . urlencode($redirect_uri) . "&code_challenge=" . urlencode($code_challenge) . "&state=" . urlencode($state);
     }
 
     echo json_encode([
