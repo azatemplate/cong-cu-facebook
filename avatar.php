@@ -110,12 +110,18 @@ if ($img_data !== false && !empty($img_data)) {
         header('Content-Type: image/jpeg');
         header('Cache-Control: max-age=86400, public');
         readfile($avatar_filepath);
+        exit;
     } else {
         if (isset($_GET['debug'])) {
             header("Content-Type: text/plain");
             echo "Failed to fetch image. Graph API Response:\n$response\n\nImage URL: " . (isset($img_url) ? $img_url : 'None');
             exit;
         }
-        header("HTTP/1.0 404 Not Found");
+        $fallback_name = isset($_GET['name']) && !empty($_GET['name']) ? $_GET['name'] : 'User';
+        // Clean up the name a bit
+        $fallback_name = preg_replace('/[^\p{L}\p{N}\s]/u', '', $fallback_name);
+        $fallback_url = "https://ui-avatars.com/api/?name=" . urlencode($fallback_name) . "&background=random&color=fff&size=128";
+        header("Location: " . $fallback_url);
+        exit;
     }
 }

@@ -544,7 +544,7 @@ function saveBotRule(e) {
         </div>
         <div style="padding:15px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:12px;">
             <div style="text-align:center;margin-bottom:10px;">
-                <img id="info_avatar" src="https://ui-avatars.com/api/?name=KH&background=random" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #e2e8f0;margin-bottom:8px;">
+                <img id="info_avatar" src="https://ui-avatars.com/api/?name=KH&background=random" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #e2e8f0;margin-bottom:8px;" onerror="this.src='https://ui-avatars.com/api/?name='+encodeURIComponent(document.getElementById('info_name_display').innerText)+'&background=random'">
                 <div id="info_name_display" style="font-weight:700;font-size:15px;color:#1f2937;">Khách hàng</div>
                 <div id="info_id_display" style="font-size:11px;color:#9ca3af;margin-top:2px;">ID: -</div>
             </div>
@@ -985,7 +985,7 @@ function renderConversations() {
         div.dataset.senderId = senderId;
         div.innerHTML = `
             <div style="display:flex;align-items:center;gap:10px;">
-                <img src="avatar.php?id=${senderId}&page_id=${itemPageId}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://ui-avatars.com/api/?name='+encodeURIComponent('${senderName}')+'&background=random'">
+                <img src="avatar.php?id=${senderId}&page_id=${itemPageId}&name=${encodeURIComponent(senderName)}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://ui-avatars.com/api/?name='+encodeURIComponent('${senderName}')+'&background=random'">
                 <div style="min-width:0;flex:1;">
                     <div style="font-size:13px;margin-bottom:2px;font-weight:600;display:flex;justify-content:space-between;align-items:center;">
                         <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${pagePrefix}${senderName}</span>
@@ -1038,7 +1038,7 @@ function loadMessages(convId, senderName, senderId, activePageIdToUse = currentP
         chatHeader.innerHTML = `
             <button id="btn_back_mobile" onclick="mobileBackToList()" style="display:none;background:none;border:none;font-size:18px;cursor:pointer;padding:0;">←</button>
             <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
-                <img src="avatar.php?id=${senderId}&page_id=${activePageIdToUse}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" onerror="this.src='https://ui-avatars.com/api/?name='+encodeURIComponent('${senderName}')+'&background=random'">
+                <img src="avatar.php?id=${senderId}&page_id=${activePageIdToUse}&name=${encodeURIComponent(senderName)}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" onerror="this.src='https://ui-avatars.com/api/?name='+encodeURIComponent('${senderName}')+'&background=random'">
                 <div style="min-width:0;flex:1;">
                     <div style="font-weight:600;font-size:14px;color:#1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${senderName}</div>
                     <div style="font-size:11px;color:#6b7280;">ID: ${senderId}</div>
@@ -1065,7 +1065,7 @@ function loadMessages(convId, senderName, senderId, activePageIdToUse = currentP
                     renderLabels(data.data.map(l => l.label_name));
                 }
             });
-        loadCustomerInfo(senderId, activePageIdToUse);
+        loadCustomerInfo(senderId, activePageIdToUse, senderName);
     }
 
     fetch('actions/get_messages.php?conv_id=' + convId + '&page_id=' + activePageIdToUse + '&user_id=' + activeUserIdToUse)
@@ -1346,9 +1346,10 @@ function toggleInfoPanel() {
     }
 }
 
-function loadCustomerInfo(senderId, pageId) {
+function loadCustomerInfo(senderId, pageId, senderName = '') {
     document.getElementById('info_id_display').innerText = 'ID: ' + senderId;
-    document.getElementById('info_avatar').src = `avatar.php?id=${senderId}&page_id=${pageId}`;
+    const fallbackName = senderName || 'Khách hàng';
+    document.getElementById('info_avatar').src = `avatar.php?id=${senderId}&page_id=${pageId}&name=${encodeURIComponent(fallbackName)}`;
     
     // Clear form inputs
     document.getElementById('info_name').value = '';
@@ -1362,16 +1363,20 @@ function loadCustomerInfo(senderId, pageId) {
         .then(res => {
             if (res.status === 'success') {
                 const data = res.data;
-                document.getElementById('info_name_display').innerText = data.name || 'Khách hàng';
+                const finalName = data.name || fallbackName;
+                document.getElementById('info_name_display').innerText = finalName;
                 document.getElementById('info_name').value = data.name || '';
                 document.getElementById('info_phone').value = data.phone || '';
                 document.getElementById('info_province').value = data.province || '';
                 document.getElementById('info_notes').value = data.notes || '';
+                
+                // Update avatar with proper DB name
+                document.getElementById('info_avatar').src = `avatar.php?id=${senderId}&page_id=${pageId}&name=${encodeURIComponent(finalName)}`;
             } else {
-                document.getElementById('info_name_display').innerText = 'Khách hàng';
+                document.getElementById('info_name_display').innerText = fallbackName;
             }
         }).catch(() => {
-            document.getElementById('info_name_display').innerText = 'Khách hàng';
+            document.getElementById('info_name_display').innerText = fallbackName;
         });
 }
 
