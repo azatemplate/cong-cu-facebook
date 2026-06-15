@@ -192,11 +192,11 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                 $php_upd_cols = [];
                                 $php_upd_vals = [];
                                 if ($detected_phone) {
-                                    $php_upd_cols[] = "phone = COALESCE(phone, ?)";
+                                    $php_upd_cols[] = "phone = ?";
                                     $php_upd_vals[] = $detected_phone;
                                 }
                                 if ($detected_province) {
-                                    $php_upd_cols[] = "province = COALESCE(province, ?)";
+                                    $php_upd_cols[] = "province = ?";
                                     $php_upd_vals[] = $detected_province;
                                 }
                                 
@@ -434,21 +434,16 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                     $info_context .= "- Tỉnh thành: " . ($cust_province ?: "CHƯA CÓ") . "\n";
                                     $info_context .= "- Nhu cầu/Yêu cầu khách hàng: " . ($cust_notes ?: "CHƯA CÓ") . "\n";
                                     $info_context .= "-----------------------------------\n";
-                                    $info_context .= "HƯỚNG DẪN BẮT BUỘC: Bạn là chatbot chăm sóc khách hàng chuyên nghiệp. Hãy kiểm tra các thông tin ở trên:\n";
-                                    $info_context .= "1. Với thông tin nào đã có (không phải là 'CHƯA CÓ'), bạn tuyệt đối không được hỏi lại khách hàng nữa.\n";
-                                    $info_context .= "2. Với thông tin nào ghi 'CHƯA CÓ', hãy khéo léo và thân thiện hỏi khách hàng trong quá trình trò chuyện. Hỏi từng thông tin một cách tự nhiên, không hỏi dồn dập.\n";
-                                    $info_context .= "3. Khi đã thu thập đủ cả 3 thông tin (Số điện thoại, Tỉnh thành, Nhu cầu), hãy tóm tắt lại và gửi lời cảm ơn khách hàng.\n";
-
-                                    $json_instruction = "\n\nQUY ĐỊNH PHẢN HỒI: Để đồng bộ thông tin vào hệ thống quản lý, bạn BẮT BUỘC phải phản hồi dưới định dạng JSON duy nhất (không bọc trong thẻ ```json hay bất kỳ chữ giải thích nào khác ngoài cấu trúc JSON), nội dung như sau:\n";
+                                               $json_instruction = "\n\nQUY ĐỊNH PHẢN HỒI: Để đồng bộ thông tin vào hệ thống quản lý, bạn BẮT BUỘC phải phản hồi dưới định dạng JSON duy nhất (không bọc trong thẻ ```json hay bất kỳ chữ giải thích nào khác ngoài cấu trúc JSON), nội dung như sau:\n";
                                     $json_instruction .= "{\n";
                                     $json_instruction .= '  "reply": "Nội dung tin nhắn bạn muốn trả lời khách hàng (viết bằng tiếng Việt tự nhiên)",\n';
                                     $json_instruction .= '  "extracted": {\n';
-                                    $json_instruction .= '    "phone": "Số điện thoại mới phát hiện được trong tin nhắn của khách hàng (nếu có, không lấy số cũ), nếu không có trả về null",\n';
-                                    $json_instruction .= '    "province": "Tỉnh thành mới phát hiện được trong tin nhắn của khách hàng (nếu có, không lấy tỉnh cũ), nếu không có trả về null",\n';
-                                    $json_instruction .= '    "requirements": "Nhu cầu/yêu cầu mới khách hàng vừa nêu ra (nếu có, không lấy nhu cầu cũ), nếu không có trả về null"\n';
+                                    $json_instruction .= '    "phone": "Số điện thoại phát hiện được trong tin nhắn mới của khách hàng (nếu có, không lấy số cũ), nếu khách hàng gửi lại số điện thoại khác thì trả về số mới, nếu không có trả về null",\n';
+                                    $json_instruction .= '    "province": "Tỉnh thành phát hiện được trong tin nhắn mới của khách hàng (nếu có, không lấy tỉnh cũ), nếu không có trả về null",\n';
+                                    $json_instruction .= '    "requirements": "Nhu cầu/yêu cầu đầy đủ nhất của khách hàng đã được cập nhật hoặc bổ sung thêm thông tin mới (nếu khách hàng cung cấp thêm chi tiết mới như số lượng, thông số, chủng loại... hãy tự động kết hợp với nhu cầu cũ ở phần THÔNG TIN KHÁCH HÀNG ĐÃ CÓ để tạo ra mô tả đầy đủ nhất, ví dụ ban đầu là \'cùm giáo\' sau đó khách nói thêm \'100 cái\' thì trả về \'Cùm giáo - 100 cái\'). Nếu không có thông tin gì mới hoặc không có thay đổi, trả về null"\n';
                                     $json_instruction .= "  }\n";
                                     $json_instruction .= "}\n";
-
+ 
                                     $custom_system_prompt = $ai_rule['message'] . $info_context . $json_instruction;
                                     $ai_reply_text = generate_chat_reply_with_ai($text, $custom_system_prompt, $acc_id, $page_name, $history_text);
                                     
@@ -463,20 +458,29 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                             $ai_upd_fields = [];
                                             $ai_upd_params = [];
                                             
-                                            if (!empty($parsed_json['extracted']['phone']) && empty($cust_phone)) {
-                                                $ai_upd_fields[] = "phone = ?";
-                                                $ai_upd_params[] = trim($parsed_json['extracted']['phone']);
-                                                $cust_phone = trim($parsed_json['extracted']['phone']);
+                                            if (!empty($parsed_json['extracted']['phone'])) {
+                                                $new_phone = trim($parsed_json['extracted']['phone']);
+                                                if ($new_phone !== $cust_phone) {
+                                                    $ai_upd_fields[] = "phone = ?";
+                                                    $ai_upd_params[] = $new_phone;
+                                                    $cust_phone = $new_phone;
+                                                }
                                             }
-                                            if (!empty($parsed_json['extracted']['province']) && empty($cust_province)) {
-                                                $ai_upd_fields[] = "province = ?";
-                                                $ai_upd_params[] = trim($parsed_json['extracted']['province']);
-                                                $cust_province = trim($parsed_json['extracted']['province']);
+                                            if (!empty($parsed_json['extracted']['province'])) {
+                                                $new_province = trim($parsed_json['extracted']['province']);
+                                                if ($new_province !== $cust_province) {
+                                                    $ai_upd_fields[] = "province = ?";
+                                                    $ai_upd_params[] = $new_province;
+                                                    $cust_province = $new_province;
+                                                }
                                             }
-                                            if (!empty($parsed_json['extracted']['requirements']) && empty($cust_notes)) {
-                                                $ai_upd_fields[] = "notes = ?";
-                                                $ai_upd_params[] = trim($parsed_json['extracted']['requirements']);
-                                                $cust_notes = trim($parsed_json['extracted']['requirements']);
+                                            if (!empty($parsed_json['extracted']['requirements'])) {
+                                                $new_notes = trim($parsed_json['extracted']['requirements']);
+                                                if ($new_notes !== $cust_notes) {
+                                                    $ai_upd_fields[] = "notes = ?";
+                                                    $ai_upd_params[] = $new_notes;
+                                                    $cust_notes = $new_notes;
+                                                }
                                             }
                                             
                                             if (!empty($ai_upd_fields)) {
@@ -499,12 +503,12 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                         
                                         $php_upd_cols = [];
                                         $php_upd_vals = [];
-                                        if ($php_detected_phone && empty($cust_phone)) {
+                                        if ($php_detected_phone && $php_detected_phone !== $cust_phone) {
                                             $php_upd_cols[] = "phone = ?";
                                             $php_upd_vals[] = $php_detected_phone;
                                             $cust_phone = $php_detected_phone;
                                         }
-                                        if ($php_detected_province && empty($cust_province)) {
+                                        if ($php_detected_province && $php_detected_province !== $cust_province) {
                                             $php_upd_cols[] = "province = ?";
                                             $php_upd_vals[] = $php_detected_province;
                                             $cust_province = $php_detected_province;
