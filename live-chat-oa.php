@@ -1264,11 +1264,12 @@ $pages_json = json_encode($pages);
             // Render different types of message (text, image, sticker, etc.)
             if (msg.type === 'text') {
                 content = `<div>${escapeHtml(msg.message)}</div>`;
-            } else if (msg.type === 'image') {
+            } else if (msg.type === 'image' || msg.type === 'photo') {
                 const imgUrl = msg.url || msg.thumb || '';
-                content = `<img src="${imgUrl}" alt="Hình ảnh" onclick="window.open('${imgUrl}')">`;
-                if (msg.message) {
-                    content += `<div style="margin-top:5px;">${escapeHtml(msg.message)}</div>`;
+                content = `<img src="${imgUrl}" alt="Hình ảnh" onclick="window.open('${imgUrl}')" style="max-width:100%; max-height:300px; border-radius:8px; cursor:pointer; margin-top:5px;">`;
+                const imgDesc = msg.description || msg.message || '';
+                if (imgDesc) {
+                    content += `<div style="margin-top:5px;">${escapeHtml(imgDesc)}</div>`;
                 }
             } else if (msg.type === 'sticker') {
                 const stickerUrl = msg.url || '';
