@@ -276,7 +276,7 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                             $match_page = true;
                                         }
                                     }
-                                    if ($match_page) {
+                                    if ($match_page && is_bot_rule_time_active($r)) {
                                         $send_bot_msg($r['message']);
                                         $matched_rule = true;
                                         break; // Only apply the first matching welcome rule
@@ -304,6 +304,7 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                 }
 
                                 foreach ($kw_rules as $rule) {
+                                    if (!is_bot_rule_time_active($rule)) continue;
                                     $kws = array_filter(array_map('trim', explode(',', $rule['keywords'])));
                                     $found = false;
                                     foreach ($kws as $kw) {
@@ -328,13 +329,18 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                 
                                 $ai_rule = null;
                                 foreach ($ai_rules_all as $r) {
+                                    $match_scope = false;
                                     if ($r['pages_scope'] === 'ALL') {
-                                        $ai_rule = $r; break;
+                                        $match_scope = true;
                                     } else {
                                         $scope_arr = @json_decode($r['pages_scope'], true);
                                         if (is_array($scope_arr) && in_array($page_id, $scope_arr)) {
-                                            $ai_rule = $r; break;
+                                            $match_scope = true;
                                         }
+                                    }
+                                    if ($match_scope && is_bot_rule_time_active($r)) {
+                                        $ai_rule = $r;
+                                        break;
                                     }
                                 }
 
@@ -669,8 +675,24 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
     // Trả về 200 OK để Facebook biết đã nhận được
     http_response_code(200);
     echo "EVENT_RECEIVED";
-} else {
     // Không phải Object Page
     http_response_code(404);
+}
+
+/**
+ * Check if the current local time falls inside a bot rule's active hours
+ */
+function is_bot_rule_time_active($rule) {
+    if (!isset($rule['active_time_type']) || $rule['active_time_type'] === 'ALL_DAY') {
+        return true;
+    }
+    $current_time = date('H:i:s');
+    $start = $rule['active_start_time'] ?? '00:00:00';
+    $end = $rule['active_end_time'] ?? '23:59:59';
+    if ($start <= $end) {
+        return ($current_time >= $start && $current_time <= $end);
+    } else {
+        return ($current_time >= $start || $current_time <= $end);
+    }
 }
 ?>

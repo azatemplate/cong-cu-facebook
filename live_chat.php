@@ -136,6 +136,22 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
                 <div id="hint_rule_message" style="font-size:11px; color:#6b7280; margin-top:4px;">Bạn có thể dùng {name} để gọi tên khách. Mỗi dòng 1 mẫu câu để chọn ngẫu nhiên.</div>
             </div>
 
+            <!-- Active Hours Settings -->
+            <div style="margin-bottom:15px;">
+                <label style="display:block; font-size:13px; font-weight:600; margin-bottom:5px;">Thời gian hoạt động</label>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <select id="rule_active_time_type" onchange="toggleActiveTimeFields()" style="padding:6px; font-size:13px; border-radius:6px; border:1px solid #d1d5db; background:#fff; color:#374151; cursor:pointer;">
+                        <option value="ALL_DAY">Cả ngày (24/24)</option>
+                        <option value="CUSTOM">Khung giờ tùy chỉnh</option>
+                    </select>
+                    <div id="rule_active_time_range" style="display:none; align-items:center; gap:5px;">
+                        <input type="time" id="rule_active_start_time" value="17:00" style="padding:4px 6px; border:1px solid #d1d5db; border-radius:6px;">
+                        <span style="font-size:12px; color:#4b5563;">đến</span>
+                        <input type="time" id="rule_active_end_time" value="07:00" style="padding:4px 6px; border:1px solid #d1d5db; border-radius:6px;">
+                    </div>
+                </div>
+            </div>
+
             <div style="margin-bottom:15px;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:5px;">
                     <label style="display:block; font-size:13px; font-weight:600;">Áp dụng cho Fanpage</label>
@@ -259,12 +275,21 @@ function renderBotRules(type) {
         }
         let activeStr = parseInt(r.is_active) === 1 ? '<span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;">Bật</span>' : '<span style="background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;">Tắt</span>';
         
+        let timeStr = '';
+        if (r.active_time_type === 'CUSTOM') {
+            let start = (r.active_start_time || '17:00').substring(0, 5);
+            let end = (r.active_end_time || '07:00').substring(0, 5);
+            timeStr = `<span style="background:#fff7ed;color:#c2410c;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:5px;">🕒 ${start} - ${end}</span>`;
+        } else {
+            timeStr = `<span style="background:#f0fdf4;color:#16a34a;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:5px;">🕒 Cả ngày</span>`;
+        }
+        
         let kwHtml = type === 'keyword' ? `<div style="font-size:12px; font-weight:600; color:#b91c1c; margin-bottom:4px;">Từ khóa: ${r.keywords}</div>` : '';
         
         html += `<div style="background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:12px; margin-bottom:10px; position:relative;">
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                 <div style="flex:1; min-width:0;">
-                    ${activeStr} <span style="font-size:11px; color:#6b7280; margin-left:5px;">Áp dụng: ${pageStr}</span>
+                    ${activeStr} ${timeStr} <span style="font-size:11px; color:#6b7280; margin-left:5px;">Áp dụng: ${pageStr}</span>
                     <div style="margin-top:6px;">
                         ${kwHtml}
                         <div style="font-size:13px; color:#374151; white-space:pre-wrap; background:#f3f4f6; padding:8px; border-radius:4px;">${r.message}</div>
@@ -311,6 +336,17 @@ function openRuleForm(type, rule = null) {
         document.getElementById('rule_message').value = rule.message || '';
         document.getElementById('rule_delay_seconds').value = rule.delay_seconds !== undefined ? rule.delay_seconds : 10;
         document.getElementById('rule_history_count').value = rule.history_count !== undefined ? rule.history_count : 6;
+        
+        const timeType = rule.active_time_type || 'ALL_DAY';
+        document.getElementById('rule_active_time_type').value = timeType;
+        let start = rule.active_start_time || '17:00';
+        if (start.split(':').length === 3) start = start.substring(0, 5);
+        let end = rule.active_end_time || '07:00';
+        if (end.split(':').length === 3) end = end.substring(0, 5);
+        document.getElementById('rule_active_start_time').value = start;
+        document.getElementById('rule_active_end_time').value = end;
+        toggleActiveTimeFields();
+
         if (rule.pages_scope === 'ALL') {
             document.getElementById('rule_pages_all').checked = true;
             document.querySelectorAll('.rule_page_cb').forEach(el => el.checked = true);
@@ -339,9 +375,19 @@ function openRuleForm(type, rule = null) {
         document.getElementById('rule_pages_all').checked = true;
         document.querySelectorAll('.rule_page_cb').forEach(el => el.checked = true);
         document.getElementById('rule_is_active').checked = true;
+        
+        document.getElementById('rule_active_time_type').value = 'ALL_DAY';
+        document.getElementById('rule_active_start_time').value = '17:00';
+        document.getElementById('rule_active_end_time').value = '07:00';
+        toggleActiveTimeFields();
     }
 
     document.getElementById('botRuleFormModal').style.display = 'flex';
+}
+
+function toggleActiveTimeFields() {
+    const val = document.getElementById('rule_active_time_type').value;
+    document.getElementById('rule_active_time_range').style.display = (val === 'CUSTOM') ? 'flex' : 'none';
 }
 
 function editBotRule(id) {
@@ -429,6 +475,9 @@ function saveBotRule(e) {
     fd.append('message', document.getElementById('rule_message').value);
     fd.append('delay_seconds', document.getElementById('rule_delay_seconds').value);
     fd.append('history_count', document.getElementById('rule_history_count').value);
+    fd.append('active_time_type', document.getElementById('rule_active_time_type').value);
+    fd.append('active_start_time', document.getElementById('rule_active_start_time').value);
+    fd.append('active_end_time', document.getElementById('rule_active_end_time').value);
     fd.append('pages_scope', pagesScope);
     fd.append('is_active', document.getElementById('rule_is_active').checked ? 1 : 0);
 
