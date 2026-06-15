@@ -1439,8 +1439,6 @@ $pages_json = json_encode($pages);
         .catch(() => showToast('Lưu thông tin thất bại.', 'error'));
     }
 
-    }
-
     // ── BOT SETTINGS JS LOGIC ──────────────────────────────────────────
     const allPages = <?php echo $pages_json; ?>;
     let botRules = [];
@@ -1701,7 +1699,6 @@ $pages_json = json_encode($pages);
             }).finally(()=>{
                 btn.disabled=false; btn.innerText='Lưu';
             });
-    }
     }
 </script>
 
