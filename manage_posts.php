@@ -196,8 +196,8 @@ try {
         }
     ?>
     <div style="border:1px solid var(--border-color);border-radius:10px;padding:18px 20px;background:var(--card-bg);transition:box-shadow 0.2s;" onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)'" onmouseout="this.style.boxShadow='none'">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
-            <div style="flex:1;min-width:0;">
+        <div class="campaign-row">
+            <div class="campaign-info">
                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
                     <span style="font-weight:600;font-size:15px;color:var(--text-main);"><?php echo htmlspecialchars($c['name']); ?></span>
                     <span style="background:<?php echo $badge_color; ?>;color:<?php echo $badge_text_color; ?>;font-size:12px;padding:2px 10px;border-radius:20px;font-weight:500;white-space:nowrap;"><?php echo $badge_label; ?></span>
@@ -229,7 +229,7 @@ try {
                 </div>
             </div>
             <!-- Actions -->
-            <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+            <div class="campaign-actions">
                 <?php if ($fail > 0 || $check > 0): ?>
                 <button onclick="showConfirmModal('retry', <?php echo $c['id']; ?>, 'Thử lại tất cả bài lỗi trong chiến dịch này?')" style="padding:7px 12px;background:#d1fae5;color:#065f46;border-radius:6px;border:none;cursor:pointer;font-size:13px;">
                     Retry
@@ -245,7 +245,7 @@ try {
                     🗑 Xóa
                 </button>
                 <?php endif; ?>
-                <a href="campaign_detail.php?id=<?php echo $c['id']; ?>" style="padding:7px 14px;background:var(--primary-color);color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;margin-left:auto;">
+                <a href="campaign_detail.php?id=<?php echo $c['id']; ?>" style="padding:7px 14px;background:var(--primary-color);color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;" class="btn-detail">
                     Xem chi tiết →
                 </a>
             </div>
@@ -365,6 +365,55 @@ document.addEventListener('DOMContentLoaded', function() {
     if (hasPending) setTimeout(() => window.location.reload(), 20000);
 });
 </script>
-<style>@keyframes rotation{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}</style>
+<style>
+@keyframes rotation{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+
+.campaign-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+.campaign-info {
+    flex: 1;
+    min-width: 0;
+}
+.campaign-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-shrink: 0;
+}
+.campaign-actions a.btn-detail {
+    margin-left: auto;
+}
+
+@media (max-width: 768px) {
+    .campaign-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+    .campaign-actions {
+        width: 100%;
+        border-top: 1px solid #f3f4f6;
+        padding-top: 12px;
+        margin-top: 4px;
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+    }
+    .campaign-actions button, .campaign-actions a.btn-detail {
+        flex: 1;
+        text-align: center;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 9px 12px !important;
+        font-size: 13px;
+        margin-left: 0 !important;
+    }
+}
+</style>
 
 <?php include 'includes/footer.php'; ?>
