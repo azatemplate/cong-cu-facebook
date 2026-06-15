@@ -92,7 +92,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if ($file_response['status_code'] !== 200) {
             $file_success = false;
-            $error_msg = isset($file_response['data']['error']['message']) ? $file_response['data']['error']['message'] : 'Lỗi gửi file';
+            $error_data = $file_response['data']['error'] ?? [];
+            $error_msg = translate_fb_error($error_data);
             echo json_encode(['status' => 'error', 'msg' => $error_msg]);
             exit;
         } else {
@@ -118,7 +119,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $text_success = false;
             // Only output error if we haven't already succeeded with a file
             if (!$has_file) {
-                $error_msg = isset($text_response['data']['error']['message']) ? $text_response['data']['error']['message'] : 'Lỗi gửi tin nhắn';
+                $error_data = $text_response['data']['error'] ?? [];
+                $error_msg = translate_fb_error($error_data);
                 echo json_encode(['status' => 'error', 'msg' => $error_msg]);
                 exit;
             }
@@ -137,5 +139,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 } else {
     echo json_encode(['status' => 'error', 'msg' => 'Method not allowed']);
+}
+
+/**
+ * Dịch lỗi Facebook API thành thông báo tiếng Việt thân thiện
+ */
+function translate_fb_error($error_data) {
+    if (empty($error_data) || !is_array($error_data)) {
+        return 'Lỗi không xác định từ Facebook API.';
+    }
+    
+    $code = $error_data['code'] ?? 0;
+    $subcode = $error_data['error_subcode'] ?? 0;
+    $msg = $error_data['message'] ?? '';
+    
+    // Kiểm tra lỗi chính sách nhắn tin ngoài khung 24h
+    if ($code === 10 || 
+        strpos(strtolower($msg), 'outside the allowed window') !== false || 
+        strpos($msg, 'ngoài khoảng thời gian cho phép') !== false ||
+        $subcode === 2018028
+    ) {
+        return 'Cuộc trò chuyện đã quá 24 giờ kể từ tương tác cuối cùng của khách hàng. Facebook không cho phép gửi tin nhắn thường lúc này.';
+    }
+    
+    return $msg ?: 'Lỗi gửi tin nhắn.';
 }
 ?>

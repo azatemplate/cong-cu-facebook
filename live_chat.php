@@ -709,6 +709,49 @@ let isLoadingMore  = false;
 let locallyReadConvs = JSON.parse(localStorage.getItem('fb_read_cache') || '{}');
 const phoneRegex   = /(03|05|07|08|09)+([0-9]{8})\b/;
 
+function showToast(message, type = 'error') {
+    let toast = document.getElementById('chat_toast_notification');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'chat_toast_notification';
+        toast.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+            z-index: 99999;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            transform: translateY(-20px);
+            opacity: 0;
+            font-family: system-ui, -apple-system, sans-serif;
+        `;
+        document.body.appendChild(toast);
+    }
+    toast.style.background = type === 'success' ? '#10b981' : '#ef4444';
+    toast.innerText = message;
+    toast.style.display = 'block';
+    
+    // Trigger animation
+    setTimeout(() => {
+        toast.style.transform = 'translateY(0)';
+        toast.style.opacity = '1';
+    }, 50);
+    
+    // Hide after 4 seconds
+    setTimeout(() => {
+        toast.style.transform = 'translateY(-20px)';
+        toast.style.opacity = '0';
+        setTimeout(() => {
+            toast.style.display = 'none';
+        }, 300);
+    }, 4000);
+}
+
 // active state
 let currentPageId = '<?php echo $selected_page_id; ?>';
 let currentUserId = '';
@@ -912,7 +955,7 @@ btnReadAll.addEventListener('click', function() {
     if (!unread.length) return;
     
     if (isMergedChat) {
-        alert('Không hỗ trợ "Đọc tất cả" khi đang Gộp Fanpage. Xin vui lòng chọn từng Fanpage.');
+        showToast('Không hỗ trợ "Đọc tất cả" khi đang Gộp Fanpage. Xin vui lòng chọn từng Fanpage.', 'error');
         return;
     }
 
@@ -1183,7 +1226,7 @@ btnAddTag?.addEventListener('click', e => {
 tagDropdown.querySelectorAll('.dropdown-item').forEach(item => {
     item.addEventListener('click', function() {
         const tagVal = this.dataset.val;
-        if (!activeConvId.value) { alert('Chưa chọn hội thoại nào.'); return; }
+        if (!activeConvId.value) { showToast('Chưa chọn hội thoại nào.', 'error'); return; }
 
         // Optimistic UI
         const names = Array.from(labelsDiv.querySelectorAll('.chat-tag')).map(el => el.textContent.trim().replace('✕','').trim());
@@ -1203,7 +1246,7 @@ tagDropdown.querySelectorAll('.dropdown-item').forEach(item => {
         fetch('actions/add_tag.php', { method:'POST', body:fd })
             .then(r => r.json())
             .then(data => {
-                if (data.status !== 'success') alert('Lỗi gắn nhãn: ' + data.msg);
+                if (data.status !== 'success') showToast('Lỗi gắn nhãn: ' + data.msg, 'error');
             });
         tagDropdown.style.display = 'none';
     });
@@ -1282,9 +1325,9 @@ document.getElementById('reply_form').addEventListener('submit', function(e) {
                 chatMessages.scrollTop = chatMessages.scrollHeight;
                 replyText.value = ''; replyFile.value = ''; filePreview.style.display = 'none';
             } else {
-                alert('Gửi thất bại: ' + data.msg);
+                showToast(data.msg, 'error');
             }
-        }).catch(() => alert('Lỗi mạng'))
+        }).catch(() => showToast('Lỗi mạng', 'error'))
         .finally(() => { setChatEnabled(true); replyText.focus(); });
 });
 
@@ -1302,7 +1345,7 @@ document.getElementById('form_add_reply').addEventListener('submit', function(e)
         .then(r=>r.json())
         .then(data => {
             if (data.status==='success') { customModal.style.display='none'; this.reset(); loadSavedReplies(); }
-            else alert('Lỗi: '+data.msg);
+            else showToast('Lỗi: '+data.msg, 'error');
         });
 });
 
