@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $stmt->execute([$account_id]);
         $old_settings = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (empty($app_secret)) {
+        if (empty($app_secret) || $app_secret === '••••••••••••••••••••••••') {
             if ($old_settings && !empty($old_settings['app_secret'])) {
                 // Giữ nguyên secret cũ
                 $encrypted_secret = $old_settings['app_secret'];
@@ -75,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $encrypted_secret = encryptData($app_secret);
         }
 
-        if (empty($oa_secret)) {
+        if (empty($oa_secret) || $oa_secret === '••••••••••••••••••••••••') {
             if ($old_settings && !empty($old_settings['oa_secret'])) {
                 // Giữ nguyên oa secret cũ
                 $encrypted_oa_secret = $old_settings['oa_secret'];

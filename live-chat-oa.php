@@ -805,18 +805,20 @@ $pages_json = json_encode($pages);
                 const badge = document.getElementById('secret_badge');
                 if (res.data.has_secret) {
                     badge.style.display = 'inline-block';
-                    document.getElementById('config_app_secret').placeholder = '••••••••••••••••••••••••';
+                    document.getElementById('config_app_secret').value = '••••••••••••••••••••••••';
                 } else {
                     badge.style.display = 'none';
+                    document.getElementById('config_app_secret').value = '';
                     document.getElementById('config_app_secret').placeholder = 'Nhập mật khẩu App Secret';
                 }
 
                 const oaBadge = document.getElementById('oa_secret_badge');
                 if (res.data.has_oa_secret) {
                     oaBadge.style.display = 'inline-block';
-                    document.getElementById('config_oa_secret').placeholder = '••••••••••••••••••••••••';
+                    document.getElementById('config_oa_secret').value = '••••••••••••••••••••••••';
                 } else {
                     oaBadge.style.display = 'none';
+                    document.getElementById('config_oa_secret').value = '';
                     document.getElementById('config_oa_secret').placeholder = 'Nhập OA Secret Key';
                 }
             } else {
