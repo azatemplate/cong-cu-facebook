@@ -53,6 +53,11 @@ if (empty($receivedSignature) && function_exists('getallheaders')) {
     }
 }
 
+// Strip "mac=" prefix if present
+if (strpos($receivedSignature, 'mac=') === 0) {
+    $receivedSignature = substr($receivedSignature, 4);
+}
+
 $content = $appId . $rawData . $timeStamp . $secretKey;
 $calculatedSignature = hash('sha256', $content);
 
