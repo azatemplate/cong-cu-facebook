@@ -16,6 +16,9 @@ $oa_id = isset($_GET['oa_id']) ? trim($_GET['oa_id']) : '';
 $sender_id = isset($_GET['sender_id']) ? trim($_GET['sender_id']) : '';
 $offset = isset($_GET['offset']) ? intval($_GET['offset']) : 0;
 $count = isset($_GET['count']) ? intval($_GET['count']) : 10;
+if ($count > 10) {
+    $count = 10;
+}
 
 if (empty($oa_id) || empty($sender_id)) {
     echo json_encode(['status' => 'error', 'msg' => 'Thiếu tham số OA ID hoặc Sender ID.']);

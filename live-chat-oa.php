@@ -579,6 +579,10 @@ $pages_json = json_encode($pages);
                 <span>👤</span> Hồ sơ khách hàng
             </div>
             <div class="info-content">
+                <button type="button" id="btn_refresh_profile" onclick="handleRefreshZaloProfile()" class="btn" style="width:100%; font-weight:600; background:#f3f4f6; border:1px solid #d1d5db; color:#374151; margin-bottom:15px; display:flex; align-items:center; justify-content:center; gap:6px; font-size:13px;" disabled>
+                    🔄 Đồng bộ Zalo Profile
+                </button>
+                
                 <form id="customer_profile_form" onsubmit="handleSaveCustomer(event)">
                     <div class="form-group">
                         <label for="cust_name">Tên khách hàng</label>
@@ -1080,6 +1084,9 @@ $pages_json = json_encode($pages);
         document.getElementById('cust_province').disabled = !enable;
         document.getElementById('cust_notes').disabled = !enable;
         document.getElementById('btn_save_customer').disabled = !enable;
+        
+        const refreshBtn = document.getElementById('btn_refresh_profile');
+        if (refreshBtn) refreshBtn.disabled = !enable;
     }
 
     function enableChatInputs(enable) {
@@ -1142,7 +1149,7 @@ $pages_json = json_encode($pages);
         const container = document.getElementById('chat_messages_container');
         container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);">Đang tải tin nhắn...</div>';
 
-        fetch(`actions/zalo_get_messages.php?oa_id=${activeOaId}&sender_id=${activeSenderId}&offset=0&count=20`)
+        fetch(`actions/zalo_get_messages.php?oa_id=${activeOaId}&sender_id=${activeSenderId}&offset=0&count=10`)
         .then(r => r.json())
         .then(res => {
             if (res.status === 'success') {
@@ -1460,6 +1467,50 @@ $pages_json = json_encode($pages);
             }
         })
         .catch(() => showToast('Lưu thông tin thất bại.', 'error'));
+    }
+
+    window.handleRefreshZaloProfile = function() {
+        if (!activeOaId || !activeSenderId) return;
+        
+        const btn = document.getElementById('btn_refresh_profile');
+        const origText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '🔄 Đang đồng bộ...';
+        
+        fetch(`actions/zalo_refresh_customer.php?oa_id=${activeOaId}&sender_id=${activeSenderId}`)
+        .then(r => r.json())
+        .then(res => {
+            if (res.status === 'success') {
+                showToast(res.msg, 'success');
+                if (res.data) {
+                    document.getElementById('cust_name').value = res.data.name || '';
+                    document.getElementById('cust_province').value = res.data.province || '';
+                    
+                    // Reload conversations list to update names/avatars in left panel
+                    loadConversationsAfterSend();
+                    
+                    // Reload active header user name and avatar
+                    const activeHeader = document.getElementById('chat_active_user_info');
+                    if (activeHeader) {
+                        const avatarUrl = res.data.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(res.data.name);
+                        activeHeader.innerHTML = `
+                            <img src="${avatarUrl}" class="chat-active-avatar">
+                            <div>
+                                <div class="chat-active-name">${escapeHtml(res.data.name)}</div>
+                                <div class="chat-active-status">Zalo User ID: ${activeSenderId}</div>
+                            </div>
+                        `;
+                    }
+                }
+            } else {
+                showToast(res.msg, 'error');
+            }
+        })
+        .catch(() => showToast('Gửi yêu cầu đồng bộ thất bại.', 'error'))
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = origText;
+        });
     }
 
     // ── BOT SETTINGS JS LOGIC ──────────────────────────────────────────

@@ -120,7 +120,7 @@ try {
         $cust_notes = $cust['notes'];
     }
 
-    if ($access_token && (!$cust || empty($cust['name']))) {
+    if ($access_token && (!$cust || empty($cust['name']) || $cust['name'] === 'Khách hàng Zalo' || empty($cust['avatar']) || strpos($cust['avatar'], 'ui-avatars.com') !== false)) {
         // Fetch from Zalo API
         $profile = zalo_get_customer_profile($access_token, $sender_id);
         if ($profile) {
