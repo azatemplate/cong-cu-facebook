@@ -37,6 +37,57 @@ function webhook_log($msg) {
     @file_put_contents(__DIR__ . '/webhook_db_errors.txt', date('Y-m-d H:i:s') . " " . $msg . "\n", FILE_APPEND);
 }
 
+function detect_vietnam_province($text) {
+    $provinces = [
+        'An Giang', 'Bà Rịa - Vũng Tàu', 'Bà Rịa Vũng Tàu', 'Vũng Tàu', 'Bắc Giang', 'Bắc Kạn', 'Bạc Liêu', 'Bắc Ninh', 'Bến Tre', 'Bình Định', 
+        'Bình Dương', 'Bình Phước', 'Bình Thuận', 'Cà Mau', 'Cần Thơ', 'Cao Bằng', 'Đà Nẵng', 'Đắk Lắk', 'Đắk Nông', 'Điện Biên', 
+        'Đồng Nai', 'Đồng Tháp', 'Gia Lai', 'Hà Giang', 'Hà Nam', 'Hà Nội', 'Hà Tĩnh', 'Hải Dương', 'Hải Phòng', 'Hậu Giang', 
+        'Hòa Bình', 'Hưng Yên', 'Khánh Hòa', 'Nha Trang', 'Kiên Giang', 'Kon Tum', 'Lai Châu', 'Lâm Đồng', 'Đà Lạt', 'Lạng Sơn', 
+        'Lào Cai', 'Long An', 'Nam Định', 'Nghệ An', 'Ninh Bình', 'Ninh Thuận', 'Phú Thọ', 'Phú Yên', 'Quảng Bình', 'Quảng Nam', 
+        'Quảng Ngãi', 'Quảng Ninh', 'Quảng Trị', 'Sóc Trăng', 'Sơn La', 'Tây Ninh', 'Thái Bình', 'Thái Nguyên', 'Thanh Hóa', 
+        'Thừa Thiên Huế', 'Huế', 'Tiền Giang', 'Trà Vinh', 'Tuyên Quang', 'Vĩnh Long', 'Vĩnh Phúc', 'Yên Bái', 'TPHCM', 'TP HCM', 
+        'Sài Gòn', 'Hồ Chí Minh',
+        // Unaccented versions
+        'An Giang', 'Ba Ria - Vung Tau', 'Ba Ria Vung Tau', 'Vung Tau', 'Bac Giang', 'Bac Kan', 'Bac Lieu', 'Bac Ninh', 'Ben Tre', 'Binh Dinh', 
+        'Binh Duong', 'Binh Phuoc', 'Binh Thuan', 'Ca Mau', 'Can Tho', 'Cao Bang', 'Da Nang', 'Dak Lak', 'Dak Nong', 'Dien Bien', 
+        'Dong Nai', 'Dong Thap', 'Gia Lai', 'Ha Giang', 'Ha Nam', 'Ha Noi', 'Ha Tinh', 'Hai Duong', 'Hai Phong', 'Hau Giang', 
+        'Hoa Binh', 'Hung Yen', 'Khanh Hoa', 'Nha Trang', 'Kien Giang', 'Kon Tum', 'Lai Chau', 'Lam Dong', 'Da Lat', 'Lang Son', 
+        'Lao Cai', 'Long An', 'Nam Dinh', 'Nghe An', 'Ninh Binh', 'Ninh Thuan', 'Phu Tho', 'Phu Yen', 'Quang Binh', 'Quang Nam', 
+        'Quang Ngai', 'Quang Ninh', 'Quang Tri', 'Soc Trang', 'Son La', 'Tay Ninh', 'Thai Binh', 'Thai Nguyen', 'Thanh Hoa', 
+        'Thua Thien Hue', 'Hue', 'Tien Giang', 'Tra Vinh', 'Tuyen Quang', 'Vinh Long', 'Vinh Phuc', 'Yen Bai', 'Sai Gon', 'Ho Chi Minh'
+    ];
+    
+    $text_lower = mb_strtolower($text, 'UTF-8');
+    
+    // Sắp xếp tỉnh thành theo độ dài giảm dần để khớp các cụm từ dài trước (tránh khớp đè)
+    usort($provinces, function($a, $b) {
+        return mb_strlen($b, 'UTF-8') - mb_strlen($a, 'UTF-8');
+    });
+    
+    foreach ($provinces as $p) {
+        $p_lower = mb_strtolower($p, 'UTF-8');
+        if (mb_strpos($text_lower, $p_lower) !== false) {
+            if (in_array(strtolower($p), ['tphcm', 'tp hcm', 'sài gòn', 'sai gon', 'hồ chí minh', 'ho chi minh'])) {
+                return 'Hồ Chí Minh';
+            }
+            if (strtolower($p) == 'vũng tàu' || strtolower($p) == 'vung tau') {
+                return 'Bà Rịa - Vũng Tàu';
+            }
+            if (strtolower($p) == 'huế' || strtolower($p) == 'hue') {
+                return 'Thừa Thiên Huế';
+            }
+            if (strtolower($p) == 'nha trang') {
+                return 'Khánh Hòa';
+            }
+            if (strtolower($p) == 'đà lạt' || strtolower($p) == 'da lat') {
+                return 'Lâm Đồng';
+            }
+            return mb_convert_case($p, MB_CASE_TITLE, 'UTF-8');
+        }
+    }
+    return null;
+}
+
 if ($data && isset($data['object']) && $data['object'] === 'page') {
     
     // Tự động tạo bảng nếu chưa có (dành cho môi trường mới chưa chạy script tạo bảng)
@@ -125,6 +176,51 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                         $stmt = $pdo->prepare("INSERT INTO page_notifications (page_id, type, sender_id, sender_name, conversation_id, snippet) VALUES (?, 'message', ?, ?, ?, ?)");
                         $r = $stmt->execute([$page_id, $sender_id, $sender_name, $conversation_id, $text]);
                         webhook_log("MSG INSERT: page=$page_id sender=$sender_id result=" . ($r ? 'OK id='.$pdo->lastInsertId() : 'FAIL'));
+
+                        // Đảm bảo thông tin khách hàng được khởi tạo/cập nhật trong fb_customers
+                        try {
+                            $stmt_cust = $pdo->prepare("INSERT INTO fb_customers (page_id, sender_id, name) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name)");
+                            $stmt_cust->execute([$page_id, $sender_id, $sender_name]);
+                            
+                            if ($is_message && !empty($text) && $text !== 'Đã gửi một tệp đính kèm' && strpos($text, '[Hành động:') === false) {
+                                $detected_phone = '';
+                                if (preg_match('/(03|05|07|08|09)+([0-9]{8})\b/', $text, $matches)) {
+                                    $detected_phone = $matches[0];
+                                }
+                                $detected_province = detect_vietnam_province($text);
+                                
+                                $php_upd_cols = [];
+                                $php_upd_vals = [];
+                                if ($detected_phone) {
+                                    $php_upd_cols[] = "phone = COALESCE(phone, ?)";
+                                    $php_upd_vals[] = $detected_phone;
+                                }
+                                if ($detected_province) {
+                                    $php_upd_cols[] = "province = COALESCE(province, ?)";
+                                    $php_upd_vals[] = $detected_province;
+                                }
+                                
+                                if (!empty($php_upd_cols)) {
+                                    $php_upd_vals[] = $page_id;
+                                    $php_upd_vals[] = $sender_id;
+                                    $stmt_upd = $pdo->prepare("UPDATE fb_customers SET " . implode(", ", $php_upd_cols) . " WHERE page_id = ? AND sender_id = ?");
+                                    $stmt_upd->execute($php_upd_vals);
+                                }
+                                
+                                // Tự động gán nhãn Đã cho số điện thoại nếu có SĐT trong DB
+                                $stmt_chk_ph = $pdo->prepare("SELECT phone FROM fb_customers WHERE page_id = ? AND sender_id = ?");
+                                $stmt_chk_ph->execute([$page_id, $sender_id]);
+                                $has_phone = $stmt_chk_ph->fetchColumn();
+                                if ($has_phone && !empty($conversation_id)) {
+                                    try {
+                                        $stmt_lbl = $pdo->prepare("INSERT IGNORE INTO conversation_labels (conv_id, page_id, recipient_id, label_name) VALUES (?, ?, ?, 'Đã cho số điện thoại')");
+                                        $stmt_lbl->execute([$conversation_id, $page_id, $sender_id]);
+                                    } catch (Exception $e) {}
+                                }
+                            }
+                        } catch (Exception $e) {
+                            webhook_log("CUSTOMER PROFILE UPDATE ERR: " . $e->getMessage());
+                        }
                     } catch (Exception $e) { webhook_log('MSG DB ERR: ' . $e->getMessage()); }
 
                     // ===== BẮT ĐẦU BOT CHAT LOGIC =====
@@ -145,7 +241,7 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                 $chosen_msg = $lines[array_rand($lines)];
                                 $final_msg = str_replace('{name}', $sender_name, $chosen_msg);
 
-                                $url = "https://graph.facebook.com/v22.0/me/messages?access_token={$page_token}";
+                                $url = "https://graph.facebook.com/v25.0/me/messages?access_token={$page_token}";
                                 $post_data = json_encode([
                                     'recipient' => ['id' => $sender_id],
                                     'message' => ['text' => $final_msg],
@@ -320,10 +416,119 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                         }
                                     }
 
-                                    $ai_reply_text = generate_chat_reply_with_ai($text, $ai_rule['message'], $acc_id, $page_name, $history_text);
+                                    // Truy vấn thông tin khách hàng hiện tại từ DB
+                                    $cust_phone = '';
+                                    $cust_province = '';
+                                    $cust_notes = '';
+                                    $st_cust = $pdo->prepare("SELECT phone, province, notes FROM fb_customers WHERE page_id = ? AND sender_id = ?");
+                                    $st_cust->execute([$page_id, $sender_id]);
+                                    if ($cust_row = $st_cust->fetch(PDO::FETCH_ASSOC)) {
+                                        $cust_phone = $cust_row['phone'] ?? '';
+                                        $cust_province = $cust_row['province'] ?? '';
+                                        $cust_notes = $cust_row['notes'] ?? '';
+                                    }
+
+                                    // Thiết lập ngữ cảnh thông tin và hướng dẫn thu thập cho AI Chatbot
+                                    $info_context = "\n\n--- THÔNG TIN KHÁCH HÀNG ĐÃ CÓ ---\n";
+                                    $info_context .= "- Số điện thoại: " . ($cust_phone ?: "CHƯA CÓ") . "\n";
+                                    $info_context .= "- Tỉnh thành: " . ($cust_province ?: "CHƯA CÓ") . "\n";
+                                    $info_context .= "- Nhu cầu/Yêu cầu khách hàng: " . ($cust_notes ?: "CHƯA CÓ") . "\n";
+                                    $info_context .= "-----------------------------------\n";
+                                    $info_context .= "HƯỚNG DẪN BẮT BUỘC: Bạn là chatbot chăm sóc khách hàng chuyên nghiệp. Hãy kiểm tra các thông tin ở trên:\n";
+                                    $info_context .= "1. Với thông tin nào đã có (không phải là 'CHƯA CÓ'), bạn tuyệt đối không được hỏi lại khách hàng nữa.\n";
+                                    $info_context .= "2. Với thông tin nào ghi 'CHƯA CÓ', hãy khéo léo và thân thiện hỏi khách hàng trong quá trình trò chuyện. Hỏi từng thông tin một cách tự nhiên, không hỏi dồn dập.\n";
+                                    $info_context .= "3. Khi đã thu thập đủ cả 3 thông tin (Số điện thoại, Tỉnh thành, Nhu cầu), hãy tóm tắt lại và gửi lời cảm ơn khách hàng.\n";
+
+                                    $json_instruction = "\n\nQUY ĐỊNH PHẢN HỒI: Để đồng bộ thông tin vào hệ thống quản lý, bạn BẮT BUỘC phải phản hồi dưới định dạng JSON duy nhất (không bọc trong thẻ ```json hay bất kỳ chữ giải thích nào khác ngoài cấu trúc JSON), nội dung như sau:\n";
+                                    $json_instruction .= "{\n";
+                                    $json_instruction .= '  "reply": "Nội dung tin nhắn bạn muốn trả lời khách hàng (viết bằng tiếng Việt tự nhiên)",\n';
+                                    $json_instruction .= '  "extracted": {\n';
+                                    $json_instruction .= '    "phone": "Số điện thoại mới phát hiện được trong tin nhắn của khách hàng (nếu có, không lấy số cũ), nếu không có trả về null",\n';
+                                    $json_instruction .= '    "province": "Tỉnh thành mới phát hiện được trong tin nhắn của khách hàng (nếu có, không lấy tỉnh cũ), nếu không có trả về null",\n';
+                                    $json_instruction .= '    "requirements": "Nhu cầu/yêu cầu mới khách hàng vừa nêu ra (nếu có, không lấy nhu cầu cũ), nếu không có trả về null"\n';
+                                    $json_instruction .= "  }\n";
+                                    $json_instruction .= "}\n";
+
+                                    $custom_system_prompt = $ai_rule['message'] . $info_context . $json_instruction;
+                                    $ai_reply_text = generate_chat_reply_with_ai($text, $custom_system_prompt, $acc_id, $page_name, $history_text);
+                                    
+                                    $reply_to_send = '';
                                     if (!empty($ai_reply_text)) {
-                                        $send_bot_msg($ai_reply_text);
-                                        $matched_rule = true;
+                                        // Thử giải mã JSON phản hồi của AI
+                                        $parsed_json = json_decode(clean_json_response($ai_reply_text), true);
+                                        if (is_array($parsed_json) && isset($parsed_json['reply'])) {
+                                            $reply_to_send = $parsed_json['reply'];
+                                            
+                                            // Cập nhật CSDL nếu AI trích xuất được thông tin mới
+                                            $ai_upd_fields = [];
+                                            $ai_upd_params = [];
+                                            
+                                            if (!empty($parsed_json['extracted']['phone']) && empty($cust_phone)) {
+                                                $ai_upd_fields[] = "phone = ?";
+                                                $ai_upd_params[] = trim($parsed_json['extracted']['phone']);
+                                                $cust_phone = trim($parsed_json['extracted']['phone']);
+                                            }
+                                            if (!empty($parsed_json['extracted']['province']) && empty($cust_province)) {
+                                                $ai_upd_fields[] = "province = ?";
+                                                $ai_upd_params[] = trim($parsed_json['extracted']['province']);
+                                                $cust_province = trim($parsed_json['extracted']['province']);
+                                            }
+                                            if (!empty($parsed_json['extracted']['requirements']) && empty($cust_notes)) {
+                                                $ai_upd_fields[] = "notes = ?";
+                                                $ai_upd_params[] = trim($parsed_json['extracted']['requirements']);
+                                                $cust_notes = trim($parsed_json['extracted']['requirements']);
+                                            }
+                                            
+                                            if (!empty($ai_upd_fields)) {
+                                                $ai_upd_params[] = $page_id;
+                                                $ai_upd_params[] = $sender_id;
+                                                $st_ai_upd = $pdo->prepare("UPDATE fb_customers SET " . implode(", ", $ai_upd_fields) . " WHERE page_id = ? AND sender_id = ?");
+                                                $st_ai_upd->execute($ai_upd_params);
+                                            }
+                                        } else {
+                                            // Fallback nếu AI không trả về JSON hợp lệ
+                                            $reply_to_send = $ai_reply_text;
+                                        }
+                                        
+                                        // Đồng thời luôn chạy regex và string detection của PHP để đảm bảo độ chính xác
+                                        $php_detected_phone = '';
+                                        if (preg_match('/(03|05|07|08|09)+([0-9]{8})\b/', $text, $matches)) {
+                                            $php_detected_phone = $matches[0];
+                                        }
+                                        $php_detected_province = detect_vietnam_province($text);
+                                        
+                                        $php_upd_cols = [];
+                                        $php_upd_vals = [];
+                                        if ($php_detected_phone && empty($cust_phone)) {
+                                            $php_upd_cols[] = "phone = ?";
+                                            $php_upd_vals[] = $php_detected_phone;
+                                            $cust_phone = $php_detected_phone;
+                                        }
+                                        if ($php_detected_province && empty($cust_province)) {
+                                            $php_upd_cols[] = "province = ?";
+                                            $php_upd_vals[] = $php_detected_province;
+                                            $cust_province = $php_detected_province;
+                                        }
+                                        
+                                        if (!empty($php_upd_cols)) {
+                                            $php_upd_vals[] = $page_id;
+                                            $php_upd_vals[] = $sender_id;
+                                            $st_php_upd = $pdo->prepare("UPDATE fb_customers SET " . implode(", ", $php_upd_cols) . " WHERE page_id = ? AND sender_id = ?");
+                                            $st_php_upd->execute($php_upd_vals);
+                                        }
+                                        
+                                        // Gán nhãn "Đã cho số điện thoại" nếu có SĐT
+                                        if (!empty($cust_phone) && !empty($conversation_id)) {
+                                            try {
+                                                $stmt_lbl = $pdo->prepare("INSERT IGNORE INTO conversation_labels (conv_id, page_id, recipient_id, label_name) VALUES (?, ?, ?, 'Đã cho số điện thoại')");
+                                                $stmt_lbl->execute([$conversation_id, $page_id, $sender_id]);
+                                            } catch (Exception $e) {}
+                                        }
+                                        
+                                        if (!empty($reply_to_send)) {
+                                            $send_bot_msg($reply_to_send);
+                                            $matched_rule = true;
+                                        }
                                     }
                                     
                                     // Nếu process này đã gộp (đã sleep), thì sau khi gửi tin nhắn ta nên kết thúc script luôn
@@ -422,7 +627,7 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                         $chosen_inbox = $lines_inbox[array_rand($lines_inbox)];
 
                                         $msg = str_replace('{name}', $sender_name, $chosen_inbox);
-                                        $url = "https://graph.facebook.com/v22.0/me/messages?access_token={$page_token}";
+                                        $url = "https://graph.facebook.com/v25.0/me/messages?access_token={$page_token}";
                                         $post_data = json_encode([
                                             'recipient' => ['comment_id' => $comment_id],
                                             'message' => ['text' => $msg],

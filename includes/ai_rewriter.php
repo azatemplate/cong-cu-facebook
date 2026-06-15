@@ -244,13 +244,47 @@ function rewrite_content_with_claude($prompt, $api_keys, $endpoint, $prompt_vait
     return '';
 }
 
+function log_ai_usage($account_id, $provider, $feature, $prompt_length, $response_length, $status, $error_message = null) {
+    global $pdo;
+    try {
+        $username = null;
+        if ($account_id) {
+            $stmt = $pdo->prepare("SELECT username FROM system_accounts WHERE id = ? LIMIT 1");
+            $stmt->execute([$account_id]);
+            $username = $stmt->fetchColumn();
+        }
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1 (Hệ thống)';
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'System Cron / CLI';
+        $log_stmt = $pdo->prepare("
+            INSERT INTO ai_usage_logs (account_id, username, provider, feature, prompt_length, response_length, status, error_message, ip_address, user_agent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $log_stmt->execute([
+            $account_id,
+            $username,
+            $provider,
+            $feature,
+            $prompt_length,
+            $response_length,
+            $status,
+            $error_message,
+            $ip_address,
+            $user_agent
+        ]);
+    } catch (Exception $e) {
+        ai_log("Failed to write AI usage log: " . $e->getMessage());
+    }
+}
+
+
 function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanpage_name = '') {
     global $pdo;
     
     if (empty(trim($content))) return $content;
 
+    $selected_ai = 'Unknown';
     try {
-        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, model, prompt_content, prompt_title, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
+        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, cookie, model, prompt_content, prompt_title, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
         $stmt->execute([$account_id]);
         $config = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -263,6 +297,7 @@ function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanp
         $selected_model = $config['model'];
         $endpoint = $config['endpoint'];
         $api_keys_raw = decryptData($config['api_keys']);
+        $cookie_raw = isset($config['cookie']) ? decryptData($config['cookie']) : '';
         $max_retries = isset($config['max_retries']) ? intval($config['max_retries']) : 2;
         $timeout_seconds = isset($config['timeout_seconds']) ? intval($config['timeout_seconds']) : 120;
         
@@ -302,6 +337,9 @@ function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanp
         }
         
         $rewritten_text = "";
+        $status = "success";
+        $error_message = null;
+
         if ($selected_ai === "Gemini") {
             $rewritten_text = rewrite_content_with_gemini($content, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
         } elseif ($selected_ai === "OpenAI") {
@@ -313,13 +351,18 @@ function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanp
         }
         
         if (empty($rewritten_text)) {
+            $status = "failed";
+            $error_message = "Empty response from AI Provider";
+            log_ai_usage($account_id, $selected_ai, $is_title ? 'Tiêu đề bài viết' : 'Nội dung bài viết', strlen($content), 0, $status, $error_message);
             return $content;
         }
         
+        log_ai_usage($account_id, $selected_ai, $is_title ? 'Tiêu đề bài viết' : 'Nội dung bài viết', strlen($content), strlen($rewritten_text), $status, $error_message);
         return clean_markdown($rewritten_text);
         
     } catch (Exception $e) {
         ai_log("Error in rewrite_content_with_ai: " . $e->getMessage());
+        log_ai_usage($account_id, $selected_ai, $is_title ? 'Tiêu đề bài viết' : 'Nội dung bài viết', strlen($content), 0, "failed", $e->getMessage());
         return $content;
     }
 }
@@ -328,8 +371,9 @@ function generate_chat_reply_with_ai($user_message, $system_prompt, $account_id,
     global $pdo;
     if (empty(trim($user_message))) return '';
 
+    $selected_ai = 'Unknown';
     try {
-        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, model, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
+        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, cookie, model, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
         $stmt->execute([$account_id]);
         $config = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -342,6 +386,7 @@ function generate_chat_reply_with_ai($user_message, $system_prompt, $account_id,
         $selected_model = $config['model'];
         $endpoint = $config['endpoint'];
         $api_keys_raw = decryptData($config['api_keys']);
+        $cookie_raw = isset($config['cookie']) ? decryptData($config['cookie']) : '';
         $max_retries = isset($config['max_retries']) ? intval($config['max_retries']) : 2;
         $timeout_seconds = isset($config['timeout_seconds']) ? intval($config['timeout_seconds']) : 120;
         
@@ -385,6 +430,9 @@ function generate_chat_reply_with_ai($user_message, $system_prompt, $account_id,
         }
         
         $rewritten_text = "";
+        $status = "success";
+        $error_message = null;
+
         if ($selected_ai === "Gemini") {
             $rewritten_text = rewrite_content_with_gemini($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
         } elseif ($selected_ai === "OpenAI") {
@@ -393,10 +441,19 @@ function generate_chat_reply_with_ai($user_message, $system_prompt, $account_id,
             $rewritten_text = rewrite_content_with_claude($user_message, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries, $timeout_seconds);
         }
         
+        if (empty($rewritten_text)) {
+            $status = "failed";
+            $error_message = "Empty response from AI Provider";
+            log_ai_usage($account_id, $selected_ai, 'Live Chat CSKH', strlen($user_message), 0, $status, $error_message);
+            return '';
+        }
+
+        log_ai_usage($account_id, $selected_ai, 'Live Chat CSKH', strlen($user_message), strlen($rewritten_text), $status, $error_message);
         return clean_markdown($rewritten_text);
         
     } catch (Exception $e) {
         ai_log("Error in generate_chat_reply_with_ai: " . $e->getMessage());
+        log_ai_usage($account_id, $selected_ai, 'Live Chat CSKH', strlen($user_message), 0, "failed", $e->getMessage());
         return '';
     }
 }
@@ -415,8 +472,9 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
     
     if (empty(trim($content))) return null;
 
+    $selected_ai = 'Unknown';
     try {
-        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, model, prompt_youtube_title, prompt_youtube_desc, prompt_youtube_tags, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
+        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, cookie, model, prompt_youtube_title, prompt_youtube_desc, prompt_youtube_tags, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
         $stmt->execute([$account_id]);
         $config = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -429,6 +487,7 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
         $selected_model = $config['model'];
         $endpoint = $config['endpoint'];
         $api_keys_raw = decryptData($config['api_keys']);
+        $cookie_raw = isset($config['cookie']) ? decryptData($config['cookie']) : '';
         $max_retries = isset($config['max_retries']) ? intval($config['max_retries']) : 2;
         $timeout_seconds = isset($config['timeout_seconds']) ? intval($config['timeout_seconds']) : 120;
         
@@ -507,8 +566,12 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
         // Trả kết quả trực tiếp mà không cần giải mã JSON rủi ro
         if (empty($ai_title) && empty($ai_desc)) {
             ai_log("Failed to generate content in 3-step AI pipeline.");
+            log_ai_usage($account_id, $selected_ai, 'YouTube SEO (3-step)', strlen($content), 0, "failed", "Failed to generate title and description");
             return null;
         }
+
+        $resp_length = strlen($ai_title) + strlen($ai_desc) + strlen($ai_tags);
+        log_ai_usage($account_id, $selected_ai, 'YouTube SEO (3-step)', strlen($content), $resp_length, "success");
 
         return [
             'title' => $ai_title,
@@ -518,6 +581,7 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
         
     } catch (Exception $e) {
         ai_log("Error in rewrite_youtube_with_ai: " . $e->getMessage());
+        log_ai_usage($account_id, $selected_ai, 'YouTube SEO (3-step)', strlen($content), 0, "failed", $e->getMessage());
         return null;
     }
 }

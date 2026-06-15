@@ -20,8 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'];
     $client_ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 
-    // Rate limiting: 5 attempts per 15 minutes per IP
-    if (!rate_limit_check($client_ip, 5, 900)) {
+    if (!isset($_POST['agree_terms'])) {
+        $error = "Bạn phải đồng ý với Điều khoản Dịch vụ (Terms of Service) để đăng nhập.";
+    } else if (!rate_limit_check($client_ip, 5, 900)) { // Rate limiting: 5 attempts per 15 minutes per IP
         $error = "Bạn đã nhập sai quá nhiều lần. Vui lòng thử lại sau 15 phút.";
     } else {
         // Try login by username first (only for accounts NOT using login_by_email)
@@ -452,11 +453,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <p>REELS MEDIA ACCESS • VERSION 2.0</p>
             </div>
 
-            <?php if ($error): ?>
-                <div class="error-msg"><?php echo htmlspecialchars($error); ?></div>
-            <?php endif; ?>
+            <div id="error-container">
+                <?php if ($error): ?>
+                    <div class="error-msg"><?php echo htmlspecialchars($error); ?></div>
+                <?php endif; ?>
+            </div>
 
-            <form method="POST" action="">
+            <form method="POST" action="" onsubmit="return validateForm(event)">
                 <?php echo csrf_field(); ?>
                 
                 <div class="form-group">
@@ -476,6 +479,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <svg id="eye-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                         </button>
                     </div>
+                </div>
+
+                <div class="form-options" style="margin-bottom: 20px; flex-direction: column; align-items: flex-start;">
+                    <label class="checkbox-container">
+                        <input type="checkbox" name="agree_terms">
+                        <div class="checkmark"></div>
+                        <span>Tôi đồng ý với <a href="terms_of_service.php" target="_blank" style="color: var(--primary); text-decoration: none;">Điều khoản Dịch vụ</a></span>
+                    </label>
+                    <span style="font-size: 11px; color: var(--gray-500); margin-top: 5px; margin-left: 28px;">(Khuyến khích người dùng nên đọc kỹ và đồng ý)</span>
                 </div>
 
                 <button type="submit" class="submit-btn" style="margin-top: 10px;">
@@ -507,6 +519,18 @@ function togglePassword() {
         pwd.type = 'password';
         eyeIcon.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>';
     }
+}
+
+function validateForm(event) {
+    const agreeCheckbox = document.querySelector('input[name="agree_terms"]');
+    const errorContainer = document.getElementById('error-container');
+    if (!agreeCheckbox || !agreeCheckbox.checked) {
+        event.preventDefault();
+        errorContainer.innerHTML = '<div class="error-msg">Bạn phải đồng ý với Điều khoản Dịch vụ (Terms of Service) để đăng nhập.</div>';
+        errorContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return false;
+    }
+    return true;
 }
 </script>
 </body>

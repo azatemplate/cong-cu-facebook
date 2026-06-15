@@ -1,10 +1,26 @@
 <?php
 $current_page = 'ai_settings';
-require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/db.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+if (!isset($_SESSION['account_id'])) {
+    header("Location: login.php");
+    exit;
+}
 
 $account_id = $_SESSION['account_id'];
 $alert_type = '';
 $alert_message = '';
+
+if (isset($_SESSION['alert_message'])) {
+    $alert_type = $_SESSION['alert_type'];
+    $alert_message = $_SESSION['alert_message'];
+    unset($_SESSION['alert_type']);
+    unset($_SESSION['alert_message']);
+}
 
 // Check DB schema for new youtube prompt columns
 try {
@@ -16,8 +32,10 @@ try {
     }
 } catch (Exception $e) {}
 
-// Handle Form Submission
+// Handle Form Submission (PRG Pattern)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $active_tab = 'gemini';
+
     if (isset($_POST['save_config'])) {
         $provider = $_POST['provider'];
         if (!in_array($provider, ['OpenAI', 'Gemini', 'Claude'])) {
@@ -25,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $endpoint = trim($_POST['endpoint']);
         $api_keys = trim($_POST['api_keys']);
+        $cookie = isset($_POST['cookie']) ? trim($_POST['cookie']) : '';
         $model = trim($_POST['model']);
         $prompt_content = trim($_POST['prompt_content']);
         $prompt_title = trim($_POST['prompt_title']);
@@ -41,11 +60,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $existing = $check_stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($existing) {
-            $u_stmt = $pdo->prepare("UPDATE ai_configs SET endpoint=?, api_keys=?, model=?, prompt_content=?, prompt_title=?, prompt_youtube_title=?, prompt_youtube_desc=?, prompt_youtube_tags=?, max_retries=?, timeout_seconds=? WHERE id=?");
-            $u_stmt->execute([$endpoint, encryptData($api_keys), $model, $prompt_content, $prompt_title, $prompt_youtube_title, $prompt_youtube_desc, $prompt_youtube_tags, $max_retries, $timeout_seconds, $existing['id']]);
+            $u_stmt = $pdo->prepare("UPDATE ai_configs SET endpoint=?, api_keys=?, cookie=?, model=?, prompt_content=?, prompt_title=?, prompt_youtube_title=?, prompt_youtube_desc=?, prompt_youtube_tags=?, max_retries=?, timeout_seconds=? WHERE id=?");
+            $u_stmt->execute([$endpoint, encryptData($api_keys), encryptData($cookie), $model, $prompt_content, $prompt_title, $prompt_youtube_title, $prompt_youtube_desc, $prompt_youtube_tags, $max_retries, $timeout_seconds, $existing['id']]);
         } else {
-            $i_stmt = $pdo->prepare("INSERT INTO ai_configs (account_id, provider, endpoint, api_keys, model, prompt_content, prompt_title, prompt_youtube_title, prompt_youtube_desc, prompt_youtube_tags, max_retries, timeout_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $i_stmt->execute([$account_id, $provider, $endpoint, encryptData($api_keys), $model, $prompt_content, $prompt_title, $prompt_youtube_title, $prompt_youtube_desc, $prompt_youtube_tags, $max_retries, $timeout_seconds]);
+            $i_stmt = $pdo->prepare("INSERT INTO ai_configs (account_id, provider, endpoint, api_keys, cookie, model, prompt_content, prompt_title, prompt_youtube_title, prompt_youtube_desc, prompt_youtube_tags, max_retries, timeout_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $i_stmt->execute([$account_id, $provider, $endpoint, encryptData($api_keys), encryptData($cookie), $model, $prompt_content, $prompt_title, $prompt_youtube_title, $prompt_youtube_desc, $prompt_youtube_tags, $max_retries, $timeout_seconds]);
         }
         
         // If this one is set as active, deactivate the other
@@ -54,9 +73,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare("UPDATE ai_configs SET is_active = 1 WHERE account_id = ? AND provider = ?")->execute([$account_id, $provider]);
         }
         
-        $alert_type = 'success';
-        $alert_message = 'Đã lưu cấu hình ' . $provider . ' thành công.';
+        if ($provider === 'OpenAI') $active_tab = 'openai';
+        elseif ($provider === 'Claude') $active_tab = 'claude';
+        else $active_tab = 'gemini';
+
+        $_SESSION['alert_type'] = 'success';
+        $_SESSION['alert_message'] = 'Đã lưu cấu hình ' . $provider . ' thành công.';
     }
+
+    header("Location: ai_settings.php?tab=" . $active_tab);
+    exit;
 }
 
 // Fetch Configurations
@@ -97,27 +123,38 @@ $claude_conf = [
     'max_retries' => 2,
     'timeout_seconds' => 120
 ];
-
 foreach ($configs_db as &$c) {
     if (isset($c['api_keys'])) {
         $c['api_keys'] = decryptData($c['api_keys']);
+    }
+    if (isset($c['cookie'])) {
+        $c['cookie'] = decryptData($c['cookie']);
     }
     if ($c['provider'] === 'Gemini') {
         $gemini_conf = array_merge($gemini_conf, $c);
     } elseif ($c['provider'] === 'Claude') {
         $claude_conf = array_merge($claude_conf, $c);
-    } else {
+    } elseif ($c['provider'] === 'OpenAI') {
         $openai_conf = array_merge($openai_conf, $c);
     }
 }
 
 // Determine active tab
-$active_tab = 'gemini';
-if ($openai_conf['is_active'] == 1) {
-    $active_tab = 'openai';
-} elseif ($claude_conf['is_active'] == 1) {
-    $active_tab = 'claude';
+$active_tab = $_GET['tab'] ?? '';
+if (!in_array($active_tab, ['gemini', 'openai', 'claude'])) {
+    $active_tab = '';
 }
+
+if (empty($active_tab)) {
+    $active_tab = 'gemini';
+    if ($openai_conf['is_active'] == 1) {
+        $active_tab = 'openai';
+    } elseif ($claude_conf['is_active'] == 1) {
+        $active_tab = 'claude';
+    }
+}
+
+require_once __DIR__ . '/includes/header.php';
 ?>
 
 <div class="page-title">Cấu hình AI Rewriter</div>
@@ -127,7 +164,7 @@ if ($openai_conf['is_active'] == 1) {
 <?php endif; ?>
 
 <div class="card" style="margin-bottom: 20px;">
-    <div style="display: flex; gap: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 20px;">
+    <div style="display: flex; gap: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 20px; flex-wrap: wrap;">
         <button class="btn <?= $active_tab==='gemini' ? 'btn-primary' : 'btn-secondary' ?>" onclick="switchTab('gemini')" id="tab_gemini">✨ Cấu hình Gemini <?= $gemini_conf['is_active'] ? '(Đang chọn)' : '' ?></button>
         <button class="btn <?= $active_tab==='openai' ? 'btn-primary' : 'btn-secondary' ?>" onclick="switchTab('openai')" id="tab_openai">🤖 Cấu hình OpenAI <?= $openai_conf['is_active'] ? '(Đang chọn)' : '' ?></button>
         <button class="btn <?= $active_tab==='claude' ? 'btn-primary' : 'btn-secondary' ?>" onclick="switchTab('claude')" id="tab_claude">🔮 Cấu hình Claude <?= $claude_conf['is_active'] ? '(Đang chọn)' : '' ?></button>
@@ -372,6 +409,9 @@ function switchTab(tab) {
     document.getElementById('tab_gemini').className = 'btn ' + (tab === 'gemini' ? 'btn-primary' : 'btn-secondary');
     document.getElementById('tab_openai').className = 'btn ' + (tab === 'openai' ? 'btn-primary' : 'btn-secondary');
     document.getElementById('tab_claude').className = 'btn ' + (tab === 'claude' ? 'btn-primary' : 'btn-secondary');
+    
+    // Update the browser URL dynamically without page reload
+    history.replaceState(null, '', 'ai_settings.php?tab=' + tab);
 }
 </script>
 

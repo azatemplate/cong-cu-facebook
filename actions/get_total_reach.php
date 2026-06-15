@@ -27,7 +27,7 @@ $curl_handlers = [];
 foreach ($pages as $p) {
     if (empty($p['access_token'])) continue;
     $ptoken = decryptData($p['access_token']);
-    $url = "https://graph.facebook.com/v19.0/" . $p['page_id'] . "/insights?metric=page_impressions,page_post_engagements&period=day&access_token=" . urlencode($ptoken);
+    $url = "https://graph.facebook.com/v25.0/" . $p['page_id'] . "/insights?metric=page_impressions,page_post_engagements&period=day&access_token=" . urlencode($ptoken);
     
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);

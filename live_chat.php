@@ -535,6 +535,42 @@ function saveBotRule(e) {
             </form>
         </div>
     </div>
+
+    <!-- ── Customer Info Panel ────────────────────────────────────────── -->
+    <div id="customer_info_panel" style="width:280px;flex-shrink:0;background:#fff;border:1px solid var(--border-color);border-radius:0 10px 10px 0;display:none;flex-direction:column;overflow:hidden;border-left:none;">
+        <div style="padding:10px 14px;font-weight:700;font-size:13px;border-bottom:1px solid var(--border-color);background:#f9fafb;letter-spacing:.3px;display:flex;justify-content:space-between;align-items:center;">
+            <span>👤 Thông tin khách hàng</span>
+            <button onclick="toggleInfoPanel()" style="background:none;border:none;cursor:pointer;font-size:14px;color:#6b7280;">✕</button>
+        </div>
+        <div style="padding:15px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:12px;">
+            <div style="text-align:center;margin-bottom:10px;">
+                <img id="info_avatar" src="https://ui-avatars.com/api/?name=KH&background=random" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #e2e8f0;margin-bottom:8px;">
+                <div id="info_name_display" style="font-weight:700;font-size:15px;color:#1f2937;">Khách hàng</div>
+                <div id="info_id_display" style="font-size:11px;color:#9ca3af;margin-top:2px;">ID: -</div>
+            </div>
+            
+            <form id="frm_customer_info" onsubmit="saveCustomerInfo(event)" style="display:flex;flex-direction:column;gap:12px;">
+                <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;text-transform:uppercase;">Họ và tên</label>
+                    <input type="text" id="info_name" style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;text-transform:uppercase;">Số điện thoại</label>
+                    <input type="text" id="info_phone" style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;box-sizing:border-box;" placeholder="Chưa phát hiện được SĐT">
+                </div>
+                <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;text-transform:uppercase;">Tỉnh thành</label>
+                    <input type="text" id="info_province" style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;box-sizing:border-box;" placeholder="Chưa phát hiện được tỉnh thành">
+                </div>
+                <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;text-transform:uppercase;">Yêu cầu / Ghi chú</label>
+                    <textarea id="info_notes" rows="4" style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;box-sizing:border-box;resize:vertical;" placeholder="Nhập yêu cầu hoặc ghi chú của khách..."></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%;padding:9px;font-weight:600;border:none;border-radius:6px;background:#0284c7;color:#fff;cursor:pointer;margin-top:5px;box-shadow: 0 4px 6px -1px rgba(2, 132, 199, 0.4);">Cập nhật thông tin</button>
+                <div id="customer_info_status" style="display:none; text-align:center; font-size:12px; font-weight:600; padding:8px; border-radius:6px; margin-top:8px;"></div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <!-- Modal Thêm Tin Mẫu -->
@@ -593,6 +629,7 @@ function saveBotRule(e) {
 .tag-qualified { background:#ffedd5;color:#f97316; }
 .tag-accepted  { background:#fef3c7;color:#d97706; }
 .tag-hot       { background:#fce7f3;color:#be185d; }
+.tag-phone     { background:#dbeafe;color:#1e40af; }
 .tag-default   { background:#ccfbf1;color:#0f766e; }
 
 /* Dropdown */
@@ -633,7 +670,8 @@ function saveBotRule(e) {
         box-sizing: border-box;
     }
     .livechat-container.chat-active .lc-sidebar,
-    .livechat-container.chat-active .lc-conversations {
+    .livechat-container.chat-active .lc-conversations,
+    .livechat-container.chat-active #customer_info_panel {
         display: none !important;
     }
     .livechat-container.chat-active .lc-chatbox {
@@ -686,6 +724,7 @@ function tagClass(name) {
     if (n.includes('qualified'))  return 'tag-qualified';
     if (n.includes('tiếp nhận')) return 'tag-accepted';
     if (n.includes('hot'))        return 'tag-hot';
+    if (n.includes('số điện thoại')) return 'tag-phone';
     return 'tag-default';
 }
 
@@ -945,9 +984,17 @@ function renderConversations() {
         div.dataset.id = conv.id;
         div.dataset.senderId = senderId;
         div.innerHTML = `
-            <div style="font-size:13px;margin-bottom:3px;">${pagePrefix}${senderName}${isUnread ? '<span class="unread-dot"></span>': ''}</div>
-            <div style="font-size:11px;color:${isUnread?'#111':'#6b7280'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${snippet}</div>
-            <div style="font-size:10px;color:#9ca3af;margin-top:2px;">${updTime}</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <img src="avatar.php?id=${senderId}&page_id=${itemPageId}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://ui-avatars.com/api/?name='+encodeURIComponent('${senderName}')+'&background=random'">
+                <div style="min-width:0;flex:1;">
+                    <div style="font-size:13px;margin-bottom:2px;font-weight:600;display:flex;justify-content:space-between;align-items:center;">
+                        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${pagePrefix}${senderName}</span>
+                        ${isUnread ? '<span class="unread-dot"></span>': ''}
+                    </div>
+                    <div style="font-size:11px;color:${isUnread?'#111':'#6b7280'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${snippet}</div>
+                    <div style="font-size:10px;color:#9ca3af;margin-top:2px;">${updTime}</div>
+                </div>
+            </div>
         `;
         div.addEventListener('click', function() {
             document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
@@ -988,7 +1035,17 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
 // ── Load Messages ─────────────────────────────────────────────────────────
 function loadMessages(convId, senderName, senderId, activePageIdToUse = currentPageId, activeUserIdToUse = currentUserId, isAutoRefresh = false) {
     if (!isAutoRefresh) {
-        chatHeader.innerHTML = `<button id="btn_back_mobile" onclick="mobileBackToList()" style="display:none;background:none;border:none;font-size:18px;cursor:pointer;padding:0;">←</button><span>${senderName}</span>`;
+        chatHeader.innerHTML = `
+            <button id="btn_back_mobile" onclick="mobileBackToList()" style="display:none;background:none;border:none;font-size:18px;cursor:pointer;padding:0;">←</button>
+            <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
+                <img src="avatar.php?id=${senderId}&page_id=${activePageIdToUse}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" onerror="this.src='https://ui-avatars.com/api/?name='+encodeURIComponent('${senderName}')+'&background=random'">
+                <div style="min-width:0;flex:1;">
+                    <div style="font-weight:600;font-size:14px;color:#1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${senderName}</div>
+                    <div style="font-size:11px;color:#6b7280;">ID: ${senderId}</div>
+                </div>
+            </div>
+            <button onclick="toggleInfoPanel()" class="btn btn-secondary" style="border-radius:50%;width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;border:1px solid var(--border-color);background:#fff;" title="Thông tin khách hàng">ℹ️</button>
+        `;
         if (window.innerWidth <= 768) {
             chatHeader.querySelector('#btn_back_mobile').style.display = 'inline-block';
         }
@@ -1008,6 +1065,7 @@ function loadMessages(convId, senderName, senderId, activePageIdToUse = currentP
                     renderLabels(data.data.map(l => l.label_name));
                 }
             });
+        loadCustomerInfo(senderId, activePageIdToUse);
     }
 
     fetch('actions/get_messages.php?conv_id=' + convId + '&page_id=' + activePageIdToUse + '&user_id=' + activeUserIdToUse)
@@ -1272,6 +1330,133 @@ setInterval(() => {
         loadMessages(convId, chatHeader.innerText, recipId, activePageIdEl.value, activeUserIdEl.value, true);
     }
 }, 10000);
+
+// ── Customer Info Panel Logic ─────────────────────────────────────────────
+function toggleInfoPanel() {
+    const panel = document.getElementById('customer_info_panel');
+    const chatbox = document.querySelector('.lc-chatbox');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'flex';
+        chatbox.style.borderRadius = '0';
+        localStorage.setItem('show_info_panel', '1');
+    } else {
+        panel.style.display = 'none';
+        chatbox.style.borderRadius = '0 10px 10px 0';
+        localStorage.setItem('show_info_panel', '0');
+    }
+}
+
+function loadCustomerInfo(senderId, pageId) {
+    document.getElementById('info_id_display').innerText = 'ID: ' + senderId;
+    document.getElementById('info_avatar').src = `avatar.php?id=${senderId}&page_id=${pageId}`;
+    
+    // Clear form inputs
+    document.getElementById('info_name').value = '';
+    document.getElementById('info_phone').value = '';
+    document.getElementById('info_province').value = '';
+    document.getElementById('info_notes').value = '';
+    document.getElementById('info_name_display').innerText = 'Đang tải...';
+    
+    fetch(`actions/get_customer_info.php?sender_id=${encodeURIComponent(senderId)}&page_id=${encodeURIComponent(pageId)}`)
+        .then(r => r.json())
+        .then(res => {
+            if (res.status === 'success') {
+                const data = res.data;
+                document.getElementById('info_name_display').innerText = data.name || 'Khách hàng';
+                document.getElementById('info_name').value = data.name || '';
+                document.getElementById('info_phone').value = data.phone || '';
+                document.getElementById('info_province').value = data.province || '';
+                document.getElementById('info_notes').value = data.notes || '';
+            } else {
+                document.getElementById('info_name_display').innerText = 'Khách hàng';
+            }
+        }).catch(() => {
+            document.getElementById('info_name_display').innerText = 'Khách hàng';
+        });
+}
+
+function saveCustomerInfo(e) {
+    e.preventDefault();
+    const senderId = activeRecipId.value;
+    const pageId = activePageIdEl.value;
+    if (!senderId || !pageId) return;
+    
+    const name = document.getElementById('info_name').value.trim();
+    const phone = document.getElementById('info_phone').value.trim();
+    const province = document.getElementById('info_province').value.trim();
+    const notes = document.getElementById('info_notes').value.trim();
+    
+    const fd = new FormData();
+    fd.append('sender_id', senderId);
+    fd.append('page_id', pageId);
+    fd.append('name', name);
+    fd.append('phone', phone);
+    fd.append('province', province);
+    fd.append('notes', notes);
+    
+    const btn = e.target.querySelector('button[type="submit"]');
+    const oldText = btn.innerText;
+    btn.disabled = true;
+    btn.innerText = 'Đang lưu...';
+    
+    fetch('actions/save_customer_info.php', {
+        method: 'POST',
+        body: fd
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.status === 'success') {
+            document.getElementById('info_name_display').innerText = name || 'Khách hàng';
+            // Refresh conversation list to show name updates and label if phone was added
+            if (currentPageId && currentUserId) {
+                let url = 'actions/get_conversations.php?page_id=' + currentPageId + '&user_id=' + currentUserId;
+                if (isMergedChat) url = 'actions/get_conversations.php?merge_all=1';
+                fetch(url)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status === 'success') { currentConversations = data.data; renderConversations(); }
+                    });
+            }
+            if (activeConvId.value) {
+                fetch('actions/get_labels.php?conv_id=' + encodeURIComponent(activeConvId.value) + '&page_id=' + encodeURIComponent(pageId))
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            renderLabels(data.data.map(l => l.label_name));
+                        }
+                    });
+            }
+            const statusDiv = document.getElementById('customer_info_status');
+            if (statusDiv) {
+                statusDiv.style.display = 'block';
+                statusDiv.style.background = '#d1fae5';
+                statusDiv.style.color = '#065f46';
+                statusDiv.innerText = '✔️ Cập nhật thông tin thành công!';
+                setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
+            }
+        } else {
+            const statusDiv = document.getElementById('customer_info_status');
+            if (statusDiv) {
+                statusDiv.style.display = 'block';
+                statusDiv.style.background = '#fee2e2';
+                statusDiv.style.color = '#991b1b';
+                statusDiv.innerText = '❌ Lỗi: ' + res.msg;
+                setTimeout(() => { statusDiv.style.display = 'none'; }, 4000);
+            }
+        }
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerText = oldText;
+    });
+}
+
+// Restore side panel visibility state from localStorage
+const showPanelState = localStorage.getItem('show_info_panel') !== '0';
+document.getElementById('customer_info_panel').style.display = showPanelState ? 'flex' : 'none';
+if (showPanelState) {
+    document.querySelector('.lc-chatbox').style.borderRadius = '0';
+}
 </script>
 
 <?php include 'includes/footer.php'; ?>

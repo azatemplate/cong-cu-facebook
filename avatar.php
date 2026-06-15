@@ -5,8 +5,10 @@ ini_set('display_errors', 0);
 
 require_once __DIR__ . '/includes/db.php';
 
-$page_id = isset($_GET['id']) ? preg_replace('/[^0-9]/', '', $_GET['id']) : '';
-if (!$page_id) {
+$id = isset($_GET['id']) ? preg_replace('/[^0-9]/', '', $_GET['id']) : '';
+$page_id = isset($_GET['page_id']) ? preg_replace('/[^0-9]/', '', $_GET['page_id']) : '';
+
+if (!$id) {
     header("HTTP/1.0 404 Not Found");
     exit;
 }
@@ -16,7 +18,8 @@ if (!is_dir($avatar_dir)) {
     @mkdir($avatar_dir, 0777, true);
 }
 
-$avatar_filepath = $avatar_dir . '/' . $page_id . '.jpg';
+// Scoped filename for customer avatars to prevent collisions across different pages
+$avatar_filepath = $avatar_dir . '/' . $id . ($page_id ? '_' . $page_id : '') . '.jpg';
 $cache_time = 7 * 86400; // Cache for 7 days
 
 if (file_exists($avatar_filepath) && (time() - filemtime($avatar_filepath) < $cache_time)) {
@@ -26,8 +29,9 @@ if (file_exists($avatar_filepath) && (time() - filemtime($avatar_filepath) < $ca
     exit;
 }
 
+$token_page_id = $page_id ? $page_id : $id;
 $stmt = $pdo->prepare("SELECT access_token FROM pages WHERE page_id = ?");
-$stmt->execute([$page_id]);
+$stmt->execute([$token_page_id]);
 $page = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$page) {
@@ -44,20 +48,42 @@ if (!$page) {
 $token = decryptData($page['access_token']);
 
 // Fetch using Graph API
-$fb_api_url = "https://graph.facebook.com/v20.0/{$page_id}/picture?type=normal&redirect=0&access_token={$token}";
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, $fb_api_url);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-$response = curl_exec($ch);
-curl_close($ch);
-
-$data = json_decode($response, true);
 $img_data = false;
+$response = '';
 
-if (isset($data['data']['url'])) {
-    $img_url = $data['data']['url'];
+if ($page_id && $page_id !== $id) {
+    // Customer Avatar (PSID) -> Query User Profile node fields
+    $fb_api_url = "https://graph.facebook.com/v25.0/{$id}?fields=profile_pic&access_token={$token}";
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $fb_api_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    $data = json_decode($response, true);
+    if (isset($data['profile_pic'])) {
+        $img_url = $data['profile_pic'];
+    }
+} else {
+    // Page Avatar -> Query /picture edge
+    $fb_api_url = "https://graph.facebook.com/v25.0/{$id}/picture?type=normal&redirect=0&access_token={$token}";
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $fb_api_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    $data = json_decode($response, true);
+    if (isset($data['data']['url'])) {
+        $img_url = $data['data']['url'];
+    }
+}
+
+if (isset($img_url)) {
     
     // Use curl instead of file_get_contents
     $ch2 = curl_init();

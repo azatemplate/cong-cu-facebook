@@ -122,7 +122,7 @@ try {
         CREATE TABLE IF NOT EXISTS ai_configs (
             id INT AUTO_INCREMENT PRIMARY KEY,
             account_id INT NOT NULL,
-            provider ENUM('OpenAI', 'Gemini', 'Claude') DEFAULT 'Gemini',
+            provider ENUM('OpenAI', 'Gemini', 'Claude', 'HongVipPro AI') DEFAULT 'Gemini',
             endpoint VARCHAR(255) DEFAULT '',
             api_keys TEXT,
             model VARCHAR(100) DEFAULT '',
@@ -134,6 +134,31 @@ try {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (account_id) REFERENCES system_accounts(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS gemini_keys (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            api_key VARCHAR(255) UNIQUE NOT NULL,
+            description VARCHAR(255) DEFAULT '',
+            status TINYINT(1) DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS ai_usage_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            account_id INT DEFAULT NULL,
+            username VARCHAR(50) DEFAULT NULL,
+            provider VARCHAR(50) DEFAULT NULL,
+            feature VARCHAR(100) DEFAULT NULL,
+            prompt_length INT DEFAULT 0,
+            response_length INT DEFAULT 0,
+            status VARCHAR(20) DEFAULT 'success',
+            error_message TEXT DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ");
 
@@ -257,9 +282,31 @@ try {
         $col = $pdo->query("SHOW COLUMNS FROM ai_configs LIKE 'provider'");
         if ($col) {
             $colInfo = $col->fetch(PDO::FETCH_ASSOC);
-            if ($colInfo && strpos($colInfo['Type'], 'Claude') === false) {
-                $pdo->exec("ALTER TABLE ai_configs MODIFY COLUMN provider ENUM('OpenAI', 'Gemini', 'Claude') DEFAULT 'Gemini'");
+            if ($colInfo && strpos($colInfo['Type'], 'HongVipPro AI') === false) {
+                $pdo->exec("ALTER TABLE ai_configs MODIFY COLUMN provider ENUM('OpenAI', 'Gemini', 'Claude', 'HongVipPro AI') DEFAULT 'Gemini'");
             }
+        }
+        
+        // Them cot cookie vao ai_configs neu chua co
+        $colCookie = $pdo->query("SHOW COLUMNS FROM ai_configs LIKE 'cookie'");
+        if ($colCookie && $colCookie->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE ai_configs ADD COLUMN cookie TEXT DEFAULT NULL");
+        }
+        
+        // Xoa cot cookie_value khoi gemini_keys neu con ton tai
+        $colKeyCookie = $pdo->query("SHOW COLUMNS FROM gemini_keys LIKE 'cookie_value'");
+        if ($colKeyCookie && $colKeyCookie->rowCount() > 0) {
+            $pdo->exec("ALTER TABLE gemini_keys DROP COLUMN cookie_value");
+        }
+        
+        // Them cot ip_address va user_agent vao ai_usage_logs neu chua co
+        $colIP = $pdo->query("SHOW COLUMNS FROM ai_usage_logs LIKE 'ip_address'");
+        if ($colIP && $colIP->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE ai_usage_logs ADD COLUMN ip_address VARCHAR(45) DEFAULT NULL");
+        }
+        $colUA = $pdo->query("SHOW COLUMNS FROM ai_usage_logs LIKE 'user_agent'");
+        if ($colUA && $colUA->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE ai_usage_logs ADD COLUMN user_agent TEXT DEFAULT NULL");
         }
     } catch (Exception $e) {}
 

@@ -45,7 +45,7 @@ $redirect_uri = $protocol . $_SERVER['HTTP_HOST'] . get_base_url() . "redirect_c
 
 $login_url = "";
 if ($fb_app_id) {
-    $login_url = "https://www.facebook.com/v19.0/dialog/oauth?client_id=" . urlencode($fb_app_id) . "&redirect_uri=" . urlencode($redirect_uri) . "&scope=" . urlencode($fb_permissions) . "&response_type=token";
+    $login_url = "https://www.facebook.com/v25.0/dialog/oauth?client_id=" . urlencode($fb_app_id) . "&redirect_uri=" . urlencode($redirect_uri) . "&scope=" . urlencode($fb_permissions) . "&response_type=token";
 }
 ?>
 

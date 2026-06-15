@@ -42,6 +42,19 @@ try {
     $pdo->exec($sql_lock);
     echo "Tạo bảng bot_chat_locks thành công.\n";
 
+    $sql_customers = "CREATE TABLE IF NOT EXISTS fb_customers (
+        page_id VARCHAR(50) NOT NULL,
+        sender_id VARCHAR(50) NOT NULL,
+        name VARCHAR(255) NULL,
+        phone VARCHAR(50) NULL,
+        province VARCHAR(255) NULL,
+        notes TEXT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (page_id, sender_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
+    $pdo->exec($sql_customers);
+    echo "Tạo bảng fb_customers thành công.\n";
+
 } catch (PDOException $e) {
     echo "Lỗi: " . $e->getMessage() . "\n";
 }
