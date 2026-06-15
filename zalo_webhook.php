@@ -25,18 +25,18 @@ $appId = $data['app_id'] ?? '';
 $timeStamp = $data['timestamp'] ?? '';
 
 // 1. Get OA Secret Key from DB based on appId
-$stmt = $pdo->prepare("SELECT app_secret, account_id FROM zalo_settings WHERE app_id = ?");
+$stmt = $pdo->prepare("SELECT oa_secret, account_id FROM zalo_settings WHERE app_id = ?");
 $stmt->execute([$appId]);
 $settings = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$settings || empty($settings['app_secret'])) {
+if (!$settings || empty($settings['oa_secret'])) {
     // Return 200 OK so that Zalo Developer dashboard verification passes during configuration
     http_response_code(200);
     echo "OK (Pending app configuration in settings)";
     exit;
 }
 
-$secretKey = decryptData($settings['app_secret']);
+$secretKey = decryptData($settings['oa_secret']);
 $acc_id = $settings['account_id'];
 
 // 2. Validate Signature

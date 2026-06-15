@@ -17,7 +17,7 @@ $account_id = $_SESSION['account_id'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
-        $stmt = $pdo->prepare("SELECT app_id, app_secret FROM zalo_settings WHERE account_id = ?");
+        $stmt = $pdo->prepare("SELECT app_id, app_secret, oa_secret FROM zalo_settings WHERE account_id = ?");
         $stmt->execute([$account_id]);
         $settings = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -26,7 +26,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 'status' => 'success',
                 'data' => [
                     'app_id' => $settings['app_id'],
-                    'has_secret' => !empty($settings['app_secret'])
+                    'has_secret' => !empty($settings['app_secret']),
+                    'has_oa_secret' => !empty($settings['oa_secret'])
                 ]
             ]);
         } else {
@@ -34,7 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 'status' => 'success',
                 'data' => [
                     'app_id' => '',
-                    'has_secret' => false
+                    'has_secret' => false,
+                    'has_oa_secret' => false
                 ]
             ]);
         }
@@ -47,6 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
     $app_id = isset($_POST['app_id']) ? trim($_POST['app_id']) : '';
     $app_secret = isset($_POST['app_secret']) ? trim($_POST['app_secret']) : '';
+    $oa_secret = isset($_POST['oa_secret']) ? trim($_POST['oa_secret']) : '';
 
     if (empty($app_id)) {
         echo json_encode(['status' => 'error', 'msg' => 'Vui lòng nhập App ID.']);
@@ -55,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
     try {
         // Lấy config cũ
-        $stmt = $pdo->prepare("SELECT app_secret FROM zalo_settings WHERE account_id = ?");
+        $stmt = $pdo->prepare("SELECT app_secret, oa_secret FROM zalo_settings WHERE account_id = ?");
         $stmt->execute([$account_id]);
         $old_settings = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -72,15 +75,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $encrypted_secret = encryptData($app_secret);
         }
 
+        if (empty($oa_secret)) {
+            if ($old_settings && !empty($old_settings['oa_secret'])) {
+                // Giữ nguyên oa secret cũ
+                $encrypted_oa_secret = $old_settings['oa_secret'];
+            } else {
+                echo json_encode(['status' => 'error', 'msg' => 'Vui lòng nhập OA Secret Key (Webhook).']);
+                exit;
+            }
+        } else {
+            // Mã hóa oa secret mới
+            $encrypted_oa_secret = encryptData($oa_secret);
+        }
+
         $stmt_save = $pdo->prepare("
-            INSERT INTO zalo_settings (account_id, app_id, app_secret)
-            VALUES (?, ?, ?)
+            INSERT INTO zalo_settings (account_id, app_id, app_secret, oa_secret)
+            VALUES (?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE 
                 app_id = VALUES(app_id),
                 app_secret = VALUES(app_secret),
+                oa_secret = VALUES(oa_secret),
                 updated_at = CURRENT_TIMESTAMP
         ");
-        $stmt_save->execute([$account_id, $app_id, $encrypted_secret]);
+        $stmt_save->execute([$account_id, $app_id, $encrypted_secret, $encrypted_oa_secret]);
 
         echo json_encode(['status' => 'success', 'msg' => 'Lưu cấu hình Zalo App thành công.']);
     } catch (PDOException $e) {

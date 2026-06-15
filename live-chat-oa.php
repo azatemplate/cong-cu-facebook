@@ -645,8 +645,19 @@ $pages_json = json_encode($pages);
             <div class="form-group">
                 <label for="config_app_secret">Khóa bí mật của ứng dụng (App Secret Key)</label>
                 <input type="password" id="config_app_secret" name="app_secret" placeholder="••••••••••••••••••••••••">
-                <span id="secret_badge" style="font-size:11px; background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:10px; font-weight:600; margin-top:5px; display:inline-block; none">
-                    ✓ Đã có mã khóa bí mật được lưu
+                <span id="secret_badge" style="font-size:11px; background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:10px; font-weight:600; margin-top:5px; display:none;">
+                    ✓ Đã có mã khóa bí mật ứng dụng được lưu
+                </span>
+            </div>
+            
+            <div class="form-group" style="margin-top:15px;">
+                <label for="config_oa_secret">Khóa bí mật Webhook (OA Secret Key)</label>
+                <input type="password" id="config_oa_secret" name="oa_secret" placeholder="••••••••••••••••••••••••">
+                <span id="oa_secret_badge" style="font-size:11px; background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:10px; font-weight:600; margin-top:5px; display:none;">
+                    ✓ Đã có mã khóa bí mật Webhook (OA Secret Key) được lưu
+                </span>
+                <span style="font-size:12px; color:var(--text-muted); margin-top:4px; display:block;">
+                    Lấy tại trang Cấu hình Webhook của OA trong Zalo Developer Console (Ví dụ: Nggrp6rmCR60EeDM3U6I).
                 </span>
             </div>
             
@@ -790,6 +801,7 @@ $pages_json = json_encode($pages);
         .then(res => {
             if (res.status === 'success') {
                 document.getElementById('config_app_id').value = res.data.app_id || '';
+                
                 const badge = document.getElementById('secret_badge');
                 if (res.data.has_secret) {
                     badge.style.display = 'inline-block';
@@ -797,6 +809,15 @@ $pages_json = json_encode($pages);
                 } else {
                     badge.style.display = 'none';
                     document.getElementById('config_app_secret').placeholder = 'Nhập mật khẩu App Secret';
+                }
+
+                const oaBadge = document.getElementById('oa_secret_badge');
+                if (res.data.has_oa_secret) {
+                    oaBadge.style.display = 'inline-block';
+                    document.getElementById('config_oa_secret').placeholder = '••••••••••••••••••••••••';
+                } else {
+                    oaBadge.style.display = 'none';
+                    document.getElementById('config_oa_secret').placeholder = 'Nhập OA Secret Key';
                 }
             } else {
                 showToast(res.msg, 'error');

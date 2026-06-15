@@ -12,11 +12,18 @@ try {
         account_id INT NOT NULL PRIMARY KEY,
         app_id VARCHAR(100) NULL,
         app_secret VARCHAR(255) NULL,
+        oa_secret VARCHAR(255) NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
     $pdo->exec($sql_settings);
-    echo "1. Tạo bảng zalo_settings thành công.\n";
+    
+    try {
+        $pdo->exec("ALTER TABLE zalo_settings ADD COLUMN oa_secret VARCHAR(255) NULL AFTER app_secret");
+    } catch (PDOException $e) {
+        // Cột có thể đã tồn tại, bỏ qua
+    }
+    echo "1. Tạo/Cập nhật bảng zalo_settings thành công.\n";
 
     // 2. Tạo bảng zalo_oas
     $sql_oas = "CREATE TABLE IF NOT EXISTS zalo_oas (
