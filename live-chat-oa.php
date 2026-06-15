@@ -476,6 +476,25 @@ $pages_json = json_encode($pages);
         font-weight: 600;
     }
 </style>
+<style>
+    .platform-tab-btn:hover {
+        color: #0068ff !important;
+        border-bottom-color: #cbd5e1 !important;
+    }
+    .platform-tab-btn.active:hover {
+        border-bottom-color: #0068ff !important;
+    }
+</style>
+
+<!-- Platform Switcher Tabs -->
+<div class="platform-tabs" style="display: flex; gap: 20px; border-bottom: 2px solid #e5e7eb; margin-bottom: 20px; padding-bottom: 0;">
+    <a href="live_chat.php" class="platform-tab-btn <?php echo ($current_page === 'live_chat') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'live_chat') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'live_chat') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
+        <span>📘</span> Facebook Fanpage
+    </a>
+    <a href="live-chat-oa.php" class="platform-tab-btn <?php echo ($current_page === 'live_chat_zalo') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'live_chat_zalo') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'live_chat_zalo') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
+        <span>💬</span> Zalo Official Account
+    </a>
+</div>
 
 <!-- Page Header Title -->
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
