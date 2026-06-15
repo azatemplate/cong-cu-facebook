@@ -55,6 +55,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $attachment_type = 'audio';
         }
 
+        // Tạo thư mục tạm trong dự án để tránh lỗi open_basedir restrictions của VPS
+        $tmp_dir = __DIR__ . '/../uploads/tmp';
+        if (!is_dir($tmp_dir)) {
+            @mkdir($tmp_dir, 0777, true);
+        }
+        
+        // Di chuyển file tạm vào thư mục dự án
+        $local_temp_file = $tmp_dir . '/' . uniqid('fb_att_') . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '', $file_name);
+        if (move_uploaded_file($file_tmp, $local_temp_file)) {
+            $file_to_send = $local_temp_file;
+        } else {
+            // Fallback nếu không di chuyển được file
+            $file_to_send = $file_tmp;
+        }
+
         $post_data_file = [
             'recipient' => json_encode(['id' => $recipient_id]),
             'message' => json_encode([
@@ -63,13 +78,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'payload' => ['is_reusable' => false]
                 ]
             ]),
-            'messaging_type' => 'MESSAGE_TAG',
-            'tag' => 'ACCOUNT_UPDATE',
-            'filedata' => new CURLFile($file_tmp, $file_type, $file_name)
+            'messaging_type' => 'RESPONSE', // Dùng RESPONSE thay vì MESSAGE_TAG cho tệp đính kèm để tránh lỗi Invalid parameter
+            'filedata' => new CURLFile($file_to_send, $file_type, $file_name)
         ];
 
         $params = ['access_token' => $page_access_token];
         $file_response = fb_api_request($endpoint, $params, 'POST', $post_data_file);
+        
+        // Xóa file tạm sau khi gửi
+        if ($file_to_send !== $file_tmp && file_exists($file_to_send)) {
+            @unlink($file_to_send);
+        }
         
         if ($file_response['status_code'] !== 200) {
             $file_success = false;
