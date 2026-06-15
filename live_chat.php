@@ -494,6 +494,10 @@ function saveBotRule(e) {
                 <span id="file_preview_name"></span>
                 <button type="button" id="btn_remove_file" style="margin-left:10px;color:red;border:none;background:none;cursor:pointer;font-weight:bold;">✕ Xóa tệp</button>
             </div>
+            <div id="policy_24h_banner" style="display:none;margin-bottom:10px;padding:12px 16px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;color:#374151;align-items:flex-start;gap:10px;line-height:1.5;font-family:system-ui, -apple-system, sans-serif;">
+                <span style="color:#2563eb;font-size:16px;font-weight:bold;margin-top:1px;flex-shrink:0;">ℹ️</span>
+                <span>Do chính sách của Facebook, khi tin nhắn cuối cùng của khách hàng cách thời điểm hiện tại quá 24h nên bạn không thể tiếp tục gửi tin nhắn cho đến khi khách hàng phản hồi lại.</span>
+            </div>
             <form id="reply_form" style="display:flex;gap:8px;align-items:center;position:relative;">
                 <input type="hidden" id="active_conversation_id" value="">
                 <input type="hidden" id="active_recipient_id" value="">
@@ -708,6 +712,7 @@ let currentCursor  = '';
 let isLoadingMore  = false;
 let locallyReadConvs = JSON.parse(localStorage.getItem('fb_read_cache') || '{}');
 const phoneRegex   = /(03|05|07|08|09)+([0-9]{8})\b/;
+let activeConvOver24h = false;
 
 function showToast(message, type = 'error') {
     let toast = document.getElementById('chat_toast_notification');
@@ -781,6 +786,15 @@ function mobileBackToList() {
 
 // ── Enable / disable chat controls ───────────────────────────────────────
 function setChatEnabled(enabled) {
+    if (enabled && activeConvOver24h) {
+        replyText.disabled = true;
+        btnSend.disabled   = true;
+        ['btn_attach','btn_add_tag','btn_saved_reply'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.disabled = true;
+        });
+        return;
+    }
     replyText.disabled = !enabled;
     btnSend.disabled   = !enabled;
     ['btn_attach','btn_add_tag','btn_saved_reply'].forEach(id => {
@@ -1075,6 +1089,9 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
 // ── Load Messages ─────────────────────────────────────────────────────────
 function loadMessages(convId, senderName, senderId, activePageIdToUse = currentPageId, activeUserIdToUse = currentUserId, isAutoRefresh = false) {
     if (!isAutoRefresh) {
+        activeConvOver24h = false;
+        const banner = document.getElementById('policy_24h_banner');
+        if (banner) banner.style.display = 'none';
         chatHeader.innerHTML = `
             <button id="btn_back_mobile" onclick="mobileBackToList()" style="display:none;background:none;border:none;font-size:18px;cursor:pointer;padding:0;">←</button>
             <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
@@ -1114,7 +1131,45 @@ function loadMessages(convId, senderName, senderId, activePageIdToUse = currentP
             if (data.status === 'success') {
                 if (!isAutoRefresh) currentCursor = data.next_cursor || '';
                 const isBottom = chatMessages.scrollHeight - chatMessages.clientHeight <= chatMessages.scrollTop + 50;
-                renderMessages(data.data.reverse(), !isAutoRefresh || isBottom);
+                
+                const reversedMsgs = data.data.reverse();
+                renderMessages(reversedMsgs, !isAutoRefresh || isBottom);
+
+                // Kiểm tra chính sách 24h của Facebook
+                let isOver24h = false;
+                let lastCustomerMsg = null;
+                for (let i = reversedMsgs.length - 1; i >= 0; i--) {
+                    if (reversedMsgs[i].from && reversedMsgs[i].from.id !== activePageIdToUse) {
+                        lastCustomerMsg = reversedMsgs[i];
+                        break;
+                    }
+                }
+                
+                if (lastCustomerMsg) {
+                    const lastTime = new Date(lastCustomerMsg.created_time).getTime();
+                    const now = new Date().getTime();
+                    const diffHours = (now - lastTime) / (1000 * 60 * 60);
+                    if (diffHours > 24) {
+                        isOver24h = true;
+                    }
+                } else {
+                    const conv = currentConversations.find(x => x.id === convId);
+                    if (conv) {
+                        const updTime = new Date(conv.updated_time).getTime();
+                        const now = new Date().getTime();
+                        const diffHours = (now - updTime) / (1000 * 60 * 60);
+                        if (diffHours > 24) {
+                            isOver24h = true;
+                        }
+                    }
+                }
+                
+                activeConvOver24h = isOver24h;
+                const banner = document.getElementById('policy_24h_banner');
+                if (banner) {
+                    banner.style.display = isOver24h ? 'flex' : 'none';
+                }
+                
                 setChatEnabled(true);
             } else if (!isAutoRefresh) {
                 chatMessages.innerHTML = '<div style="color:red;text-align:center;padding:16px;">' + data.msg + '</div>';
