@@ -17,7 +17,7 @@ $account_id = $_SESSION['account_id'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
-        $stmt = $pdo->prepare("SELECT app_id, app_secret, oa_secret FROM zalo_settings WHERE account_id = ?");
+        $stmt = $pdo->prepare("SELECT app_id, app_secret, oa_secret, phone_request_enabled, phone_request_hours, phone_request_text, province_request_text, product_request_text FROM zalo_settings WHERE account_id = ?");
         $stmt->execute([$account_id]);
         $settings = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -27,7 +27,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 'data' => [
                     'app_id' => $settings['app_id'],
                     'has_secret' => !empty($settings['app_secret']),
-                    'has_oa_secret' => !empty($settings['oa_secret'])
+                    'has_oa_secret' => !empty($settings['oa_secret']),
+                    'phone_request_enabled' => (int)($settings['phone_request_enabled'] ?? 0),
+                    'phone_request_hours' => (int)($settings['phone_request_hours'] ?? 1),
+                    'phone_request_text' => $settings['phone_request_text'] ?? '',
+                    'province_request_text' => $settings['province_request_text'] ?? '',
+                    'product_request_text' => $settings['product_request_text'] ?? ''
                 ]
             ]);
         } else {
@@ -36,7 +41,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 'data' => [
                     'app_id' => '',
                     'has_secret' => false,
-                    'has_oa_secret' => false
+                    'has_oa_secret' => false,
+                    'phone_request_enabled' => 0,
+                    'phone_request_hours' => 1,
+                    'phone_request_text' => '',
+                    'province_request_text' => '',
+                    'product_request_text' => ''
                 ]
             ]);
         }

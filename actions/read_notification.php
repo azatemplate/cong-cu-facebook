@@ -7,6 +7,7 @@ if (!isset($_SESSION['account_id'])) {
     echo json_encode(compact('status', 'msg'));
     exit;
 }
+session_write_close();
 
 $id = $_POST['id'] ?? null;
 $post_id = $_POST['post_id'] ?? null;

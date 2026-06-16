@@ -295,8 +295,8 @@ $channels_json = json_encode($channels);
 
         <div class="form-group" style="margin-top: 15px;">
             <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
-                <input type="checkbox" name="use_ai" value="1" style="width: 18px; height: 18px;" checked>
-                🤖 Tự động viết lại nội dung/tiêu đề chuẩn SEO YouTube với cấu hình JSON (Trực tiếp bằng Worker ngầm)
+                <input type="checkbox" name="use_ai" value="1" style="width: 18px; height: 18px;">
+                🤖 Tự động viết lại nội dung/tiêu đề chuẩn SEO YouTube
             </label>
         </div>
 

@@ -434,6 +434,43 @@ try {
         );
     }
 
+    // Migration: Auto Info Request columns
+    $auto_req_migrations = [
+        "ALTER TABLE system_accounts ADD COLUMN phone_request_enabled TINYINT DEFAULT 0",
+        "ALTER TABLE system_accounts ADD COLUMN phone_request_hours INT DEFAULT 1",
+        "ALTER TABLE system_accounts ADD COLUMN phone_request_text TEXT DEFAULT NULL",
+        "ALTER TABLE system_accounts ADD COLUMN province_request_text TEXT DEFAULT NULL",
+        "ALTER TABLE system_accounts ADD COLUMN product_request_text TEXT DEFAULT NULL",
+        
+        "ALTER TABLE zalo_settings ADD COLUMN phone_request_enabled TINYINT DEFAULT 0",
+        "ALTER TABLE zalo_settings ADD COLUMN phone_request_hours INT DEFAULT 1",
+        "ALTER TABLE zalo_settings ADD COLUMN phone_request_text TEXT DEFAULT NULL",
+        "ALTER TABLE zalo_settings ADD COLUMN province_request_text TEXT DEFAULT NULL",
+        "ALTER TABLE zalo_settings ADD COLUMN product_request_text TEXT DEFAULT NULL",
+
+        "ALTER TABLE fb_customers ADD COLUMN last_sender VARCHAR(10) DEFAULT 'customer'",
+        "ALTER TABLE fb_customers ADD COLUMN last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE fb_customers ADD COLUMN info_requested_at TIMESTAMP NULL DEFAULT NULL",
+
+        "ALTER TABLE zalo_customers ADD COLUMN last_sender VARCHAR(10) DEFAULT 'customer'",
+        "ALTER TABLE zalo_customers ADD COLUMN last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE zalo_customers ADD COLUMN info_requested_at TIMESTAMP NULL DEFAULT NULL"
+    ];
+
+    foreach ($auto_req_migrations as $query) {
+        try {
+            $pdo->exec($query);
+        } catch (PDOException $e) {
+            // Skip if column already exists (SQLSTATE 42S21)
+            if ($e->getCode() !== '42S21' && strpos($e->getMessage(), 'Duplicate column') === false) {
+                @file_put_contents(__DIR__ . '/../uploads/app_error.log',
+                    date('[Y-m-d H:i:s] ') . 'migration auto_request query error (' . $query . '): ' . $e->getMessage() . "\n",
+                    FILE_APPEND | LOCK_EX
+                );
+            }
+        }
+    }
+
 } catch (PDOException $e) {
     $err_msg = date('[Y-m-d H:i:s] ') . 'DB Connection Error: ' . $e->getMessage() . "\n";
     @file_put_contents(__DIR__ . '/../uploads/app_error.log', $err_msg, FILE_APPEND | LOCK_EX);

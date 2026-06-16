@@ -10,6 +10,7 @@ if (!isset($_SESSION['account_id'])) {
     echo json_encode(['status' => 'error', 'msg' => 'Phiên đăng nhập hết hạn.']);
     exit;
 }
+session_write_close();
 
 $oa_id = isset($_GET['oa_id']) ? trim($_GET['oa_id']) : '';
 $sender_id = isset($_GET['sender_id']) ? trim($_GET['sender_id']) : '';
@@ -33,14 +34,23 @@ try {
     $stmt->execute([$oa_id, $sender_id]);
     $customer = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    echo json_encode([
-        'status' => 'success',
-        'data' => $customer ?: [
+    $stmt_lock = $pdo->prepare("SELECT expire_at FROM zalo_chat_locks WHERE oa_id = ? AND sender_id = ? AND expire_at > NOW()");
+    $stmt_lock->execute([$oa_id, $sender_id]);
+    $is_locked = $stmt_lock->fetch() ? 1 : 0;
+
+    if (!$customer) {
+        $customer = [
             'name' => '',
             'phone' => '',
             'province' => '',
             'notes' => ''
-        ]
+        ];
+    }
+    $customer['is_locked'] = $is_locked;
+
+    echo json_encode([
+        'status' => 'success',
+        'data' => $customer
     ]);
 } catch (PDOException $e) {
     echo json_encode(['status' => 'error', 'msg' => 'Lỗi DB: ' . $e->getMessage()]);

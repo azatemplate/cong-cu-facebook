@@ -11,6 +11,7 @@ if (!isset($_SESSION['account_id'])) {
     echo json_encode(['status' => 'error', 'msg' => 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.']);
     exit;
 }
+session_write_close();
 
 $oa_id = isset($_GET['oa_id']) ? trim($_GET['oa_id']) : '';
 $sender_id = isset($_GET['sender_id']) ? trim($_GET['sender_id']) : '';
@@ -57,6 +58,14 @@ try {
     
     if ($res['status_code'] === 200 && isset($res['data']['error']) && $res['data']['error'] === 0) {
         $messages = $res['data']['data'] ?? [];
+        
+        // Reset unread_count to 0 for this conversation in DB
+        try {
+            $stmt_reset = $pdo->prepare("UPDATE zalo_messages SET unread_count = 0 WHERE oa_id = ? AND sender_id = ?");
+            $stmt_reset->execute([$oa_id, $sender_id]);
+        } catch (Exception $e) {
+            // Ignore/Log error if any
+        }
         
         // Auto-extract name and avatar from conversation history if missing in DB
         $extracted_name = '';

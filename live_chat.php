@@ -9,6 +9,16 @@ ob_start();
 require_once __DIR__ . '/setup_live_chat.php'; // auto run setup for DB table
 ob_end_clean(); // Clean output entirely so no random text is printed
 
+// Fetch system_accounts phone request config
+$stmt_acc = $pdo->prepare("SELECT phone_request_enabled, phone_request_hours, phone_request_text, province_request_text, product_request_text FROM system_accounts WHERE id = ?");
+$stmt_acc->execute([$account_id]);
+$acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC);
+$phone_request_enabled = (int)($acc_setup['phone_request_enabled'] ?? 0);
+$phone_request_hours = (int)($acc_setup['phone_request_hours'] ?? 1);
+$phone_request_text = $acc_setup['phone_request_text'] ?? '';
+$province_request_text = $acc_setup['province_request_text'] ?? '';
+$product_request_text = $acc_setup['product_request_text'] ?? '';
+
 // Fetch all pages for sidebar (owned + shared)
 $stmt2 = $pdo->prepare("
     (SELECT p.id, p.page_id, p.name, p.avatar, p.user_id, u.name AS user_name
@@ -66,12 +76,13 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
         </div>
         
         <!-- Tabs -->
-        <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:1px solid #e5e7eb; padding-bottom:10px;">
+        <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:1px solid #e5e7eb; padding-bottom:10px; flex-wrap: wrap;">
             <button id="tab_welcome" onclick="switchBotTab('welcome')" style="padding:8px 16px; border:none; background:#0284c7; color:#fff; border-radius:6px; cursor:pointer; font-weight:600;">Tin nhắn chào mừng</button>
             <button id="tab_keyword" onclick="switchBotTab('keyword')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Tin nhắn theo từ khóa</button>
             <button id="tab_ai_reply" onclick="switchBotTab('ai_reply')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Chat bot AI tự trả lời</button>
+            <button id="tab_phone_request" onclick="switchBotTab('phone_request')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Tự động xin thông tin</button>
         </div>
-
+        
         <!-- Nội dung Tab 1: Tin nhắn chào mừng -->
         <div id="content_welcome">
             <p style="font-size:13px; color:#6b7280; margin-top:0;">Tin nhắn sẽ tự động gửi khi khách hàng gửi tin nhắn đầu tiên hoặc bấm nút Bắt Đầu.</p>
@@ -97,6 +108,56 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
                 <div style="text-align:center; padding:10px; color:#9ca3af; font-size:13px;">Đang tải...</div>
             </div>
             <button onclick="openRuleForm('ai_reply')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed #d1d5db; background:#f9fafb; color:#374151; border-radius:6px;">+ Thêm cấu hình Bot AI mới</button>
+        </div>
+
+        <!-- Nội dung Tab 4: Tự động xin thông tin (SĐT -> Tỉnh -> Nhu cầu) -->
+        <div id="content_phone_request" style="display:none;">
+            <p style="font-size:13px; color:#6b7280; margin-top:0;">Hệ thống sẽ tự động quét và gửi tin nhắn xin các thông tin còn thiếu của khách hàng theo thứ tự ưu tiên (SĐT -> Tỉnh thành -> Nhu cầu/Sản phẩm) sau X giờ kể từ tin nhắn cuối cùng của họ (tối đa 24 giờ).</p>
+            
+            <form id="frm_phone_request" onsubmit="savePhoneRequestSettings(event)" style="display:flex; flex-direction:column; gap:15px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; background:#f9fafb; padding:10px; border-radius:6px; border:1px solid #e5e7eb;">
+                    <label style="font-weight:600; font-size:14px; color:#374151; cursor:pointer; display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="phone_request_enabled" name="phone_request_enabled" value="1" <?php echo $phone_request_enabled ? 'checked' : ''; ?> style="width:18px; height:18px; cursor:pointer;">
+                        Kích hoạt tự động xin thông tin
+                    </label>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:#374151;">Thời gian chờ gửi tin nhắn (giờ)</label>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <input type="number" id="phone_request_hours" name="phone_request_hours" min="1" max="24" value="<?php echo $phone_request_hours; ?>" style="width:80px; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:14px;">
+                        <span style="font-size:13px; color:#6b7280;">giờ (từ 1 đến 24 giờ. Khuyến nghị: 1-2 giờ)</span>
+                    </div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:#374151; display:flex; align-items:center; gap:5px;">
+                        📞 Mẫu tin nhắn xin Số điện thoại
+                    </label>
+                    <textarea id="phone_request_text" name="phone_request_text" rows="2" placeholder="Ví dụ: Dạ {name} cho em xin số điện thoại để tiện liên hệ tư vấn ạ!" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($phone_request_text); ?></textarea>
+                    <span style="font-size:11px; color:#9ca3af;">Dùng {name} để gọi tên khách. Để trống nếu không muốn tự động xin SĐT.</span>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:#374151; display:flex; align-items:center; gap:5px;">
+                        📍 Mẫu tin nhắn xin Tỉnh thành
+                    </label>
+                    <textarea id="province_request_text" name="province_request_text" rows="2" placeholder="Ví dụ: Dạ hiện tại {name} đang ở tỉnh thành nào để em báo phí ship cho mình ạ?" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($province_request_text); ?></textarea>
+                    <span style="font-size:11px; color:#9ca3af;">Gửi khi đã có SĐT nhưng chưa có Tỉnh thành. Để trống để bỏ qua bước này.</span>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:#374151; display:flex; align-items:center; gap:5px;">
+                        🛍️ Mẫu tin nhắn xin Nhu cầu / Sản phẩm quan tâm
+                    </label>
+                    <textarea id="product_request_text" name="product_request_text" rows="2" placeholder="Ví dụ: Dạ {name} đang quan tâm đến dòng sản phẩm nào bên em để em gửi thông tin chi tiết ạ?" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($product_request_text); ?></textarea>
+                    <span style="font-size:11px; color:#9ca3af;">Gửi khi đã có SĐT và Tỉnh thành nhưng chưa có ghi chú/nhu cầu. Để trống để bỏ qua bước này.</span>
+                </div>
+
+                <div style="text-align:right; margin-top:5px;">
+                    <button type="submit" class="btn btn-primary" style="background:#0284c7; color:#fff; border:none; padding:8px 20px; font-weight:600; border-radius:6px; cursor:pointer;">Lưu cấu hình</button>
+                </div>
+            </form>
         </div>
 
     </div>
@@ -212,7 +273,7 @@ function openBotSettings() {
 }
 
 function switchBotTab(tab) {
-    const tabs = ['welcome', 'keyword', 'ai_reply'];
+    const tabs = ['welcome', 'keyword', 'ai_reply', 'phone_request'];
     tabs.forEach(t => {
         const btn = document.getElementById('tab_' + t);
         const content = document.getElementById('content_' + t);
@@ -240,7 +301,7 @@ function loadBotRules() {
                 renderBotRules('keyword');
                 renderBotRules('ai_reply');
             } else {
-                alert('Lỗi tải cấu hình: ' + res.msg);
+                showToast('Lỗi tải cấu hình: ' + res.msg, 'error');
             }
         }).catch(e => console.error(e));
 }
@@ -402,8 +463,12 @@ function deleteBotRule(id) {
     fd.append('id', id);
     fetch('actions/manage_bot_rules.php', { method:'POST', body:fd })
         .then(r=>r.json()).then(res=>{
-            if(res.status==='success') loadBotRules();
-            else alert(res.msg);
+            if(res.status==='success') {
+                loadBotRules();
+                showToast('Đã xóa cấu hình thành công.', 'success');
+            } else {
+                showToast(res.msg, 'error');
+            }
         });
 }
 
@@ -460,7 +525,7 @@ function saveBotRule(e) {
         const checkedVals = Array.from(checkedCbs).map(el => el.value);
         pagesScope = JSON.stringify(checkedVals);
         if (checkedVals.length === 0) {
-            alert('Vui lòng chọn ít nhất 1 Fanpage!');
+            showToast('Vui lòng chọn ít nhất 1 Fanpage!', 'error');
             return;
         }
     }
@@ -486,12 +551,48 @@ function saveBotRule(e) {
             if(res.status==='success'){
                 document.getElementById('botRuleFormModal').style.display='none';
                 loadBotRules();
+                showToast('Đã lưu cấu hình thành công.', 'success');
             }else{
-                alert(res.msg);
+                showToast(res.msg, 'error');
             }
         }).finally(()=>{
             btn.disabled=false; btn.innerText='Lưu';
         });
+}
+
+function savePhoneRequestSettings(e) {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    btn.innerText = 'Đang lưu...';
+    
+    const fd = new FormData();
+    fd.append('phone_request_enabled', document.getElementById('phone_request_enabled').checked ? 1 : 0);
+    fd.append('phone_request_hours', document.getElementById('phone_request_hours').value);
+    fd.append('phone_request_text', document.getElementById('phone_request_text').value);
+    fd.append('province_request_text', document.getElementById('province_request_text').value);
+    fd.append('product_request_text', document.getElementById('product_request_text').value);
+    
+    fetch('actions/save_auto_reply.php', {
+        method: 'POST',
+        body: fd
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.status === 'success') {
+            showToast('Đã lưu cấu hình tự động xin thông tin thành công!', 'success');
+        } else {
+            showToast('Lỗi: ' + res.msg, 'error');
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        showToast('Có lỗi xảy ra khi kết nối máy chủ!', 'error');
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerText = 'Lưu cấu hình';
+    });
 }
 </script>
 
@@ -789,7 +890,7 @@ function showToast(message, type = 'error') {
         toast.id = 'chat_toast_notification';
         toast.style.cssText = `
             position: fixed;
-            top: 20px;
+            bottom: 20px;
             right: 20px;
             padding: 12px 24px;
             border-radius: 8px;
@@ -799,7 +900,7 @@ function showToast(message, type = 'error') {
             z-index: 99999;
             box-shadow: 0 4px 15px rgba(0,0,0,0.2);
             transition: all 0.3s ease;
-            transform: translateY(-20px);
+            transform: translateY(20px);
             opacity: 0;
             font-family: system-ui, -apple-system, sans-serif;
         `;
@@ -817,7 +918,7 @@ function showToast(message, type = 'error') {
     
     // Hide after 4 seconds
     setTimeout(() => {
-        toast.style.transform = 'translateY(-20px)';
+        toast.style.transform = 'translateY(20px)';
         toast.style.opacity = '0';
         setTimeout(() => {
             toast.style.display = 'none';
@@ -1071,12 +1172,25 @@ function renderConversations() {
     convList.innerHTML = '';
 
     let filtered = currentConversations;
-    if (currentFilter === 'unread') filtered = filtered.filter(c => c.unread_count > 0);
-    else if (currentFilter === 'phone') {
+    if (currentFilter === 'unread') {
+        filtered = filtered.filter(c => {
+            let isUnread = c.unread_count > 0;
+            if (isUnread && locallyReadConvs[c.id]) {
+                if (new Date(c.updated_time).getTime() <= locallyReadConvs[c.id]) isUnread = false;
+            }
+            return isUnread;
+        });
+    } else if (currentFilter === 'phone') {
         filtered = filtered.filter(c => c.has_phone === true);
     }
 
-    const hasUnread = currentConversations.some(c => c.unread_count > 0);
+    const hasUnread = currentConversations.some(c => {
+        let isUnread = c.unread_count > 0;
+        if (isUnread && locallyReadConvs[c.id]) {
+            if (new Date(c.updated_time).getTime() <= locallyReadConvs[c.id]) isUnread = false;
+        }
+        return isUnread;
+    });
     btnReadAll.style.display = hasUnread ? 'block' : 'none';
 
     if (!filtered.length) {
@@ -1169,6 +1283,9 @@ function loadMessages(convId, senderName, senderId, activePageIdToUse = currentP
                     <div style="font-size:11px;color:#6b7280;">ID: ${senderId}</div>
                 </div>
             </div>
+            <button id="btn_toggle_bot" onclick="toggleBotLock()" class="btn" style="padding:6px 12px; font-size:12px; font-weight:600; border-radius:20px; border:1px solid #d1d5db; background:#fff; color:#374151; display:flex; align-items:center; gap:4px; cursor:pointer;" title="Tạm dừng hoặc Bật lại bot tự trả lời cho khách này">
+                🤖 Bot: ON
+            </button>
             <button onclick="toggleInfoPanel()" class="btn btn-secondary" style="border-radius:50%;width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;border:1px solid var(--border-color);background:#fff;" title="Thông tin khách hàng">ℹ️</button>
         `;
         if (window.innerWidth <= 768) {
@@ -1535,12 +1652,88 @@ function loadCustomerInfo(senderId, pageId, senderName = '') {
                 
                 // Update avatar with proper DB name
                 document.getElementById('info_avatar').src = `avatar.php?id=${senderId}&page_id=${pageId}&name=${encodeURIComponent(finalName)}`;
+                
+                // Update bot toggle button status (header + panel)
+                const isLocked = res.data.is_locked == 1;
+                updateBotToggleUI(isLocked);
             } else {
                 document.getElementById('info_name_display').innerText = fallbackName;
             }
         }).catch(() => {
             document.getElementById('info_name_display').innerText = fallbackName;
         });
+}
+
+function updateBotToggleUI(isLocked) {
+    // Header button
+    const btnHeader = document.getElementById('btn_toggle_bot');
+    if (btnHeader) {
+        if (isLocked) {
+            btnHeader.innerHTML = '❌ Bot: OFF';
+            btnHeader.style.background = '#fee2e2';
+            btnHeader.style.color = '#991b1b';
+            btnHeader.style.borderColor = '#fca5a5';
+        } else {
+            btnHeader.innerHTML = '🤖 Bot: ON';
+            btnHeader.style.background = '#dcfce7';
+            btnHeader.style.color = '#166534';
+            btnHeader.style.borderColor = '#86efac';
+        }
+    }
+    // Panel button
+    const btnPanel = document.getElementById('btn_toggle_bot_panel');
+    if (btnPanel) {
+        if (isLocked) {
+            btnPanel.innerHTML = '❌ Bot đang TẮT — Bạn đang tự trả lời';
+            btnPanel.style.background = '#fee2e2';
+            btnPanel.style.color = '#991b1b';
+            btnPanel.style.borderColor = '#fca5a5';
+        } else {
+            btnPanel.innerHTML = '🤖 Bot đang BẬT — Tự động trả lời';
+            btnPanel.style.background = '#dcfce7';
+            btnPanel.style.color = '#166534';
+            btnPanel.style.borderColor = '#86efac';
+        }
+    }
+}
+
+function toggleBotLock() {
+    const senderId = activeRecipId.value;
+    const pageId = activePageIdEl.value;
+    if (!senderId || !pageId) return;
+
+    const btnHeader = document.getElementById('btn_toggle_bot');
+    const btnPanel = document.getElementById('btn_toggle_bot_panel');
+    if (btnHeader) { btnHeader.disabled = true; btnHeader.innerHTML = '⏱️ ...'; }
+    if (btnPanel) { btnPanel.disabled = true; btnPanel.innerHTML = '⏱️ Đang xử lý...'; }
+
+    const fd = new FormData();
+    fd.append('type', 'facebook');
+    fd.append('sender_id', senderId);
+    fd.append('channel_id', pageId);
+    fd.append('action', 'toggle');
+
+    fetch('actions/toggle_bot_lock.php', {
+        method: 'POST',
+        body: fd
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.status === 'success') {
+            loadCustomerInfo(senderId, pageId);
+            showToast(res.msg, 'success');
+        } else {
+            showToast('Lỗi: ' + res.msg, 'error');
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        showToast('Có lỗi xảy ra khi kết nối máy chủ!', 'error');
+    })
+    .finally(() => {
+        if (btnHeader) btnHeader.disabled = false;
+        if (btnPanel) btnPanel.disabled = false;
+    });
 }
 
 function saveCustomerInfo(e) {

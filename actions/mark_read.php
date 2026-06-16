@@ -12,6 +12,7 @@ if (!isset($_SESSION['account_id'])) {
     echo json_encode(['status' => 'error', 'msg' => 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.']);
     exit;
 }
+session_write_close();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $user_id = isset($_POST['user_id']) ? intval($_POST['user_id']) : 0;

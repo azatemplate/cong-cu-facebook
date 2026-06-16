@@ -12,6 +12,7 @@ if (!isset($_SESSION['account_id'])) {
     echo json_encode(['status' => 'error', 'msg' => 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.']);
     exit;
 }
+session_write_close();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $oa_id = isset($_POST['oa_id']) ? trim($_POST['oa_id']) : '';
@@ -178,6 +179,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ON DUPLICATE KEY UPDATE expire_at = DATE_ADD(NOW(), INTERVAL 30 MINUTE)
             ");
             $lock_stmt->execute([$oa_id, $recipient_id]);
+
+            // Update last_sender to 'agent' in zalo_customers
+            try {
+                $st_upd = $pdo->prepare("UPDATE zalo_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP WHERE oa_id = ? AND sender_id = ?");
+                $st_upd->execute([$oa_id, $recipient_id]);
+            } catch (Exception $e) {}
 
             echo json_encode([
                 'status' => 'success',

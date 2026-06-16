@@ -43,6 +43,10 @@ try {
         ];
     }
     
+    $stmt_lock = $pdo->prepare("SELECT expire_at FROM bot_chat_locks WHERE page_id = ? AND sender_id = ? AND expire_at > NOW()");
+    $stmt_lock->execute([$page_id, $sender_id]);
+    $customer['is_locked'] = $stmt_lock->fetch() ? 1 : 0;
+    
     echo json_encode(['status' => 'success', 'data' => $customer]);
 } catch (PDOException $e) {
     echo json_encode(['status' => 'error', 'msg' => 'Lỗi DB: ' . $e->getMessage()]);

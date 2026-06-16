@@ -11,6 +11,7 @@ if (!isset($_SESSION['account_id'])) {
     echo json_encode(['status' => 'error', 'msg' => 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.']);
     exit;
 }
+session_write_close();
 
 $oa_id = isset($_GET['oa_id']) ? trim($_GET['oa_id']) : '';
 $sender_id = isset($_GET['sender_id']) ? trim($_GET['sender_id']) : '';

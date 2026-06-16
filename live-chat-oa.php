@@ -701,10 +701,11 @@ $pages_json = json_encode($pages);
         </div>
         
         <!-- Bot Tabs -->
-        <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:1px solid var(--border-color); padding-bottom:10px;">
+        <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:1px solid var(--border-color); padding-bottom:10px; flex-wrap: wrap;">
             <button id="tab_welcome" onclick="switchBotTab('welcome')" style="padding:8px 16px; border:none; background:#0068ff; color:#fff; border-radius:6px; cursor:pointer; font-weight:600;">Tin nhắn chào mừng</button>
             <button id="tab_keyword" onclick="switchBotTab('keyword')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Tin nhắn theo từ khóa</button>
             <button id="tab_ai_reply" onclick="switchBotTab('ai_reply')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Chat bot AI tự trả lời</button>
+            <button id="tab_phone_request" onclick="switchBotTab('phone_request')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Tự động xin thông tin</button>
         </div>
 
         <!-- Nội dung Tab 1: Tin nhắn chào mừng -->
@@ -732,6 +733,56 @@ $pages_json = json_encode($pages);
                 <div style="text-align:center; padding:10px; color:var(--text-muted); font-size:13px;">Đang tải...</div>
             </div>
             <button onclick="openRuleForm('ai_reply')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed var(--border-color); background:var(--bg-color); color:var(--text-main); border-radius:6px; font-weight:600;">+ Thêm cấu hình Bot AI mới</button>
+        </div>
+
+        <!-- Nội dung Tab 4: Tự động xin thông tin Zalo (SĐT -> Tỉnh -> Nhu cầu) -->
+        <div id="content_phone_request" style="display:none;">
+            <p style="font-size:13px; color:var(--text-muted); margin-top:0; text-align:left; margin-bottom:15px;">Hệ thống sẽ tự động quét và gửi tin nhắn xin các thông tin còn thiếu của khách hàng Zalo theo thứ tự ưu tiên (SĐT -> Tỉnh thành -> Nhu cầu/Sản phẩm) sau X giờ kể từ tin nhắn cuối cùng của họ (tối đa 24 giờ).</p>
+            
+            <form id="frm_zalo_phone_request" onsubmit="saveZaloPhoneRequestSettings(event)" style="display:flex; flex-direction:column; gap:15px; text-align:left;">
+                <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-color); padding:10px; border-radius:6px; border:1px solid var(--border-color);">
+                    <label style="font-weight:600; font-size:14px; color:var(--text-main); cursor:pointer; display:flex; align-items:center; gap:8px; margin:0;">
+                        <input type="checkbox" id="zalo_phone_request_enabled" name="phone_request_enabled" value="1" style="width:18px; height:18px; cursor:pointer;">
+                        Kích hoạt tự động xin thông tin
+                    </label>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:var(--text-main);">Thời gian chờ gửi tin nhắn (giờ)</label>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <input type="number" id="zalo_phone_request_hours" name="phone_request_hours" min="1" max="24" value="1" style="width:80px; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:14px; background:var(--card-bg); color:var(--text-main);">
+                        <span style="font-size:13px; color:var(--text-muted);">giờ (từ 1 đến 24 giờ. Khuyến nghị: 1-2 giờ)</span>
+                    </div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:var(--text-main); display:flex; align-items:center; gap:5px;">
+                        📞 Mẫu tin nhắn xin Số điện thoại
+                    </label>
+                    <textarea id="zalo_phone_request_text" name="phone_request_text" rows="2" placeholder="Ví dụ: Dạ {name} cho em xin số điện thoại để tiện liên hệ tư vấn ạ!" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:13px; resize:vertical; background:var(--card-bg); color:var(--text-main);"></textarea>
+                    <span style="font-size:11px; color:var(--text-muted);">Dùng {name} để gọi tên khách. Để trống nếu không muốn tự động xin SĐT.</span>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:var(--text-main); display:flex; align-items:center; gap:5px;">
+                        📍 Mẫu tin nhắn xin Tỉnh thành
+                    </label>
+                    <textarea id="zalo_province_request_text" name="province_request_text" rows="2" placeholder="Ví dụ: Dạ hiện tại {name} đang ở tỉnh thành nào để em báo phí ship cho mình ạ?" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:13px; resize:vertical; background:var(--card-bg); color:var(--text-main);"></textarea>
+                    <span style="font-size:11px; color:var(--text-muted);">Gửi khi đã có SĐT nhưng chưa có Tỉnh thành. Để trống để bỏ qua bước này.</span>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:var(--text-main); display:flex; align-items:center; gap:5px;">
+                        🛍️ Mẫu tin nhắn xin Nhu cầu / Sản phẩm quan tâm
+                    </label>
+                    <textarea id="zalo_product_request_text" name="product_request_text" rows="2" placeholder="Ví dụ: Dạ {name} đang quan tâm đến dòng sản phẩm nào bên em để em gửi thông tin chi tiết ạ?" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:13px; resize:vertical; background:var(--card-bg); color:var(--text-main);"></textarea>
+                    <span style="font-size:11px; color:var(--text-muted);">Gửi khi đã có SĐT và Tỉnh thành nhưng chưa có ghi chú/nhu cầu. Để trống để bỏ qua bước này.</span>
+                </div>
+
+                <div style="text-align:right; margin-top:5px;">
+                    <button type="submit" class="btn btn-primary" style="background:#0068ff; color:#fff; border:none; padding:8px 20px; font-weight:600; border-radius:6px; cursor:pointer;">Lưu cấu hình</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -1079,19 +1130,32 @@ $pages_json = json_encode($pages);
         // Highlight active conversation node
         document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
         const activeNode = document.getElementById(`conv_${senderId}`);
-        if (activeNode) activeNode.classList.add('active');
+        if (activeNode) {
+            activeNode.classList.add('active');
+            // Remove unread dot from DOM
+            const dot = activeNode.querySelector('.unread-dot');
+            if (dot) dot.remove();
+        }
 
         // Update header customer
         const conv = conversationsCache.find(x => x.sender_id === senderId);
+        if (conv) {
+            conv.unread_count = 0; // Reset unread count locally
+        }
         const headerContainer = document.getElementById('chat_active_user_info');
         if (conv) {
             headerContainer.innerHTML = `
-                <div style="display:flex; align-items:center; gap:10px;">
-                    <img class="chat-active-avatar" src="${conv.sender_avatar || 'https://ui-avatars.com/api/?name=Zalo'}" alt="Avatar">
-                    <div>
-                        <div class="chat-active-name">${conv.sender_name}</div>
-                        <div class="chat-active-status">Zalo User ID: ${conv.sender_id}</div>
+                <div style="display:flex; align-items:center; gap:10px; justify-content:space-between; width:100%; flex-wrap:wrap;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <img class="chat-active-avatar" src="${conv.sender_avatar || 'https://ui-avatars.com/api/?name=Zalo'}" alt="Avatar">
+                        <div>
+                            <div class="chat-active-name">${conv.sender_name}</div>
+                            <div class="chat-active-status">Zalo User ID: ${conv.sender_id}</div>
+                        </div>
                     </div>
+                    <button id="btn_toggle_bot" onclick="toggleBotLock()" class="btn" style="padding:6px 12px; font-size:12px; font-weight:600; border-radius:20px; border:1px solid #d1d5db; background:#fff; color:#374151; display:flex; align-items:center; gap:4px; cursor:pointer;" title="Tạm dừng hoặc Bật lại bot tự trả lời cho khách này">
+                        🤖 Bot: ON
+                    </button>
                 </div>
             `;
             
@@ -1177,8 +1241,62 @@ $pages_json = json_encode($pages);
                     document.getElementById('cust_phone').value = res.data.phone || '';
                     document.getElementById('cust_province').value = res.data.province || '';
                     document.getElementById('cust_notes').value = res.data.notes || '';
+
+                    // Update Zalo bot toggle button status
+                    const isLocked = res.data.is_locked == 1;
+                    const btnToggleBot = document.getElementById('btn_toggle_bot');
+                    if (btnToggleBot) {
+                        if (isLocked) {
+                            btnToggleBot.innerHTML = '❌ Bot: OFF';
+                            btnToggleBot.style.background = '#fee2e2';
+                            btnToggleBot.style.color = '#991b1b';
+                            btnToggleBot.style.borderColor = '#fca5a5';
+                        } else {
+                            btnToggleBot.innerHTML = '🤖 Bot: ON';
+                            btnToggleBot.style.background = '#dcfce7';
+                            btnToggleBot.style.color = '#166534';
+                            btnToggleBot.style.borderColor = '#86efac';
+                        }
+                    }
                 }
             }
+        });
+    }
+
+    window.toggleBotLock = function() {
+        if (!activeSenderId || !activeOaId) return;
+
+        const btn = document.getElementById('btn_toggle_bot');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '⏱️ ...';
+        }
+
+        const fd = new FormData();
+        fd.append('type', 'zalo');
+        fd.append('sender_id', activeSenderId);
+        fd.append('channel_id', activeOaId);
+        fd.append('action', 'toggle');
+
+        fetch('actions/toggle_bot_lock.php', {
+            method: 'POST',
+            body: fd
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (res.status === 'success') {
+                fetchCustomerNotes(activeSenderId);
+                showToast(res.msg, 'success');
+            } else {
+                showToast('Lỗi: ' + res.msg, 'error');
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            showToast('Có lỗi xảy ra khi kết nối máy chủ!', 'error');
+        })
+        .finally(() => {
+            if (btn) btn.disabled = false;
         });
     }
 
@@ -1563,7 +1681,7 @@ $pages_json = json_encode($pages);
     }
 
     window.switchBotTab = function(tab) {
-        const tabs = ['welcome', 'keyword', 'ai_reply'];
+        const tabs = ['welcome', 'keyword', 'ai_reply', 'phone_request'];
         tabs.forEach(t => {
             const btn = document.getElementById('tab_' + t);
             const content = document.getElementById('content_' + t);
@@ -1578,6 +1696,59 @@ $pages_json = json_encode($pages);
                     content.style.display = 'none';
                 }
             }
+        });
+        if (tab === 'phone_request') {
+            window.loadZaloPhoneRequestSettings();
+        }
+    }
+
+    window.loadZaloPhoneRequestSettings = function() {
+        fetch('actions/zalo_settings.php')
+        .then(r => r.json())
+        .then(res => {
+            if (res.status === 'success' && res.data) {
+                document.getElementById('zalo_phone_request_enabled').checked = res.data.phone_request_enabled == 1;
+                document.getElementById('zalo_phone_request_hours').value = res.data.phone_request_hours || 1;
+                document.getElementById('zalo_phone_request_text').value = res.data.phone_request_text || '';
+                document.getElementById('zalo_province_request_text').value = res.data.province_request_text || '';
+                document.getElementById('zalo_product_request_text').value = res.data.product_request_text || '';
+            }
+        })
+        .catch(err => console.error('Error loading Zalo phone settings:', err));
+    }
+
+    window.saveZaloPhoneRequestSettings = function(e) {
+        e.preventDefault();
+        const btn = e.target.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.innerText = 'Đang lưu...';
+        
+        const fd = new FormData();
+        fd.append('phone_request_enabled', document.getElementById('zalo_phone_request_enabled').checked ? 1 : 0);
+        fd.append('phone_request_hours', document.getElementById('zalo_phone_request_hours').value);
+        fd.append('phone_request_text', document.getElementById('zalo_phone_request_text').value);
+        fd.append('province_request_text', document.getElementById('zalo_province_request_text').value);
+        fd.append('product_request_text', document.getElementById('zalo_product_request_text').value);
+        
+        fetch('actions/zalo_save_phone_settings.php', {
+            method: 'POST',
+            body: fd
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (res.status === 'success') {
+                showToast('Lưu cấu hình tự động xin thông tin Zalo thành công!', 'success');
+            } else {
+                showToast('Lỗi: ' + res.msg, 'error');
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            showToast('Có lỗi xảy ra khi kết nối máy chủ!', 'error');
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerText = 'Lưu cấu hình';
         });
     }
 

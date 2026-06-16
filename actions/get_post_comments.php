@@ -10,6 +10,7 @@ if (!isset($_SESSION['account_id'])) {
     echo json_encode(['status' => 'error', 'msg' => 'Unauthorized']);
     exit;
 }
+session_write_close();
 
 $page_id = $_GET['page_id'] ?? '';
 $user_id = $_GET['user_id'] ?? '';

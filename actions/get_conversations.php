@@ -40,6 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $_SESSION['merge_cursors'] = [];
         }
 
+        session_write_close();
+
         foreach ($all_pages_raw as $p) {
             if (!empty($p['access_token'])) {
                 if ($append === 1 && empty($cursors[$p['page_id']])) {
@@ -59,6 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $merged_conversations = $multi_result['data'];
         $returned_cursors = $multi_result['cursors'];
         
+        session_start();
         if ($append === 0) {
             $_SESSION['merge_cursors'] = $returned_cursors;
         } else {
@@ -71,6 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 }
             }
         }
+        session_write_close();
         
         $next_cursor = !empty($_SESSION['merge_cursors']) ? 'merging' : '';
 
@@ -88,6 +92,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         echo json_encode(['status' => 'error', 'msg' => 'Vui lòng chọn đầy đủ User và Fanpage.']);
         exit;
     }
+
+    session_write_close();
 
     $stmt = $pdo->prepare("SELECT access_token FROM pages WHERE page_id = ? AND user_id = ?");
     $stmt->execute([$page_id, $user_id]);

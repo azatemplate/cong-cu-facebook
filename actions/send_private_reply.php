@@ -10,6 +10,7 @@ if (!isset($_SESSION['account_id'])) {
     echo json_encode(['status' => 'error', 'msg' => 'Unauthorized']);
     exit;
 }
+session_write_close();
 
 $page_id = $_POST['page_id'] ?? '';
 $user_id = $_POST['user_id'] ?? '';
@@ -55,5 +56,15 @@ if (isset($response['data']['error'])) {
     echo json_encode(['status' => 'error', 'msg' => 'Lỗi FB: ' . $err]);
     exit;
 }
+
+try {
+    $stmt_not = $pdo->prepare("SELECT sender_id FROM page_notifications WHERE comment_id = ?");
+    $stmt_not->execute([$target_id]);
+    $snd_id = $stmt_not->fetchColumn();
+    if ($snd_id) {
+        $st_upd = $pdo->prepare("UPDATE fb_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP WHERE page_id = ? AND sender_id = ?");
+        $st_upd->execute([$page_id, $snd_id]);
+    }
+} catch (Exception $e) {}
 
 echo json_encode(['status' => 'success', 'data' => $response['data']]);

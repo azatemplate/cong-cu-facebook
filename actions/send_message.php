@@ -12,6 +12,7 @@ if (!isset($_SESSION['account_id'])) {
     echo json_encode(['status' => 'error', 'msg' => 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.']);
     exit;
 }
+session_write_close();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $message = isset($_POST['message']) ? trim($_POST['message']) : '';
@@ -130,6 +131,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($file_success || $text_success) {
+        try {
+            $st_upd = $pdo->prepare("UPDATE fb_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP WHERE page_id = ? AND sender_id = ?");
+            $st_upd->execute([$page_id, $recipient_id]);
+        } catch (Exception $e) {}
+
+        // Lock chatbot for 30 minutes due to manual admin activity
+        try {
+            $lock_stmt = $pdo->prepare("
+                INSERT INTO bot_chat_locks (page_id, sender_id, expire_at)
+                VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 MINUTE))
+                ON DUPLICATE KEY UPDATE expire_at = DATE_ADD(NOW(), INTERVAL 30 MINUTE)
+            ");
+            $lock_stmt->execute([$page_id, $recipient_id]);
+        } catch (Exception $e) {}
+
         echo json_encode([
             'status' => 'success', 
             'data' => $text_response_data ?: $file_response_data

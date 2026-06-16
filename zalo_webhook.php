@@ -100,6 +100,20 @@ if (!$is_message) {
 }
 
 // 4. Update or Insert Customer Profile
+// Khởi tạo/Cập nhật thông tin tương tác cuối trong zalo_customers
+try {
+    $st_last = $pdo->prepare("
+        INSERT INTO zalo_customers (oa_id, sender_id, name, last_sender, last_message_at)
+        VALUES (?, ?, 'Khách hàng Zalo', 'customer', CURRENT_TIMESTAMP)
+        ON DUPLICATE KEY UPDATE
+            last_sender = 'customer',
+            last_message_at = CURRENT_TIMESTAMP
+    ");
+    $st_last->execute([$oa_id, $sender_id]);
+} catch (Exception $e) {
+    error_log("Failed to insert/update zalo_customers interaction: " . $e->getMessage());
+}
+
 $access_token = zalo_get_active_token($oa_id, $pdo);
 $cust_name = 'Khách hàng Zalo';
 $cust_avatar = 'https://ui-avatars.com/api/?name=Zalo';
@@ -184,12 +198,14 @@ try {
 
         if ($fetched_ok) {
             $stmt_ins = $pdo->prepare("
-                INSERT INTO zalo_customers (oa_id, sender_id, name, avatar, phone, province, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO zalo_customers (oa_id, sender_id, name, avatar, phone, province, notes, last_sender, last_message_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'customer', CURRENT_TIMESTAMP)
                 ON DUPLICATE KEY UPDATE 
                     name = VALUES(name),
                     avatar = VALUES(avatar),
-                    province = COALESCE(NULLIF(VALUES(province), ''), province)
+                    province = COALESCE(NULLIF(VALUES(province), ''), province),
+                    last_sender = 'customer',
+                    last_message_at = CURRENT_TIMESTAMP
             ");
             $stmt_ins->execute([$oa_id, $sender_id, $cust_name, $cust_avatar, $cust_phone, $cust_province, $cust_notes]);
             
@@ -365,7 +381,7 @@ try {
             $json_instruction .= '  "extracted": {\n';
             $json_instruction .= '    "phone": "Số điện thoại phát hiện được trong tin nhắn mới của khách hàng (nếu có, không lấy số cũ), nếu khách hàng gửi lại số điện thoại khác thì trả về số mới, nếu không có trả về null",\n';
             $json_instruction .= '    "province": "Tỉnh thành phát hiện được trong tin nhắn mới của khách hàng (nếu có, không lấy tỉnh cũ), nếu không có trả về null",\n';
-            $json_instruction .= '    "requirements": "Nhu cầu/yêu cầu đầy đủ nhất của khách hàng đã được cập nhật hoặc bổ sung thêm thông tin mới. Hãy đối chiếu với mục Nhu cầu/Yêu cầu khách hàng trong THÔNG TIN KHÁCH HÀNG ĐÃ CÓ ở trên: nếu khách bổ sung chi tiết cho sản phẩm cũ (ví dụ: ban đầu là \'cùm giáo\' sau đó nói thêm \'100 cái\' -> trả về \'Cùm giáo - 100 cái\'), hoặc khách bổ sung thêm sản phẩm/nhu cầu mới khác (ví dụ: ban đầu là \'Cùm giáo - 100 cái\', sau đó quay lại bảo mua thêm \'100 mét ty ren\' -> hãy ghép nối và trả về toàn bộ nhu cầu tích lũy: \'Cùm giáo - 100 cái, mua thêm 100 mét ty ren\'). Nếu không có thông tin gì mới hoặc không thay đổi, trả về null"\n';
+            $json_instruction .= '    "requirements": "Nhu cầu/yêu cầu đầy đủ nhất của khách hàng đã được cập nhật hoặc bổ sung thêm thông tin mới. Hãy đối chiếu với mục Nhu cầu/Yêu cầu khách hàng trong THÔNG TIN KHÁCH HÀNG ĐÃ CÓ ở trên để cập nhật hoặc tích lũy một cách chính xác theo các nguyên tắc sau:\n1. BẮT BUỘC phải trích xuất ngay tên sản phẩm khi khách hàng đề cập, dù khách hàng chưa cung cấp số lượng (ví dụ: khách nói \'tôi muốn mua cùm giáo\' -> lập tức cập nhật \'Cùm giáo\'). Không được bỏ qua hay chờ số lượng.\n2. Nếu khách hàng bổ sung số lượng cho sản phẩm đã nói trước đó (ví dụ: thông tin cũ là \'Cùm giáo\', nay khách nói thêm \'lấy cho em 50 cái\' -> cập nhật tích lũy thành \'Cùm giáo - 50 cái\').\n3. Nếu khách hàng bổ sung thêm sản phẩm/yêu cầu mới khác (ví dụ: thông tin cũ là \'Cùm giáo - 50 cái\', nay khách nói mua thêm \'100m ty ren\' -> tích lũy thêm thành \'Cùm giáo - 50 cái, 100m ty ren\').\nNếu khách hàng không đề cập gì thêm về sản phẩm/nhu cầu hoặc không có thông tin thay đổi so với thông tin đã có, trả về null"\n';
             $json_instruction .= "  }\n";
             $json_instruction .= "}\n";
 
@@ -467,6 +483,12 @@ try {
                                 updated_time = CURRENT_TIMESTAMP
                         ");
                         $stmt_upd_thread->execute([$oa_id, $sender_id, $cust_name, $reply_to_send]);
+
+                        // Cập nhật last_sender cho Zalo customer
+                        try {
+                            $st_upd_agent = $pdo->prepare("UPDATE zalo_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP WHERE oa_id = ? AND sender_id = ?");
+                            $st_upd_agent->execute([$oa_id, $sender_id]);
+                        } catch (Exception $e) {}
                     }
                 }
             }

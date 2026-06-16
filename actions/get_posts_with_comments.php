@@ -71,7 +71,9 @@ if ($merge_all === 1) {
     if ($append === 1 && isset($_SESSION['lc_merge_cursors'])) {
         $cursors = $_SESSION['lc_merge_cursors'];
     } elseif ($append === 0) {
+        session_start();
         $_SESSION['lc_merge_cursors'] = [];
+        session_write_close();
     }
 
     foreach ($all_pages_raw as $p) {
@@ -89,7 +91,11 @@ if ($merge_all === 1) {
     
     $multi_result = get_fb_posts_multi($pages, 30, $cursors);
     $data = $multi_result['data'];
+    
+    session_start();
     $_SESSION['lc_merge_cursors'] = $multi_result['cursors'];
+    session_write_close();
+    
     $next_cursor = !empty($multi_result['cursors']) ? 'has_more' : '';
     
 } else {

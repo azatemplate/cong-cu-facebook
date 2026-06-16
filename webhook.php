@@ -179,7 +179,14 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
 
                         // Đảm bảo thông tin khách hàng được khởi tạo/cập nhật trong fb_customers
                         try {
-                            $stmt_cust = $pdo->prepare("INSERT INTO fb_customers (page_id, sender_id, name) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name)");
+                            $stmt_cust = $pdo->prepare("
+                                INSERT INTO fb_customers (page_id, sender_id, name, last_sender, last_message_at) 
+                                VALUES (?, ?, ?, 'customer', CURRENT_TIMESTAMP) 
+                                ON DUPLICATE KEY UPDATE 
+                                    name = VALUES(name),
+                                    last_sender = 'customer',
+                                    last_message_at = CURRENT_TIMESTAMP
+                            ");
                             $stmt_cust->execute([$page_id, $sender_id, $sender_name]);
                             
                             if ($is_message && !empty($text) && $text !== 'Đã gửi một tệp đính kèm' && strpos($text, '[Hành động:') === false) {
@@ -234,8 +241,16 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                             $page_token = decryptData($page_info['access_token']);
                             $acc_id = $page_info['account_id'];
 
-                            // Hàm xử lý gửi tin nhắn
-                            $send_bot_msg = function($msg_text) use ($sender_id, $sender_name, $page_token) {
+                            // Check chatbot lock (Manual hand-off / admin override)
+                            $stmt_lock = $pdo->prepare("SELECT expire_at FROM bot_chat_locks WHERE page_id = ? AND sender_id = ? AND expire_at > NOW()");
+                            $stmt_lock->execute([$page_id, $sender_id]);
+                            $is_locked = (bool)$stmt_lock->fetch();
+
+                            if ($is_locked) {
+                                webhook_log("BOT_CHAT_LOCKED: Chatbot disabled due to active lock (manual admin activity) for sender $sender_id on page $page_id");
+                            } else {
+                                // Hàm xử lý gửi tin nhắn
+                                $send_bot_msg = function($msg_text) use ($sender_id, $sender_name, $page_token, $page_id, $pdo) {
                                 $lines = array_filter(explode("\n", str_replace("\r", "", $msg_text)), 'trim');
                                 if (empty($lines)) return;
                                 $chosen_msg = $lines[array_rand($lines)];
@@ -255,8 +270,16 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                                 curl_setopt($ch, CURLOPT_TIMEOUT, 3);
                                 $output = curl_exec($ch);
+                                $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                                 curl_close($ch);
                                 webhook_log("BOT_CHAT_REPLY: " . $output);
+
+                                if ($http_code === 200) {
+                                    try {
+                                        $st_upd = $pdo->prepare("UPDATE fb_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP WHERE page_id = ? AND sender_id = ?");
+                                        $st_upd->execute([$page_id, $sender_id]);
+                                    } catch (Exception $e) {}
+                                }
                             };
 
                             $matched_rule = false;
@@ -454,7 +477,7 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                     $json_instruction .= '  "extracted": {\n';
                                     $json_instruction .= '    "phone": "Số điện thoại phát hiện được trong tin nhắn mới của khách hàng (nếu có, không lấy số cũ), nếu khách hàng gửi lại số điện thoại khác thì trả về số mới, nếu không có trả về null",\n';
                                     $json_instruction .= '    "province": "Tỉnh thành phát hiện được trong tin nhắn mới của khách hàng (nếu có, không lấy tỉnh cũ), nếu không có trả về null",\n';
-                                    $json_instruction .= '    "requirements": "Nhu cầu/yêu cầu đầy đủ nhất của khách hàng đã được cập nhật hoặc bổ sung thêm thông tin mới. Hãy đối chiếu với mục Nhu cầu/Yêu cầu khách hàng trong THÔNG TIN KHÁCH HÀNG ĐÃ CÓ ở trên: nếu khách bổ sung chi tiết cho sản phẩm cũ (ví dụ: ban đầu là \'cùm giáo\' sau đó nói thêm \'100 cái\' -> trả về \'Cùm giáo - 100 cái\'), hoặc khách bổ sung thêm sản phẩm/nhu cầu mới khác (ví dụ: ban đầu là \'Cùm giáo - 100 cái\', sau đó quay lại bảo mua thêm \'100 mét ty ren\' -> hãy ghép nối và trả về toàn bộ nhu cầu tích lũy: \'Cùm giáo - 100 cái, mua thêm 100 mét ty ren\'). Nếu không có thông tin gì mới hoặc không thay đổi, trả về null"\n';
+                                    $json_instruction .= '    "requirements": "Nhu cầu/yêu cầu đầy đủ nhất của khách hàng đã được cập nhật hoặc bổ sung thêm thông tin mới. Hãy đối chiếu với mục Nhu cầu/Yêu cầu khách hàng trong THÔNG TIN KHÁCH HÀNG ĐÃ CÓ ở trên để cập nhật hoặc tích lũy một cách chính xác theo các nguyên tắc sau:\n1. BẮT BUỘC phải trích xuất ngay tên sản phẩm khi khách hàng đề cập, dù khách hàng chưa cung cấp số lượng (ví dụ: khách nói \'tôi muốn mua cùm giáo\' -> lập tức cập nhật \'Cùm giáo\'). Không được bỏ qua hay chờ số lượng.\n2. Nếu khách hàng bổ sung số lượng cho sản phẩm đã nói trước đó (ví dụ: thông tin cũ là \'Cùm giáo\', nay khách nói thêm \'lấy cho em 50 cái\' -> cập nhật tích lũy thành \'Cùm giáo - 50 cái\').\n3. Nếu khách hàng bổ sung thêm sản phẩm/yêu cầu mới khác (ví dụ: thông tin cũ là \'Cùm giáo - 50 cái\', nay khách nói mua thêm \'100m ty ren\' -> tích lũy thêm thành \'Cùm giáo - 50 cái, 100m ty ren\').\nNếu khách hàng không đề cập gì thêm về sản phẩm/nhu cầu hoặc không có thông tin thay đổi so với thông tin đã có, trả về null"\n';
                                     $json_instruction .= "  }\n";
                                     $json_instruction .= "}\n";
  
@@ -556,6 +579,7 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                     }
                                 }
                             }
+                            } // End of if (!$is_locked)
                         }
                     } catch (Exception $e) { webhook_log('BOT CHAT LOGIC ERR: ' . $e->getMessage()); }
                     // ===== KẾT THÚC BOT CHAT LOGIC =====
@@ -675,9 +699,13 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
     // Trả về 200 OK để Facebook biết đã nhận được
     http_response_code(200);
     echo "EVENT_RECEIVED";
-    // Không phải Object Page
-    http_response_code(404);
+    exit;
 }
+
+// Không phải Object Page
+http_response_code(404);
+echo "NOT_A_PAGE_OBJECT";
+exit;
 
 /**
  * Check if the current local time falls inside a bot rule's active hours

@@ -290,6 +290,8 @@ function checkSelectAll() {
             <div class="page-tab" data-page-id="<?php echo htmlspecialchars((string)($p['page_id'] ?? '')); ?>"
                  data-user-id="<?php echo (int)($p['user_id'] ?? 0); ?>"
                  data-token="<?php echo htmlspecialchars((string)(decryptData($p['access_token'] ?? '') ?? '')); ?>"
+                 data-name="<?php echo htmlspecialchars((string)($p['name'] ?? '')); ?>"
+                 data-avatar="<?php echo htmlspecialchars((string)($p['avatar'] ?? '')); ?>"
                  title="<?php echo htmlspecialchars((string)($p['name'] ?? '')); ?> — <?php echo htmlspecialchars((string)($p['user_name'] ?? '')); ?>"
                  style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-color);transition:background .15s;">
                 <div style="display:flex;align-items:center;gap:8px;">
@@ -684,9 +686,18 @@ function renderComments(commentsList) {
             postMedia = `<img src="${post.picture}" style="max-width:100%; max-height:400px; object-fit:contain; display:block; margin:0 auto;">`;
         }
         let msgHtml = post.message ? post.message.replace(/\n/g, '<br>') : '';
-        let pageName = document.querySelector('.page-tab.active div') ? document.querySelector('.page-tab.active div').innerText : 'Page';
-        
-        let pageAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(pageName)}&background=random&size=100`;
+        const activeTab = document.querySelector('.page-tab.active');
+        let pageName = activeTab ? activeTab.dataset.name : 'Page';
+        let pageAvatar = activeTab ? activeTab.dataset.avatar : '';
+        if (pageAvatar) {
+            if (pageAvatar.indexOf('?') !== -1) {
+                pageAvatar += `&name=${encodeURIComponent(pageName)}`;
+            } else {
+                pageAvatar += `?name=${encodeURIComponent(pageName)}`;
+            }
+        } else {
+            pageAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(pageName)}&background=random&size=100`;
+        }
 
         html += `
         <div style="background:#fff; margin-bottom:10px; border-bottom:1px solid #ced0d4;">
@@ -750,13 +761,25 @@ function buildCommentHTML(c, isReply = false) {
     }
     
     let authorAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(authorNameStr)}&background=random&size=64`;
-    if (c.from && c.from.picture && c.from.picture.data && c.from.picture.data.url) {
+    if (isSent) {
+        const activeTab = document.querySelector('.page-tab.active');
+        let pageAvatar = activeTab ? activeTab.dataset.avatar : '';
+        let pageName = activeTab ? activeTab.dataset.name : 'Page';
+        if (pageAvatar) {
+            if (pageAvatar.indexOf('?') !== -1) {
+                pageAvatar += `&name=${encodeURIComponent(pageName)}`;
+            } else {
+                pageAvatar += `?name=${encodeURIComponent(pageName)}`;
+            }
+            authorAvatar = pageAvatar;
+        } else {
+            authorAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(pageName)}&background=random&size=64`;
+        }
+    } else if (c.from && c.from.picture && c.from.picture.data && c.from.picture.data.url) {
         authorAvatar = c.from.picture.data.url;
     } else if (c.from && c.from.id) {
         // Fallback to direct Graph API picture link if we have the ID but no picture field
         authorAvatar = `https://graph.facebook.com/${c.from.id}/picture?type=square&access_token=${chatToken || ''}`;
-    } else if (isSent) {
-        authorAvatar = 'https://ui-avatars.com/api/?name=P&background=0284c7&color=fff&size=64';
     }
 
     let timeStr = '';

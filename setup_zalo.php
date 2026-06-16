@@ -52,6 +52,9 @@ try {
         phone VARCHAR(50) NULL,
         province VARCHAR(255) NULL,
         notes TEXT NULL,
+        last_sender VARCHAR(10) DEFAULT 'customer',
+        last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        info_requested_at TIMESTAMP NULL DEFAULT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (oa_id, sender_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
