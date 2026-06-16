@@ -56,7 +56,7 @@ try {
             FROM fb_customers c
             WHERE c.page_id = :page_id
               AND c.last_sender = 'customer'
-              AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
+              AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL $hours HOUR)
               AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
               AND (c.info_requested_at IS NULL OR c.last_message_at > c.info_requested_at)
               AND NOT EXISTS (
@@ -66,8 +66,7 @@ try {
         ";
         $stmt_cust = $pdo->prepare($sql_fb_customers);
         $stmt_cust->execute([
-            ':page_id' => $page_id,
-            ':hours' => $hours
+            ':page_id' => $page_id
         ]);
         $customers = $stmt_cust->fetchAll(PDO::FETCH_ASSOC);
 
@@ -176,14 +175,13 @@ try {
             FROM zalo_customers
             WHERE oa_id = :oa_id
               AND last_sender = 'customer'
-              AND last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
+              AND last_message_at <= DATE_SUB(NOW(), INTERVAL $hours HOUR)
               AND last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
               AND (info_requested_at IS NULL OR last_message_at > info_requested_at)
         ";
         $stmt_cust = $pdo->prepare($sql_zalo_customers);
         $stmt_cust->execute([
-            ':oa_id' => $oa_id,
-            ':hours' => $hours
+            ':oa_id' => $oa_id
         ]);
         $customers = $stmt_cust->fetchAll(PDO::FETCH_ASSOC);
 
