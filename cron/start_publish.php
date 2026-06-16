@@ -9,6 +9,11 @@ echo "--- KHOI DONG SCRAPER WORKER ---\n";
 @include_once __DIR__ . '/start_scraper.php';
 echo "--------------------------------\n\n";
 
+// Include Auto-Request Info Cron Logic (Chạy tự động cùng luồng Dispatcher Publish)
+echo "--- KHOI DONG AUTO-REQUEST INFO WORKER ---\n";
+@include_once __DIR__ . '/auto_request_phone.php';
+echo "------------------------------------------\n\n";
+
 // --- ĐẢM BẢO BÁO CÁO HÀNG NGÀY CHẠY ĐÚNG ---
 try {
     $today = date('Y-m-d');
