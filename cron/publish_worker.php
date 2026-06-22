@@ -189,20 +189,29 @@ try {
 // Thứ tự ưu tiên: Custom API → TikWM → Direct Scrape (Cách 3) → oEmbed fallback
 function getApi22Data($videoId) {
     if (empty($videoId)) return null;
-    $apiUrl = "https://api22-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id=" . $videoId . "&iid=7318518857994389254&device_id=7318517321748022790&channel=googleplay&app_name=musical_ly&version_code=300904&device_platform=android&device_type=ASUS_Z01QD&os_version=9";
-    $ch = curl_init($apiUrl);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'User-Agent: com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; ru_RU; Rootkit; Build/NJH47F; Cronet/TTNetVersion:b4d74d15 2020-04-23 QuicVersion:0144d138 2020-03-24)'
-    ]);
-    $res = curl_exec($ch);
-    curl_close($ch);
-    if ($res) {
-        $data = json_decode($res, true);
-        if (isset($data['aweme_list'][0])) {
-            return $data['aweme_list'][0];
+    
+    $domains = [
+        "api22-normal-c-useast1a.tiktokv.com",
+        "api22-normal-c-alisg.tiktokv.com",
+        "api16-normal-c-useast1a.tiktokv.com"
+    ];
+    
+    foreach ($domains as $domain) {
+        $apiUrl = "https://" . $domain . "/aweme/v1/feed/?aweme_id=" . $videoId . "&iid=7318518857994389254&device_id=7318517321748022790&channel=googleplay&app_name=musical_ly&version_code=300904&device_platform=android&device_type=ASUS_Z01QD&os_version=9";
+        $ch = curl_init($apiUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'User-Agent: com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; ru_RU; Rootkit; Build/NJH47F; Cronet/TTNetVersion:b4d74d15 2020-04-23 QuicVersion:0144d138 2020-03-24)'
+        ]);
+        $res = curl_exec($ch);
+        curl_close($ch);
+        if ($res) {
+            $data = json_decode($res, true);
+            if (isset($data['aweme_list'][0])) {
+                return $data['aweme_list'][0];
+            }
         }
     }
     return null;
@@ -211,6 +220,7 @@ function getApi22Data($videoId) {
 function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?array
 {
     $tiktok_url = trim($tiktok_url);
+    $tikwm_fallback_data = null;
     
     // ==================== Logic 0: Custom API (Evil0ctal / TikHub) - Nhanh nhất ====================
     if (!empty($custom_api_url)) {
@@ -232,7 +242,7 @@ function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?ar
 
         if ($resp) {
             $json = json_decode($resp, true);
-            if ($json) {
+            if ($json && isset($json['data'])) {
                 $download_url = null;
                 $title = null;
                 $vid = null;
@@ -282,11 +292,18 @@ function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?ar
                 }
 
                 if (!empty($download_url)) {
-                    return [
+                    $res_data = [
                         'download_url' => $download_url,
                         'title'        => $title ?? 'tiktok_video',
                         'video_id'     => $vid,
                     ];
+                    
+                    $source = $json['data']['source'] ?? 'custom_api';
+                    if ($source !== 'tikwm') {
+                        return $res_data;
+                    } else {
+                        $tikwm_fallback_data = $res_data;
+                    }
                 }
             }
         }
@@ -359,6 +376,12 @@ function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?ar
                 ];
             }
         }
+    }
+
+    // Nếu cả Custom API (chính thức) và PHP direct API đều không thành công
+    // Nhưng Custom API trước đó có lấy được TikWM, ta dùng TikWM
+    if ($tikwm_fallback_data) {
+        return $tikwm_fallback_data;
     }
 
     // ==================== Logic 2: TikWM API GET Mặc định (Nếu App API lỗi) ====================

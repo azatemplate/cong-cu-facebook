@@ -19,6 +19,8 @@ try {
     }
 } catch (Exception $e) {}
 
+$tikwm_fallback_data = null;
+
 if (!empty($custom_api_url)) {
     $api_target = $custom_api_url;
     if (strpos($api_target, '?') === false) {
@@ -38,7 +40,7 @@ if (!empty($custom_api_url)) {
 
     if ($resp) {
         $json = json_decode($resp, true);
-        if ($json) {
+        if ($json && isset($json['data'])) {
             $download_url = null;
             $title = null;
             $vid = null;
@@ -112,19 +114,28 @@ if (!empty($custom_api_url)) {
                     'share_count'       => (int)($json['data']['statistics']['share_count'] ?? $json['data']['share_count'] ?? 0)
                 ];
 
+                $extractor_source = $json['data']['source'] ?? 'custom_api';
+
                 $output = [
                     'ad_count'   => 0,
                     'count'      => 1,
                     'keyword'    => '',
                     'shop_count' => 0,
-                    'extractor_source' => $json['data']['source'] ?? 'custom_api',
+                    'extractor_source' => $extractor_source,
                     'videos'     => [
                         $videoFormatted
                     ],
                     'cookies'    => ''
                 ];
-                echo json_encode($output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-                exit;
+
+                // Nếu source lấy được không phải tikwm, ta trả về ngay.
+                // Nếu là tikwm, ta lưu lại làm dự phòng và tiếp tục thử API chính thức trực tiếp từ PHP.
+                if ($extractor_source !== 'tikwm') {
+                    echo json_encode($output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                    exit;
+                } else {
+                    $tikwm_fallback_data = $output;
+                }
             }
         }
     }
@@ -160,20 +171,29 @@ function getTikTokCookies($url) {
 // ==================== LẤY DỮ LIỆU TỪ API APP (LINK TRỰC TIẾP KHÔNG CẦN COOKIE) ====================
 function getApi22Data($videoId) {
     if (empty($videoId)) return null;
-    $apiUrl = "https://api22-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id=" . $videoId . "&iid=7318518857994389254&device_id=7318517321748022790&channel=googleplay&app_name=musical_ly&version_code=300904&device_platform=android&device_type=ASUS_Z01QD&os_version=9";
-    $ch = curl_init($apiUrl);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'User-Agent: com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; ru_RU; Rootkit; Build/NJH47F; Cronet/TTNetVersion:b4d74d15 2020-04-23 QuicVersion:0144d138 2020-03-24)'
-    ]);
-    $res = curl_exec($ch);
-    curl_close($ch);
-    if ($res) {
-        $data = json_decode($res, true);
-        if (isset($data['aweme_list'][0])) {
-            return $data['aweme_list'][0];
+    
+    $domains = [
+        "api22-normal-c-useast1a.tiktokv.com",
+        "api22-normal-c-alisg.tiktokv.com",
+        "api16-normal-c-useast1a.tiktokv.com"
+    ];
+    
+    foreach ($domains as $domain) {
+        $apiUrl = "https://" . $domain . "/aweme/v1/feed/?aweme_id=" . $videoId . "&iid=7318518857994389254&device_id=7318517321748022790&channel=googleplay&app_name=musical_ly&version_code=300904&device_platform=android&device_type=ASUS_Z01QD&os_version=9";
+        $ch = curl_init($apiUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'User-Agent: com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; ru_RU; Rootkit; Build/NJH47F; Cronet/TTNetVersion:b4d74d15 2020-04-23 QuicVersion:0144d138 2020-03-24)'
+        ]);
+        $res = curl_exec($ch);
+        curl_close($ch);
+        if ($res) {
+            $data = json_decode($res, true);
+            if (isset($data['aweme_list'][0])) {
+                return $data['aweme_list'][0];
+            }
         }
     }
     return null;
@@ -210,6 +230,12 @@ $cookies = getTikTokCookies($tiktok_url);
 $apiData = getApi22Data($videoId);
 
 if (!$apiData) {
+    global $tikwm_fallback_data;
+    if (!empty($tikwm_fallback_data)) {
+        echo json_encode($tikwm_fallback_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    
     http_response_code(200);
     echo json_encode(['code' => -1, 'msg' => 'Không tìm thấy dữ liệu video qua API nội bộ', 'videoId' => $videoId], JSON_UNESCAPED_UNICODE);
     exit;
