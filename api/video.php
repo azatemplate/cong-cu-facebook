@@ -173,8 +173,8 @@ function getApi22Data($videoId) {
     if (empty($videoId)) return null;
     
     $domains = [
-        "api22-normal-c-useast1a.tiktokv.com",
         "api22-normal-c-alisg.tiktokv.com",
+        "api22-normal-c-useast1a.tiktokv.com",
         "api16-normal-c-useast1a.tiktokv.com"
     ];
     
@@ -182,7 +182,7 @@ function getApi22Data($videoId) {
         $apiUrl = "https://" . $domain . "/aweme/v1/feed/?aweme_id=" . $videoId . "&iid=7318518857994389254&device_id=7318517321748022790&channel=googleplay&app_name=musical_ly&version_code=300904&device_platform=android&device_type=ASUS_Z01QD&os_version=9";
         $ch = curl_init($apiUrl);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'User-Agent: com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; ru_RU; Rootkit; Build/NJH47F; Cronet/TTNetVersion:b4d74d15 2020-04-23 QuicVersion:0144d138 2020-03-24)'
