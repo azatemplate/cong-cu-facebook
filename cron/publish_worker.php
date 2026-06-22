@@ -236,13 +236,19 @@ function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?ar
                 $download_url = null;
                 $title = null;
                 $vid = null;
+                $hdAddr = $json['data']['video_data']['nwm_video_url_hd'] ?? null;
+                $fhdAddr = $json['data']['video_data']['nwm_video_url_fhd'] ?? null;
 
-                if (!empty($json['data']['play'])) {
+                if (!empty($fhdAddr)) {
+                    $download_url = $fhdAddr;
+                } elseif (!empty($hdAddr)) {
+                    $download_url = $hdAddr;
+                } elseif (!empty($json['data']['play'])) {
                     $download_url = $json['data']['play'];
-                } elseif (!empty($json['data']['video_data']['nwm_video_url'])) {
-                    $download_url = $json['data']['video_data']['nwm_video_url'];
                 } elseif (!empty($json['data']['video_data']['nwm_video_url_HQ'])) {
                     $download_url = $json['data']['video_data']['nwm_video_url_HQ'];
+                } elseif (!empty($json['data']['video_data']['nwm_video_url'])) {
+                    $download_url = $json['data']['video_data']['nwm_video_url'];
                 } elseif (!empty($json['data']['video']['play_addr']['url_list'][0])) {
                     $download_url = $json['data']['video']['play_addr']['url_list'][0];
                 } elseif (!empty($json['data']['url'])) {
@@ -318,10 +324,33 @@ function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?ar
         $apiData = getApi22Data($videoId);
         if ($apiData) {
             $video = $apiData['video'] ?? [];
-            $playAddr = $video['play_addr']['url_list'][0] ?? null;
+            $hdAddr = null;
+            $fhdAddr = null;
+            if (!empty($video['bit_rate']) && is_array($video['bit_rate'])) {
+                foreach ($video['bit_rate'] as $br) {
+                    if (!empty($br['gear_name']) && !empty($br['play_addr']['url_list'][0])) {
+                        $gear = strtolower($br['gear_name']);
+                        $url = $br['play_addr']['url_list'][0];
+                        if (strpos($gear, '1080') !== false) {
+                            $fhdAddr = $url;
+                        } elseif (strpos($gear, '720') !== false) {
+                            $hdAddr = $url;
+                        }
+                    }
+                }
+            }
+            
+            $playAddr = $fhdAddr;
+            if (empty($playAddr)) {
+                $playAddr = $hdAddr;
+            }
+            if (empty($playAddr)) {
+                $playAddr = $video['play_addr']['url_list'][0] ?? null;
+            }
             if (empty($playAddr)) {
                 $playAddr = $video['download_addr']['url_list'][0] ?? null;
             }
+            
             if (!empty($playAddr)) {
                 return [
                     'download_url' => $playAddr,

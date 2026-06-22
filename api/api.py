@@ -34,6 +34,27 @@ def extract_video_id(url: str) -> str:
         
     return ""
 
+def extract_high_quality_urls(video_info: dict) -> tuple:
+    """Extract HD (720p) and FHD (1080p) URLs from the video's bit_rate list."""
+    fhd_url = None
+    hd_url = None
+    
+    bit_rates = video_info.get("bit_rate", [])
+    if isinstance(bit_rates, list):
+        for item in bit_rates:
+            if not isinstance(item, dict):
+                continue
+            gear_name = str(item.get("gear_name", "")).lower()
+            play_addr = item.get("play_addr", {})
+            if play_addr and play_addr.get("url_list"):
+                url = play_addr["url_list"][0]
+                if "1080" in gear_name:
+                    fhd_url = url
+                elif "720" in gear_name:
+                    hd_url = url
+                    
+    return hd_url, fhd_url
+
 async def fetch_tiktok_data(video_id: str) -> dict:
     """Fetch video metadata from TikTok's SG API endpoint (fast and stable from Asia)."""
     # Use SG api22-normal-c-alisg domain (much faster than US domains for Asian VPS)
@@ -136,6 +157,9 @@ async def get_video_data(request: Request, url: str = Query(..., description="Ti
             if download_addr and download_addr.get("url_list"):
                 nwm_url = download_addr["url_list"][0]
                 
+        # Get HD and Full HD URLs
+        hd_url, fhd_url = extract_high_quality_urls(video_info)
+                
         # Get cover
         cover_url = ""
         cover_obj = video_info.get("cover", {})
@@ -167,7 +191,9 @@ async def get_video_data(request: Request, url: str = Query(..., description="Ti
             },
             "video_data": {
                 "nwm_video_url": nwm_url,
-                "nwm_video_url_HQ": nwm_url,
+                "nwm_video_url_HQ": fhd_url or hd_url or nwm_url,
+                "nwm_video_url_hd": hd_url,
+                "nwm_video_url_fhd": fhd_url,
                 "wm_video_url": nwm_url
             }
         }

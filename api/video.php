@@ -42,13 +42,19 @@ if (!empty($custom_api_url)) {
             $download_url = null;
             $title = null;
             $vid = null;
+            $hdAddr = $json['data']['video_data']['nwm_video_url_hd'] ?? null;
+            $fhdAddr = $json['data']['video_data']['nwm_video_url_fhd'] ?? null;
 
-            if (!empty($json['data']['play'])) {
+            if (!empty($fhdAddr)) {
+                $download_url = $fhdAddr;
+            } elseif (!empty($hdAddr)) {
+                $download_url = $hdAddr;
+            } elseif (!empty($json['data']['play'])) {
                 $download_url = $json['data']['play'];
-            } elseif (!empty($json['data']['video_data']['nwm_video_url'])) {
-                $download_url = $json['data']['video_data']['nwm_video_url'];
             } elseif (!empty($json['data']['video_data']['nwm_video_url_HQ'])) {
                 $download_url = $json['data']['video_data']['nwm_video_url_HQ'];
+            } elseif (!empty($json['data']['video_data']['nwm_video_url'])) {
+                $download_url = $json['data']['video_data']['nwm_video_url'];
             } elseif (!empty($json['data']['video']['play_addr']['url_list'][0])) {
                 $download_url = $json['data']['video']['play_addr']['url_list'][0];
             } elseif (!empty($json['data']['url'])) {
@@ -83,25 +89,27 @@ if (!empty($custom_api_url)) {
 
             if (!empty($download_url)) {
                 $videoFormatted = [
-                    'ad_authorization' => false,
-                    'anchor_types'     => [],
-                    'author'           => $json['data']['author']['unique_id'] ?? $json['data']['author']['nickname'] ?? 'tiktok_user',
-                    'author_followers' => 0,
-                    'author_id'        => (string)($json['data']['author']['id'] ?? ''),
-                    'category_type'    => 113,
-                    'comment_count'    => (int)($json['data']['statistics']['comment_count'] ?? $json['data']['comment_count'] ?? 0),
-                    'cover'            => $json['data']['cover'] ?? '',
-                    'create_time'      => (int)($json['data']['create_time'] ?? time()),
-                    'desc'             => $title,
-                    'digg_count'       => (int)($json['data']['statistics']['digg_count'] ?? $json['data']['digg_count'] ?? 0),
-                    'download_addr'    => $download_url,
-                    'duration_s'       => (int)($json['data']['duration'] ?? 0),
-                    'embed_url'        => 'https://www.tiktok.com/embed/v2/' . $vid,
-                    'has_shop'         => false,
-                    'hashtags'         => [],
-                    'id'               => (string)$vid,
-                    'play_count'       => (int)($json['data']['statistics']['play_count'] ?? $json['data']['play_count'] ?? 0),
-                    'share_count'      => (int)($json['data']['statistics']['share_count'] ?? $json['data']['share_count'] ?? 0)
+                    'ad_authorization'  => false,
+                    'anchor_types'      => [],
+                    'author'            => $json['data']['author']['unique_id'] ?? $json['data']['author']['nickname'] ?? 'tiktok_user',
+                    'author_followers'  => 0,
+                    'author_id'         => (string)($json['data']['author']['id'] ?? ''),
+                    'category_type'     => 113,
+                    'comment_count'     => (int)($json['data']['statistics']['comment_count'] ?? $json['data']['comment_count'] ?? 0),
+                    'cover'             => $json['data']['cover'] ?? '',
+                    'create_time'       => (int)($json['data']['create_time'] ?? time()),
+                    'desc'              => $title,
+                    'digg_count'        => (int)($json['data']['statistics']['digg_count'] ?? $json['data']['digg_count'] ?? 0),
+                    'download_addr'     => $download_url,
+                    'download_addr_hd'  => $hdAddr,
+                    'download_addr_fhd' => $fhdAddr,
+                    'duration_s'        => (int)($json['data']['duration'] ?? 0),
+                    'embed_url'         => 'https://www.tiktok.com/embed/v2/' . $vid,
+                    'has_shop'          => false,
+                    'hashtags'          => [],
+                    'id'                => (string)$vid,
+                    'play_count'        => (int)($json['data']['statistics']['play_count'] ?? $json['data']['play_count'] ?? 0),
+                    'share_count'       => (int)($json['data']['statistics']['share_count'] ?? $json['data']['share_count'] ?? 0)
                 ];
 
                 $output = [
@@ -220,8 +228,31 @@ foreach ($textExtra as $extra) {
     }
 }
 
-// Lấy link trực tiếp không cần cookie
-$playAddr = $video['play_addr']['url_list'][0] ?? null;
+// Lấy HD và Full HD URLs
+$hdAddr = null;
+$fhdAddr = null;
+if (!empty($video['bit_rate']) && is_array($video['bit_rate'])) {
+    foreach ($video['bit_rate'] as $br) {
+        if (!empty($br['gear_name']) && !empty($br['play_addr']['url_list'][0])) {
+            $gear = strtolower($br['gear_name']);
+            $url = $br['play_addr']['url_list'][0];
+            if (strpos($gear, '1080') !== false) {
+                $fhdAddr = $url;
+            } elseif (strpos($gear, '720') !== false) {
+                $hdAddr = $url;
+            }
+        }
+    }
+}
+
+// Lấy link trực tiếp không cần cookie, ưu tiên FHD > HD > play_addr
+$playAddr = $fhdAddr;
+if (empty($playAddr)) {
+    $playAddr = $hdAddr;
+}
+if (empty($playAddr)) {
+    $playAddr = $video['play_addr']['url_list'][0] ?? null;
+}
 if (empty($playAddr)) {
     $playAddr = $video['download_addr']['url_list'][0] ?? null;
 }
@@ -229,25 +260,27 @@ if (empty($playAddr)) {
 $duration = isset($video['duration']) ? (int)($video['duration'] / 1000) : 0;
 
 $videoFormatted = [
-    'ad_authorization' => $apiData['is_ads'] ?? false,
-    'anchor_types'     => [],
-    'author'           => $author['unique_id'] ?? '',
-    'author_followers' => 0,
-    'author_id'        => (string)($author['uid'] ?? ''),
-    'category_type'    => 113,
-    'comment_count'    => (int)($stats['comment_count'] ?? 0),
-    'cover'            => $video['cover']['url_list'][0] ?? '',
-    'create_time'      => (int)($apiData['create_time'] ?? 0),
-    'desc'             => $apiData['desc'] ?? '',
-    'digg_count'       => (int)($stats['digg_count'] ?? 0),
-    'download_addr'    => $playAddr,
-    'duration_s'       => $duration,
-    'embed_url'        => 'https://www.tiktok.com/embed/v2/' . $videoId,
-    'has_shop'         => !empty($apiData['is_ads']),
-    'hashtags'         => $hashtags,
-    'id'               => (string)$videoId,
-    'play_count'       => (int)($stats['play_count'] ?? 0),
-    'share_count'      => (int)($stats['share_count'] ?? 0)
+    'ad_authorization'  => $apiData['is_ads'] ?? false,
+    'anchor_types'      => [],
+    'author'            => $author['unique_id'] ?? '',
+    'author_followers'  => 0,
+    'author_id'         => (string)($author['uid'] ?? ''),
+    'category_type'     => 113,
+    'comment_count'     => (int)($stats['comment_count'] ?? 0),
+    'cover'             => $video['cover']['url_list'][0] ?? '',
+    'create_time'       => (int)($apiData['create_time'] ?? 0),
+    'desc'              => $apiData['desc'] ?? '',
+    'digg_count'        => (int)($stats['digg_count'] ?? 0),
+    'download_addr'     => $playAddr,
+    'download_addr_hd'  => $hdAddr,
+    'download_addr_fhd' => $fhdAddr,
+    'duration_s'        => $duration,
+    'embed_url'         => 'https://www.tiktok.com/embed/v2/' . $videoId,
+    'has_shop'          => !empty($apiData['is_ads']),
+    'hashtags'          => $hashtags,
+    'id'                => (string)$videoId,
+    'play_count'        => (int)($stats['play_count'] ?? 0),
+    'share_count'       => (int)($stats['share_count'] ?? 0)
 ];
 
 // Định dạng json đầu ra mong muốn như ảnh

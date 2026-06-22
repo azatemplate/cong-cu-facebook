@@ -58,5 +58,20 @@ if (!$data || ($data['code'] ?? 0) !== 200) {
     exit;
 }
 
+$region = trim($_GET['region'] ?? '');
+if ($region !== '' && !empty($data['videos']) && is_array($data['videos'])) {
+    $rList = array_map('strtoupper', array_filter(array_map('trim', explode(',', $region))));
+    if (!empty($rList)) {
+        $filtered = [];
+        foreach ($data['videos'] as $vid) {
+            $vidRegion = strtoupper(trim($vid['region'] ?? ''));
+            if (in_array($vidRegion, $rList)) {
+                $filtered[] = $vid;
+            }
+        }
+        $data['videos'] = $filtered;
+    }
+}
+
 echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 ?>

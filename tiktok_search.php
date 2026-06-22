@@ -600,6 +600,10 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="text" id="us-input" placeholder="Nhập username..." autocomplete="off">
             </div>
             <div class="search-field">
+                <label for="us-region">Vùng (Quốc gia)</label>
+                <input type="text" id="us-region" placeholder="Ví dụ: VN, US..." style="width:140px;">
+            </div>
+            <div class="search-field">
                 <label for="us-count">Số video <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 5000)</span></label>
                 <input type="number" id="us-count" value="10" min="1" max="5000" style="width:110px;">
             </div>
@@ -974,11 +978,12 @@ function doSearchUsername() {
     const username = document.getElementById('us-input').value.trim();
     if (!username) { alert('Vui lòng nhập username!'); return; }
     const needed = parseInt(document.getElementById('us-count').value) || 10;
+    const region = document.getElementById('us-region').value.trim().toUpperCase();
 
     allVideos = [];
     sortKey = null; sortDir = 'desc';
     resetResults();
-    pgState = { mode: 'username', username, cursor: 0, needed, fetchCount: 0, seenIds: new Set() };
+    pgState = { mode: 'username', username, cursor: 0, needed, region: region, fetchCount: 0, seenIds: new Set() };
     setLoading(true, '🔍 Đang tải video từ kênh ' + username + '...');
     fetchNextPage();
 }
@@ -1252,6 +1257,7 @@ function escHtml(str) {
 document.getElementById('kw-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearchKeyword(); });
 document.getElementById('ht-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearchHashtagKeyword(); });
 document.getElementById('us-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearchUsername(); });
+document.getElementById('us-region').addEventListener('keydown', e => { if (e.key === 'Enter') doSearchUsername(); });
 document.getElementById('co-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearchComments(); });
 </script>
 
