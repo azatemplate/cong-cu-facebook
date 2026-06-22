@@ -77,7 +77,8 @@ if (isset($_GET['ajax'])) {
     // ── Search by username ──────────────────────────────────────────────────────
     if ($ajax === 'username') {
         $username = trim($_GET['username'] ?? '');
-        $count    = max(1, min(5000, intval($_GET['count'] ?? 10)));
+        $count    = 33; // API returns up to 33 per request, JS will loop
+        $cursor   = max(0, intval($_GET['cursor'] ?? 0));
 
         if ($username === '') {
             echo json_encode(['status' => 'error', 'message' => 'Vui lòng nhập username kênh TikTok.']); exit;
@@ -96,6 +97,7 @@ if (isset($_GET['ajax'])) {
         $api_url = rtrim($tiktok_api_url, '/') . '/api/tiktok/user_videos?' . http_build_query([
             'username' => $username,
             'count'    => $count,
+            'cursor'   => $cursor,
         ]);
 
         ['raw' => $raw, 'err' => $err] = tiktok_curl($api_url);
@@ -130,8 +132,8 @@ if (isset($_GET['ajax'])) {
         echo json_encode([
             'status'  => 'success',
             'data'    => $formatted_videos,
-            'cursor'  => 0,
-            'hasMore' => false,
+            'cursor'  => $data['cursor'] ?? 0,
+            'hasMore' => !empty($data['has_more']),
         ]);
         exit;
     }
@@ -766,7 +768,7 @@ function fetchNextPage() {
     if (s.mode === 'keyword') {
         url = `tiktok_search.php?ajax=keyword&keyword=${encodeURIComponent(s.keyword)}&cursor=${s.cursor}`;
     } else if (s.mode === 'username') {
-        url = `tiktok_search.php?ajax=username&username=${encodeURIComponent(s.username)}&count=${s.needed}`;
+        url = `tiktok_search.php?ajax=username&username=${encodeURIComponent(s.username)}&cursor=${s.cursor}`;
     } else {
         url = `tiktok_search.php?ajax=hashtag&challenge_id=${encodeURIComponent(s.challengeId)}&cursor=${s.cursor}`;
     }

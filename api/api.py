@@ -363,14 +363,11 @@ async def fetch_sec_uid_from_username(username: str) -> str:
         
     return ""
 
-async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id: str = "") -> list:
-    """Fetch all posts/videos of a TikTok user with pagination."""
+async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 33, unique_id: str = "", cursor: int = 0) -> dict:
+    """Fetch one page of posts/videos of a TikTok user with pagination cursor."""
     videos = []
-    cursor = 0
-    page_size = 33
-    has_more = True
-    loop_limit = 50  # Maximum 50 requests (approx. 1600 videos) to prevent IP throttling
-    loop_count = 0
+    has_more = False
+    next_cursor = 0
     
     if unique_id:
         unique_id = unique_id.lstrip("@").strip()
@@ -380,126 +377,48 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
         "Referer": "https://www.tiktok.com/"
     }
     
-    while has_more and loop_count < loop_limit:
-        if max_count > 0 and len(videos) >= max_count:
-            break
-            
-        fetch_size = page_size
-        if max_count > 0:
-            fetch_size = min(page_size, max_count - len(videos))
-            
-        api_url = (
-            f"https://api22-normal-c-alisg.tiktokv.com/aweme/v1/aweme/post/?"
-            f"sec_user_id={sec_uid}&"
-            f"cursor={cursor}&"
-            f"count={fetch_size}&"
-            f"device_type=SM-ASUS_Z01QD&"
-            f"device_platform=android&"
-            f"iid=7318518857994389254&"
-            f"device_id=7318517321748022790&"
-            f"version_code=300904&"
-            f"app_name=musical_ly"
-        )
-        
-        try:
-            async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
-                response = await client.get(api_url, headers=headers)
-                if response.status_code != 200:
-                    print(f"Alisg posts responded with status {response.status_code}")
-                    break
+    # Try official Alisg API first
+    api_url = (
+        f"https://api22-normal-c-alisg.tiktokv.com/aweme/v1/aweme/post/?"
+        f"sec_user_id={sec_uid}&"
+        f"cursor={cursor}&"
+        f"count={max_count}&"
+        f"device_type=SM-ASUS_Z01QD&"
+        f"device_platform=android&"
+        f"iid=7318518857994389254&"
+        f"device_id=7318517321748022790&"
+        f"version_code=300904&"
+        f"app_name=musical_ly"
+    )
+    
+    try:
+        async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
+            response = await client.get(api_url, headers=headers)
+            if response.status_code == 200:
                 data = response.json()
-                
                 aweme_list = data.get("aweme_list", [])
-                if not aweme_list:
-                    break
-                    
-                for item in aweme_list:
-                    video_id = item.get("aweme_id", "")
-                    desc = item.get("desc", "")
-                    create_time = item.get("create_time", 0)
-                    
-                    video_info = item.get("video", {})
-                    cover_url = video_info.get("cover", {}).get("url_list", [""])[0]
-                    
-                    nwm_url = None
-                    play_addr = video_info.get("play_addr", {})
-                    if play_addr and play_addr.get("url_list"):
-                        nwm_url = play_addr["url_list"][0]
-                    if not nwm_url:
-                        download_addr = video_info.get("download_addr", {})
-                        if download_addr and download_addr.get("url_list"):
-                            nwm_url = download_addr["url_list"][0]
-                            
-                    stats = item.get("statistics", {})
-                    region = item.get("region", "VN")
-                    duration = int(video_info.get("duration", 0) / 1000)
-                    
-                    videos.append({
-                        "video_id": video_id,
-                        "desc": desc,
-                        "create_time": create_time,
-                        "cover": cover_url,
-                        "nwm_video_url": nwm_url,
-                        "region": region,
-                        "duration": duration,
-                        "statistics": {
-                            "comment_count": stats.get("comment_count", 0),
-                            "digg_count": stats.get("digg_count", 0),
-                            "play_count": stats.get("play_count", 0),
-                            "share_count": stats.get("share_count", 0)
-                        }
-                    })
-                    
-                has_more = data.get("has_more", 0) == 1
-                cursor = data.get("max_cursor", 0)
-                
-                if cursor == 0 or not has_more:
-                    break
-                    
-        except Exception as e:
-            print(f"Error fetching user videos from Alisg: {e}")
-            break
-            
-        loop_count += 1
-        
-    if not videos:
-        # Fallback to TikWM API if the official API is empty (due to protection blocks)
-        cursor = 0
-        has_more = True
-        loop_limit = 50
-        loop_count = 0
-        while has_more and loop_count < loop_limit:
-            if max_count > 0 and len(videos) >= max_count:
-                break
-            fetch_size = page_size
-            if max_count > 0:
-                fetch_size = min(page_size, max_count - len(videos))
-            
-            if unique_id:
-                tikwm_url = f"https://www.tikwm.com/api/user/posts?unique_id={unique_id}&count={fetch_size}&cursor={cursor}"
-            else:
-                tikwm_url = f"https://www.tikwm.com/api/user/posts?sec_user_id={sec_uid}&count={fetch_size}&cursor={cursor}"
-            try:
-                async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
-                    response = await client.get(tikwm_url)
-                    if response.status_code != 200:
-                        print(f"TikWM user/posts responded with status {response.status_code}")
-                        break
-                    data = response.json()
-                    if data.get("code") != 0 or not data.get("data"):
-                        break
-                    data_obj = data["data"]
-                    videos_list = data_obj.get("videos", [])
-                    if not videos_list:
-                        break
-                    for item in videos_list:
-                        video_id = item.get("video_id", "")
-                        desc = item.get("title", "")
+                if aweme_list:
+                    for item in aweme_list:
+                        video_id = item.get("aweme_id", "")
+                        desc = item.get("desc", "")
                         create_time = item.get("create_time", 0)
-                        cover_url = item.get("cover", "")
-                        nwm_url = item.get("play", "")
+                        
+                        video_info = item.get("video", {})
+                        cover_url = video_info.get("cover", {}).get("url_list", [""])[0]
+                        
+                        nwm_url = None
+                        play_addr = video_info.get("play_addr", {})
+                        if play_addr and play_addr.get("url_list"):
+                            nwm_url = play_addr["url_list"][0]
+                        if not nwm_url:
+                            download_addr = video_info.get("download_addr", {})
+                            if download_addr and download_addr.get("url_list"):
+                                nwm_url = download_addr["url_list"][0]
+                                
+                        stats = item.get("statistics", {})
                         region = item.get("region", "VN")
-                        duration = int(item.get("duration", 0))
+                        duration = int(video_info.get("duration", 0) / 1000)
+                        
                         videos.append({
                             "video_id": video_id,
                             "desc": desc,
@@ -509,23 +428,64 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
                             "region": region,
                             "duration": duration,
                             "statistics": {
-                                "comment_count": item.get("comment_count", 0),
-                                "digg_count": item.get("digg_count", 0),
-                                "play_count": item.get("play_count", 0),
-                                "share_count": item.get("share_count", 0)
-                            },
-                            "is_fallback": True
+                                "comment_count": stats.get("comment_count", 0),
+                                "digg_count": stats.get("digg_count", 0),
+                                "play_count": stats.get("play_count", 0),
+                                "share_count": stats.get("share_count", 0)
+                            }
                         })
-                    has_more = data_obj.get("hasMore", data_obj.get("has_more", False))
-                    cursor = data_obj.get("cursor", 0)
-                    if cursor == 0 or not has_more:
-                        break
-            except Exception as e:
-                print(f"Error fetching user videos from TikWM: {e}")
-                break
-            loop_count += 1
-
-    return videos[:max_count] if max_count > 0 else videos
+                    has_more = data.get("has_more", 0) == 1
+                    next_cursor = data.get("max_cursor", 0)
+                    return {"videos": videos, "cursor": next_cursor, "has_more": has_more}
+    except Exception as e:
+        print(f"Error fetching user videos from Alisg: {e}")
+        
+    # Fallback to TikWM API
+    if unique_id:
+        tikwm_url = f"https://www.tikwm.com/api/user/posts?unique_id={unique_id}&count={max_count}&cursor={cursor}"
+    else:
+        tikwm_url = f"https://www.tikwm.com/api/user/posts?sec_user_id={sec_uid}&count={max_count}&cursor={cursor}"
+        
+    try:
+        async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
+            response = await client.get(tikwm_url)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("code") == 0 and data.get("data"):
+                    data_obj = data["data"]
+                    videos_list = data_obj.get("videos", [])
+                    if videos_list:
+                        for item in videos_list:
+                            video_id = item.get("video_id", "")
+                            desc = item.get("title", "")
+                            create_time = item.get("create_time", 0)
+                            cover_url = item.get("cover", "")
+                            nwm_url = item.get("play", "")
+                            region = item.get("region", "VN")
+                            duration = int(item.get("duration", 0))
+                            videos.append({
+                                "video_id": video_id,
+                                "desc": desc,
+                                "create_time": create_time,
+                                "cover": cover_url,
+                                "nwm_video_url": nwm_url,
+                                "region": region,
+                                "duration": duration,
+                                "statistics": {
+                                    "comment_count": item.get("comment_count", 0),
+                                    "digg_count": item.get("digg_count", 0),
+                                    "play_count": item.get("play_count", 0),
+                                    "share_count": item.get("share_count", 0)
+                                },
+                                "is_fallback": True
+                            })
+                        has_more = data_obj.get("hasMore", data_obj.get("has_more", False))
+                        next_cursor = data_obj.get("cursor", 0)
+                        return {"videos": videos, "cursor": next_cursor, "has_more": has_more}
+    except Exception as e:
+        print(f"Error fetching user videos from TikWM: {e}")
+        
+    return {"videos": [], "cursor": 0, "has_more": False}
 
 @app.get("/api/tiktok/comments")
 async def get_comments(
@@ -561,14 +521,9 @@ async def get_comments(
 async def get_user_videos(
     username: str = Query(None, description="TikTok Username (e.g., @copphavietcom)"),
     sec_uid: str = Query(None, description="TikTok sec_user_id"),
-    count: str = Query("50", description="Number of videos to fetch. Use 'all' or '0' to fetch all.")
+    count: int = Query(33, description="Number of videos to fetch per page."),
+    cursor: int = Query(0, description="Pagination cursor.")
 ):
-    max_count = 50
-    if count.lower() == "all" or count == "0":
-        max_count = 0
-    elif count.isdigit():
-        max_count = int(count)
-        
     target_sec_uid = sec_uid
     parsed_username = ""
     if username:
@@ -584,12 +539,13 @@ async def get_user_videos(
     if not target_sec_uid:
         raise HTTPException(status_code=400, detail="Could not resolve sec_user_id for this user")
         
-    videos_data = await fetch_tiktok_user_videos(target_sec_uid, max_count, parsed_username)
+    result = await fetch_tiktok_user_videos(target_sec_uid, count, parsed_username, cursor)
     return {
         "code": 200,
         "sec_user_id": target_sec_uid,
-        "total_fetched": len(videos_data),
-        "videos": videos_data
+        "cursor": result["cursor"],
+        "has_more": result["has_more"],
+        "videos": result["videos"]
     }
 
 if __name__ == "__main__":
