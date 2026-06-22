@@ -50,7 +50,7 @@ $argc = 3;
 // Let's change the post status back to 'pending' so publish_worker.php fetches it, 
 // and we will run publish_worker.php by passing its page_id as parameter!
 
-$pdo->prepare("UPDATE scheduled_posts SET status = 'pending', error_msg = NULL, retry_count = 0 WHERE id = ?")->execute([$post['id']]);
+$pdo->prepare("UPDATE scheduled_posts SET status = 'pending', error_msg = NULL, retry_count = 0, scheduled_time = NOW() WHERE id = ?")->execute([$post['id']]);
 
 echo "Executing publish_worker.php for Page ID: {$post['page_id']}...\n";
 echo "--------------------------------------------------\n";
