@@ -33,8 +33,9 @@ if (!empty($custom_api_url)) {
 
     $ch = curl_init($api_target);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     $resp = curl_exec($ch);
     curl_close($ch);
 
@@ -128,14 +129,9 @@ if (!empty($custom_api_url)) {
                     'cookies'    => ''
                 ];
 
-                // Nếu source lấy được không phải tikwm, ta trả về ngay.
-                // Nếu là tikwm, ta lưu lại làm dự phòng và tiếp tục thử API chính thức trực tiếp từ PHP.
-                if ($extractor_source !== 'tikwm') {
-                    echo json_encode($output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-                    exit;
-                } else {
-                    $tikwm_fallback_data = $output;
-                }
+                // Trả về kết quả ngay lập tức (kể cả tikwm) để tránh gọi lại API chính thức gây treo hoặc rate limit chéo
+                echo json_encode($output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                exit;
             }
         }
     }
@@ -143,13 +139,16 @@ if (!empty($custom_api_url)) {
 
 // ==================== LẤY COOKIES TỪ WEB ====================
 function getTikTokCookies($url) {
+    return ''; // Bỏ qua cURL lấy cookie để tăng tốc độ tối đa (API chính thức & TikWM không dùng cookie)
+    
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HEADER, true);
     curl_setopt($ch, CURLOPT_NOBODY, true); // Chỉ lấy Header cho nhanh, không tải nguyên trang HTML nữa
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 3);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
         'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -243,7 +242,7 @@ if (!$apiData) {
     $tikwm_url = 'https://www.tikwm.com/api/?url=' . urlencode($tiktok_url);
     $ch = curl_init($tikwm_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 25);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 7);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [

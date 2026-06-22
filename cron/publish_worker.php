@@ -236,8 +236,9 @@ function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?ar
 
         $ch = curl_init($api_target);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         $resp = curl_exec($ch);
         curl_close($ch);
 
@@ -299,12 +300,8 @@ function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?ar
                         'video_id'     => $vid,
                     ];
                     
-                    $source = $json['data']['source'] ?? 'custom_api';
-                    if ($source !== 'tikwm') {
-                        return $res_data;
-                    } else {
-                        $tikwm_fallback_data = $res_data;
-                    }
+                    // Trả về kết quả ngay lập tức (kể cả tikwm) để tránh gọi lại API chính thức gây treo hoặc rate limit chéo
+                    return $res_data;
                 }
             }
         }
@@ -390,8 +387,9 @@ function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?ar
     $tikwm_url = 'https://www.tikwm.com/api/?url=' . urlencode($tiktok_url);
     $ch = curl_init($tikwm_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 25);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 7);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
         'Referer: https://tikwm.com/',
@@ -607,6 +605,7 @@ foreach ($pending_posts as $post) {
         $ch = curl_init('https://oauth2.googleapis.com/token');
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
             'client_id' => $client_id,
             'client_secret' => $client_secret,
@@ -781,10 +780,10 @@ foreach ($pending_posts as $post) {
         // --- RESUMABLE UPLOAD PROCESS ---
         $file_size = filesize($abs_media_path);
 
-        // 1. Khởi tạo Upload
         $ch_init = curl_init('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status');
         curl_setopt($ch_init, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch_init, CURLOPT_POST, true);
+        curl_setopt($ch_init, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         curl_setopt($ch_init, CURLOPT_POSTFIELDS, json_encode($metadata));
         curl_setopt($ch_init, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer $access_token",
@@ -831,6 +830,7 @@ foreach ($pending_posts as $post) {
         curl_setopt($ch_upload, CURLOPT_PUT, true);
         curl_setopt($ch_upload, CURLOPT_INFILE, $file_handle);
         curl_setopt($ch_upload, CURLOPT_INFILESIZE, $file_size);
+        curl_setopt($ch_upload, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         curl_setopt($ch_upload, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer $access_token",
             "Content-Type: video/*"
