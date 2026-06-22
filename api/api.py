@@ -363,7 +363,7 @@ async def fetch_sec_uid_from_username(username: str) -> str:
         
     return ""
 
-async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 33, unique_id: str = "", cursor: int = 0) -> dict:
+async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 33, unique_id: str = "", cursor: str = "0") -> dict:
     """Fetch one page of posts/videos of a TikTok user with pagination cursor."""
     videos = []
     has_more = False
@@ -522,7 +522,7 @@ async def get_user_videos(
     username: str = Query(None, description="TikTok Username (e.g., @copphavietcom)"),
     sec_uid: str = Query(None, description="TikTok sec_user_id"),
     count: int = Query(33, description="Number of videos to fetch per page."),
-    cursor: int = Query(0, description="Pagination cursor.")
+    cursor: str = Query("0", description="Pagination cursor.")
 ):
     target_sec_uid = sec_uid
     parsed_username = ""

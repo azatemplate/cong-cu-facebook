@@ -78,7 +78,7 @@ if (isset($_GET['ajax'])) {
     if ($ajax === 'username') {
         $username = trim($_GET['username'] ?? '');
         $count    = 33; // API returns up to 33 per request, JS will loop
-        $cursor   = max(0, intval($_GET['cursor'] ?? 0));
+        $cursor   = trim($_GET['cursor'] ?? '0');
 
         if ($username === '') {
             echo json_encode(['status' => 'error', 'message' => 'Vui lòng nhập username kênh TikTok.']); exit;
