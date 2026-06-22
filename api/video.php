@@ -255,6 +255,26 @@ if (!$apiData) {
     curl_close($ch);
 
     $data = json_decode($resp, true);
+    
+    // Tự động thử lại TikWM nếu bị rate limit 1 request/second
+    if ($data && isset($data['code']) && $data['code'] === -1 && strpos(strtolower($data['msg'] ?? ''), 'limit') !== false) {
+        usleep(1500000); // Ngủ 1.5 giây
+        $ch = curl_init($tikwm_url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 7);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+            'Referer: https://tikwm.com/',
+            'Origin: https://tikwm.com',
+            'Accept: application/json, text/plain, */*'
+        ]);
+        $resp = curl_exec($ch);
+        curl_close($ch);
+        $data = json_decode($resp, true);
+    }
+
     if ($data && isset($data['code']) && $data['code'] === 0 && isset($data['data'])) {
         $d = $data['data'];
         if (!empty($d['play'])) {

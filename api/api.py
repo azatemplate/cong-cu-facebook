@@ -103,37 +103,45 @@ async def fetch_tiktok_data(video_id: str) -> dict:
     print(f"All Custom API domains failed. Falling back to TikWM. Last error: {last_err}")
     fallback_url = f"https://www.tikwm.com/api/?url=https://www.tiktok.com/video/{video_id}"
     try:
-        async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
-            fb_resp = await client.get(fallback_url)
-            if fb_resp.status_code == 200:
-                fb_json = fb_resp.json()
-                fb_data = fb_json.get("data")
-                if fb_json.get("code") == 0 and fb_data:
-                    # Map TikWM response structure to match expected aweme details
-                    return {
-                        "is_fallback": True,
-                        "desc": fb_data.get("title", ""),
-                        "create_time": fb_data.get("create_time", 0),
-                        "author": {
-                            "unique_id": fb_data.get("author", {}).get("unique_id", ""),
-                            "nickname": fb_data.get("author", {}).get("nickname", ""),
-                            "uid": str(fb_data.get("author", {}).get("id", ""))
-                        },
-                        "statistics": {
-                            "comment_count": fb_data.get("comment_count", 0),
-                            "digg_count": fb_data.get("digg_count", 0),
-                            "play_count": fb_data.get("play_count", 0),
-                            "share_count": fb_data.get("share_count", 0)
-                        },
-                        "video": {
-                            "cover": {
-                                "url_list": [fb_data.get("cover", "")]
+        import asyncio
+        for attempt in range(2):
+            async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+                fb_resp = await client.get(fallback_url)
+                if fb_resp.status_code == 200:
+                    fb_json = fb_resp.json()
+                    fb_code = fb_json.get("code")
+                    fb_data = fb_json.get("data")
+                    if fb_code == 0 and fb_data:
+                        # Map TikWM response structure to match expected aweme details
+                        return {
+                            "is_fallback": True,
+                            "desc": fb_data.get("title", ""),
+                            "create_time": fb_data.get("create_time", 0),
+                            "author": {
+                                "unique_id": fb_data.get("author", {}).get("unique_id", ""),
+                                "nickname": fb_data.get("author", {}).get("nickname", ""),
+                                "uid": str(fb_data.get("author", {}).get("id", ""))
                             },
-                            "play_addr": {
-                                "url_list": [fb_data.get("play", "")]
+                            "statistics": {
+                                "comment_count": fb_data.get("comment_count", 0),
+                                "digg_count": fb_data.get("digg_count", 0),
+                                "play_count": fb_data.get("play_count", 0),
+                                "share_count": fb_data.get("share_count", 0)
+                            },
+                            "video": {
+                                "cover": {
+                                    "url_list": [fb_data.get("cover", "")]
+                                },
+                                "play_addr": {
+                                    "url_list": [fb_data.get("play", "")]
+                                }
                             }
                         }
-                    }
+                    elif fb_code == -1 and "request/second" in str(fb_json.get("msg", "")):
+                        print(f"TikWM rate limited (Attempt {attempt+1}/2). Sleeping 1.5s...")
+                        await asyncio.sleep(1.5)
+                        continue
+            break
     except Exception as fb_err:
         print(f"TikWM fallback error: {fb_err}")
         pass
