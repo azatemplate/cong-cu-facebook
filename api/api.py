@@ -299,7 +299,7 @@ async def fetch_tiktok_comments(video_id: str, max_count: int = 50) -> list:
                             },
                             "is_fallback": True
                         })
-                    has_more = data_obj.get("has_more", False)
+                    has_more = data_obj.get("hasMore", data_obj.get("has_more", False))
                     cursor = data_obj.get("cursor", 0)
                     if cursor == 0 or not has_more:
                         break
@@ -516,7 +516,7 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
                             },
                             "is_fallback": True
                         })
-                    has_more = data_obj.get("has_more", False)
+                    has_more = data_obj.get("hasMore", data_obj.get("has_more", False))
                     cursor = data_obj.get("cursor", 0)
                     if cursor == 0 or not has_more:
                         break
