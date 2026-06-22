@@ -138,6 +138,47 @@ if (isset($_GET['ajax'])) {
         exit;
     }
 
+    // ── Get comments of a video ────────────────────────────────────────────────
+    if ($ajax === 'comments') {
+        $url   = trim($_GET['url'] ?? '');
+        $count = max(1, min(2000, intval($_GET['count'] ?? 100)));
+
+        if ($url === '') {
+            echo json_encode(['status' => 'error', 'message' => 'Vui lòng nhập URL hoặc ID video TikTok.']); exit;
+        }
+
+        // Get TikTok API URL
+        $tiktok_api_url = 'http://127.0.0.1:8000';
+        $ss_stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'tiktok_api_url'");
+        if ($ss_stmt) {
+            $db_url = trim($ss_stmt->fetchColumn() ?: '');
+            if ($db_url !== '') {
+                $tiktok_api_url = $db_url;
+            }
+        }
+
+        $api_url = rtrim($tiktok_api_url, '/') . '/api/tiktok/comments?' . http_build_query([
+            'url'   => $url,
+            'count' => $count,
+        ]);
+
+        ['raw' => $raw, 'err' => $err] = tiktok_curl($api_url);
+        if ($err) { echo json_encode(['status' => 'error', 'message' => 'Lỗi cURL: ' . $err]); exit; }
+
+        $data = json_decode($raw, true);
+        if (!$data || ($data['code'] ?? 0) !== 200) {
+            echo json_encode(['status' => 'error', 'message' => $data['detail'] ?? ($data['msg'] ?? 'Không thể tải bình luận của video này.')]); exit;
+        }
+
+        echo json_encode([
+            'status'  => 'success',
+            'data'    => $data['comments'] ?? [],
+            'cursor'  => 0,
+            'hasMore' => false,
+        ]);
+        exit;
+    }
+
     // ── Search hashtags by keyword — mirrors getHashTagBYKeyword() ───────────────
     // path: api/challenge/search | returns challenge_list [{id, cha_name, user_count, view_count}]
     if ($ajax === 'hashtag_search') {
@@ -484,6 +525,7 @@ require_once __DIR__ . '/includes/header.php';
     <button class="mode-tab active" id="tab-keyword" onclick="switchMode('keyword')">🔍 Tìm theo Từ khóa</button>
     <button class="mode-tab" id="tab-hashtag" onclick="switchMode('hashtag')">🏷️ Tìm theo Hashtag</button>
     <button class="mode-tab" id="tab-username" onclick="switchMode('username')">👤 Tìm theo Username</button>
+    <button class="mode-tab" id="tab-comments" onclick="switchMode('comments')">💬 Quét Bình luận</button>
 </div>
 
 <!-- Search Card: KEYWORD -->
@@ -568,6 +610,27 @@ require_once __DIR__ . '/includes/header.php';
     </form>
 </div>
 
+<!-- Search Card: COMMENTS -->
+<div class="search-form-card" id="form-comments" style="display:none;">
+    <form onsubmit="return false;">
+        <div class="search-row">
+            <div class="search-field grow">
+                <label for="co-input">URL hoặc ID video TikTok</label>
+                <input type="text" id="co-input" placeholder="Nhập URL video (ví dụ: https://www.tiktok.com/.../video/...) hoặc ID video..." autocomplete="off">
+            </div>
+            <div class="search-field">
+                <label for="co-count">Số bình luận <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 2000)</span></label>
+                <input type="number" id="co-count" value="100" min="1" max="2000" style="width:110px;">
+            </div>
+            <div style="display:flex; align-items:flex-end;">
+                <button class="btn-search" id="btn-search-co" onclick="doSearchComments()">
+                    <span>🔍</span> Quét bình luận
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
 <!-- Column Filter Chips -->
 <div class="col-filter-wrap" id="col-filter-wrap" style="display:none;">
     <div class="col-filter-label">🎛 Hiển thị cột</div>
@@ -628,7 +691,17 @@ let allVideos  = [];
 let sortKey    = null;
 let sortDir    = 'desc';
 let colVisible = {};
-let currentMode = 'keyword'; // 'keyword' | 'hashtag' | 'username'
+let currentMode = 'keyword'; // 'keyword' | 'hashtag' | 'username' | 'comments'
+
+const COMMENT_COLUMNS = [
+    { key: 'checkbox',      label: '☑',            sortable: false, visible: true,  special: 'checkbox' },
+    { key: 'avatar',        label: 'Avatar',       sortable: false, visible: true  },
+    { key: 'author',        label: 'Người dùng',   sortable: true,  visible: true  },
+    { key: 'text',          label: 'Nội dung bình luận', sortable: false, visible: true  },
+    { key: 'digg_count',    label: '❤ Thích',      sortable: true,  visible: true  },
+    { key: 'reply_count',   label: '💬 Phản hồi',  sortable: true,  visible: true  },
+    { key: 'create_time',   label: '📅 Ngày',      sortable: true,  visible: true  },
+];
 
 COLUMNS.forEach(c => { colVisible[c.key] = c.visible; });
 
@@ -639,16 +712,57 @@ function switchMode(mode) {
     document.getElementById('form-keyword').style.display = mode === 'keyword' ? 'block' : 'none';
     document.getElementById('form-hashtag').style.display = mode === 'hashtag' ? 'block' : 'none';
     document.getElementById('form-username').style.display = mode === 'username' ? 'block' : 'none';
+    document.getElementById('form-comments').style.display = mode === 'comments' ? 'block' : 'none';
 
     const tabKw = document.getElementById('tab-keyword');
     const tabHt = document.getElementById('tab-hashtag');
     const tabUs = document.getElementById('tab-username');
+    const tabCo = document.getElementById('tab-comments');
+    
     tabKw.className = 'mode-tab' + (mode === 'keyword' ? ' active' : '');
     tabHt.className = 'mode-tab' + (mode === 'hashtag' ? ' active-ht' : '');
     tabUs.className = 'mode-tab' + (mode === 'username' ? ' active' : '');
+    tabCo.className = 'mode-tab' + (mode === 'comments' ? ' active' : '');
 
     // Reset results
     resetResults();
+}
+
+function doSearchComments() {
+    const url = document.getElementById('co-input').value.trim();
+    if (!url) { alert('Vui lòng nhập URL hoặc ID video TikTok!'); return; }
+    const needed = parseInt(document.getElementById('co-count').value) || 100;
+
+    allVideos = [];
+    sortKey = null; sortDir = 'desc';
+    resetResults();
+    pgState = { mode: 'comments', url, needed, fetchCount: 0 };
+    setLoading(true, '💬 Đang quét bình luận video...');
+    
+    fetch(`tiktok_search.php?ajax=comments&url=${encodeURIComponent(url)}&count=${needed}`)
+        .then(r => r.json())
+        .then(res => {
+            setLoading(false);
+            if (res.status !== 'success') { showError('❌ ' + res.message); return; }
+            
+            allVideos = res.data || [];
+            if (allVideos.length === 0) {
+                document.getElementById('empty-state').style.display = 'block';
+                return;
+            }
+
+            document.getElementById('col-filter-wrap').style.display = 'none';
+            document.getElementById('results-section').style.display = 'block';
+            
+            const infoEl = document.getElementById('result-count');
+            infoEl.innerHTML = `Tìm thấy <strong>${allVideos.length}</strong> bình luận của video.`;
+            
+            renderTable();
+        })
+        .catch(e => {
+            setLoading(false);
+            showError('❌ Lỗi kết nối: ' + e.message);
+        });
 }
 
 function resetResults() {
@@ -930,18 +1044,32 @@ function buildChips() {
 function buildHeader() {
     const thead = document.getElementById('table-head');
     let html = '<tr>';
-    COLUMNS.forEach(col => {
-        if (!colVisible[col.key]) return;
-        if (col.special === 'checkbox') {
-            html += `<th class="col-checkbox">
-                <label class="check-all-wrap" title="Chọn tất cả">
-                    <input type="checkbox" id="check-all" onchange="toggleAll(this.checked)">
-                </label></th>`;
-        } else {
-            const cls = col.sortable ? (sortKey === col.key ? (sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '') : '';
-            html += `<th class="${cls}" onclick="${col.sortable ? `doSort('${col.key}')` : ''}">${col.label}</th>`;
-        }
-    });
+    if (currentMode === 'comments') {
+        COMMENT_COLUMNS.forEach(col => {
+            if (col.special === 'checkbox') {
+                html += `<th class="col-checkbox">
+                    <label class="check-all-wrap" title="Chọn tất cả">
+                        <input type="checkbox" id="check-all" onchange="toggleAll(this.checked)">
+                    </label></th>`;
+            } else {
+                const cls = col.sortable ? (sortKey === col.key ? (sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '') : '';
+                html += `<th class="${cls}" onclick="${col.sortable ? `doSort('${col.key}')` : ''}">${col.label}</th>`;
+            }
+        });
+    } else {
+        COLUMNS.forEach(col => {
+            if (!colVisible[col.key]) return;
+            if (col.special === 'checkbox') {
+                html += `<th class="col-checkbox">
+                    <label class="check-all-wrap" title="Chọn tất cả">
+                        <input type="checkbox" id="check-all" onchange="toggleAll(this.checked)">
+                    </label></th>`;
+            } else {
+                const cls = col.sortable ? (sortKey === col.key ? (sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '') : '';
+                html += `<th class="${cls}" onclick="${col.sortable ? `doSort('${col.key}')` : ''}">${col.label}</th>`;
+            }
+        });
+    }
     html += '</tr>';
     thead.innerHTML = html;
 }
@@ -954,7 +1082,12 @@ function renderTable() {
     if (sortKey) {
         videos.sort((a, b) => {
             let va = a[sortKey], vb = b[sortKey];
-            if (sortKey === 'author') { va = a.author?.nickname || a.author?.unique_id || ''; vb = b.author?.nickname || b.author?.unique_id || ''; }
+            if (currentMode === 'comments') {
+                if (sortKey === 'author') { va = a.author?.nickname || a.author?.unique_id || ''; vb = b.author?.nickname || b.author?.unique_id || ''; }
+                if (sortKey === 'reply_count') { va = a.reply_comment_total || 0; vb = b.reply_comment_total || 0; }
+            } else {
+                if (sortKey === 'author') { va = a.author?.nickname || a.author?.unique_id || ''; vb = b.author?.nickname || b.author?.unique_id || ''; }
+            }
             if (typeof va === 'string') return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
             return sortDir === 'asc' ? va - vb : vb - va;
         });
@@ -968,51 +1101,82 @@ function renderTable() {
 
     let html = '';
     videos.forEach((v, idx) => {
-        const videoId    = v.video_id || '';
-        const authorId   = v.author?.unique_id || 'user';
-        const tiktokUrl  = videoId ? `https://www.tiktok.com/@${authorId}/video/${videoId}` : '';
-        const title      = (v.title || '').trim() || '(Không có tiêu đề)';
-        const authorName = v.author?.nickname || v.author?.unique_id || '—';
-        const dateStr    = v.create_time ? new Date(v.create_time * 1000).toLocaleDateString('vi-VN') : '—';
+        if (currentMode === 'comments') {
+            const authorId   = v.author?.unique_id || 'user';
+            const authorName = v.author?.nickname || v.author?.unique_id || '—';
+            const text       = v.text || '';
+            const avatar     = v.author?.avatar || '';
+            const dateStr    = v.create_time ? new Date(v.create_time * 1000).toLocaleDateString('vi-VN') : '—';
+            
+            html += `<tr data-idx="${idx}">`;
+            COMMENT_COLUMNS.forEach(col => {
+                if (col.special === 'checkbox') {
+                    html += `<td class="col-checkbox"><input type="checkbox" class="row-check" data-text="${escHtml(text)}" onchange="updateSelectedCount()"></td>`;
+                } else if (col.key === 'avatar') {
+                    html += `<td>${avatar ? `<img src="${escHtml(avatar)}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" onerror="this.src='assets/img/avatar.png'">` : '—'}</td>`;
+                } else if (col.key === 'author') {
+                    html += `<td><strong>${escHtml(authorName)}</strong><br><small style="color:var(--text-muted);">@${escHtml(authorId)}</small></td>`;
+                } else if (col.key === 'text') {
+                    html += `<td style="max-width:350px;white-space:normal;word-break:break-word;">${escHtml(text)}</td>`;
+                } else if (col.key === 'digg_count') {
+                    html += `<td><span class="tiktok-badge badge-likes">${fmtNum(v.digg_count)}</span></td>`;
+                } else if (col.key === 'reply_count') {
+                    html += `<td><span class="tiktok-badge badge-comments">${fmtNum(v.reply_comment_total)}</span></td>`;
+                } else if (col.key === 'create_time') {
+                    html += `<td style="white-space:nowrap;font-size:12px;color:var(--text-muted);">${dateStr}</td>`;
+                }
+            });
+            html += '</tr>';
+        } else {
+            const videoId    = v.video_id || '';
+            const authorId   = v.author?.unique_id || 'user';
+            const tiktokUrl  = videoId ? `https://www.tiktok.com/@${authorId}/video/${videoId}` : '';
+            const title      = (v.title || '').trim() || '(Không có tiêu đề)';
+            const authorName = v.author?.nickname || v.author?.unique_id || '—';
+            const dateStr    = v.create_time ? new Date(v.create_time * 1000).toLocaleDateString('vi-VN') : '—';
 
-        html += `<tr data-idx="${idx}">`;
-        COLUMNS.forEach(col => {
-            if (!colVisible[col.key]) return;
-            if (col.special === 'checkbox') {
-                html += `<td class="col-checkbox"><input type="checkbox" class="row-check" data-url="${escHtml(tiktokUrl)}" onchange="updateSelectedCount()"></td>`;
-            } else if (col.key === 'title') {
-                html += `<td class="col-title">${tiktokUrl ? `<a href="${escHtml(tiktokUrl)}" target="_blank" title="${escHtml(title)}">${escHtml(title)}</a>` : escHtml(title)}</td>`;
-            } else if (col.key === 'author') {
-                html += `<td>${escHtml(authorName)}</td>`;
-            } else if (col.key === 'play_count') {
-                html += `<td><span class="tiktok-badge badge-views">${fmtNum(v.play_count)}</span></td>`;
-            } else if (col.key === 'digg_count') {
-                html += `<td><span class="tiktok-badge badge-likes">${fmtNum(v.digg_count)}</span></td>`;
-            } else if (col.key === 'comment_count') {
-                html += `<td><span class="tiktok-badge badge-comments">${fmtNum(v.comment_count)}</span></td>`;
-            } else if (col.key === 'share_count') {
-                html += `<td><span class="tiktok-badge badge-shares">${fmtNum(v.share_count)}</span></td>`;
-            } else if (col.key === 'download_count') {
-                html += `<td>${fmtNum(v.download_count)}</td>`;
-            } else if (col.key === 'duration') {
-                const dur = parseInt(v.duration) || 0;
-                html += `<td>${Math.floor(dur/60)}:${String(dur%60).padStart(2,'0')}</td>`;
-            } else if (col.key === 'region') {
-                html += `<td>${escHtml(v.region || '—')}</td>`;
-            } else if (col.key === 'create_time') {
-                html += `<td style="white-space:nowrap;font-size:12px;color:var(--text-muted);">${dateStr}</td>`;
-            } else {
-                html += `<td>—</td>`;
-            }
-        });
-        html += '</tr>';
+            html += `<tr data-idx="${idx}">`;
+            COLUMNS.forEach(col => {
+                if (!colVisible[col.key]) return;
+                if (col.special === 'checkbox') {
+                    html += `<td class="col-checkbox"><input type="checkbox" class="row-check" data-url="${escHtml(tiktokUrl)}" onchange="updateSelectedCount()"></td>`;
+                } else if (col.key === 'title') {
+                    html += `<td class="col-title">${tiktokUrl ? `<a href="${escHtml(tiktokUrl)}" target="_blank" title="${escHtml(title)}">${escHtml(title)}</a>` : escHtml(title)}</td>`;
+                } else if (col.key === 'author') {
+                    html += `<td>${escHtml(authorName)}</td>`;
+                } else if (col.key === 'play_count') {
+                    html += `<td><span class="tiktok-badge badge-views">${fmtNum(v.play_count)}</span></td>`;
+                } else if (col.key === 'digg_count') {
+                    html += `<td><span class="tiktok-badge badge-likes">${fmtNum(v.digg_count)}</span></td>`;
+                } else if (col.key === 'comment_count') {
+                    html += `<td><span class="tiktok-badge badge-comments">${fmtNum(v.comment_count)}</span></td>`;
+                } else if (col.key === 'share_count') {
+                    html += `<td><span class="tiktok-badge badge-shares">${fmtNum(v.share_count)}</span></td>`;
+                } else if (col.key === 'download_count') {
+                    html += `<td>${fmtNum(v.download_count)}</td>`;
+                } else if (col.key === 'duration') {
+                    const dur = parseInt(v.duration) || 0;
+                    html += `<td>${Math.floor(dur/60)}:${String(dur%60).padStart(2,'0')}</td>`;
+                } else if (col.key === 'region') {
+                    html += `<td>${escHtml(v.region || '—')}</td>`;
+                } else if (col.key === 'create_time') {
+                    html += `<td style="white-space:nowrap;font-size:12px;color:var(--text-muted);">${dateStr}</td>`;
+                } else {
+                    html += `<td>—</td>`;
+                }
+            });
+            html += '</tr>';
+        }
     });
 
     tbody.innerHTML = html;
     updateSelectedCount();
 }
 
-function getVisibleCount() { return COLUMNS.filter(c => colVisible[c.key]).length; }
+function getVisibleCount() { 
+    if (currentMode === 'comments') return COMMENT_COLUMNS.length;
+    return COLUMNS.filter(c => colVisible[c.key]).length; 
+}
 
 // ─── Sort ─────────────────────────────────────────────────────────────────────
 function doSort(key) {
@@ -1030,21 +1194,34 @@ function updateSelectedCount() {
     const n = document.querySelectorAll('.row-check:checked').length;
     document.getElementById('selected-count').textContent = n;
     document.getElementById('btn-copy').disabled = n === 0;
+
+    const btn = document.getElementById('btn-copy');
+    if (currentMode === 'comments') {
+        btn.innerHTML = `📋 Copy bình luận đã chọn (<span id="selected-count">${n}</span>)`;
+    } else {
+        btn.innerHTML = `📋 Copy URL đã chọn (<span id="selected-count">${n}</span>)`;
+    }
 }
 
-// ─── Copy URLs ────────────────────────────────────────────────────────────────
+// ─── Copy Selected Data ───────────────────────────────────────────────────────
 function copySelectedUrls() {
-    const urls = [];
-    document.querySelectorAll('.row-check:checked').forEach(cb => { if (cb.dataset.url) urls.push(cb.dataset.url); });
-    if (!urls.length) return;
-    const text = urls.join('\n');
+    const items = [];
+    document.querySelectorAll('.row-check:checked').forEach(cb => {
+        if (currentMode === 'comments') {
+            if (cb.dataset.text) items.push(cb.dataset.text);
+        } else {
+            if (cb.dataset.url) items.push(cb.dataset.url);
+        }
+    });
+    if (!items.length) return;
+    const text = items.join('\n');
     navigator.clipboard.writeText(text).then(() => {
-        showToast(`✅ Đã copy ${urls.length} URL vào clipboard!`);
+        showToast(currentMode === 'comments' ? `✅ Đã copy ${items.length} nội dung bình luận!` : `✅ Đã copy ${items.length} URL vào clipboard!`);
     }).catch(() => {
         const ta = document.createElement('textarea');
         ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;';
         document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-        showToast(`✅ Đã copy ${urls.length} URL vào clipboard!`);
+        showToast(currentMode === 'comments' ? `✅ Đã copy ${items.length} nội dung bình luận!` : `✅ Đã copy ${items.length} URL vào clipboard!`);
     });
 }
 
@@ -1058,6 +1235,8 @@ function setLoading(on, msg) {
     document.getElementById('btn-search-ht').disabled = on;
     const btnUs = document.getElementById('btn-search-us');
     if (btnUs) btnUs.disabled = on;
+    const btnCo = document.getElementById('btn-search-co');
+    if (btnCo) btnCo.disabled = on;
 }
 function showError(msg) {
     const el = document.getElementById('search-error');
@@ -1085,6 +1264,7 @@ function escHtml(str) {
 document.getElementById('kw-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearchKeyword(); });
 document.getElementById('ht-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearchHashtagKeyword(); });
 document.getElementById('us-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearchUsername(); });
+document.getElementById('co-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearchComments(); });
 </script>
 
 <?php include 'includes/footer.php'; ?>

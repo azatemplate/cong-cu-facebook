@@ -129,5 +129,41 @@ pm2 startup
 
 ---
 
+## 7. Hướng Dẫn Gọi Chi Tiết Các Cổng API Bằng Curl / HTTP
+
+Khi cần chạy thử hoặc tích hợp các tính năng API vào hệ thống khác, bạn có thể gọi trực tiếp thông qua 3 Endpoint chính dưới đây (mặc định chạy tại cổng `8000` của VPS):
+
+### 1. Quét thông tin chi tiết và tải Video không Watermark
+* **Mô tả:** Lấy thông tin tiêu đề, views, likes, comments, shares, cover và link tải video không dính logo watermark của một video TikTok bất kỳ.
+* **Cú pháp gọi (Curl):**
+  ```bash
+  curl "http://127.0.0.1:8000/api/hybrid/video_data?url=https://www.tiktok.com/@phuong_thao.86/video/7489283757137087749"
+  ```
+* **Tham số:**
+  * `url` (Bắt buộc): URL video hoặc ID video (hỗ trợ cả các link rút gọn dạng `vt.tiktok.com` hoặc `vm.tiktok.com`).
+
+### 2. Quét danh sách bình luận của Video
+* **Mô tả:** Lấy danh sách bình luận kèm theo thông tin tác giả bình luận (avatar, nickname), nội dung comment, lượt thích và phản hồi.
+* **Cú pháp gọi (Curl):**
+  ```bash
+  curl "http://127.0.0.1:8000/api/tiktok/comments?url=https://www.tiktok.com/@phuong_thao.86/video/7489283757137087749&count=50"
+  ```
+* **Tham số:**
+  * `url` (Bắt buộc): URL video hoặc ID video.
+  * `count` (Mặc định 50): Số lượng bình luận muốn lấy. Dùng `all` hoặc `0` để quét toàn bộ.
+
+### 3. Quét danh sách video từ Kênh User (Username)
+* **Mô tả:** Quét danh sách video đăng của một tài khoản TikTok cụ thể (kèm lượt xem, lượt thích, bình luận, chia sẻ, thời lượng và quốc gia).
+* **Cú pháp gọi (Curl):**
+  ```bash
+  curl "http://127.0.0.1:8000/api/tiktok/user_videos?username=copphavietcom&count=33&cursor=0"
+  ```
+* **Tham số:**
+  * `username` (Bắt buộc): Tên kênh (ví dụ: `copphavietcom` hoặc `@copphavietcom`).
+  * `count` (Mặc định 33): Số video lấy về trên 1 lần gọi trang.
+  * `cursor` (Mặc định "0"): Con trỏ phân trang trả về từ lần gọi trước để lấy trang tiếp theo (Ví dụ: `1781918300503`).
+
+---
+
 ## 6. Tài Liệu Tham Khảo / Nguồn Gốc
 * Dự án được xây dựng và tham khảo dựa trên mã nguồn mở: [Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API)
