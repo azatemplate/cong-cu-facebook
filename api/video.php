@@ -239,6 +239,67 @@ if (!$apiData) {
         exit;
     }
     
+    // ==================== Logic 2: TikWM API GET Mặc định (Nếu App API lỗi) ====================
+    $tikwm_url = 'https://www.tikwm.com/api/?url=' . urlencode($tiktok_url);
+    $ch = curl_init($tikwm_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 25);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+        'Referer: https://tikwm.com/',
+        'Origin: https://tikwm.com',
+        'Accept: application/json, text/plain, */*'
+    ]);
+    $resp = curl_exec($ch);
+    curl_close($ch);
+
+    $data = json_decode($resp, true);
+    if ($data && isset($data['code']) && $data['code'] === 0 && isset($data['data'])) {
+        $d = $data['data'];
+        if (!empty($d['play'])) {
+            $videoFormatted = [
+                'ad_authorization'  => false,
+                'anchor_types'      => [],
+                'author'            => $d['author']['unique_id'] ?? $d['author']['nickname'] ?? 'tiktok_user',
+                'author_followers'  => 0,
+                'author_id'         => (string)($d['author']['id'] ?? ''),
+                'category_type'     => 113,
+                'comment_count'     => (int)($d['comment_count'] ?? 0),
+                'cover'             => $d['cover'] ?? '',
+                'create_time'       => (int)($d['create_time'] ?? time()),
+                'desc'              => $d['title'] ?? '',
+                'digg_count'        => (int)($d['digg_count'] ?? 0),
+                'download_addr'     => $d['play'],
+                'download_addr_hd'  => null,
+                'download_addr_fhd' => null,
+                'duration_s'        => (int)($d['duration'] ?? 0),
+                'embed_url'         => 'https://www.tiktok.com/embed/v2/' . ($d['id'] ?? $videoId),
+                'has_shop'          => false,
+                'hashtags'          => [],
+                'id'                => (string)($d['id'] ?? $videoId),
+                'play_count'        => (int)($d['play_count'] ?? 0),
+                'share_count'       => (int)($d['share_count'] ?? 0)
+            ];
+
+            $output = [
+                'ad_count'   => 0,
+                'count'      => 1,
+                'keyword'    => '',
+                'shop_count' => 0,
+                'extractor_source' => 'tikwm',
+                'videos'     => [
+                    $videoFormatted
+                ],
+                'cookies'    => ''
+            ];
+
+            echo json_encode($output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+    }
+    
     http_response_code(200);
     echo json_encode(['code' => -1, 'msg' => 'Không tìm thấy dữ liệu video qua API nội bộ', 'videoId' => $videoId], JSON_UNESCAPED_UNICODE);
     exit;
