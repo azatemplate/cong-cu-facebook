@@ -431,6 +431,8 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
                             nwm_url = download_addr["url_list"][0]
                             
                     stats = item.get("statistics", {})
+                    region = item.get("region", "VN")
+                    duration = int(video_info.get("duration", 0) / 1000)
                     
                     videos.append({
                         "video_id": video_id,
@@ -438,6 +440,8 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
                         "create_time": create_time,
                         "cover": cover_url,
                         "nwm_video_url": nwm_url,
+                        "region": region,
+                        "duration": duration,
                         "statistics": {
                             "comment_count": stats.get("comment_count", 0),
                             "digg_count": stats.get("digg_count", 0),
@@ -494,12 +498,16 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
                         create_time = item.get("create_time", 0)
                         cover_url = item.get("cover", "")
                         nwm_url = item.get("play", "")
+                        region = item.get("region", "VN")
+                        duration = int(item.get("duration", 0))
                         videos.append({
                             "video_id": video_id,
                             "desc": desc,
                             "create_time": create_time,
                             "cover": cover_url,
                             "nwm_video_url": nwm_url,
+                            "region": region,
+                            "duration": duration,
                             "statistics": {
                                 "comment_count": item.get("comment_count", 0),
                                 "digg_count": item.get("digg_count", 0),

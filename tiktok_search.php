@@ -77,7 +77,7 @@ if (isset($_GET['ajax'])) {
     // ── Search by username ──────────────────────────────────────────────────────
     if ($ajax === 'username') {
         $username = trim($_GET['username'] ?? '');
-        $count    = max(1, min(300, intval($_GET['count'] ?? 10)));
+        $count    = max(1, min(5000, intval($_GET['count'] ?? 10)));
 
         if ($username === '') {
             echo json_encode(['status' => 'error', 'message' => 'Vui lòng nhập username kênh TikTok.']); exit;
@@ -497,8 +497,8 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="text" id="kw-region" placeholder="Ví dụ: VN, US..." style="width:140px;">
             </div>
             <div class="search-field">
-                <label for="kw-count">Số video <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 300)</span></label>
-                <input type="number" id="kw-count" value="10" min="1" max="300" style="width:110px;">
+                <label for="kw-count">Số video <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 5000)</span></label>
+                <input type="number" id="kw-count" value="10" min="1" max="5000" style="width:110px;">
             </div>
             <div style="display:flex; align-items:flex-end;">
                 <button class="btn-search" id="btn-search-kw" onclick="doSearchKeyword()">
@@ -524,8 +524,8 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="text" id="ht-region" placeholder="Ví dụ: VN, US..." style="width:140px;">
             </div>
             <div class="search-field">
-                <label for="ht-count">Số video / hashtag <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 300)</span></label>
-                <input type="number" id="ht-count" value="10" min="1" max="300" style="width:120px;">
+                <label for="ht-count">Số video / hashtag <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 5000)</span></label>
+                <input type="number" id="ht-count" value="10" min="1" max="5000" style="width:120px;">
             </div>
             <div style="display:flex;align-items:flex-end;gap:8px;">
                 <button class="btn-search ht" id="btn-search-ht" onclick="doSearchHashtagKeyword()">
@@ -550,12 +550,12 @@ require_once __DIR__ . '/includes/header.php';
     <form onsubmit="return false;">
         <div class="search-row">
             <div class="search-field grow">
-                <label for="us-input">Username kênh TikTok (ví dụ: @copphavietcom)</label>
+                <label for="us-input">Username kênh TikTok (ví dụ: copphavietcom)</label>
                 <input type="text" id="us-input" placeholder="Nhập username..." autocomplete="off">
             </div>
             <div class="search-field">
-                <label for="us-count">Số video <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 300)</span></label>
-                <input type="number" id="us-count" value="10" min="1" max="300" style="width:110px;">
+                <label for="us-count">Số video <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 5000)</span></label>
+                <input type="number" id="us-count" value="10" min="1" max="5000" style="width:110px;">
             </div>
             <div style="display:flex; align-items:flex-end;">
                 <button class="btn-search" id="btn-search-us" onclick="doSearchUsername()">
