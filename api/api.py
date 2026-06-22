@@ -183,132 +183,91 @@ async def get_video_data(request: Request, url: str = Query(..., description="Ti
     except Exception as e:
         return JSONResponse(status_code=500, content={"code": 500, "msg": str(e)})
 
-async def fetch_tiktok_comments(video_id: str, max_count: int = 50) -> list:
-    """Fetch comments of a TikTok video with pagination."""
+async def fetch_tiktok_comments(video_id: str, count: int = 50, cursor: str = "0") -> dict:
+    """Fetch one page of comments of a TikTok video with pagination."""
     comments = []
-    cursor = 0
-    page_size = 50
-    has_more = True
-    loop_limit = 40  # Maximum 40 requests (approx. 2000 comments) to prevent IP throttling
-    loop_count = 0
+    has_more = False
+    next_cursor = "0"
     
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
         "Referer": "https://www.tiktok.com/"
     }
     
-    while has_more and loop_count < loop_limit:
-        if max_count > 0 and len(comments) >= max_count:
-            break
-            
-        fetch_size = page_size
-        if max_count > 0:
-            fetch_size = min(page_size, max_count - len(comments))
-            
-        api_url = (
-            f"https://api22-normal-c-alisg.tiktokv.com/aweme/v1/comment/list/?"
-            f"aweme_id={video_id}&"
-            f"cursor={cursor}&"
-            f"count={fetch_size}&"
-            f"device_type=SM-ASUS_Z01QD&"
-            f"device_platform=android&"
-            f"iid=7318518857994389254&"
-            f"device_id=7318517321748022790&"
-            f"version_code=300904&"
-            f"app_name=musical_ly"
-        )
-        
-        try:
-            async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
-                response = await client.get(api_url, headers=headers)
-                if response.status_code != 200:
-                    print(f"Alisg comments responded with status {response.status_code}")
-                    break
+    # Try official Alisg API first
+    api_url = (
+        f"https://api22-normal-c-alisg.tiktokv.com/aweme/v1/comment/list/?"
+        f"aweme_id={video_id}&"
+        f"cursor={cursor}&"
+        f"count={count}&"
+        f"device_type=SM-ASUS_Z01QD&"
+        f"device_platform=android&"
+        f"iid=7318518857994389254&"
+        f"device_id=7318517321748022790&"
+        f"version_code=300904&"
+        f"app_name=musical_ly"
+    )
+    
+    try:
+        async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+            response = await client.get(api_url, headers=headers)
+            if response.status_code == 200:
                 data = response.json()
-                
                 comments_list = data.get("comments", [])
-                if not comments_list:
-                    break
-                    
-                for c in comments_list:
-                    user_info = c.get("user", {})
-                    comments.append({
-                        "comment_id": str(c.get("cid", "")),
-                        "text": c.get("text", ""),
-                        "create_time": c.get("create_time", 0),
-                        "digg_count": c.get("digg_count", 0),
-                        "reply_comment_total": c.get("reply_comment_total", 0),
-                        "author": {
-                            "unique_id": user_info.get("unique_id", ""),
-                            "nickname": user_info.get("nickname", ""),
-                            "avatar": user_info.get("avatar_thumb", {}).get("url_list", [""])[0]
-                        }
-                    })
-                    
-                has_more = data.get("has_more", 0) == 1
-                cursor = data.get("cursor", 0)
-                
-                if cursor == 0 or not has_more:
-                    break
-                    
-        except Exception as e:
-            print(f"Error fetching comments from Alisg: {e}")
-            break
-            
-        loop_count += 1
-        
-    if not comments:
-        # Fallback to TikWM API if the official API is empty (due to protection blocks)
-        cursor = 0
-        has_more = True
-        loop_limit = 40
-        loop_count = 0
-        while has_more and loop_count < loop_limit:
-            if max_count > 0 and len(comments) >= max_count:
-                break
-            fetch_size = page_size
-            if max_count > 0:
-                fetch_size = min(page_size, max_count - len(comments))
-            
-            tikwm_url = f"https://www.tikwm.com/api/comment/list?url=https://www.tiktok.com/video/{video_id}&count={fetch_size}&cursor={cursor}"
-            try:
-                async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
-                    response = await client.get(tikwm_url)
-                    if response.status_code != 200:
-                        print(f"TikWM comments responded with status {response.status_code}")
-                        break
-                    data = response.json()
-                    if data.get("code") != 0 or not data.get("data"):
-                        break
-                    data_obj = data["data"]
-                    comments_list = data_obj.get("comments", [])
-                    if not comments_list:
-                        break
+                if comments_list:
                     for c in comments_list:
                         user_info = c.get("user", {})
                         comments.append({
-                            "comment_id": str(c.get("id", c.get("cid", ""))),
+                            "comment_id": str(c.get("cid", "")),
                             "text": c.get("text", ""),
                             "create_time": c.get("create_time", 0),
                             "digg_count": c.get("digg_count", 0),
-                            "reply_comment_total": c.get("reply_total", c.get("reply_comment_total", 0)),
+                            "reply_comment_total": c.get("reply_comment_total", 0),
                             "author": {
                                 "unique_id": user_info.get("unique_id", ""),
                                 "nickname": user_info.get("nickname", ""),
-                                "avatar": user_info.get("avatar", user_info.get("avatar_thumb", {}).get("url_list", [""])[0])
-                            },
-                            "is_fallback": True
+                                "avatar": user_info.get("avatar_thumb", {}).get("url_list", [""])[0]
+                            }
                         })
-                    has_more = data_obj.get("hasMore", data_obj.get("has_more", False))
-                    cursor = data_obj.get("cursor", 0)
-                    if cursor == 0 or not has_more:
-                        break
-            except Exception as e:
-                print(f"Error fetching comments from TikWM: {e}")
-                break
-            loop_count += 1
-            
-    return comments[:max_count] if max_count > 0 else comments
+                    has_more = data.get("has_more", 0) == 1
+                    next_cursor = str(data.get("cursor", "0"))
+                    return {"comments": comments, "cursor": next_cursor, "has_more": has_more}
+    except Exception as e:
+        print(f"Error fetching comments from Alisg: {e}")
+        
+    # Fallback to TikWM API if the official API is empty or fails
+    tikwm_url = f"https://www.tikwm.com/api/comment/list?url=https://www.tiktok.com/video/{video_id}&count={count}&cursor={cursor}"
+    try:
+        async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
+            response = await client.get(tikwm_url)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("code") == 0 and data.get("data"):
+                    data_obj = data["data"]
+                    comments_list = data_obj.get("comments", [])
+                    if comments_list:
+                        for c in comments_list:
+                            user_info = c.get("user", {})
+                            comments.append({
+                                "comment_id": str(c.get("id", c.get("cid", ""))),
+                                "text": c.get("text", ""),
+                                "create_time": c.get("create_time", 0),
+                                "digg_count": c.get("digg_count", 0),
+                                "reply_comment_total": c.get("reply_total", c.get("reply_comment_total", 0)),
+                                "author": {
+                                    "unique_id": user_info.get("unique_id", ""),
+                                    "nickname": user_info.get("nickname", ""),
+                                    "avatar": user_info.get("avatar", user_info.get("avatar_thumb", {}).get("url_list", [""])[0])
+                                },
+                                "is_fallback": True
+                            })
+                        has_more = data_obj.get("hasMore", data_obj.get("has_more", False))
+                        next_cursor = str(data_obj.get("cursor", "0"))
+                        return {"comments": comments, "cursor": next_cursor, "has_more": has_more}
+    except Exception as e:
+        print(f"Error fetching comments from TikWM: {e}")
+        
+    return {"comments": [], "cursor": "0", "has_more": False}
 
 async def fetch_sec_uid_from_username(username: str) -> str:
     """Fetch sec_user_id from username using Alisg profile endpoint with TikWM fallback."""
@@ -491,14 +450,9 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 33, unique_id:
 async def get_comments(
     url: str = Query(None, description="TikTok Video URL"),
     video_id: str = Query(None, description="TikTok Video ID"),
-    count: str = Query("50", description="Number of comments to fetch. Use 'all' or '0' to fetch all.")
+    count: int = Query(50, description="Number of comments to fetch per page."),
+    cursor: str = Query("0", description="Pagination cursor.")
 ):
-    max_count = 50
-    if count.lower() == "all" or count == "0":
-        max_count = 0
-    elif count.isdigit():
-        max_count = int(count)
-        
     target_video_id = video_id
     if not target_video_id and url:
         resolved_url = url
@@ -509,12 +463,13 @@ async def get_comments(
     if not target_video_id:
         raise HTTPException(status_code=400, detail="Could not extract video ID from parameters")
         
-    comments_data = await fetch_tiktok_comments(target_video_id, max_count)
+    result = await fetch_tiktok_comments(target_video_id, count, cursor)
     return {
         "code": 200,
         "video_id": target_video_id,
-        "total_fetched": len(comments_data),
-        "comments": comments_data
+        "cursor": result["cursor"],
+        "has_more": result["has_more"],
+        "comments": result["comments"]
     }
 
 @app.get("/api/tiktok/user_videos")

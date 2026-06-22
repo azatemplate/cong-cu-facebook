@@ -140,8 +140,9 @@ if (isset($_GET['ajax'])) {
 
     // ── Get comments of a video ────────────────────────────────────────────────
     if ($ajax === 'comments') {
-        $url   = trim($_GET['url'] ?? '');
-        $count = max(1, min(2000, intval($_GET['count'] ?? 100)));
+        $url    = trim($_GET['url'] ?? '');
+        $count  = max(1, min(2000, intval($_GET['count'] ?? 100)));
+        $cursor = trim($_GET['cursor'] ?? '0');
 
         if ($url === '') {
             echo json_encode(['status' => 'error', 'message' => 'Vui lòng nhập URL hoặc ID video TikTok.']); exit;
@@ -158,8 +159,9 @@ if (isset($_GET['ajax'])) {
         }
 
         $api_url = rtrim($tiktok_api_url, '/') . '/api/tiktok/comments?' . http_build_query([
-            'url'   => $url,
-            'count' => $count,
+            'url'    => $url,
+            'count'  => $count,
+            'cursor' => $cursor,
         ]);
 
         ['raw' => $raw, 'err' => $err] = tiktok_curl($api_url);
@@ -173,8 +175,8 @@ if (isset($_GET['ajax'])) {
         echo json_encode([
             'status'  => 'success',
             'data'    => $data['comments'] ?? [],
-            'cursor'  => 0,
-            'hasMore' => false,
+            'cursor'  => $data['cursor'] ?? '0',
+            'hasMore' => !empty($data['has_more']),
         ]);
         exit;
     }
@@ -736,33 +738,9 @@ function doSearchComments() {
     allVideos = [];
     sortKey = null; sortDir = 'desc';
     resetResults();
-    pgState = { mode: 'comments', url, needed, fetchCount: 0 };
+    pgState = { mode: 'comments', url, cursor: '0', needed, fetchCount: 0, seenIds: new Set() };
     setLoading(true, '💬 Đang quét bình luận video...');
-    
-    fetch(`tiktok_search.php?ajax=comments&url=${encodeURIComponent(url)}&count=${needed}`)
-        .then(r => r.json())
-        .then(res => {
-            setLoading(false);
-            if (res.status !== 'success') { showError('❌ ' + res.message); return; }
-            
-            allVideos = res.data || [];
-            if (allVideos.length === 0) {
-                document.getElementById('empty-state').style.display = 'block';
-                return;
-            }
-
-            document.getElementById('col-filter-wrap').style.display = 'none';
-            document.getElementById('results-section').style.display = 'block';
-            
-            const infoEl = document.getElementById('result-count');
-            infoEl.innerHTML = `Tìm thấy <strong>${allVideos.length}</strong> bình luận của video.`;
-            
-            renderTable();
-        })
-        .catch(e => {
-            setLoading(false);
-            showError('❌ Lỗi kết nối: ' + e.message);
-        });
+    fetchNextPage();
 }
 
 function resetResults() {
@@ -883,6 +861,8 @@ function fetchNextPage() {
         url = `tiktok_search.php?ajax=keyword&keyword=${encodeURIComponent(s.keyword)}&cursor=${s.cursor}`;
     } else if (s.mode === 'username') {
         url = `tiktok_search.php?ajax=username&username=${encodeURIComponent(s.username)}&cursor=${s.cursor}`;
+    } else if (s.mode === 'comments') {
+        url = `tiktok_search.php?ajax=comments&url=${encodeURIComponent(s.url)}&count=50&cursor=${s.cursor}`;
     } else {
         url = `tiktok_search.php?ajax=hashtag&challenge_id=${encodeURIComponent(s.challengeId)}&cursor=${s.cursor}`;
     }
@@ -899,16 +879,17 @@ function fetchNextPage() {
                 return;
             }
 
-            // ── Dedup by video_id ──────────────────────────────────────────────
-            const newVideos = (res.data || []).filter(v => {
-                const id = String(v.video_id || '');
+            // ── Dedup by comment_id or video_id ────────────────────────────────
+            const isComments = s.mode === 'comments';
+            const newItems = (res.data || []).filter(item => {
+                const id = String(isComments ? (item.comment_id || '') : (item.video_id || ''));
                 if (!id || s.seenIds.has(id)) return false;
                 
-                // Region Filter
-                if (s.region) {
+                // Region Filter (only for videos)
+                if (!isComments && s.region) {
                     const rList = s.region.split(',').map(x => x.trim().toUpperCase()).filter(x => x);
                     if (rList.length > 0) {
-                        const vidRegion = String(v.region || '').trim().toUpperCase();
+                        const vidRegion = String(item.region || '').trim().toUpperCase();
                         if (!rList.includes(vidRegion)) return false;
                     }
                 }
@@ -917,29 +898,34 @@ function fetchNextPage() {
                 return true;
             });
 
-            if (newVideos.length > 0) {
+            if (newItems.length > 0) {
                 const isFirst = allVideos.length === 0;
-                allVideos.push(...newVideos);
+                allVideos.push(...newItems);
 
                 if (isFirst) {
-                    // First batch: show table + chips
-                    document.getElementById('col-filter-wrap').style.display = 'block';
+                    // First batch: show results wrap
+                    if (isComments) {
+                        document.getElementById('col-filter-wrap').style.display = 'none';
+                    } else {
+                        document.getElementById('col-filter-wrap').style.display = 'block';
+                        buildChips();
+                    }
                     document.getElementById('results-section').style.display = 'block';
-                    buildChips();
                 }
                 renderTable();
             }
 
-            s.cursor = res.cursor || 0;
-            const hasMore = res.hasMore && s.cursor > 0;
+            s.cursor = res.cursor || '0';
+            const hasMore = res.hasMore && s.cursor !== '0' && s.cursor !== 0 && s.cursor !== '';
             const gotEnough = allVideos.length >= s.needed;
 
-            if (!gotEnough && hasMore && s.fetchCount < 50) {
+            if (!gotEnough && hasMore && s.fetchCount < 100) {
                 // Update progress and fetch next page
                 const infoEl = document.getElementById('result-count');
-                infoEl.innerHTML = `⏳ Đang tải... <strong>${allVideos.length}</strong> / ${s.needed} video`;
-                setLoading(true, `⏳ Đang quét vùng... tìm được ${allVideos.length}/${s.needed} video`);
-                setTimeout(fetchNextPage, 150); // slight delay to prevent API throttle
+                const label = isComments ? 'bình luận' : 'video';
+                infoEl.innerHTML = `⏳ Đang tải... <strong>${allVideos.length}</strong> / ${s.needed} ${label}`;
+                setLoading(true, `⏳ Đang quét... tìm được ${allVideos.length}/${s.needed} ${label}`);
+                setTimeout(fetchNextPage, isComments ? 600 : 150); // slight delay to prevent API throttle
             } else {
                 finalizeResults();
             }
@@ -968,6 +954,8 @@ function finalizeResults() {
         infoEl.innerHTML = `Tìm thấy <strong>${allVideos.length}</strong> video cho từ khóa "<strong>${escHtml(s.keyword)}</strong>"`;
     } else if (s.mode === 'username') {
         infoEl.innerHTML = `Tìm thấy <strong>${allVideos.length}</strong> video từ kênh "<strong>${escHtml(s.username)}</strong>"`;
+    } else if (s.mode === 'comments') {
+        infoEl.innerHTML = `Tìm thấy <strong>${allVideos.length}</strong> bình luận của video.`;
     } else {
         infoEl.innerHTML = `<strong>${allVideos.length}</strong> video trong hashtag "<strong>#${escHtml(s.challengeName)}</strong>"`;
         // Update ht-info-bar
