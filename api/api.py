@@ -306,7 +306,7 @@ async def fetch_tiktok_comments(video_id: str, max_count: int = 50) -> list:
     return comments[:max_count] if max_count > 0 else comments
 
 async def fetch_sec_uid_from_username(username: str) -> str:
-    """Fetch sec_user_id from username using Alisg profile endpoint."""
+    """Fetch sec_user_id from username using Alisg profile endpoint with TikWM fallback."""
     username = username.lstrip("@").strip()
     
     api_url = (
@@ -337,9 +337,24 @@ async def fetch_sec_uid_from_username(username: str) -> str:
     except Exception:
         pass
         
+    # Fallback to TikWM API
+    tikwm_url = f"https://www.tikwm.com/api/user/info?unique_id={username}"
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            response = await client.get(tikwm_url)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("code") == 0 and data.get("data"):
+                    user_obj = data["data"].get("user", {})
+                    sec_uid = user_obj.get("secUid", "")
+                    if sec_uid:
+                        return sec_uid
+    except Exception:
+        pass
+        
     return ""
 
-async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50) -> list:
+async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id: str = "") -> list:
     """Fetch all posts/videos of a TikTok user with pagination."""
     videos = []
     cursor = 0
@@ -442,7 +457,10 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50) -> list:
             if max_count > 0:
                 fetch_size = min(page_size, max_count - len(videos))
             
-            tikwm_url = f"https://www.tikwm.com/api/user/posts?sec_user_id={sec_uid}&count={fetch_size}&cursor={cursor}"
+            if unique_id:
+                tikwm_url = f"https://www.tikwm.com/api/user/posts?unique_id={unique_id}&count={fetch_size}&cursor={cursor}"
+            else:
+                tikwm_url = f"https://www.tikwm.com/api/user/posts?sec_user_id={sec_uid}&count={fetch_size}&cursor={cursor}"
             try:
                 async with httpx.AsyncClient(timeout=6.0) as client:
                     response = await client.get(tikwm_url)
@@ -542,7 +560,7 @@ async def get_user_videos(
     if not target_sec_uid:
         raise HTTPException(status_code=400, detail="Could not resolve sec_user_id for this user")
         
-    videos_data = await fetch_tiktok_user_videos(target_sec_uid, max_count)
+    videos_data = await fetch_tiktok_user_videos(target_sec_uid, max_count, parsed_username if username else "")
     return {
         "code": 200,
         "sec_user_id": target_sec_uid,
