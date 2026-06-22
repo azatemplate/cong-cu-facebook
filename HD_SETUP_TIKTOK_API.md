@@ -13,9 +13,11 @@ Tài liệu này hướng dẫn chi tiết cách cài đặt, tích hợp, tối
 
 ## 2. Danh Sách Các File Cần Thiết trong Mã Nguồn
 1. **`api/api.py`**: Mã nguồn Python FastAPI khởi tạo API server nội bộ (cổng `8000`).
-2. **`actions/video.php`**: Xử lý request từ người dùng trên giao diện Web, gọi đến API Python cổng `8000` và trả kết quả dạng JSON.
-3. **`cron/publish_worker.php`**: Chạy tác vụ cronjob đăng bài tự động ngầm, gọi API Python để tải video sạch trước khi đẩy lên Page Facebook.
-4. **`settings.php`**: Quản trị cấu hình để nhập và lưu địa chỉ API (`http://127.0.0.1:8000`).
+2. **`api/video.php`**: Xử lý request từ người dùng trên giao diện Web, gọi đến API Python cổng `8000` và trả kết quả dạng JSON.
+3. **`api/username.php`**: Đầu nối PHP gọi API lấy danh sách video của một Kênh User (tiện cho việc test).
+4. **`api/comments.php`**: Đầu nối PHP gọi API lấy bình luận của một video (tiện cho việc test).
+5. **`cron/publish_worker.php`**: Chạy tác vụ cronjob đăng bài tự động ngầm, gọi API Python để tải video sạch trước khi đẩy lên Page Facebook.
+6. **`settings.php`**: Quản trị cấu hình để nhập và lưu địa chỉ API (`http://127.0.0.1:8000`).
 
 ---
 
@@ -109,7 +111,7 @@ pm2 startup
     chown -R www:www /www/wwwroot/ten_domain_cua_ban
     chmod -R 755 /www/wwwroot/ten_domain_cua_ban
     ```
-* **Nguyên nhân 2 (Cơ chế Intercept lỗi của Nginx):** Trong file `actions/video.php` cũ, khi API bị lỗi, PHP trả về mã trạng thái HTTP là `404`. Nginx có cấu hình `fastcgi_intercept_errors on` sẽ tự động chặn mã lỗi này để hiện trang HTML 404 mặc định.
+* **Nguyên nhân 2 (Cơ chế Intercept lỗi của Nginx):** Trong file `api/video.php` cũ (hoặc `actions/video.php`), khi API bị lỗi, PHP trả về mã trạng thái HTTP là `404`. Nginx có cấu hình `fastcgi_intercept_errors on` sẽ tự động chặn mã lỗi này để hiện trang HTML 404 mặc định.
   * **Cách sửa:** Mã nguồn mới đã được đổi mã trạng thái trả về thành `200` kèm thông báo lỗi chi tiết dạng JSON (`{"code":-1, "msg":"..."}`). Điều này giúp Nginx bỏ qua và hiển thị chính xác lỗi từ PHP.
 
 ### Lỗi 3: Cổng 8000 đã bị chiếm dụng (Không thể khởi động API mới)
@@ -162,6 +164,30 @@ Khi cần chạy thử hoặc tích hợp các tính năng API vào hệ thống
   * `username` (Bắt buộc): Tên kênh (ví dụ: `copphavietcom` hoặc `@copphavietcom`).
   * `count` (Mặc định 33): Số video lấy về trên 1 lần gọi trang.
   * `cursor` (Mặc định "0"): Con trỏ phân trang trả về từ lần gọi trước để lấy trang tiếp theo (Ví dụ: `1781918300503`).
+
+---
+
+## 8. Hướng Dẫn Gọi Thử Qua Các Cổng Proxy PHP (Không Cần Cổng 8000)
+
+Để thuận tiện cho việc kiểm thử từ bên ngoài hoặc chạy qua trình duyệt web (không cần gọi trực tiếp tới cổng `8000` của Python), bạn có thể gọi qua các cổng PHP trung gian đặt tại thư mục `api/`:
+
+### 1. Lấy thông tin video không Watermark
+* **URL gọi thử:**
+  ```text
+  http://app.hongvippro.com/api/video.php?url=https://www.tiktok.com/@phuong_thao.86/video/7489283757137087749
+  ```
+
+### 2. Quét danh sách bình luận của video (Hỗ trợ phân trang)
+* **URL gọi thử:**
+  ```text
+  http://app.hongvippro.com/api/comments.php?url=https://www.tiktok.com/@phuong_thao.86/video/7489283757137087749&count=50&cursor=0
+  ```
+
+### 3. Quét danh sách video của User (Hỗ trợ phân trang)
+* **URL gọi thử:**
+  ```text
+  http://app.hongvippro.com/api/username.php?username=copphavietcom&count=33&cursor=0
+  ```
 
 ---
 
