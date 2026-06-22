@@ -287,15 +287,15 @@ async def fetch_tiktok_comments(video_id: str, max_count: int = 50) -> list:
                     for c in comments_list:
                         user_info = c.get("user", {})
                         comments.append({
-                            "comment_id": str(c.get("cid", "")),
+                            "comment_id": str(c.get("id", c.get("cid", ""))),
                             "text": c.get("text", ""),
                             "create_time": c.get("create_time", 0),
                             "digg_count": c.get("digg_count", 0),
-                            "reply_comment_total": c.get("reply_comment_total", 0),
+                            "reply_comment_total": c.get("reply_total", c.get("reply_comment_total", 0)),
                             "author": {
                                 "unique_id": user_info.get("unique_id", ""),
                                 "nickname": user_info.get("nickname", ""),
-                                "avatar": user_info.get("avatar_thumb", {}).get("url_list", [""])[0]
+                                "avatar": user_info.get("avatar", user_info.get("avatar_thumb", {}).get("url_list", [""])[0])
                             },
                             "is_fallback": True
                         })
