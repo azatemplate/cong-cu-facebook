@@ -89,19 +89,19 @@ if (!empty($custom_api_url)) {
                     'author_followers' => 0,
                     'author_id'        => (string)($json['data']['author']['id'] ?? ''),
                     'category_type'    => 113,
-                    'comment_count'    => (int)($json['data']['comment_count'] ?? 0),
+                    'comment_count'    => (int)($json['data']['statistics']['comment_count'] ?? $json['data']['comment_count'] ?? 0),
                     'cover'            => $json['data']['cover'] ?? '',
                     'create_time'      => (int)($json['data']['create_time'] ?? time()),
                     'desc'             => $title,
-                    'digg_count'       => (int)($json['data']['digg_count'] ?? 0),
+                    'digg_count'       => (int)($json['data']['statistics']['digg_count'] ?? $json['data']['digg_count'] ?? 0),
                     'download_addr'    => $download_url,
                     'duration_s'       => (int)($json['data']['duration'] ?? 0),
                     'embed_url'        => 'https://www.tiktok.com/embed/v2/' . $vid,
                     'has_shop'         => false,
                     'hashtags'         => [],
                     'id'               => (string)$vid,
-                    'play_count'       => (int)($json['data']['play_count'] ?? 0),
-                    'share_count'      => (int)($json['data']['share_count'] ?? 0)
+                    'play_count'       => (int)($json['data']['statistics']['play_count'] ?? $json['data']['play_count'] ?? 0),
+                    'share_count'      => (int)($json['data']['statistics']['share_count'] ?? $json['data']['share_count'] ?? 0)
                 ];
 
                 $output = [
