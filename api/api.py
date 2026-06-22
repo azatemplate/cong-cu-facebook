@@ -15,7 +15,7 @@ TIKTOK_HEADERS = {
 
 async def resolve_url(url: str) -> str:
     """Resolve short URLs and redirects to get the final TikTok URL."""
-    async with httpx.AsyncClient(follow_redirects=True, timeout=3.0) as client:
+    async with httpx.AsyncClient(follow_redirects=True, timeout=3.0, verify=False) as client:
         # Perform a HEAD request to quickly follow redirects without downloading the body
         response = await client.head(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
         return str(response.url)
@@ -51,7 +51,7 @@ async def fetch_tiktok_data(video_id: str) -> dict:
     )
     
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(timeout=3.0, verify=False) as client:
             response = await client.get(api_url, headers=TIKTOK_HEADERS)
             if response.status_code != 200:
                 raise Exception(f"TikTok API responded with status {response.status_code}")
@@ -64,10 +64,11 @@ async def fetch_tiktok_data(video_id: str) -> dict:
             return aweme_list[0]
             
     except Exception as e:
+        print(f"Error fetching tiktok data from Alisg: {e}")
         # Fallback logic using the free public TikWM API
         fallback_url = f"https://www.tikwm.com/api/?url=https://www.tiktok.com/video/{video_id}"
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
                 fb_resp = await client.get(fallback_url)
                 if fb_resp.status_code == 200:
                     fb_json = fb_resp.json()
@@ -218,9 +219,10 @@ async def fetch_tiktok_comments(video_id: str, max_count: int = 50) -> list:
         )
         
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
                 response = await client.get(api_url, headers=headers)
                 if response.status_code != 200:
+                    print(f"Alisg comments responded with status {response.status_code}")
                     break
                 data = response.json()
                 
@@ -249,7 +251,8 @@ async def fetch_tiktok_comments(video_id: str, max_count: int = 50) -> list:
                 if cursor == 0 or not has_more:
                     break
                     
-        except Exception:
+        except Exception as e:
+            print(f"Error fetching comments from Alisg: {e}")
             break
             
         loop_count += 1
@@ -269,9 +272,10 @@ async def fetch_tiktok_comments(video_id: str, max_count: int = 50) -> list:
             
             tikwm_url = f"https://www.tikwm.com/api/comment/list?url=https://www.tiktok.com/video/{video_id}&count={fetch_size}&cursor={cursor}"
             try:
-                async with httpx.AsyncClient(timeout=6.0) as client:
+                async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
                     response = await client.get(tikwm_url)
                     if response.status_code != 200:
+                        print(f"TikWM comments responded with status {response.status_code}")
                         break
                     data = response.json()
                     if data.get("code") != 0 or not data.get("data"):
@@ -299,7 +303,8 @@ async def fetch_tiktok_comments(video_id: str, max_count: int = 50) -> list:
                     cursor = data_obj.get("cursor", 0)
                     if cursor == 0 or not has_more:
                         break
-            except Exception:
+            except Exception as e:
+                print(f"Error fetching comments from TikWM: {e}")
                 break
             loop_count += 1
             
@@ -326,7 +331,7 @@ async def fetch_sec_uid_from_username(username: str) -> str:
     }
     
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
             response = await client.get(api_url, headers=headers)
             if response.status_code == 200:
                 data = response.json()
@@ -334,13 +339,15 @@ async def fetch_sec_uid_from_username(username: str) -> str:
                 sec_uid = user_info.get("sec_uid", "")
                 if sec_uid:
                     return sec_uid
-    except Exception:
-        pass
+            else:
+                print(f"Alisg profile responded with status {response.status_code}")
+    except Exception as e:
+        print(f"Error fetching sec_uid from Alisg: {e}")
         
     # Fallback to TikWM API
     tikwm_url = f"https://www.tikwm.com/api/user/info?unique_id={username}"
     try:
-        async with httpx.AsyncClient(timeout=6.0) as client:
+        async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
             response = await client.get(tikwm_url)
             if response.status_code == 200:
                 data = response.json()
@@ -349,8 +356,10 @@ async def fetch_sec_uid_from_username(username: str) -> str:
                     sec_uid = user_obj.get("secUid", "")
                     if sec_uid:
                         return sec_uid
-    except Exception:
-        pass
+            else:
+                print(f"TikWM user/info responded with status {response.status_code}")
+    except Exception as e:
+        print(f"Error fetching sec_uid from TikWM: {e}")
         
     return ""
 
@@ -363,6 +372,9 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
     loop_limit = 50  # Maximum 50 requests (approx. 1600 videos) to prevent IP throttling
     loop_count = 0
     
+    if unique_id:
+        unique_id = unique_id.lstrip("@").strip()
+        
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
         "Referer": "https://www.tiktok.com/"
@@ -390,9 +402,10 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
         )
         
         try:
-            async with httpx.AsyncClient(timeout=6.0) as client:
+            async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
                 response = await client.get(api_url, headers=headers)
                 if response.status_code != 200:
+                    print(f"Alisg posts responded with status {response.status_code}")
                     break
                 data = response.json()
                 
@@ -439,7 +452,8 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
                 if cursor == 0 or not has_more:
                     break
                     
-        except Exception:
+        except Exception as e:
+            print(f"Error fetching user videos from Alisg: {e}")
             break
             
         loop_count += 1
@@ -462,9 +476,10 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
             else:
                 tikwm_url = f"https://www.tikwm.com/api/user/posts?sec_user_id={sec_uid}&count={fetch_size}&cursor={cursor}"
             try:
-                async with httpx.AsyncClient(timeout=6.0) as client:
+                async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
                     response = await client.get(tikwm_url)
                     if response.status_code != 200:
+                        print(f"TikWM user/posts responded with status {response.status_code}")
                         break
                     data = response.json()
                     if data.get("code") != 0 or not data.get("data"):
@@ -479,8 +494,6 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
                         create_time = item.get("create_time", 0)
                         cover_url = item.get("cover", "")
                         nwm_url = item.get("play", "")
-                        stats = item.get("statistics", {})
-                        
                         videos.append({
                             "video_id": video_id,
                             "desc": desc,
@@ -488,10 +501,10 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
                             "cover": cover_url,
                             "nwm_video_url": nwm_url,
                             "statistics": {
-                                "comment_count": stats.get("comment_count", 0),
-                                "digg_count": stats.get("digg_count", 0),
-                                "play_count": stats.get("play_count", 0),
-                                "share_count": stats.get("share_count", 0)
+                                "comment_count": item.get("comment_count", 0),
+                                "digg_count": item.get("digg_count", 0),
+                                "play_count": item.get("play_count", 0),
+                                "share_count": item.get("share_count", 0)
                             },
                             "is_fallback": True
                         })
@@ -499,7 +512,8 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50, unique_id:
                     cursor = data_obj.get("cursor", 0)
                     if cursor == 0 or not has_more:
                         break
-            except Exception:
+            except Exception as e:
+                print(f"Error fetching user videos from TikWM: {e}")
                 break
             loop_count += 1
 
@@ -548,19 +562,21 @@ async def get_user_videos(
         max_count = int(count)
         
     target_sec_uid = sec_uid
-    if not target_sec_uid and username:
-        parsed_username = username
+    parsed_username = ""
+    if username:
+        parsed_username = username.lstrip("@").strip()
         if "tiktok.com/" in username:
             match = re.search(r"@([a-zA-Z0-9_\.]+)", username)
             if match:
                 parsed_username = match.group(1)
                 
+    if not target_sec_uid and parsed_username:
         target_sec_uid = await fetch_sec_uid_from_username(parsed_username)
         
     if not target_sec_uid:
         raise HTTPException(status_code=400, detail="Could not resolve sec_user_id for this user")
         
-    videos_data = await fetch_tiktok_user_videos(target_sec_uid, max_count, parsed_username if username else "")
+    videos_data = await fetch_tiktok_user_videos(target_sec_uid, max_count, parsed_username)
     return {
         "code": 200,
         "sec_user_id": target_sec_uid,
