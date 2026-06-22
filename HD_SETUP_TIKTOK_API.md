@@ -52,7 +52,18 @@ pip install fastapi uvicorn httpx
 ### Bước 3.3: Khởi chạy API chạy nền
 
 **Cách 1: Khởi chạy bằng `nohup` (Khuyên dùng - Nhanh nhất, không cần cài đặt thêm công cụ):**
+
+Cần di chuyển vào thư mục dự án trước:
 ```bash
+cd /www/wwwroot/app.hongvippro.com/
+```
+
+Sau đó tắt tiến trình cũ và khởi chạy lại bằng môi trường ảo venv chuẩn:
+```bash
+# 3. Tắt tiến trình cũ
+pkill -9 -f api.py
+
+# 4. Khởi chạy lại API trong nền bằng venv chuẩn
 nohup venv/bin/python api/api.py > api.log 2>&1 &
 ```
 * Tiến trình sẽ chạy ẩn dưới nền và tự động ghi log hoạt động vào file `api.log`.
@@ -115,3 +126,8 @@ pm2 startup
   $env:PYTHONIOENCODING="utf-8"
   python -X utf8 api/api.py
   ```
+
+---
+
+## 6. Tài Liệu Tham Khảo / Nguồn Gốc
+* Dự án được xây dựng và tham khảo dựa trên mã nguồn mở: [Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API)
