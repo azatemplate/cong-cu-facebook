@@ -75,7 +75,7 @@ $api_responses = get_fb_page_insights_multi($fetch_pages, $period, $start_date, 
 foreach ($api_responses as $pid => $api_response) {
     if ($api_response['status_code'] === 200 && isset($api_response['data']['data'])) {
         foreach ($api_response['data']['data'] as $metric) {
-            if (!in_array($metric['name'], ['page_media_view', 'page_impressions_unique'])) continue;
+            if (!in_array($metric['name'], ['page_media_view', 'page_total_media_view_unique'])) continue;
             if (!isset($metric['values']) || !is_array($metric['values']) || empty($metric['values'])) continue;
 
             $latest = end($metric['values']);

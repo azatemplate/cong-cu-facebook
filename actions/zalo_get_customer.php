@@ -30,7 +30,7 @@ try {
     }
 
     // Fetch customer details
-    $stmt = $pdo->prepare("SELECT name, phone, province, notes FROM zalo_customers WHERE oa_id = ? AND sender_id = ?");
+    $stmt = $pdo->prepare("SELECT name, phone, province, notes, consulted, sales_phone, sales_notes FROM zalo_customers WHERE oa_id = ? AND sender_id = ?");
     $stmt->execute([$oa_id, $sender_id]);
     $customer = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -43,7 +43,10 @@ try {
             'name' => '',
             'phone' => '',
             'province' => '',
-            'notes' => ''
+            'notes' => '',
+            'consulted' => 0,
+            'sales_phone' => '',
+            'sales_notes' => ''
         ];
     }
     $customer['is_locked'] = $is_locked;

@@ -76,6 +76,24 @@ $migrations = [
     // Email login columns
     ["ALTER TABLE system_accounts ADD COLUMN email VARCHAR(255) DEFAULT NULL", "system_accounts.email"],
     ["ALTER TABLE system_accounts ADD COLUMN login_by_email TINYINT(1) DEFAULT 0", "system_accounts.login_by_email"],
+
+    // Customer consulted status
+    ["ALTER TABLE fb_customers ADD COLUMN consulted TINYINT DEFAULT 0", "fb_customers.consulted"],
+    ["ALTER TABLE zalo_customers ADD COLUMN consulted TINYINT DEFAULT 0", "zalo_customers.consulted"],
+
+    // Sales Handoff columns
+    ["ALTER TABLE fb_customers ADD COLUMN sales_phone VARCHAR(50) DEFAULT NULL", "fb_customers.sales_phone"],
+    ["ALTER TABLE fb_customers ADD COLUMN sales_notes TEXT DEFAULT NULL", "fb_customers.sales_notes"],
+    ["ALTER TABLE zalo_customers ADD COLUMN sales_phone VARCHAR(50) DEFAULT NULL", "zalo_customers.sales_phone"],
+    ["ALTER TABLE zalo_customers ADD COLUMN sales_notes TEXT DEFAULT NULL", "zalo_customers.sales_notes"],
+    
+    // Quick sales list per account
+    ["ALTER TABLE system_accounts ADD COLUMN sales_list TEXT DEFAULT NULL", "system_accounts.sales_list"],
+
+    // New dashboard snapshot columns
+    ["ALTER TABLE dashboard_snapshots ADD COLUMN total_accounts INT DEFAULT 0", "dashboard_snapshots.total_accounts"],
+    ["ALTER TABLE dashboard_snapshots ADD COLUMN total_reels INT DEFAULT 0", "dashboard_snapshots.total_reels"],
+    ["ALTER TABLE dashboard_snapshots ADD COLUMN total_posts INT DEFAULT 0", "dashboard_snapshots.total_posts"],
 ];
 
 // Default system settings seed

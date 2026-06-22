@@ -120,9 +120,11 @@ $cust_avatar = 'https://ui-avatars.com/api/?name=Zalo';
 $cust_phone = '';
 $cust_province = '';
 $cust_notes = '';
+$cust_sales_phone = '';
+$cust_sales_notes = '';
 
 try {
-    $stmt_cust = $pdo->prepare("SELECT name, avatar, phone, province, notes FROM zalo_customers WHERE oa_id = ? AND sender_id = ?");
+    $stmt_cust = $pdo->prepare("SELECT name, avatar, phone, province, notes, sales_phone, sales_notes FROM zalo_customers WHERE oa_id = ? AND sender_id = ?");
     $stmt_cust->execute([$oa_id, $sender_id]);
     $cust = $stmt_cust->fetch(PDO::FETCH_ASSOC);
 
@@ -132,6 +134,8 @@ try {
         $cust_phone = $cust['phone'];
         $cust_province = $cust['province'];
         $cust_notes = $cust['notes'];
+        $cust_sales_phone = $cust['sales_phone'] ?? '';
+        $cust_sales_notes = $cust['sales_notes'] ?? '';
     }
 
     if ($access_token && (!$cust || empty($cust['name']) || $cust['name'] === 'Khách hàng Zalo' || empty($cust['avatar']) || strpos($cust['avatar'], 'ui-avatars.com') !== false)) {
@@ -369,7 +373,12 @@ try {
             $info_context .= "- Số điện thoại: " . ($cust_phone ?: "CHƯA CÓ") . "\n";
             $info_context .= "- Tỉnh thành: " . ($cust_province ?: "CHƯA CÓ") . "\n";
             $info_context .= "- Nhu cầu/Yêu cầu khách hàng: " . ($cust_notes ?: "CHƯA CÓ") . "\n";
+            $info_context .= "- Số điện thoại Sales phụ trách: " . ($cust_sales_phone ?: "CHƯA CÓ") . "\n";
+            $info_context .= "- Ghi chú của Sales: " . ($cust_sales_notes ?: "CHƯA CÓ") . "\n";
             $info_context .= "-----------------------------------\n";
+            if (!empty($cust_sales_phone)) {
+                $info_context .= "HƯỚNG DẪN THÊM VỀ BÀN GIAO SALES: Nếu có thông tin 'Số điện thoại Sales phụ trách' và khách hàng hỏi/thắc mắc về việc liên hệ, báo giá hoặc phản hồi chậm, bạn hãy khéo léo thông báo cho khách hàng biết rằng nhân viên Sales số điện thoại " . $cust_sales_phone . " đã/đang xử lý và liên hệ với khách hàng (dựa trên Ghi chú của Sales nếu có, ví dụ như gọi không liên lạc được, bận...). Hướng dẫn khách hàng liên hệ trực tiếp hoặc add Zalo số đó để được xử lý nhanh nhất.\n";
+            }
             $info_context .= "HƯỚNG DẪN BẮT BUỘC: Bạn là chatbot chăm sóc khách hàng chuyên nghiệp. Hãy kiểm tra các thông tin ở trên:\n";
             $info_context .= "1. Với thông tin nào đã có (không phải là 'CHƯA CÓ'), bạn tuyệt đối không được hỏi lại khách hàng nữa.\n";
             $info_context .= "2. Với thông tin nào ghi 'CHƯA CÓ', hãy khéo léo và thân thiện hỏi khách hàng trong quá trình trò chuyện. Hỏi từng thông tin một cách tự nhiên, không hỏi dồn dập.\n";

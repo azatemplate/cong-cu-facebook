@@ -114,7 +114,7 @@ function get_fb_page_insights_multi($pages, $period = 'day', $since = null, $unt
         $handles    = [];
 
         foreach ($chunk as $p) {
-            $url = FB_API_BASE . $p['page_id'] . "/insights?metric=page_media_view,page_impressions_unique&period=" . urlencode($period) . "&access_token=" . $p['access_token'];
+            $url = FB_API_BASE . $p['page_id'] . "/insights?metric=page_media_view,page_total_media_view_unique&period=" . urlencode($period) . "&access_token=" . $p['access_token'];
             if ($since) $url .= "&since=" . urlencode($since);
             if ($until) $url .= "&until=" . urlencode($until);
 

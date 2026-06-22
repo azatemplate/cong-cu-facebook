@@ -10,7 +10,7 @@ require_once __DIR__ . '/setup_live_chat.php'; // auto run setup for DB table
 ob_end_clean(); // Clean output entirely so no random text is printed
 
 // Fetch system_accounts phone request config
-$stmt_acc = $pdo->prepare("SELECT phone_request_enabled, phone_request_hours, phone_request_text, province_request_text, product_request_text FROM system_accounts WHERE id = ?");
+$stmt_acc = $pdo->prepare("SELECT phone_request_enabled, phone_request_hours, phone_request_text, province_request_text, product_request_text, sales_list FROM system_accounts WHERE id = ?");
 $stmt_acc->execute([$account_id]);
 $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC);
 $phone_request_enabled = (int)($acc_setup['phone_request_enabled'] ?? 0);
@@ -18,6 +18,7 @@ $phone_request_hours = (int)($acc_setup['phone_request_hours'] ?? 1);
 $phone_request_text = $acc_setup['phone_request_text'] ?? '';
 $province_request_text = $acc_setup['province_request_text'] ?? '';
 $product_request_text = $acc_setup['product_request_text'] ?? '';
+$sales_list = $acc_setup['sales_list'] ?? '';
 
 // Fetch all pages for sidebar (owned + shared)
 $stmt2 = $pdo->prepare("
@@ -50,6 +51,51 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
     .platform-tab-btn.active:hover {
         border-bottom-color: #0068ff !important;
     }
+    
+    /* Tab Navigation Styles */
+    .zalo-tabs {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 10px;
+    }
+    .zalo-tab-btn {
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        padding: 10px 20px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .zalo-tab-btn:hover {
+        background: rgba(0, 104, 255, 0.05);
+        color: #0068ff;
+    }
+    .zalo-tab-btn.active {
+        background: #0068ff;
+        color: #fff;
+        box-shadow: 0 4px 6px -1px rgba(0, 104, 255, 0.3);
+    }
+    
+    /* Tab Contents visibility */
+    .zalo-tab-content {
+        display: none;
+        animation: fadeIn 0.25s ease-in-out;
+    }
+    .zalo-tab-content.active {
+        display: block;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 </style>
 
 <!-- Platform Switcher Tabs -->
@@ -67,17 +113,26 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
     <button onclick="openBotSettings()" class="btn btn-secondary" style="background:#f59e0b; color:#fff; border:none; display:flex; align-items:center; gap:5px; font-weight:600;"><span style="font-size:16px;">⚙️</span> Cài đặt Bot Tự Động</button>
 </div>
 
-<!-- Modal Cài đặt Bot Tự động -->
-<div id="botChatModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
-    <div style="background:#fff; padding:25px; border-radius:10px; width:100%; max-width:600px; max-height:90vh; overflow-y:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e5e7eb; padding-bottom:10px; margin-bottom:15px;">
-            <h3 style="margin:0; color:#1f2937;">🤖 Cài đặt Bot Tự Động (Inbox)</h3>
-            <button onclick="document.getElementById('botChatModal').style.display='none';" style="background:none; border:none; font-size:20px; cursor:pointer; color:#6b7280;">&times;</button>
+<!-- Tabs Navigation -->
+<div class="zalo-tabs">
+    <button class="zalo-tab-btn active" data-target="tab-livechat">
+        <span>💬</span> Live Chat
+    </button>
+    <button class="zalo-tab-btn" data-target="tab-bot-settings">
+        <span>🤖</span> Bot Tự Động
+    </button>
+</div>
+
+<!-- ==================== TAB 2: BOT TỰ ĐỘNG ==================== -->
+<div id="tab-bot-settings" class="zalo-tab-content">
+    <div class="card" style="max-width:800px; margin:0 auto; background:#fff; padding:25px; border-radius:10px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); border: 1px solid var(--border-color);">
+        <div style="font-weight:600; font-size:17px; border-bottom:1px solid var(--border-color); padding-bottom:12px; margin-bottom:20px;">
+            🤖 Cài đặt Bot Tự Động (Inbox)
         </div>
         
-        <!-- Tabs -->
-        <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:1px solid #e5e7eb; padding-bottom:10px; flex-wrap: wrap;">
-            <button id="tab_welcome" onclick="switchBotTab('welcome')" style="padding:8px 16px; border:none; background:#0284c7; color:#fff; border-radius:6px; cursor:pointer; font-weight:600;">Tin nhắn chào mừng</button>
+        <!-- Bot Tabs -->
+        <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:1px solid var(--border-color); padding-bottom:10px; flex-wrap: wrap;">
+            <button id="tab_welcome" onclick="switchBotTab('welcome')" style="padding:8px 16px; border:none; background:#0068ff; color:#fff; border-radius:6px; cursor:pointer; font-weight:600;">Tin nhắn chào mừng</button>
             <button id="tab_keyword" onclick="switchBotTab('keyword')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Tin nhắn theo từ khóa</button>
             <button id="tab_ai_reply" onclick="switchBotTab('ai_reply')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Chat bot AI tự trả lời</button>
             <button id="tab_phone_request" onclick="switchBotTab('phone_request')" style="padding:8px 16px; border:none; background:#f3f4f6; color:#374151; border-radius:6px; cursor:pointer; font-weight:600;">Tự động xin thông tin</button>
@@ -85,81 +140,80 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
         
         <!-- Nội dung Tab 1: Tin nhắn chào mừng -->
         <div id="content_welcome">
-            <p style="font-size:13px; color:#6b7280; margin-top:0;">Tin nhắn sẽ tự động gửi khi khách hàng gửi tin nhắn đầu tiên hoặc bấm nút Bắt Đầu.</p>
+            <p style="font-size:13px; color:var(--text-muted); margin-top:0;">Tin nhắn sẽ tự động gửi khi khách hàng gửi tin nhắn đầu tiên hoặc bấm nút Bắt Đầu.</p>
             <div id="welcome_rules_list" style="margin-bottom:15px; max-height: 250px; overflow-y:auto;">
-                <div style="text-align:center; padding:10px; color:#9ca3af; font-size:13px;">Đang tải...</div>
+                <div style="text-align:center; padding:10px; color:var(--text-muted); font-size:13px;">Đang tải...</div>
             </div>
-            <button onclick="openRuleForm('welcome')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed #d1d5db; background:#f9fafb; color:#374151; border-radius:6px;">+ Thêm nội dung chào mừng mới</button>
+            <button onclick="openRuleForm('welcome')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed var(--border-color); background:var(--bg-color); color:var(--text-main); border-radius:6px; font-weight:600;">+ Thêm nội dung chào mừng mới</button>
         </div>
 
         <!-- Nội dung Tab 2: Tin nhắn theo từ khóa -->
         <div id="content_keyword" style="display:none;">
-            <p style="font-size:13px; color:#6b7280; margin-top:0;">Tin nhắn sẽ tự động gửi nếu câu nói của khách hàng có chứa các từ khóa dưới đây.</p>
+            <p style="font-size:13px; color:var(--text-muted); margin-top:0;">Tin nhắn sẽ tự động gửi nếu câu nói của khách hàng có chứa các từ khóa dưới đây.</p>
             <div id="keyword_rules_list" style="margin-bottom:15px; max-height: 250px; overflow-y:auto;">
-                <div style="text-align:center; padding:10px; color:#9ca3af; font-size:13px;">Đang tải...</div>
+                <div style="text-align:center; padding:10px; color:var(--text-muted); font-size:13px;">Đang tải...</div>
             </div>
-            <button onclick="openRuleForm('keyword')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed #d1d5db; background:#f9fafb; color:#374151; border-radius:6px;">+ Thêm cấu hình từ khóa mới</button>
+            <button onclick="openRuleForm('keyword')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed var(--border-color); background:var(--bg-color); color:var(--text-main); border-radius:6px; font-weight:600;">+ Thêm cấu hình từ khóa mới</button>
         </div>
 
         <!-- Nội dung Tab 3: Chat bot AI tự trả lời -->
         <div id="content_ai_reply" style="display:none;">
-            <p style="font-size:13px; color:#6b7280; margin-top:0;">Bot sẽ sử dụng AI để tự động trả lời khách hàng dựa trên Prompt bạn cấu hình. <b>Lưu ý:</b> Cần cài đặt API Key AI ở trang Cài đặt AI.</p>
+            <p style="font-size:13px; color:var(--text-muted); margin-top:0;">Bot sẽ sử dụng AI để tự động trả lời khách hàng dựa trên Prompt bạn cấu hình. <b>Lưu ý:</b> Cần cài đặt API Key AI ở trang Cài đặt AI.</p>
             <div id="ai_reply_rules_list" style="margin-bottom:15px; max-height: 250px; overflow-y:auto;">
-                <div style="text-align:center; padding:10px; color:#9ca3af; font-size:13px;">Đang tải...</div>
+                <div style="text-align:center; padding:10px; color:var(--text-muted); font-size:13px;">Đang tải...</div>
             </div>
-            <button onclick="openRuleForm('ai_reply')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed #d1d5db; background:#f9fafb; color:#374151; border-radius:6px;">+ Thêm cấu hình Bot AI mới</button>
+            <button onclick="openRuleForm('ai_reply')" class="btn btn-secondary" style="width:100%; text-align:center; display:block; padding:8px; border:1px dashed var(--border-color); background:var(--bg-color); color:var(--text-main); border-radius:6px; font-weight:600;">+ Thêm cấu hình Bot AI mới</button>
         </div>
 
         <!-- Nội dung Tab 4: Tự động xin thông tin (SĐT -> Tỉnh -> Nhu cầu) -->
         <div id="content_phone_request" style="display:none;">
-            <p style="font-size:13px; color:#6b7280; margin-top:0;">Hệ thống sẽ tự động quét và gửi tin nhắn xin các thông tin còn thiếu của khách hàng theo thứ tự ưu tiên (SĐT -> Tỉnh thành -> Nhu cầu/Sản phẩm) sau X giờ kể từ tin nhắn cuối cùng của họ (tối đa 24 giờ).</p>
+            <p style="font-size:13px; color:var(--text-muted); margin-top:0;">Hệ thống sẽ tự động quét và gửi tin nhắn xin các thông tin còn thiếu của khách hàng theo thứ tự ưu tiên (SĐT -> Tỉnh thành -> Nhu cầu/Sản phẩm) sau X giờ kể từ tin nhắn cuối cùng của họ (tối đa 24 giờ).</p>
             
             <form id="frm_phone_request" onsubmit="savePhoneRequestSettings(event)" style="display:flex; flex-direction:column; gap:15px;">
-                <div style="display:flex; align-items:center; justify-content:space-between; background:#f9fafb; padding:10px; border-radius:6px; border:1px solid #e5e7eb;">
-                    <label style="font-weight:600; font-size:14px; color:#374151; cursor:pointer; display:flex; align-items:center; gap:8px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-color); padding:10px; border-radius:6px; border:1px solid var(--border-color);">
+                    <label style="font-weight:600; font-size:14px; color:var(--text-main); cursor:pointer; display:flex; align-items:center; gap:8px;">
                         <input type="checkbox" id="phone_request_enabled" name="phone_request_enabled" value="1" <?php echo $phone_request_enabled ? 'checked' : ''; ?> style="width:18px; height:18px; cursor:pointer;">
                         Kích hoạt tự động xin thông tin
                     </label>
                 </div>
 
                 <div style="display:flex; flex-direction:column; gap:5px;">
-                    <label style="font-weight:600; font-size:13px; color:#374151;">Thời gian chờ gửi tin nhắn (giờ)</label>
+                    <label style="font-weight:600; font-size:13px; color:var(--text-main);">Thời gian chờ gửi tin nhắn (giờ)</label>
                     <div style="display:flex; align-items:center; gap:10px;">
-                        <input type="number" id="phone_request_hours" name="phone_request_hours" min="1" max="24" value="<?php echo $phone_request_hours; ?>" style="width:80px; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:14px;">
-                        <span style="font-size:13px; color:#6b7280;">giờ (từ 1 đến 24 giờ. Khuyến nghị: 1-2 giờ)</span>
+                        <input type="number" id="phone_request_hours" name="phone_request_hours" min="1" max="24" value="<?php echo $phone_request_hours; ?>" style="width:80px; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:14px; background:var(--card-bg); color:var(--text-main);">
+                        <span style="font-size:13px; color:var(--text-muted);">giờ (từ 1 đến 24 giờ. Khuyến nghị: 1-2 giờ)</span>
                     </div>
                 </div>
 
                 <div style="display:flex; flex-direction:column; gap:5px;">
-                    <label style="font-weight:600; font-size:13px; color:#374151; display:flex; align-items:center; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:var(--text-main); display:flex; align-items:center; gap:5px;">
                         📞 Mẫu tin nhắn xin Số điện thoại
                     </label>
-                    <textarea id="phone_request_text" name="phone_request_text" rows="2" placeholder="Ví dụ: Dạ {name} cho em xin số điện thoại để tiện liên hệ tư vấn ạ!" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($phone_request_text); ?></textarea>
-                    <span style="font-size:11px; color:#9ca3af;">Dùng {name} để gọi tên khách. Để trống nếu không muốn tự động xin SĐT.</span>
+                    <textarea id="phone_request_text" name="phone_request_text" rows="2" placeholder="Ví dụ: Dạ {name} cho em xin số điện thoại để tiện liên hệ tư vấn ạ!" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:13px; resize:vertical; background:var(--card-bg); color:var(--text-main);"><?php echo htmlspecialchars($phone_request_text); ?></textarea>
+                    <span style="font-size:11px; color:var(--text-muted);">Dùng {name} để gọi tên khách. Để trống nếu không muốn tự động xin SĐT.</span>
                 </div>
 
                 <div style="display:flex; flex-direction:column; gap:5px;">
-                    <label style="font-weight:600; font-size:13px; color:#374151; display:flex; align-items:center; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:var(--text-main); display:flex; align-items:center; gap:5px;">
                         📍 Mẫu tin nhắn xin Tỉnh thành
                     </label>
-                    <textarea id="province_request_text" name="province_request_text" rows="2" placeholder="Ví dụ: Dạ hiện tại {name} đang ở tỉnh thành nào để em báo phí ship cho mình ạ?" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($province_request_text); ?></textarea>
-                    <span style="font-size:11px; color:#9ca3af;">Gửi khi đã có SĐT nhưng chưa có Tỉnh thành. Để trống để bỏ qua bước này.</span>
+                    <textarea id="province_request_text" name="province_request_text" rows="2" placeholder="Ví dụ: Dạ hiện tại {name} đang ở tỉnh thành nào để em báo phí ship cho mình ạ?" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:13px; resize:vertical; background:var(--card-bg); color:var(--text-main);"><?php echo htmlspecialchars($province_request_text); ?></textarea>
+                    <span style="font-size:11px; color:var(--text-muted);">Gửi khi đã có SĐT nhưng chưa có Tỉnh thành. Để trống để bỏ qua bước này.</span>
                 </div>
 
                 <div style="display:flex; flex-direction:column; gap:5px;">
-                    <label style="font-weight:600; font-size:13px; color:#374151; display:flex; align-items:center; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:var(--text-main); display:flex; align-items:center; gap:5px;">
                         🛍️ Mẫu tin nhắn xin Nhu cầu / Sản phẩm quan tâm
                     </label>
-                    <textarea id="product_request_text" name="product_request_text" rows="2" placeholder="Ví dụ: Dạ {name} đang quan tâm đến dòng sản phẩm nào bên em để em gửi thông tin chi tiết ạ?" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($product_request_text); ?></textarea>
-                    <span style="font-size:11px; color:#9ca3af;">Gửi khi đã có SĐT và Tỉnh thành nhưng chưa có ghi chú/nhu cầu. Để trống để bỏ qua bước này.</span>
+                    <textarea id="product_request_text" name="product_request_text" rows="2" placeholder="Ví dụ: Dạ {name} đang quan tâm đến dòng sản phẩm nào bên em để em gửi thông tin chi tiết ạ?" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:13px; resize:vertical; background:var(--card-bg); color:var(--text-main);"><?php echo htmlspecialchars($product_request_text); ?></textarea>
+                    <span style="font-size:11px; color:var(--text-muted);">Gửi khi đã có SĐT và Tỉnh thành nhưng chưa có ghi chú/nhu cầu. Để trống để bỏ qua bước này.</span>
                 </div>
 
                 <div style="text-align:right; margin-top:5px;">
-                    <button type="submit" class="btn btn-primary" style="background:#0284c7; color:#fff; border:none; padding:8px 20px; font-weight:600; border-radius:6px; cursor:pointer;">Lưu cấu hình</button>
+                    <button type="submit" class="btn btn-primary" style="background:#0068ff; color:#fff; border:none; padding:8px 20px; font-weight:600; border-radius:6px; cursor:pointer;">Lưu cấu hình</button>
                 </div>
             </form>
         </div>
-
     </div>
 </div>
 
@@ -267,9 +321,10 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
 let botRules = [];
 
 function openBotSettings() {
-    document.getElementById('botChatModal').style.display = 'flex';
-    switchBotTab('welcome');
-    loadBotRules();
+    const tabBtn = document.querySelector('[data-target="tab-bot-settings"]');
+    if (tabBtn) {
+        tabBtn.click();
+    }
 }
 
 function switchBotTab(tab) {
@@ -279,7 +334,7 @@ function switchBotTab(tab) {
         const content = document.getElementById('content_' + t);
         if(btn && content) {
             if (t === tab) {
-                btn.style.background = '#0284c7';
+                btn.style.background = '#0068ff';
                 btn.style.color = '#fff';
                 content.style.display = 'block';
             } else {
@@ -596,7 +651,9 @@ function savePhoneRequestSettings(e) {
 }
 </script>
 
-<div class="livechat-container" id="livechatContainer" style="display:flex;gap:0;height:calc(100vh - 140px);min-height:520px;">
+<!-- ==================== TAB 1: LIVE CHAT ==================== -->
+<div id="tab-livechat" class="zalo-tab-content active">
+    <div class="livechat-container" id="livechatContainer" style="display:flex;gap:0;height:calc(100vh - 140px);min-height:520px;">
 
     <!-- ── Sidebar: Fanpage List ─────────────────────────────────────────── -->
     <div class="lc-sidebar" style="width:200px;flex-shrink:0;background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px 0 0 10px;display:flex;flex-direction:column;overflow:hidden;">
@@ -739,11 +796,40 @@ function savePhoneRequestSettings(e) {
                     <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;text-transform:uppercase;">Yêu cầu / Ghi chú</label>
                     <textarea id="info_notes" rows="4" style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;box-sizing:border-box;resize:vertical;" placeholder="Nhập yêu cầu hoặc ghi chú của khách..."></textarea>
                 </div>
+                <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;text-transform:uppercase;">Trạng thái tư vấn</label>
+                    <select id="info_consulted" style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;box-sizing:border-box;background:#fff;cursor:pointer;">
+                        <option value="0">🆕 Chưa tư vấn</option>
+                        <option value="1">✅ Đã tư vấn</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;text-transform:uppercase;">Số điện thoại Sales</label>
+                    <input type="text" id="info_sales_phone" list="sales_phone_list" style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;box-sizing:border-box;" placeholder="Nhập SĐT Sales...">
+                    <datalist id="sales_phone_list">
+                        <?php
+                        if (!empty($sales_list)) {
+                            $lines = explode("\n", $sales_list);
+                            foreach ($lines as $line) {
+                                $trimmed = trim($line);
+                                if ($trimmed !== '') {
+                                    echo '<option value="' . htmlspecialchars($trimmed) . '"></option>';
+                                }
+                            }
+                        }
+                        ?>
+                    </datalist>
+                </div>
+                <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:4px;text-transform:uppercase;">Ghi chú Sales</label>
+                    <textarea id="info_sales_notes" rows="3" style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;box-sizing:border-box;resize:vertical;" placeholder="Nhập ghi chú của Sales..."></textarea>
+                </div>
                 <button type="submit" class="btn btn-primary" style="width:100%;padding:9px;font-weight:600;border:none;border-radius:6px;background:#0284c7;color:#fff;cursor:pointer;margin-top:5px;box-shadow: 0 4px 6px -1px rgba(2, 132, 199, 0.4);">Cập nhật thông tin</button>
                 <div id="customer_info_status" style="display:none; text-align:center; font-size:12px; font-weight:600; padding:8px; border-radius:6px; margin-top:8px;"></div>
             </form>
         </div>
     </div>
+</div>
 </div>
 
 <!-- Modal Thêm Tin Mẫu -->
@@ -804,6 +890,16 @@ function savePhoneRequestSettings(e) {
 .tag-hot       { background:#fce7f3;color:#be185d; }
 .tag-phone     { background:#dbeafe;color:#1e40af; }
 .tag-default   { background:#ccfbf1;color:#0f766e; }
+.badge-phone {
+    font-size: 10px;
+    background: #dcfce7;
+    color: #15803d;
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-top: 4px;
+    display: inline-block;
+    font-weight: 600;
+}
 
 /* Dropdown */
 .dropdown-item { padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid #f3f4f6;color:#333; }
@@ -1064,6 +1160,7 @@ function loadConversations(append = false) {
         labelsDiv.innerHTML = '';
         setChatEnabled(false);
         convCursor = '';
+        activeConvId.value = '';
     } else {
         if (!document.getElementById('conv_more_loader')) {
             convList.insertAdjacentHTML('beforeend', `<div id="conv_more_loader" style="text-align:center;padding:12px;font-size:12px;color:#6b7280;"><svg style="animation: spin 1s linear infinite; width: 16px; height: 16px; vertical-align: middle; margin-right: 6px; color: #0284c7;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" style="opacity:0.25"></circle><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Đang tải thêm...</div>`);
@@ -1229,6 +1326,7 @@ function renderConversations() {
                     </div>
                     <div style="font-size:11px;color:${isUnread?'#111':'#6b7280'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${snippet}</div>
                     <div style="font-size:10px;color:#9ca3af;margin-top:2px;">${updTime}</div>
+                    ${conv.has_phone && conv.phone_number ? `<span class="badge-phone">📞 ${conv.phone_number}</span>` : ''}
                 </div>
             </div>
         `;
@@ -1239,6 +1337,10 @@ function renderConversations() {
             const dot = this.querySelector('.unread-dot'); if (dot) dot.remove();
             locallyReadConvs[conv.id] = new Date(conv.updated_time).getTime();
             localStorage.setItem('fb_read_cache', JSON.stringify(locallyReadConvs));
+            
+            // Save last active conversation
+            localStorage.setItem('last_active_conv_id_' + currentPageId, conv.id);
+            
             if (conv.unread_count > 0) {
                 const fd = new FormData();
                 fd.append('user_id', itemUserId);
@@ -1256,6 +1358,17 @@ function renderConversations() {
         convList.appendChild(div);
     });
     convList.scrollTop = scrollTop;
+
+    // Auto-select last active conversation on load or tab switch
+    if (!activeConvId.value) {
+        const savedConvId = localStorage.getItem('last_active_conv_id_' + currentPageId);
+        if (savedConvId) {
+            const itemToClick = Array.from(convList.querySelectorAll('.conv-item')).find(el => el.dataset.id === savedConvId);
+            if (itemToClick) {
+                itemToClick.click();
+            }
+        }
+    }
 }
 
 // ── Filter buttons ────────────────────────────────────────────────────────
@@ -1636,6 +1749,9 @@ function loadCustomerInfo(senderId, pageId, senderName = '') {
     document.getElementById('info_phone').value = '';
     document.getElementById('info_province').value = '';
     document.getElementById('info_notes').value = '';
+    document.getElementById('info_consulted').value = '0';
+    document.getElementById('info_sales_phone').value = '';
+    document.getElementById('info_sales_notes').value = '';
     document.getElementById('info_name_display').innerText = 'Đang tải...';
     
     fetch(`actions/get_customer_info.php?sender_id=${encodeURIComponent(senderId)}&page_id=${encodeURIComponent(pageId)}`)
@@ -1649,6 +1765,9 @@ function loadCustomerInfo(senderId, pageId, senderName = '') {
                 document.getElementById('info_phone').value = data.phone || '';
                 document.getElementById('info_province').value = data.province || '';
                 document.getElementById('info_notes').value = data.notes || '';
+                document.getElementById('info_consulted').value = data.consulted == 1 ? '1' : '0';
+                document.getElementById('info_sales_phone').value = data.sales_phone || '';
+                document.getElementById('info_sales_notes').value = data.sales_notes || '';
                 
                 // Update avatar with proper DB name
                 document.getElementById('info_avatar').src = `avatar.php?id=${senderId}&page_id=${pageId}&name=${encodeURIComponent(finalName)}`;
@@ -1746,6 +1865,9 @@ function saveCustomerInfo(e) {
     const phone = document.getElementById('info_phone').value.trim();
     const province = document.getElementById('info_province').value.trim();
     const notes = document.getElementById('info_notes').value.trim();
+    const consulted = document.getElementById('info_consulted').value;
+    const sales_phone = document.getElementById('info_sales_phone').value.trim();
+    const sales_notes = document.getElementById('info_sales_notes').value.trim();
     
     const fd = new FormData();
     fd.append('sender_id', senderId);
@@ -1754,6 +1876,9 @@ function saveCustomerInfo(e) {
     fd.append('phone', phone);
     fd.append('province', province);
     fd.append('notes', notes);
+    fd.append('consulted', consulted);
+    fd.append('sales_phone', sales_phone);
+    fd.append('sales_notes', sales_notes);
     
     const btn = e.target.querySelector('button[type="submit"]');
     const oldText = btn.innerText;
@@ -1787,24 +1912,13 @@ function saveCustomerInfo(e) {
                         }
                     });
             }
-            const statusDiv = document.getElementById('customer_info_status');
-            if (statusDiv) {
-                statusDiv.style.display = 'block';
-                statusDiv.style.background = '#d1fae5';
-                statusDiv.style.color = '#065f46';
-                statusDiv.innerText = '✔️ Cập nhật thông tin thành công!';
-                setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
-            }
+            showToast(res.msg, 'success');
         } else {
-            const statusDiv = document.getElementById('customer_info_status');
-            if (statusDiv) {
-                statusDiv.style.display = 'block';
-                statusDiv.style.background = '#fee2e2';
-                statusDiv.style.color = '#991b1b';
-                statusDiv.innerText = '❌ Lỗi: ' + res.msg;
-                setTimeout(() => { statusDiv.style.display = 'none'; }, 4000);
-            }
+            showToast(res.msg, 'error');
         }
+    })
+    .catch(() => {
+        showToast('Có lỗi xảy ra khi kết nối máy chủ!', 'error');
     })
     .finally(() => {
         btn.disabled = false;
@@ -1818,6 +1932,27 @@ document.getElementById('customer_info_panel').style.display = showPanelState ? 
 if (showPanelState) {
     document.querySelector('.lc-chatbox').style.borderRadius = '0';
 }
+
+// Tab switcher
+document.addEventListener('DOMContentLoaded', function() {
+    const tabs = document.querySelectorAll('.zalo-tab-btn');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            const targetId = tab.getAttribute('data-target');
+            document.querySelectorAll('.zalo-tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(targetId).classList.add('active');
+            
+            // Load specific tab data
+            if (targetId === 'tab-bot-settings') {
+                switchBotTab('welcome');
+                loadBotRules();
+            }
+        });
+    });
+});
 </script>
 
 <?php include 'includes/footer.php'; ?>

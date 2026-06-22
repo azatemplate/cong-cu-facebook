@@ -15,17 +15,48 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/security.php';
 
-echo "--- START DAILY SNAPSHOT AUTO-UPDATE ---<br>\n";
-@flush(); @ob_flush();
+// Lấy tất cả account_id hiện có
+$stmt_users = $pdo->query("SELECT DISTINCT account_id FROM users");
+$accounts = $stmt_users->fetchAll(PDO::FETCH_ASSOC);
+
+// Đếm tổng số trang để hiển thị thông báo
+$stmt_count = $pdo->query("SELECT COUNT(DISTINCT page_id) FROM pages");
+$total_pages_count = $stmt_count->fetchColumn() ?: 0;
+
+if (php_sapi_name() !== 'cli') {
+    // Trả kết quả ngay lập tức cho trình duyệt và đóng kết nối để tránh Timeout
+    ob_start();
+    echo "<h3>🚀 Bắt đầu quét Snapshot toàn hệ thống (Chạy ngầm)</h3>";
+    echo "<p>Tiến trình đang chạy ngầm trên máy chủ để tránh Timeout...</p>";
+    echo "<ul>";
+    echo "<li>Tổng số tài khoản cần quét: <strong>" . count($accounts) . "</strong></li>";
+    echo "<li>Tổng số Fanpage độc nhất: <strong>" . $total_pages_count . "</strong></li>";
+    echo "</ul>";
+    echo "<p>Vui lòng chờ khoảng 1-2 phút để tiến trình chạy xong, sau đó tải lại Dashboard để xem số liệu mới nhất.</p>";
+    
+    $size = ob_get_length();
+    header('Connection: close');
+    header('Content-Encoding: none');
+    header('Content-Length: ' . $size);
+    ob_end_flush();
+    flush();
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
+}
+
+function snapshot_log($msg) {
+    $log_file = __DIR__ . '/../uploads/daily_snapshot.log';
+    $time = date('Y-m-d H:i:s');
+    @file_put_contents($log_file, "[$time] $msg\n", FILE_APPEND | LOCK_EX);
+}
+
+@file_put_contents(__DIR__ . '/../uploads/daily_snapshot.log', "[" . date('Y-m-d H:i:s') . "] --- BẮT ĐẦU QUÉT SNAPSHOT TOÀN HỆ THỐNG ---\n");
 
 $today_date = date('Y-m-d');
 $period = 'days_28';
 $start_date = date('Y-m-d', strtotime('-28 days'));
 $end_date = $today_date;
-
-// Lấy tất cả account_id hiện có
-$stmt_users = $pdo->query("SELECT DISTINCT account_id FROM users");
-$accounts = $stmt_users->fetchAll(PDO::FETCH_ASSOC);
 
 // Cấu hình mã lỗi FB để bỏ qua
 $CHECKPOINT_ERROR_CODES = [190, 368, 2500, 467, 10902];
@@ -66,7 +97,7 @@ function update_admin_snapshot_safe($pdo, $today_date, $period, $start_date, $en
             foreach ($api_responses as $pid => $api_response) {
                 if ($api_response['status_code'] === 200 && isset($api_response['data']['data'])) {
                     foreach ($api_response['data']['data'] as $metric) {
-                        if (!in_array($metric['name'], ['page_media_view', 'page_impressions_unique'])) continue;
+                        if (!in_array($metric['name'], ['page_media_view', 'page_total_media_view_unique'])) continue;
                         if (!isset($metric['values']) || !is_array($metric['values']) || empty($metric['values'])) continue;
                         $latest = end($metric['values']);
                         $val = isset($latest['value']) ? intval($latest['value']) : 0;
@@ -148,22 +179,37 @@ function update_admin_snapshot_safe($pdo, $today_date, $period, $start_date, $en
             $global_followers = $fresh_global_followers;
         }
 
+        $global_accounts = intval($pdo->query("SELECT COUNT(*) FROM users")->fetchColumn() ?: 0);
+        
+        $reels_stmt = $pdo->prepare("SELECT COUNT(id) FROM scheduled_posts WHERE post_type = 'Reel' AND DATE(scheduled_time) = ?");
+        $reels_stmt->execute([$today_date]);
+        $global_reels = intval($reels_stmt->fetchColumn() ?: 0);
+        
+        $posts_stmt = $pdo->prepare("SELECT COUNT(id) FROM scheduled_posts WHERE status = 'published' AND DATE(scheduled_time) = ?");
+        $posts_stmt->execute([$today_date]);
+        $global_posts = intval($posts_stmt->fetchColumn() ?: 0);
+
         $pdo->prepare("
-            INSERT INTO dashboard_snapshots (account_id, snapshot_date, total_followers, total_reach, total_views, total_pages)
-            VALUES ('0', ?, ?, ?, ?, ?)
+            INSERT INTO dashboard_snapshots (account_id, snapshot_date, total_followers, total_reach, total_views, total_pages, total_accounts, total_reels, total_posts)
+            VALUES ('0', ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 total_followers = VALUES(total_followers),
                 total_reach = VALUES(total_reach),
                 total_views = VALUES(total_views),
-                total_pages = VALUES(total_pages)
-        ")->execute([$today_date, $global_followers, $global_reach, $global_views, $global_pages]);
+                total_pages = VALUES(total_pages),
+                total_accounts = VALUES(total_accounts),
+                total_reels = VALUES(total_reels),
+                total_posts = VALUES(total_posts)
+        ")->execute([$today_date, $global_followers, $global_reach, $global_views, $global_pages, $global_accounts, $global_reels, $global_posts]);
 
-        echo "Updated ADMIN snapshot: Pages {$global_pages}, Followers " . number_format($global_followers) . ", Reach " . number_format($global_reach) . ", Views " . number_format($global_views) . "<br>\n";
+        echo "Updated ADMIN snapshot: Pages {$global_pages}, Followers " . number_format($global_followers) . ", Reach " . number_format($global_reach) . ", Views " . number_format($global_views) . ", Accounts {$global_accounts}, Reels {$global_reels}, Posts {$global_posts}<br>\n";
         @flush(); @ob_flush();
+        snapshot_log("Updated ADMIN snapshot: Pages {$global_pages}, Followers " . number_format($global_followers) . ", Reach " . number_format($global_reach) . ", Views " . number_format($global_views) . ", Accounts {$global_accounts}, Reels {$global_reels}, Posts {$global_posts}");
 
         return [$global_reach, $global_views];
     } catch (Exception $e) {
         echo "Lỗi update ADMIN snapshot: " . $e->getMessage() . "<br>\n";
+        snapshot_log("Lỗi update ADMIN snapshot: " . $e->getMessage());
         return false;
     }
 }
@@ -223,7 +269,7 @@ foreach ($accounts as $acc) {
     foreach ($api_responses as $page_id => $api_response) {
         if ($api_response['status_code'] === 200 && isset($api_response['data']['data'])) {
             foreach ($api_response['data']['data'] as $metric) {
-                if ($metric['name'] === 'page_media_view' || $metric['name'] === 'page_impressions_unique') {
+                if ($metric['name'] === 'page_media_view' || $metric['name'] === 'page_total_media_view_unique') {
                     if (isset($metric['values']) && is_array($metric['values']) && count($metric['values']) > 0) {
                         $values_arr = $metric['values'];
                         $latest_value = end($values_arr);
@@ -241,22 +287,39 @@ foreach ($accounts as $acc) {
 
     // Insert dashboard_snapshots cho account_id
     try {
+        $accounts_stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE account_id = ?");
+        $accounts_stmt->execute([$account_id]);
+        $user_accounts = intval($accounts_stmt->fetchColumn() ?: 0);
+        
+        $reels_stmt = $pdo->prepare("SELECT COUNT(id) FROM scheduled_posts WHERE account_id = ? AND post_type = 'Reel' AND DATE(scheduled_time) = ?");
+        $reels_stmt->execute([$account_id, $today_date]);
+        $user_reels = intval($reels_stmt->fetchColumn() ?: 0);
+        
+        $posts_stmt = $pdo->prepare("SELECT COUNT(id) FROM scheduled_posts WHERE account_id = ? AND status = 'published' AND DATE(scheduled_time) = ?");
+        $posts_stmt->execute([$account_id, $today_date]);
+        $user_posts = intval($posts_stmt->fetchColumn() ?: 0);
+
         $pdo->prepare("
-            INSERT INTO dashboard_snapshots (account_id, snapshot_date, total_followers, total_reach, total_views, total_pages)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO dashboard_snapshots (account_id, snapshot_date, total_followers, total_reach, total_views, total_pages, total_accounts, total_reels, total_posts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 total_followers = VALUES(total_followers),
                 total_reach = VALUES(total_reach),
                 total_views = VALUES(total_views),
-                total_pages = VALUES(total_pages)
-        ")->execute([$account_id, $today_date, $total_followers, $display_total_reach, $display_total_views, $total_pages]);
+                total_pages = VALUES(total_pages),
+                total_accounts = VALUES(total_accounts),
+                total_reels = VALUES(total_reels),
+                total_posts = VALUES(total_posts)
+        ")->execute([$account_id, $today_date, $total_followers, $display_total_reach, $display_total_views, $total_pages, $user_accounts, $user_reels, $user_posts]);
         
-        echo "Updated snapshot for account {$account_id}: Followers " . number_format($total_followers) . ", Reach {$display_total_reach}, Views {$display_total_views}<br>\n";
+        echo "Updated snapshot for account {$account_id}: Followers " . number_format($total_followers) . ", Reach {$display_total_reach}, Views {$display_total_views}, Accounts {$user_accounts}, Reels {$user_reels}, Posts {$user_posts}<br>\n";
         @flush(); @ob_flush();
+        snapshot_log("Updated snapshot for account {$account_id}: Followers " . number_format($total_followers) . ", Reach {$display_total_reach}, Views {$display_total_views}, Accounts {$user_accounts}, Reels {$user_reels}, Posts {$user_posts}");
         
     } catch (Exception $e) { 
         echo "Lỗi update snapshot account {$account_id}: " . $e->getMessage() . "<br>\n";
         @flush(); @ob_flush();
+        snapshot_log("Lỗi update snapshot account {$account_id}: " . $e->getMessage());
     }
 }
 
@@ -270,3 +333,4 @@ if (is_dir($cache_dir)) {
 
 echo "--- DAILY SNAPSHOT AUTO-UPDATE DONE ---<br>\n";
 @flush(); @ob_flush();
+snapshot_log("--- DAILY SNAPSHOT AUTO-UPDATE DONE ---");

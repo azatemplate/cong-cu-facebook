@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        // 1. Check 24-hour limit using Zalo conversation history API
+        // 1. Check 7-day limit using Zalo conversation history API
         $data_param = json_encode([
             'user_id' => $recipient_id,
             'offset' => 0,
@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $check_headers = ["access_token: {$access_token}"];
         $check_res = zalo_api_request($check_url, 'GET', $check_headers);
         
-        $is_over_24h = false;
+        $is_over_7d = false;
         if ($check_res['status_code'] === 200 && isset($check_res['data']['error']) && $check_res['data']['error'] === 0) {
             $history = $check_res['data']['data'] ?? [];
             $last_customer_time = 0;
@@ -65,8 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if ($last_customer_time > 0) {
                 $diff_hours = (time() - $last_customer_time) / 3600;
-                if ($diff_hours > 24) {
-                    $is_over_24h = true;
+                if ($diff_hours > 168) { // 7 days = 168 hours
+                    $is_over_7d = true;
                 }
             } else {
                 // Fallback: check conversation's last updated time in DB
@@ -76,17 +76,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($conv_db) {
                     $upd_time = strtotime($conv_db['updated_time']);
                     $diff_hours = (time() - $upd_time) / 3600;
-                    if ($diff_hours > 24) {
-                        $is_over_24h = true;
+                    if ($diff_hours > 168) {
+                        $is_over_7d = true;
                     }
                 }
             }
         }
         
-        if ($is_over_24h) {
+        if ($is_over_7d) {
             echo json_encode([
                 'status' => 'error', 
-                'msg' => 'Gửi thất bại: Cuộc trò chuyện đã quá 24 giờ kể từ tương tác cuối cùng của khách hàng.'
+                'msg' => 'Gửi thất bại: Cuộc trò chuyện đã quá 7 ngày kể từ tương tác cuối cùng của khách hàng.'
             ]);
             exit;
         }

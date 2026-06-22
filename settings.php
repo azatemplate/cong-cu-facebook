@@ -45,6 +45,10 @@ try {
     $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
 } catch (Exception $e) {}
 
+try {
+    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN sales_list TEXT DEFAULT NULL");
+} catch (Exception $e) {}
+
 $alert_type = '';
 $alert_message = '';
 
@@ -147,6 +151,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $u_stmt = $pdo->prepare("UPDATE system_accounts SET post_delay_seconds = ?, retry_interval_minutes = ?, max_retries = ? WHERE id = ?");
         $u_stmt->execute([$delay, $interval, $max_retries, $account_id]);
         
+        // Save tiktok_api_url to system_settings (global config) - Admin only
+        if (($_SESSION['role'] === 'admin') && isset($_POST['tiktok_api_url'])) {
+            $tiktok_api_val = trim($_POST['tiktok_api_url']);
+            $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('tiktok_api_url', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
+                ->execute([$tiktok_api_val, $tiktok_api_val]);
+        }
+        
         $alert_type = 'success';
         $alert_message = 'Đã cập nhật cấu hình Đăng bài thành công.';
         
@@ -190,6 +201,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $alert_message = 'Đã cập nhật cấu hình Throttling Máy chủ thành công.';
     }
 
+    if (isset($_POST['update_sales_list'])) {
+        $sales_list = trim($_POST['sales_list'] ?? '');
+        $u_stmt = $pdo->prepare("UPDATE system_accounts SET sales_list = ? WHERE id = ?");
+        $u_stmt->execute([$sales_list, $account_id]);
+        $alert_type = 'success';
+        $alert_message = 'Đã cập nhật danh sách số điện thoại Sales thành công.';
+        $account['sales_list'] = $sales_list;
+    }
+
     if (isset($_POST['test_telegram'])) {
         require_once __DIR__ . '/includes/telegram.php';
         $ok = send_telegram_notification($pdo, $_SESSION['account_id'], "<b>🔔 Thông báo thử nghiệm</b>\nHệ thống Facebook Automation đã kết nối Telegram thành công!\n\n🕐 Thời gian: " . date('d/m/Y H:i:s'), 'general');
@@ -203,7 +223,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 } else {
     $account_id = $_SESSION['account_id'];
-    $stmt = $pdo->prepare("SELECT fb_app_id, fb_app_secret, gg_client_id, gg_client_secret, gg_refresh_token, post_delay_seconds, retry_interval_minutes, max_retries, telegram_bot_token, telegram_chat_id, email, login_by_email FROM system_accounts WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT fb_app_id, fb_app_secret, gg_client_id, gg_client_secret, gg_refresh_token, post_delay_seconds, retry_interval_minutes, max_retries, telegram_bot_token, telegram_chat_id, email, login_by_email, sales_list FROM system_accounts WHERE id = ?");
     $stmt->execute([$account_id]);
     $account = $stmt->fetch(PDO::FETCH_ASSOC);
 }
@@ -211,6 +231,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Lấy Cấu hình Retry từ User
 $retry_interval = isset($account['retry_interval_minutes']) && $account['retry_interval_minutes'] !== null ? $account['retry_interval_minutes'] : '1';
 $max_retries = isset($account['max_retries']) && $account['max_retries'] !== null ? $account['max_retries'] : '3';
+
+// Load tiktok_api_url from system_settings
+$tiktok_api_url = '';
+try {
+    $stmt_tik = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'tiktok_api_url'");
+    $stmt_tik->execute();
+    $tiktok_api_url = $stmt_tik->fetchColumn() ?: '';
+} catch (Exception $e) {}
 
 // Lấy cấu hình Telegram từ account của user hiện tại
 $tg_bot_token = $account['telegram_bot_token'] ?? '';
@@ -387,6 +415,14 @@ try {
                 <input type="number" name="post_delay_seconds" value="<?php echo htmlspecialchars($account['post_delay_seconds'] ?? '15'); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="0" max="3600">
             </div>
 
+            <?php if ($is_admin): ?>
+            <div class="form-group">
+                <label>TikTok Custom API URL (Tùy chọn)</label>
+                <p style="font-size: 11px; color: var(--text-muted); margin-top: -5px; margin-bottom: 5px;">Link API tải video TikTok tự chạy hoặc demo (Ví dụ: <code>http://127.0.0.1:8000</code>). Để trống sẽ tự động dùng API dự phòng mặc định.</p>
+                <input type="text" name="tiktok_api_url" value="<?php echo htmlspecialchars($tiktok_api_url); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" placeholder="http://127.0.0.1:8000">
+            </div>
+            <?php endif; ?>
+
             <div class="form-group">
                 <label>Thời gian chờ thử lại mặc định (Phút)</label>
                 <input type="number" name="retry_interval_minutes" value="<?php echo htmlspecialchars($retry_interval); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="1" max="1440">
@@ -463,6 +499,26 @@ try {
                 <button type="submit" name="update_telegram" class="btn btn-primary" style="background: #0088cc; border-color: #0088cc;">💾 Lưu Cấu Hình</button>
                 <button type="submit" name="test_telegram" class="btn btn-primary" style="background: #16a34a; border-color: #16a34a;">🔔 Gửi Thông Báo Thử</button>
             </div>
+        </form>
+    </div>
+
+    <div class="card" style="margin: 0; box-sizing: border-box;">
+        <h3 style="margin-bottom: 10px;">📞 Danh sách số điện thoại Sales</h3>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 15px;">
+            Nhập danh sách Sales của bạn (mỗi người một dòng). Người dùng sẽ có thể chọn nhanh từ danh sách này khi cập nhật hồ sơ khách hàng.
+        </p>
+        <form method="POST" action="settings.php">
+            <?php echo csrf_field(); ?>
+            <div class="form-group">
+                <label>Danh sách Sales (Tên và Số điện thoại)</label>
+                <p style="font-size: 11px; color: var(--text-muted); margin-top: -5px; margin-bottom: 5px;">
+                    Ví dụ:<br>
+                    Ms Hà 0932 087 886<br>
+                    Mr Tuấn 0909 123 456
+                </p>
+                <textarea name="sales_list" rows="6" placeholder="Nhập tên & SĐT Sales, ví dụ: Ms Hà 0932 087 886" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 13px; resize: vertical;"><?php echo htmlspecialchars($account['sales_list'] ?? ''); ?></textarea>
+            </div>
+            <button type="submit" name="update_sales_list" class="btn btn-primary" style="background: #10b981; border-color: #10b981;">💾 Lưu danh sách Sales</button>
         </form>
     </div>
 

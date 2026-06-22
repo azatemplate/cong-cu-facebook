@@ -168,7 +168,7 @@ $today_str   = date('Y-m-d');
 $tomorrow_str = date('Y-m-d', strtotime('+1 day'));
 
 if (!empty($page_token) && $selected_page_id) {
-    $fields = 'created_time,message,attachments{media_type,url,media},reactions.summary(true).limit(0),comments.summary(true).limit(0),shares,insights.metric(post_video_views,post_impressions_unique)';
+    $fields = 'created_time,message,attachments{media_type,url,media},reactions.summary(true).limit(0),comments.summary(true).limit(0),shares,insights.metric(post_video_views,post_total_media_view_unique)';
     $tp_url = "https://graph.facebook.com/v25.0/{$selected_page_id}/posts"
             . "?fields=" . urlencode($fields)
             . "&since={$today_str}&until={$tomorrow_str}"
@@ -416,7 +416,7 @@ function get_post_metric($post, $metric_name) {
             $thumb_url  = $tp['attachments']['data'][0]['media']['image']['src'] ?? '';
             $post_url   = $tp['attachments']['data'][0]['url'] ?? "https://facebook.com/{$tp['id']}";
             $views      = get_post_metric($tp, 'post_video_views');
-            $reach      = get_post_metric($tp, 'post_impressions_unique');
+            $reach      = get_post_metric($tp, 'post_total_media_view_unique');
             $post_likes = (int)($tp['reactions']['summary']['total_count'] ?? 0);
             $post_comments = (int)($tp['comments']['summary']['total_count'] ?? 0);
             $post_shares = (int)($tp['shares']['count'] ?? 0);

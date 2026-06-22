@@ -12,6 +12,13 @@ if (!isset($_SESSION['account_id'])) {
     echo json_encode(['status' => 'error', 'msg' => 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.']);
     exit;
 }
+
+// Clear conversation cache
+foreach (array_keys($_SESSION) as $key) {
+    if (strpos($key, 'fb_convs_') === 0) {
+        unset($_SESSION[$key]);
+    }
+}
 session_write_close();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

@@ -35,6 +35,12 @@ $zalo_oas_list = $stmt_zalo->fetchAll(PDO::FETCH_ASSOC);
 // 3. Merge lists
 $pages = array_merge($fb_pages, $zalo_oas_list);
 $pages_json = json_encode($pages);
+
+// 4. Fetch sales_list
+$stmt_acc = $pdo->prepare("SELECT sales_list FROM system_accounts WHERE id = ?");
+$stmt_acc->execute([$account_id]);
+$acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC);
+$sales_list = $acc_setup['sales_list'] ?? '';
 ?>
 
 <!-- Custom CSS for Premium Zalo Live Chat interface -->
@@ -567,9 +573,9 @@ $pages_json = json_encode($pages);
                 </div>
             </div>
 
-            <!-- 24h Warning banner -->
-            <div id="policy_24h_banner" style="display:none; margin: 0 16px 10px 16px; padding:12px 16px; background:#fef2f2; border:1px solid #fee2e2; border-radius:8px; font-size:13px; color:#b91c1c; align-items:flex-start; gap:10px; line-height:1.5;">
-                <span>⚠️ Do chính sách Zalo OA, hội thoại đã quá 24h kể từ tương tác cuối cùng của khách hàng. Bạn không thể tiếp tục gửi tin nhắn chăm sóc khách hàng.</span>
+            <!-- 7 days Warning banner -->
+            <div id="policy_7d_banner" style="display:none; margin: 0 16px 10px 16px; padding:12px 16px; background:#fef2f2; border:1px solid #fee2e2; border-radius:8px; font-size:13px; color:#b91c1c; align-items:flex-start; gap:10px; line-height:1.5;">
+                <span>⚠️ Do chính sách Zalo OA, hội thoại đã quá 7 ngày kể từ tương tác cuối cùng của khách hàng. Bạn không thể tiếp tục gửi tin nhắn chăm sóc khách hàng.</span>
             </div>
 
             <!-- Chat input form -->
@@ -618,6 +624,34 @@ $pages_json = json_encode($pages);
                     <div class="form-group">
                         <label for="cust_notes">Yêu cầu / Ghi chú tích lũy</label>
                         <textarea id="cust_notes" rows="6" placeholder="Nhu cầu sản phẩm, số lượng, lịch sử trao đổi..." style="height:auto;" disabled></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="cust_consulted">Trạng thái tư vấn</label>
+                        <select id="cust_consulted" disabled style="width:100%; padding:8px 10px; border:1px solid var(--border-color); border-radius:6px; font-size:13px; background:var(--card-bg); color:var(--text-main); cursor:pointer;">
+                            <option value="0">🆕 Chưa tư vấn</option>
+                            <option value="1">✅ Đã tư vấn</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="cust_sales_phone">Số điện thoại Sales</label>
+                        <input type="text" id="cust_sales_phone" list="sales_phone_list" placeholder="Nhập SĐT Sales" disabled>
+                        <datalist id="sales_phone_list">
+                            <?php
+                            if (!empty($sales_list)) {
+                                $lines = explode("\n", $sales_list);
+                                foreach ($lines as $line) {
+                                    $trimmed = trim($line);
+                                    if ($trimmed !== '') {
+                                        echo '<option value="' . htmlspecialchars($trimmed) . '"></option>';
+                                    }
+                                }
+                            }
+                            ?>
+                        </datalist>
+                    </div>
+                    <div class="form-group">
+                        <label for="cust_sales_notes">Ghi chú Sales</label>
+                        <textarea id="cust_sales_notes" rows="3" placeholder="Nhập ghi chú của Sales" style="height:auto;" disabled></textarea>
                     </div>
                     <button type="submit" class="btn btn-primary" id="btn_save_customer" style="width:100%; font-weight:600; background:#0068ff; border:none; margin-top:10px; box-shadow:0 4px 6px -1px rgba(0, 104, 255, 0.4);" disabled>
                         Lưu thông tin
@@ -797,8 +831,9 @@ $pages_json = json_encode($pages);
     let activeSenderId = '';
     let conversationsCache = [];
     let currentFilter = 'all';
-    let pollInterval = null;
-    let activeConvOver24h = false;
+    let messagePollingInterval = null;
+    let activeConvOver7Days = false;
+    let activeOaName = '';
 
     document.addEventListener('DOMContentLoaded', function() {
         // Tab switcher
@@ -1051,6 +1086,12 @@ $pages_json = json_encode($pages);
                     // Clear the URL query parameters so page refresh behaves normally
                     const newUrl = window.location.pathname;
                     window.history.replaceState({}, document.title, newUrl);
+                } else {
+                    // Auto select last active conversation from localStorage
+                    const savedSenderId = localStorage.getItem('last_zalo_sender_id_' + activeOaId);
+                    if (savedSenderId && conversationsCache.some(x => x.sender_id === savedSenderId)) {
+                        selectConversation(savedSenderId);
+                    }
                 }
             } else {
                 showToast(res.msg, 'error');
@@ -1126,6 +1167,7 @@ $pages_json = json_encode($pages);
 
     function selectConversation(senderId) {
         activeSenderId = senderId;
+        localStorage.setItem('last_zalo_sender_id_' + activeOaId, senderId);
         
         // Highlight active conversation node
         document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
@@ -1164,6 +1206,8 @@ $pages_json = json_encode($pages);
             document.getElementById('cust_phone').value = conv.phone || '';
             document.getElementById('cust_province').value = conv.province || '';
             document.getElementById('cust_notes').value = '';
+            document.getElementById('cust_sales_phone').value = '';
+            document.getElementById('cust_sales_notes').value = '';
             
             // Enable inputs
             enableCustomerFormInputs(true);
@@ -1184,6 +1228,9 @@ $pages_json = json_encode($pages);
         document.getElementById('cust_phone').disabled = !enable;
         document.getElementById('cust_province').disabled = !enable;
         document.getElementById('cust_notes').disabled = !enable;
+        document.getElementById('cust_consulted').disabled = !enable;
+        document.getElementById('cust_sales_phone').disabled = !enable;
+        document.getElementById('cust_sales_notes').disabled = !enable;
         document.getElementById('btn_save_customer').disabled = !enable;
         
         const refreshBtn = document.getElementById('btn_refresh_profile');
@@ -1204,7 +1251,7 @@ $pages_json = json_encode($pages);
                 Chọn khách hàng để xem lịch sử trò chuyện.
             </div>
         `;
-        document.getElementById('policy_24h_banner').style.display = 'none';
+        document.getElementById('policy_7d_banner').style.display = 'none';
         enableChatInputs(false);
         enableCustomerFormInputs(false);
     }
@@ -1241,6 +1288,9 @@ $pages_json = json_encode($pages);
                     document.getElementById('cust_phone').value = res.data.phone || '';
                     document.getElementById('cust_province').value = res.data.province || '';
                     document.getElementById('cust_notes').value = res.data.notes || '';
+                    document.getElementById('cust_consulted').value = res.data.consulted == 1 ? '1' : '0';
+                    document.getElementById('cust_sales_phone').value = res.data.sales_phone || '';
+                    document.getElementById('cust_sales_notes').value = res.data.sales_notes || '';
 
                     // Update Zalo bot toggle button status
                     const isLocked = res.data.is_locked == 1;
@@ -1312,8 +1362,8 @@ $pages_json = json_encode($pages);
                 const messages = res.data.reverse();
                 renderMessageBubbles(messages);
                 
-                // Enforce 24h Policy check
-                checkPolicy24h(messages);
+                // Enforce Zalo OA 7-day Policy check
+                checkPolicy7Days(messages);
             } else {
                 container.innerHTML = `<div style="text-align:center; padding:30px; color:#ef4444;">Lỗi: ${res.msg}</div>`;
             }
@@ -1338,7 +1388,7 @@ $pages_json = json_encode($pages);
                 const isAtBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 80;
                 
                 renderMessageBubbles(messages);
-                checkPolicy24h(messages);
+                checkPolicy7Days(messages);
                 
                 if (isAtBottom) {
                     container.scrollTop = container.scrollHeight;
@@ -1347,8 +1397,8 @@ $pages_json = json_encode($pages);
         });
     }
 
-    function checkPolicy24h(messages) {
-        let isOver24h = false;
+    function checkPolicy7Days(messages) {
+        let isOver7Days = false;
         let lastCustomerMsg = null;
         
         // Find latest customer message (src === 1)
@@ -1363,8 +1413,8 @@ $pages_json = json_encode($pages);
             const lastTime = parseInt(lastCustomerMsg.time); // ms timestamp
             const now = new Date().getTime();
             const diffHours = (now - lastTime) / (1000 * 60 * 60);
-            if (diffHours > 24) {
-                isOver24h = true;
+            if (diffHours > 168) { // 7 days = 168 hours
+                isOver7Days = true;
             }
         } else {
             // Fallback: check conversation update time in list
@@ -1373,20 +1423,20 @@ $pages_json = json_encode($pages);
                 const updTime = new Date(conv.updated_time).getTime();
                 const now = new Date().getTime();
                 const diffHours = (now - updTime) / (1000 * 60 * 60);
-                if (diffHours > 24) {
-                    isOver24h = true;
+                if (diffHours > 168) {
+                    isOver7Days = true;
                 }
             }
         }
 
-        activeConvOver24h = isOver24h;
-        const banner = document.getElementById('policy_24h_banner');
-        banner.style.display = isOver24h ? 'flex' : 'none';
+        activeConvOver7Days = isOver7Days;
+        const banner = document.getElementById('policy_7d_banner');
+        banner.style.display = isOver7Days ? 'flex' : 'none';
         
-        // Disable chat input elements if over 24h
-        if (isOver24h) {
+        // Disable chat input elements if over 7 days
+        if (isOver7Days) {
             document.getElementById('chat_message_input').disabled = true;
-            document.getElementById('chat_message_input').placeholder = "Hội thoại đã quá 24h (Đã khóa gửi tin)";
+            document.getElementById('chat_message_input').placeholder = "Hội thoại đã quá 7 ngày (Đã khóa gửi tin)";
             document.getElementById('btn_send').disabled = true;
             document.getElementById('btn_attach').disabled = true;
         } else {
@@ -1463,8 +1513,8 @@ $pages_json = json_encode($pages);
         const input = document.getElementById('chat_message_input');
         const text = input.value.trim();
         
-        if (activeConvOver24h) {
-            showToast('Không thể gửi: Hội thoại đã quá hạn 24 giờ.', 'error');
+        if (activeConvOver7Days) {
+            showToast('Không thể gửi: Hội thoại đã quá hạn 7 ngày.', 'error');
             return;
         }
 
@@ -1525,8 +1575,8 @@ $pages_json = json_encode($pages);
         const file = e.target.files[0];
         if (!file) return;
 
-        if (activeConvOver24h) {
-            showToast('Không thể gửi: Hội thoại đã quá hạn 24 giờ.', 'error');
+        if (activeConvOver7Days) {
+            showToast('Không thể gửi: Hội thoại đã quá hạn 7 ngày.', 'error');
             return;
         }
 
@@ -1599,6 +1649,9 @@ $pages_json = json_encode($pages);
         const phone = document.getElementById('cust_phone').value.trim();
         const province = document.getElementById('cust_province').value.trim();
         const notes = document.getElementById('cust_notes').value.trim();
+        const consulted = document.getElementById('cust_consulted').value;
+        const sales_phone = document.getElementById('cust_sales_phone').value.trim();
+        const sales_notes = document.getElementById('cust_sales_notes').value.trim();
 
         const fd = new FormData();
         fd.append('oa_id', activeOaId);
@@ -1607,6 +1660,9 @@ $pages_json = json_encode($pages);
         fd.append('phone', phone);
         fd.append('province', province);
         fd.append('notes', notes);
+        fd.append('consulted', consulted);
+        fd.append('sales_phone', sales_phone);
+        fd.append('sales_notes', sales_notes);
 
         fetch('actions/zalo_save_customer.php', {
             method: 'POST',

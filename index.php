@@ -10,8 +10,8 @@ $end_date = date('Y-m-d');
 $start_date = date('Y-m-d', strtotime('-28 days'));
 
 $sub_msg = $is_admin 
-    ? "🛡 Super Admin — Global View · Dữ liệu toàn hệ thống" 
-    : "👤 Thành viên — Dữ liệu tài khoản cá nhân";
+    ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" style="display:inline-block; vertical-align:text-bottom; margin-right:4px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> SUPER ADMIN • GLOBAL VIEW • DỮ LIỆU TOÀN HỆ THỐNG' 
+    : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" style="display:inline-block; vertical-align:text-bottom; margin-right:4px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> THÀNH VIÊN • DỮ LIỆU TÀI KHOẢN CÁ NHÂN';
 
 // ── Chart data from snapshots (lightweight DB query, always fast) ────────────
 $snap_account_id = $is_admin ? 0 : $account_id;
@@ -51,11 +51,203 @@ foreach ($chart_days as $day) {
 }
 ?>
 
-<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
-    <div>
-        <div class="page-title" style="margin-bottom: 5px;">Today's Overview</div>
-        <div style="font-size: 11px; font-weight: 500; color: var(--primary-color); letter-spacing: 1px; text-transform: uppercase;">
-            <?php echo $sub_msg; ?>
+<style>
+/* Premium Dashboard Card Overrides */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-bottom: 24px;
+}
+
+.stat-card.premium-card {
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stat-card.premium-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.premium-card .card-icon-container {
+    width: 58px;
+    height: 58px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    flex-shrink: 0;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+}
+
+/* Gradients for the icon containers */
+.premium-card .grad-purple {
+    background: linear-gradient(135deg, #a855f7, #6366f1);
+}
+.premium-card .grad-blue {
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+}
+.premium-card .grad-red {
+    background: linear-gradient(135deg, #f43f5e, #e11d48);
+}
+.premium-card .grad-green {
+    background: linear-gradient(135deg, #10b981, #059669);
+}
+.premium-card .grad-orange {
+    background: linear-gradient(135deg, #f97316, #ea580c);
+}
+.premium-card .grad-indigo {
+    background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+}
+.premium-card .grad-sky {
+    background: linear-gradient(135deg, #0ea5e9, #0284c7);
+}
+
+.premium-card .card-info-container {
+    flex: 1;
+    min-width: 0;
+}
+
+.premium-card .stat-title {
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.premium-card .stat-value-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.premium-card .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.5px;
+}
+
+.premium-card .stat-value.color-purple { color: #8b5cf6; }
+.premium-card .stat-value.color-blue { color: #2563eb; }
+.premium-card .stat-value.color-red { color: #e11d48; }
+.premium-card .stat-value.color-green { color: #10b981; }
+.premium-card .stat-value.color-orange { color: #ea580c; }
+.premium-card .stat-value.color-indigo { color: #6366f1; }
+.premium-card .stat-value.color-sky { color: #0284c7; }
+
+.premium-card .stat-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 0;
+    line-height: 1.3;
+}
+
+/* Badge styles for trend indicators */
+.trend-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.trend-badge.trend-up {
+    background: #f0fdf4;
+    color: #16a34a;
+    border: 1px solid #bbf7d0;
+}
+
+.trend-badge.trend-down {
+    background: #fef2f2;
+    color: #ef4444;
+    border: 1px solid #fecaca;
+}
+
+body.dark-mode .trend-badge.trend-up {
+    background: rgba(22, 163, 74, 0.15);
+    color: #4ade80;
+    border-color: rgba(34, 197, 94, 0.3);
+}
+
+body.dark-mode .trend-badge.trend-down {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+body.dark-mode .stat-card.premium-card {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+@media (max-width: 1024px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+@media (max-width: 640px) {
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+    .stat-card.premium-card {
+        padding: 16px;
+        gap: 12px;
+    }
+    .premium-card .card-icon-container {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+    }
+    .premium-card .card-icon-container svg {
+        width: 20px;
+        height: 20px;
+    }
+    .premium-card .stat-value {
+        font-size: 22px;
+    }
+}
+</style>
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+    <div style="display: flex; align-items: center; gap: 14px;">
+        <div class="dashboard-header-icon-container" style="width: 48px; height: 48px; border-radius: 12px; background: #ffffff; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.1), 0 4px 6px -4px rgba(99, 102, 241, 0.05); border: 1px solid var(--border-color); flex-shrink: 0;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="url(#headerGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="28" height="28">
+                <defs>
+                    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#a855f7" />
+                        <stop offset="100%" stop-color="#6366f1" />
+                    </linearGradient>
+                </defs>
+                <path d="M3 17l6-6 4 4 8-8"/>
+                <path d="M17 7h4v4"/>
+                <path d="M6 20v-4M10 20v-8M14 20v-5M18 20V8"/>
+            </svg>
+        </div>
+        <div>
+            <div class="page-title" style="margin-bottom: 3px; font-size: 22px; font-weight: 700; color: var(--text-main); line-height: 1.1;">Today's Overview</div>
+            <div style="font-size: 11px; font-weight: 600; color: #6366f1; letter-spacing: 0.5px; text-transform: uppercase; display: flex; align-items: center; gap: 4px;">
+                <?php echo $sub_msg; ?>
+            </div>
         </div>
     </div>
     
@@ -75,71 +267,145 @@ foreach ($chart_days as $day) {
 
 <!-- Stats Grid: All values loaded via AJAX for instant page render -->
 <div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-title"><?php echo $is_admin ? "Connected Accounts (All Users)" : "Connected FB Profiles"; ?></div>
-        <div class="stat-value color-primary" style="display:flex; align-items:center;">
-            <span class="icon" style="margin-right:10px;">👥</span> <span id="ajax-users">—</span>
+    <!-- Card 1: Connected Accounts -->
+    <div class="stat-card premium-card">
+        <div class="card-icon-container grad-purple">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+                <path d="M4.5 6.375a4.125 4.125 0 1 1 8.25 0 4.125 4.125 0 0 1-8.25 0ZM14.25 8.625a3.375 3.375 0 1 1 6.75 0 3.375 3.375 0 0 1-6.75 0ZM1.5 19.125a7.125 7.125 0 0 1 14.25 0v.003l-.001.119a.75.75 0 0 1-.363.63 13.067 13.067 0 0 1-6.761 1.873c-2.472 0-4.786-.684-6.76-1.873a.75.75 0 0 1-.364-.63l-.001-.122ZM17.25 19.128l-.001.144a2.25 2.25 0 0 1-.233.96 10.088 10.088 0 0 0 3.484-1.104.75.75 0 0 0 .363-.63 6.75 6.75 0 0 0-11.238-5.187 8.623 8.623 0 0 1 7.625 5.817Z" />
+            </svg>
         </div>
-        <div class="stat-subtitle"><?php echo $is_admin ? "Tổng tài khoản FB đã kết nối" : "Số tài khoản Facebook đã liên kết"; ?></div>
+        <div class="card-info-container">
+            <div class="stat-title"><?php echo $is_admin ? "Connected Accounts (All Users)" : "Connected FB Profiles"; ?></div>
+            <div class="stat-value-row">
+                <span class="stat-value color-purple" id="ajax-users">—</span>
+                <span id="ajax-users-diff" style="display:none;"></span>
+            </div>
+            <div class="stat-subtitle"><?php echo $is_admin ? "Tổng tài khoản FB đã kết nối" : "Số tài khoản Facebook đã liên kết"; ?></div>
+        </div>
     </div>
     
-    <div class="stat-card">
-        <div class="stat-title"><?php echo $is_admin ? "Total Fanpages (All Users)" : "Total Fanpages"; ?></div>
-        <div class="stat-value color-blue" style="display:flex; align-items:center;">
-            <span class="icon" style="margin-right:10px;">f</span> <span id="ajax-pages">—</span>
+    <!-- Card 2: Total Fanpages -->
+    <div class="stat-card premium-card">
+        <div class="card-icon-container grad-blue">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+                <path d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1v2h3v3h-3v6.95c4.56-.93 8-4.96 8-9.75z"/>
+            </svg>
         </div>
-        <div class="stat-subtitle"><?php echo $is_admin ? "Tổng fanpage trên toàn hệ thống" : "Tổng fanpage sở hữu & chia sẻ"; ?></div>
+        <div class="card-info-container">
+            <div class="stat-title"><?php echo $is_admin ? "Total Fanpages (All Users)" : "Total Fanpages"; ?></div>
+            <div class="stat-value-row">
+                <span class="stat-value color-blue" id="ajax-pages">—</span>
+                <span id="ajax-pages-diff" style="display:none;"></span>
+            </div>
+            <div class="stat-subtitle"><?php echo $is_admin ? "Tổng fanpage trên toàn hệ thống" : "Tổng fanpage sở hữu & chia sẻ"; ?></div>
+        </div>
     </div>
 
-    <div class="stat-card">
-        <div class="stat-title"><?php echo $is_admin ? "Total Reach (All Users)" : "Total Reach"; ?></div>
-        <div class="stat-value color-red" style="display:flex; align-items:center; flex-wrap:wrap;">
-            <span class="icon" style="margin-right:10px;">👁️</span> 
-            <span id="ajax-reach">—</span> 
-            <span id="ajax-reach-diff" style="display:none;"></span>
+    <!-- Card 3: Total Reach -->
+    <div class="stat-card premium-card">
+        <div class="card-icon-container grad-red">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+            </svg>
         </div>
-        <div class="stat-subtitle" style="margin-top: 10px;"><?php echo $is_admin ? "Tổng reach từ page insights" : "Tổng tiếp cận fanpage"; ?> (<?php echo htmlspecialchars($period); ?>)</div>
+        <div class="card-info-container">
+            <div class="stat-title"><?php echo $is_admin ? "Total Reach (All Users)" : "Total Reach"; ?></div>
+            <div class="stat-value-row">
+                <span class="stat-value color-red" id="ajax-reach">—</span>
+                <span id="ajax-reach-diff" style="display:none;"></span>
+            </div>
+            <div class="stat-subtitle"><?php echo $is_admin ? "Tổng reach từ page insights" : "Tổng tiếp cận fanpage"; ?> (<?php echo htmlspecialchars($period); ?>)</div>
+        </div>
     </div>
     
-    <div class="stat-card">
-        <div class="stat-title"><?php echo $is_admin ? "Total Flow (All Followers)" : "Total Followers"; ?></div>
-        <div class="stat-value color-green" style="display:flex; align-items:center; flex-wrap:wrap;">
-            <span class="icon" style="margin-right:10px;">👍</span> 
-            <span id="ajax-followers">—</span>
-            <span id="ajax-followers-diff" style="display:none;"></span>
+    <!-- Card 4: Total Followers -->
+    <div class="stat-card premium-card">
+        <div class="card-icon-container grad-green">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+                <path d="M2 20h2v-8H2v8zm19.83-8.88c-.2-.67-.82-1.12-1.52-1.12h-5.69l.86-4.14.03-.3c0-.38-.15-.74-.41-1.01L14.22 3.5 8.59 9.13C8.22 9.5 8 10 8 10.5V18c0 1.1.9 2 2 2h7.3c.73 0 1.37-.48 1.57-1.17l2.8-6.52c.1-.24.16-.5.16-.76v-1.13c0-.28-.06-.55-.17-.84z"/>
+            </svg>
         </div>
-        <div class="stat-subtitle" style="margin-top: 10px;"><?php echo $is_admin ? "Tổng người theo dõi toàn bộ fanpage" : "Tổng người theo dõi các fanpage"; ?></div>
+        <div class="card-info-container">
+            <div class="stat-title"><?php echo $is_admin ? "Total Flow (All Followers)" : "Total Followers"; ?></div>
+            <div class="stat-value-row">
+                <span class="stat-value color-green" id="ajax-followers">—</span>
+                <span id="ajax-followers-diff" style="display:none;"></span>
+            </div>
+            <div class="stat-subtitle"><?php echo $is_admin ? "Tổng người theo dõi toàn bộ fanpage" : "Tổng người theo dõi các fanpage"; ?></div>
+        </div>
     </div>
     
-    <div class="stat-card">
-        <div class="stat-title"><?php echo $is_admin ? "Reels Uploaded Today (All Users)" : "Reels Uploaded Today"; ?></div>
-        <div class="stat-value color-orange" style="display:flex; align-items:center; color: #f97316;">
-            <span class="icon" style="margin-right:10px;">📹</span> <span id="ajax-reels">—</span>
+    <!-- Card 5: Reels Uploaded Today -->
+    <div class="stat-card premium-card">
+        <div class="card-icon-container grad-orange">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2zm0 4h3L5 6H4v2zm5 0h3L10 6H8v2zm5 0h3l-2-2h-2v2zm5 0h2V6h-1l-2 2zm-12 2v8h14v-8H8zm4 6v-4l4 2-4 2z"/>
+            </svg>
         </div>
-        <div class="stat-subtitle"><?php echo $is_admin ? "Tổng reels đã upload hôm nay (giờ VN)" : "Tổng Reels đã đăng hôm nay"; ?></div>
+        <div class="card-info-container">
+            <div class="stat-title"><?php echo $is_admin ? "Reels Uploaded Today (All Users)" : "Reels Uploaded Today"; ?></div>
+            <div class="stat-value-row">
+                <span class="stat-value color-orange" id="ajax-reels">—</span>
+                <span id="ajax-reels-diff" style="display:none;"></span>
+            </div>
+            <div class="stat-subtitle"><?php echo $is_admin ? "Tổng reels đã upload hôm nay (giờ VN)" : "Tổng Reels đã đăng hôm nay"; ?></div>
+        </div>
     </div>
     
-    <div class="stat-card">
-        <div class="stat-title"><?php echo $is_admin ? "Total Views (All Users)" : "Total Views"; ?></div>
-        <div class="stat-value color-purple" style="display:flex; align-items:center; color: #8b5cf6; flex-wrap:wrap;">
-            <span class="icon" style="margin-right:10px;">▶</span> 
-            <span id="ajax-views">—</span> 
-            <span id="ajax-views-diff" style="display:none;"></span>
+    <!-- Card 6: Total Views -->
+    <div class="stat-card premium-card">
+        <div class="card-icon-container grad-indigo">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+                <path d="M8 5v14l11-7z"/>
+            </svg>
         </div>
-        <div class="stat-subtitle" style="margin-top: 10px;"><?php echo $is_admin ? "Tổng views video/reels theo dữ liệu" : "Tổng lượt xem video/reels"; ?> (<?php echo htmlspecialchars($period); ?>)</div>
+        <div class="card-info-container">
+            <div class="stat-title"><?php echo $is_admin ? "Total Views (All Users)" : "Total Views"; ?></div>
+            <div class="stat-value-row">
+                <span class="stat-value color-indigo" id="ajax-views">—</span>
+                <span id="ajax-views-diff" style="display:none;"></span>
+            </div>
+            <div class="stat-subtitle"><?php echo $is_admin ? "Tổng views video/reels theo dữ liệu" : "Tổng lượt xem video/reels"; ?> (<?php echo htmlspecialchars($period); ?>)</div>
+        </div>
     </div>
     
-    <div class="stat-card">
-        <div class="stat-title"><?php echo $is_admin ? 'Total Post Today (All Users)' : 'Total Posts Today'; ?></div>
-        <div class="stat-value color-primary" style="display:flex; align-items:center; color: #0284c7;">
-            <span class="icon" style="margin-right:10px;">📝</span> <span id="ajax-posts-today">—</span>
+    <!-- Card 7: Total Post Today -->
+    <div class="stat-card premium-card">
+        <div class="card-icon-container grad-sky">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+            </svg>
         </div>
-        <div class="stat-subtitle"><?php echo $is_admin ? 'Tổng số bài viết đã đăng trong ngày hôm nay' : 'Tổng số bài viết đã đăng hôm nay'; ?></div>
+        <div class="card-info-container">
+            <div class="stat-title"><?php echo $is_admin ? 'Total Post Today (All Users)' : 'Total Posts Today'; ?></div>
+            <div class="stat-value-row">
+                <span class="stat-value color-sky" id="ajax-posts-today">—</span>
+                <span id="ajax-posts-today-diff" style="display:none;"></span>
+            </div>
+            <div class="stat-subtitle"><?php echo $is_admin ? 'Tổng số bài viết đã đăng trong ngày hôm nay' : 'Tổng số bài viết đã đăng hôm nay'; ?></div>
+        </div>
     </div>
 </div>
 
 <!-- AJAX: Load all dashboard metrics asynchronously -->
 <script>
+function renderTrendBadge(htmlStr, targetId) {
+    const el = document.getElementById(targetId);
+    if (!el || !htmlStr) return;
+    const isUp = htmlStr.includes('uarr') || htmlStr.includes('↑') || (!htmlStr.includes('darr') && !htmlStr.includes('↓') && !htmlStr.includes('#ef4444'));
+    const pctMatch = htmlStr.match(/([\d\.,]+)%/);
+    if (pctMatch) {
+        const pct = pctMatch[1];
+        el.className = isUp ? 'trend-badge trend-up' : 'trend-badge trend-down';
+        el.innerHTML = (isUp ? '↑ +' : '↓ -') + pct + '%';
+        el.style.display = 'inline-flex';
+    } else {
+        el.className = isUp ? 'trend-badge trend-up' : 'trend-badge trend-down';
+        el.innerHTML = htmlStr;
+        el.style.display = 'inline-flex';
+    }
+}
+
 function formatPostType(type) {
     switch(type) {
         case 'Reel': return '📹 Reel';
@@ -189,20 +455,28 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(res => res.json())
         .then(data => {
             if (data.total_users !== undefined) document.getElementById('ajax-users').textContent = Number(data.total_users).toLocaleString();
+            if (data.users_diff_html) {
+                renderTrendBadge(data.users_diff_html, 'ajax-users-diff');
+            }
             if (data.total_pages !== undefined) document.getElementById('ajax-pages').textContent = Number(data.total_pages).toLocaleString();
+            if (data.pages_diff_html) {
+                renderTrendBadge(data.pages_diff_html, 'ajax-pages-diff');
+            }
             if (data.total_followers !== undefined) document.getElementById('ajax-followers').textContent = Number(data.total_followers).toLocaleString();
             if (data.followers_diff_html) {
-                document.getElementById('ajax-followers-diff').innerHTML = data.followers_diff_html;
-                document.getElementById('ajax-followers-diff').style.display = 'inline';
+                renderTrendBadge(data.followers_diff_html, 'ajax-followers-diff');
             }
             if (data.total_reels_today !== undefined) {
                 let reelsText = Number(data.total_reels_today).toLocaleString();
                 if (data.failed_reels_today > 0) {
-                    reelsText += ' <span style="font-size:14px; color:#ef4444; margin-left:10px; font-weight: 500;">(' + data.failed_reels_today + ' failed)</span>';
+                    reelsText += ' <span style="font-size:12px; color:#ef4444; margin-left:10px; font-weight: 500;">(' + data.failed_reels_today + ' failed)</span>';
                 } else {
-                    reelsText += ' <span style="font-size:14px; color:var(--text-muted); margin-left:10px; font-weight: normal;">(0 failed)</span>';
+                    reelsText += ' <span style="font-size:12px; color:var(--text-muted); margin-left:10px; font-weight: normal;">(0 failed)</span>';
                 }
                 document.getElementById('ajax-reels').innerHTML = reelsText;
+            }
+            if (data.reels_diff_html) {
+                renderTrendBadge(data.reels_diff_html, 'ajax-reels-diff');
             }
             if (data.total_posts_today !== undefined) {
                 let postsHtml = Number(data.total_posts_today).toLocaleString();
@@ -211,6 +485,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     postsHtml = '<span style="color:' + color + ';">' + postsHtml + ' / ' + Number(data.page_limit).toLocaleString() + '</span>';
                 }
                 document.getElementById('ajax-posts-today').innerHTML = postsHtml;
+            }
+            if (data.posts_diff_html) {
+                renderTrendBadge(data.posts_diff_html, 'ajax-posts-today-diff');
             }
         })
         .catch(() => {
@@ -224,13 +501,11 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(data => {
             if (data.reach_formatted) document.getElementById('ajax-reach').textContent = data.reach_formatted;
             if (data.reach_diff_html) {
-                document.getElementById('ajax-reach-diff').innerHTML = data.reach_diff_html;
-                document.getElementById('ajax-reach-diff').style.display = 'inline';
+                renderTrendBadge(data.reach_diff_html, 'ajax-reach-diff');
             }
             if (data.views_formatted) document.getElementById('ajax-views').textContent = data.views_formatted;
             if (data.views_diff_html) {
-                document.getElementById('ajax-views-diff').innerHTML = data.views_diff_html;
-                document.getElementById('ajax-views-diff').style.display = 'inline';
+                renderTrendBadge(data.views_diff_html, 'ajax-views-diff');
             }
             if (data.checkpointed_pages && data.checkpointed_pages > 0) {
                 var banner = document.getElementById('checkpoint-warning-banner');

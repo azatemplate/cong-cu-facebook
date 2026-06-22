@@ -211,6 +211,81 @@ function getApi22Data($videoId) {
 function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?array
 {
     $tiktok_url = trim($tiktok_url);
+    
+    // ==================== Logic 0: Custom API (Evil0ctal / TikHub) - Nhanh nhất ====================
+    if (!empty($custom_api_url)) {
+        $api_target = $custom_api_url;
+        if (strpos($api_target, '?') === false) {
+            $api_target = rtrim($api_target, '/') . '/api/hybrid/video_data?url=' . urlencode($tiktok_url);
+        } else {
+            if (strpos($api_target, 'url=') === false) {
+                $api_target .= (strpos($api_target, '&') === false ? '' : '&') . 'url=' . urlencode($tiktok_url);
+            }
+        }
+
+        $ch = curl_init($api_target);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        $resp = curl_exec($ch);
+        curl_close($ch);
+
+        if ($resp) {
+            $json = json_decode($resp, true);
+            if ($json) {
+                $download_url = null;
+                $title = null;
+                $vid = null;
+
+                if (!empty($json['data']['play'])) {
+                    $download_url = $json['data']['play'];
+                } elseif (!empty($json['data']['video_data']['nwm_video_url'])) {
+                    $download_url = $json['data']['video_data']['nwm_video_url'];
+                } elseif (!empty($json['data']['video_data']['nwm_video_url_HQ'])) {
+                    $download_url = $json['data']['video_data']['nwm_video_url_HQ'];
+                } elseif (!empty($json['data']['video']['play_addr']['url_list'][0])) {
+                    $download_url = $json['data']['video']['play_addr']['url_list'][0];
+                } elseif (!empty($json['data']['url'])) {
+                    $download_url = $json['data']['url'];
+                } elseif (!empty($json['video_data']['nwm_video_url'])) {
+                    $download_url = $json['video_data']['nwm_video_url'];
+                } elseif (!empty($json['url'])) {
+                    $download_url = $json['url'];
+                }
+
+                if (!empty($json['data']['desc'])) {
+                    $title = $json['data']['desc'];
+                } elseif (!empty($json['data']['title'])) {
+                    $title = $json['data']['title'];
+                } elseif (!empty($json['video_data']['video_title'])) {
+                    $title = $json['video_data']['video_title'];
+                } elseif (!empty($json['desc'])) {
+                    $title = $json['desc'];
+                } elseif (!empty($json['title'])) {
+                    $title = $json['title'];
+                }
+
+                if (!empty($json['data']['id'])) {
+                    $vid = $json['data']['id'];
+                } elseif (!empty($json['data']['aweme_id'])) {
+                    $vid = $json['data']['aweme_id'];
+                } elseif (!empty($json['video_data']['id'])) {
+                    $vid = $json['video_data']['id'];
+                } elseif (!empty($json['id'])) {
+                    $vid = $json['id'];
+                }
+
+                if (!empty($download_url)) {
+                    return [
+                        'download_url' => $download_url,
+                        'title'        => $title ?? 'tiktok_video',
+                        'video_id'     => $vid,
+                    ];
+                }
+            }
+        }
+    }
+
     // ==================== Logic 1: API App nội bộ (Tích hợp từ video.php) ====================
     preg_match('/video\/(\d+)/', $tiktok_url, $match);
     $videoId = $match[1] ?? '';
@@ -337,6 +412,25 @@ $retry_clause = $has_retry_count
 
 // Build placeholders cho IN clause
 $placeholders = implode(',', array_fill(0, count($target_page_ids), '?'));
+$params = $target_page_ids;
+$post_type_filter = "";
+$account_filter = "";
+
+if (!empty($user_id_lock)) {
+    if (strpos($user_id_lock, 'yt_') === 0) {
+        // Luồng YouTube: Chỉ lấy post_type = YouTube và account_id cụ thể
+        $post_type_filter = "AND sp.post_type = 'YouTube' ";
+        $actual_account_id = substr($user_id_lock, 3);
+        if (is_numeric($actual_account_id)) {
+            $account_filter = "AND sp.account_id = ? ";
+            array_unshift($params, (int)$actual_account_id);
+        }
+    } else {
+        // Luồng Facebook: Chỉ lấy post_type != YouTube
+        $post_type_filter = "AND sp.post_type != 'YouTube' ";
+    }
+}
+
 $sql = "
     SELECT sp.*, sa.max_retries AS sa_max_retries, sa.retry_interval_minutes AS sa_retry_interval, sa.post_delay_seconds AS sa_delay
     FROM scheduled_posts sp 
@@ -344,6 +438,8 @@ $sql = "
     WHERE (sp.status = 'pending' $retry_clause) 
       AND sp.scheduled_time <= NOW() 
       AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
+      $post_type_filter
+      $account_filter
       AND sp.page_id IN ($placeholders)
     ORDER BY sp.scheduled_time ASC
 ";
@@ -352,7 +448,7 @@ if (!$stmt) {
     file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - Prepare Error: " . print_r($pdo->errorInfo(), true) . "\n", FILE_APPEND);
     exit;
 }
-if (!$stmt->execute($target_page_ids)) {
+if (!$stmt->execute($params)) {
     file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - Execute Error: " . print_r($stmt->errorInfo(), true) . "\n", FILE_APPEND);
     exit;
 }

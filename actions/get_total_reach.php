@@ -27,7 +27,7 @@ $curl_handlers = [];
 foreach ($pages as $p) {
     if (empty($p['access_token'])) continue;
     $ptoken = decryptData($p['access_token']);
-    $url = "https://graph.facebook.com/v25.0/" . $p['page_id'] . "/insights?metric=page_impressions,page_post_engagements&period=day&access_token=" . urlencode($ptoken);
+    $url = "https://graph.facebook.com/v25.0/" . $p['page_id'] . "/insights?metric=page_media_view,page_total_media_view_unique&period=day&access_token=" . urlencode($ptoken);
     
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
@@ -62,7 +62,7 @@ foreach ($curl_handlers as $ch) {
         $data = json_decode($response, true);
         if (isset($data['data'])) {
             foreach ($data['data'] as $metric) {
-                if ($metric['name'] === 'page_impressions' || $metric['name'] === 'page_impressions_unique') {
+                if ($metric['name'] === 'page_media_view' || $metric['name'] === 'page_total_media_view_unique') {
                     if (isset($metric['values']) && is_array($metric['values'])) {
                         foreach ($metric['values'] as $v) {
                             $total_reach += isset($v['value']) ? intval($v['value']) : 0;

@@ -7,6 +7,32 @@ header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $merge_all = isset($_GET['merge_all']) ? intval($_GET['merge_all']) : 0;
+    $nocache = isset($_GET['nocache']) ? intval($_GET['nocache']) : 0;
+    
+    // Determine the cache key (only cache page 1, i.e. append=0 or after is empty)
+    $cache_key = '';
+    if ($merge_all === 1) {
+        if (isset($_SESSION['account_id'])) {
+            $append = isset($_GET['append']) ? intval($_GET['append']) : 0;
+            if ($append === 0) {
+                $cache_key = 'fb_convs_merge_' . $_SESSION['account_id'];
+            }
+        }
+    } else {
+        $user_id = isset($_GET['user_id']) ? intval($_GET['user_id']) : 0;
+        $page_id = isset($_GET['page_id']) ? $_GET['page_id'] : '';
+        $after = isset($_GET['after']) ? $_GET['after'] : '';
+        if ($page_id && $user_id && empty($after)) {
+            $cache_key = 'fb_convs_' . $page_id . '_' . $user_id;
+        }
+    }
+    
+    // Check if cache exists and is not expired
+    if (!$nocache && !empty($cache_key) && isset($_SESSION[$cache_key]) && $_SESSION[$cache_key]['expires'] > time()) {
+        echo json_encode($_SESSION[$cache_key]['data']);
+        exit;
+    }
+
     if ($merge_all === 1) {
         if (!isset($_SESSION['account_id'])) {
             echo json_encode(['status' => 'error', 'msg' => 'Chưa đăng nhập.']);
@@ -53,7 +79,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         }
         
         if (empty($pages)) {
-            echo json_encode(['status' => 'success', 'data' => [], 'next_cursor' => '', 'merged' => true]);
+            $output_array = ['status' => 'success', 'data' => [], 'next_cursor' => '', 'merged' => true];
+            if (!empty($cache_key)) {
+                session_start();
+                $_SESSION[$cache_key] = [
+                    'data' => $output_array,
+                    'expires' => time() + 15
+                ];
+                session_write_close();
+            }
+            echo json_encode($output_array);
             exit;
         }
         
@@ -74,14 +109,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 }
             }
         }
-        session_write_close();
         
         $next_cursor = !empty($_SESSION['merge_cursors']) ? 'merging' : '';
 
         // Đính kèm trạng thái SĐT từ DB
         attach_phone_status_to_conversations($merged_conversations, $pdo);
 
-        echo json_encode(['status' => 'success', 'data' => $merged_conversations, 'next_cursor' => $next_cursor, 'merged' => true]);
+        $output_array = ['status' => 'success', 'data' => $merged_conversations, 'next_cursor' => $next_cursor, 'merged' => true];
+        
+        if (!empty($cache_key)) {
+            $_SESSION[$cache_key] = [
+                'data' => $output_array,
+                'expires' => time() + 15
+            ];
+        }
+        session_write_close();
+
+        echo json_encode($output_array);
         exit;
     }
 
@@ -169,7 +213,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         // Đính kèm trạng thái SĐT từ DB
         attach_phone_status_to_conversations($conv_data, $pdo, $page_id);
         
-        echo json_encode(['status' => 'success', 'data' => $conv_data, 'next_cursor' => $next_cursor]);
+        $output_array = ['status' => 'success', 'data' => $conv_data, 'next_cursor' => $next_cursor];
+        
+        if (!empty($cache_key)) {
+            session_start();
+            $_SESSION[$cache_key] = [
+                'data' => $output_array,
+                'expires' => time() + 15
+            ];
+            session_write_close();
+        }
+        
+        echo json_encode($output_array);
     } else {
         $error_msg = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : 'Lỗi không xác định';
         echo json_encode(['status' => 'error', 'msg' => $error_msg]);

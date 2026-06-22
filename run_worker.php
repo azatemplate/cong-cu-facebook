@@ -8,13 +8,14 @@ if (!isset($_GET['type'])) exit;
 $type = $_GET['type'];
 $page_id = $_GET['page_id'] ?? '';
 
-// Giả lập biến agrv cho CLI để tương thích với source code cũ
+// Giả lập biến argv cho CLI để tương thích với source code cũ
 global $argv, $argc;
 $argv = [
     __FILE__,
-    $page_id
+    $page_id,
+    $_GET['user_id'] ?? ''
 ];
-$argc = 2;
+$argc = isset($_GET['user_id']) ? 3 : 2;
 
 if ($type === 'publish') {
     require_once __DIR__ . '/cron/publish_worker.php';

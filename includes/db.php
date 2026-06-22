@@ -370,12 +370,23 @@ try {
                 total_reach BIGINT DEFAULT 0,
                 total_views BIGINT DEFAULT 0,
                 total_pages INT DEFAULT 0,
+                total_accounts INT DEFAULT 0,
+                total_reels INT DEFAULT 0,
+                total_posts INT DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 UNIQUE KEY uniq_snapshot (account_id, snapshot_date),
                 INDEX (snapshot_date)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         ");
+        
+        // Auto-migration for new columns
+        try {
+            $col = $pdo->query("SHOW COLUMNS FROM dashboard_snapshots LIKE 'total_accounts'");
+            if ($col->rowCount() === 0) {
+                $pdo->exec("ALTER TABLE dashboard_snapshots ADD COLUMN total_accounts INT DEFAULT 0, ADD COLUMN total_reels INT DEFAULT 0, ADD COLUMN total_posts INT DEFAULT 0");
+            }
+        } catch (Exception $e) {}
     } catch (Exception $e) {
         @file_put_contents(__DIR__ . '/../uploads/app_error.log',
             date('[Y-m-d H:i:s] ') . 'dashboard_snapshots error: ' . $e->getMessage() . "\n",
@@ -454,7 +465,10 @@ try {
 
         "ALTER TABLE zalo_customers ADD COLUMN last_sender VARCHAR(10) DEFAULT 'customer'",
         "ALTER TABLE zalo_customers ADD COLUMN last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-        "ALTER TABLE zalo_customers ADD COLUMN info_requested_at TIMESTAMP NULL DEFAULT NULL"
+        "ALTER TABLE zalo_customers ADD COLUMN info_requested_at TIMESTAMP NULL DEFAULT NULL",
+
+        "ALTER TABLE fb_customers ADD COLUMN consulted TINYINT DEFAULT 0",
+        "ALTER TABLE zalo_customers ADD COLUMN consulted TINYINT DEFAULT 0"
     ];
 
     foreach ($auto_req_migrations as $query) {

@@ -22,6 +22,9 @@ $name = trim($_POST['name'] ?? '');
 $phone = trim($_POST['phone'] ?? '');
 $province = trim($_POST['province'] ?? '');
 $notes = trim($_POST['notes'] ?? '');
+$consulted = isset($_POST['consulted']) ? intval($_POST['consulted']) : 0;
+$sales_phone = trim($_POST['sales_phone'] ?? '');
+$sales_notes = trim($_POST['sales_notes'] ?? '');
 
 if (!$oa_id || !$sender_id) {
     echo json_encode(['status' => 'error', 'msg' => 'Thiếu oa_id hoặc sender_id']);
@@ -39,15 +42,18 @@ try {
 
     // Update or insert customer
     $stmt = $pdo->prepare("
-        INSERT INTO zalo_customers (oa_id, sender_id, name, phone, province, notes)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO zalo_customers (oa_id, sender_id, name, phone, province, notes, consulted, sales_phone, sales_notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE 
             name = VALUES(name), 
             phone = VALUES(phone), 
             province = VALUES(province), 
-            notes = VALUES(notes)
+            notes = VALUES(notes),
+            consulted = VALUES(consulted),
+            sales_phone = VALUES(sales_phone),
+            sales_notes = VALUES(sales_notes)
     ");
-    $stmt->execute([$oa_id, $sender_id, $name, $phone, $province, $notes]);
+    $stmt->execute([$oa_id, $sender_id, $name, $phone, $province, $notes, $consulted, $sales_phone, $sales_notes]);
 
     echo json_encode(['status' => 'success', 'msg' => 'Cập nhật thông tin khách hàng thành công.']);
 } catch (PDOException $e) {

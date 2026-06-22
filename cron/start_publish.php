@@ -104,10 +104,9 @@ if ($available_slots <= 0) {
     exit;
 }
 
-// Tìm các bài cần đăng và nhóm theo user_id (Token User) để đảm bảo 1 Token User chỉ chạy 1 worker
-// Mỗi Token User sẽ xử lý tuần tự tất cả các page của mình với delay giữa mỗi post
+// Tìm các bài cần đăng và nhóm theo user_id (Token User) với FB hoặc account_id với YouTube để đảm bảo tuần tự hóa
 $sql = "
-    SELECT DISTINCT sp.page_id, sp.account_id, p.user_id
+    SELECT DISTINCT sp.page_id, sp.account_id, sp.post_type, p.user_id
     FROM scheduled_posts sp
     LEFT JOIN system_accounts sa ON sp.account_id = sa.id
     LEFT JOIN pages p ON sp.page_id = p.page_id
@@ -134,11 +133,17 @@ if (empty($raw_pages)) {
     exit;
 }
 
-// ── Nhóm page theo user_id (Token User) ──────────────────────────────────
-// Mỗi user_id sẽ chỉ có 1 worker duy nhất, xử lý tuần tự tất cả page của user đó
+// ── Nhóm page theo user_id (Token User) của FB hoặc account_id của YouTube ──────────────────────────────────
+// Mỗi khóa gom nhóm sẽ chỉ có 1 worker duy nhất
 $pages_by_user = [];
 foreach ($raw_pages as $row) {
-    $uid = $row['user_id'] ?: ('noid_' . $row['page_id']); // Fallback nếu không có user_id
+    if ($row['post_type'] === 'YouTube') {
+        // YouTube gom nhóm theo account_id dưới dạng yt_account_id để tuần tự hóa theo từng tài khoản
+        $uid = 'yt_' . $row['account_id'];
+    } else {
+        // Facebook giữ nguyên logic cũ
+        $uid = $row['user_id'] ?: ('noid_' . $row['page_id']);
+    }
     if (!isset($pages_by_user[$uid])) {
         $pages_by_user[$uid] = [];
     }
@@ -165,7 +170,7 @@ while ($keep_going && count($selected_users) < $available_slots) {
 
 $total_pages = count($raw_pages);
 $total_users = count($selected_users);
-echo "Co {$total_pages} Fanpage tren {$total_users} Token User dang cho. Moi Token User = 1 Worker doc lap...\n";
+echo "Co {$total_pages} Fanpage/Kênh tren {$total_users} Tai khoan/Token dang cho. Moi nhom = 1 Worker doc lap...\n";
 
 $is_web = isset($_SERVER['HTTP_HOST']);
 $exec_enabled = function_exists('exec') && strpos(ini_get('disable_functions'), 'exec') === false;
@@ -194,7 +199,7 @@ foreach ($selected_users as $uid) {
         } else {
             exec("\"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$uid\" > /dev/null 2>&1 &");
         }
-        echo "  -> Da kich hoat luong CLI cho Token User #$uid (" . count($user_page_ids) . " pages: $page_ids_str)\n";
+        echo "  -> Da kich hoat luong CLI cho nhom #$uid (" . count($user_page_ids) . " pages: $page_ids_str)\n";
     } elseif ($is_web) {
         // Fallback Web-Forking (cURL Async) qua Wrapper goc
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
@@ -209,7 +214,7 @@ foreach ($selected_users as $uid) {
         curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
         curl_exec($ch);
         curl_close($ch);
-        echo "  -> Da kich luong WEB-AJAX cho Token User #$uid (" . count($user_page_ids) . " pages)\n";
+        echo "  -> Da kich luong WEB-AJAX cho nhom #$uid (" . count($user_page_ids) . " pages)\n";
     } else {
         echo "  -> THAT BAI: Ham exec() bi khoa.\n";
     }
