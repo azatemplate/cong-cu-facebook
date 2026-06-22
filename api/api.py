@@ -254,6 +254,55 @@ async def fetch_tiktok_comments(video_id: str, max_count: int = 50) -> list:
             
         loop_count += 1
         
+    if not comments:
+        # Fallback to TikWM API if the official API is empty (due to protection blocks)
+        cursor = 0
+        has_more = True
+        loop_limit = 40
+        loop_count = 0
+        while has_more and loop_count < loop_limit:
+            if max_count > 0 and len(comments) >= max_count:
+                break
+            fetch_size = page_size
+            if max_count > 0:
+                fetch_size = min(page_size, max_count - len(comments))
+            
+            tikwm_url = f"https://www.tikwm.com/api/comment/list?url=https://www.tiktok.com/video/{video_id}&count={fetch_size}&cursor={cursor}"
+            try:
+                async with httpx.AsyncClient(timeout=6.0) as client:
+                    response = await client.get(tikwm_url)
+                    if response.status_code != 200:
+                        break
+                    data = response.json()
+                    if data.get("code") != 0 or not data.get("data"):
+                        break
+                    data_obj = data["data"]
+                    comments_list = data_obj.get("comments", [])
+                    if not comments_list:
+                        break
+                    for c in comments_list:
+                        user_info = c.get("user", {})
+                        comments.append({
+                            "comment_id": str(c.get("cid", "")),
+                            "text": c.get("text", ""),
+                            "create_time": c.get("create_time", 0),
+                            "digg_count": c.get("digg_count", 0),
+                            "reply_comment_total": c.get("reply_comment_total", 0),
+                            "author": {
+                                "unique_id": user_info.get("unique_id", ""),
+                                "nickname": user_info.get("nickname", ""),
+                                "avatar": user_info.get("avatar_thumb", {}).get("url_list", [""])[0]
+                            },
+                            "is_fallback": True
+                        })
+                    has_more = data_obj.get("has_more", False)
+                    cursor = data_obj.get("cursor", 0)
+                    if cursor == 0 or not has_more:
+                        break
+            except Exception:
+                break
+            loop_count += 1
+            
     return comments[:max_count] if max_count > 0 else comments
 
 async def fetch_sec_uid_from_username(username: str) -> str:
@@ -380,6 +429,62 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 50) -> list:
             
         loop_count += 1
         
+    if not videos:
+        # Fallback to TikWM API if the official API is empty (due to protection blocks)
+        cursor = 0
+        has_more = True
+        loop_limit = 50
+        loop_count = 0
+        while has_more and loop_count < loop_limit:
+            if max_count > 0 and len(videos) >= max_count:
+                break
+            fetch_size = page_size
+            if max_count > 0:
+                fetch_size = min(page_size, max_count - len(videos))
+            
+            tikwm_url = f"https://www.tikwm.com/api/user/posts?sec_user_id={sec_uid}&count={fetch_size}&cursor={cursor}"
+            try:
+                async with httpx.AsyncClient(timeout=6.0) as client:
+                    response = await client.get(tikwm_url)
+                    if response.status_code != 200:
+                        break
+                    data = response.json()
+                    if data.get("code") != 0 or not data.get("data"):
+                        break
+                    data_obj = data["data"]
+                    videos_list = data_obj.get("videos", [])
+                    if not videos_list:
+                        break
+                    for item in videos_list:
+                        video_id = item.get("video_id", "")
+                        desc = item.get("title", "")
+                        create_time = item.get("create_time", 0)
+                        cover_url = item.get("cover", "")
+                        nwm_url = item.get("play", "")
+                        stats = item.get("statistics", {})
+                        
+                        videos.append({
+                            "video_id": video_id,
+                            "desc": desc,
+                            "create_time": create_time,
+                            "cover": cover_url,
+                            "nwm_video_url": nwm_url,
+                            "statistics": {
+                                "comment_count": stats.get("comment_count", 0),
+                                "digg_count": stats.get("digg_count", 0),
+                                "play_count": stats.get("play_count", 0),
+                                "share_count": stats.get("share_count", 0)
+                            },
+                            "is_fallback": True
+                        })
+                    has_more = data_obj.get("has_more", False)
+                    cursor = data_obj.get("cursor", 0)
+                    if cursor == 0 or not has_more:
+                        break
+            except Exception:
+                break
+            loop_count += 1
+
     return videos[:max_count] if max_count > 0 else videos
 
 @app.get("/api/tiktok/comments")
