@@ -13,6 +13,10 @@ TIKTOK_HEADERS = {
     "Cookie": "CykaBlyat=XD"
 }
 
+TIKTOK_APP_HEADERS = {
+    "User-Agent": "com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; ru_RU; Rootkit; Build/NJH47F; Cronet/TTNetVersion:b4d74d15 2020-04-23 QuicVersion:0144d138 2020-03-24)"
+}
+
 async def resolve_url(url: str) -> str:
     """Resolve short URLs and redirects to get the final TikTok URL."""
     async with httpx.AsyncClient(follow_redirects=True, timeout=3.0, verify=False) as client:
@@ -56,75 +60,86 @@ def extract_high_quality_urls(video_info: dict) -> tuple:
     return hd_url, fhd_url
 
 async def fetch_tiktok_data(video_id: str) -> dict:
-    """Fetch video metadata from TikTok's SG API endpoint (fast and stable from Asia)."""
-    # Use SG api22-normal-c-alisg domain (much faster than US domains for Asian VPS)
-    api_url = (
-        f"https://api22-normal-c-alisg.tiktokv.com/aweme/v1/feed/?"
-        f"aweme_id={video_id}&"
-        f"iid=7318518857994389254&"
-        f"device_id=7318517321748022790&"
-        f"channel=googleplay&"
-        f"app_name=musical_ly&"
-        f"version_code=300904&"
-        f"device_platform=android&"
-        f"device_type=SM-ASUS_Z01QD&"
-        f"os_version=9"
-    )
+    """Fetch video metadata from TikTok's API endpoints with domain failover."""
+    domains = [
+        "api22-normal-c-alisg.tiktokv.com",
+        "api22-normal-c-useast1a.tiktokv.com",
+        "api16-normal-c-useast1a.tiktokv.com"
+    ]
     
-    try:
-        async with httpx.AsyncClient(timeout=3.0, verify=False) as client:
-            response = await client.get(api_url, headers=TIKTOK_HEADERS)
-            if response.status_code != 200:
-                raise Exception(f"TikTok API responded with status {response.status_code}")
-            
-            data = response.json()
-            aweme_list = data.get("aweme_list", [])
-            if not aweme_list:
-                raise Exception("Video details not found in TikTok response")
-                
-            return aweme_list[0]
-            
-    except Exception as e:
-        print(f"Error fetching tiktok data from Alisg: {e}")
-        # Fallback logic using the free public TikWM API
-        fallback_url = f"https://www.tikwm.com/api/?url=https://www.tiktok.com/video/{video_id}"
+    last_err = None
+    for domain in domains:
+        api_url = (
+            f"https://{domain}/aweme/v1/feed/?"
+            f"aweme_id={video_id}&"
+            f"iid=7318518857994389254&"
+            f"device_id=7318517321748022790&"
+            f"channel=googleplay&"
+            f"app_name=musical_ly&"
+            f"version_code=300904&"
+            f"device_platform=android&"
+            f"device_type=SM-ASUS_Z01QD&"
+            f"os_version=9"
+        )
         try:
-            async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
-                fb_resp = await client.get(fallback_url)
-                if fb_resp.status_code == 200:
-                    fb_json = fb_resp.json()
-                    fb_data = fb_json.get("data")
-                    if fb_json.get("code") == 0 and fb_data:
-                        # Map TikWM response structure to match expected aweme details
-                        return {
-                            "is_fallback": True,
-                            "desc": fb_data.get("title", ""),
-                            "create_time": fb_data.get("create_time", 0),
-                            "author": {
-                                "unique_id": fb_data.get("author", {}).get("unique_id", ""),
-                                "nickname": fb_data.get("author", {}).get("nickname", ""),
-                                "uid": str(fb_data.get("author", {}).get("id", ""))
+            print(f"Trying official Custom API domain: {domain}")
+            async with httpx.AsyncClient(timeout=4.0, verify=False) as client:
+                response = await client.get(api_url, headers=TIKTOK_APP_HEADERS)
+                if response.status_code != 200:
+                    raise Exception(f"Status code {response.status_code}")
+                
+                data = response.json()
+                aweme_list = data.get("aweme_list", [])
+                if not aweme_list:
+                    raise Exception("aweme_list is empty in response")
+                    
+                print(f"Successfully fetched video details from custom API ({domain})")
+                return aweme_list[0]
+        except Exception as e:
+            print(f"Error calling {domain}: {e}")
+            last_err = e
+            
+    # Fallback logic using the free public TikWM API
+    print(f"All Custom API domains failed. Falling back to TikWM. Last error: {last_err}")
+    fallback_url = f"https://www.tikwm.com/api/?url=https://www.tiktok.com/video/{video_id}"
+    try:
+        async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+            fb_resp = await client.get(fallback_url)
+            if fb_resp.status_code == 200:
+                fb_json = fb_resp.json()
+                fb_data = fb_json.get("data")
+                if fb_json.get("code") == 0 and fb_data:
+                    # Map TikWM response structure to match expected aweme details
+                    return {
+                        "is_fallback": True,
+                        "desc": fb_data.get("title", ""),
+                        "create_time": fb_data.get("create_time", 0),
+                        "author": {
+                            "unique_id": fb_data.get("author", {}).get("unique_id", ""),
+                            "nickname": fb_data.get("author", {}).get("nickname", ""),
+                            "uid": str(fb_data.get("author", {}).get("id", ""))
+                        },
+                        "statistics": {
+                            "comment_count": fb_data.get("comment_count", 0),
+                            "digg_count": fb_data.get("digg_count", 0),
+                            "play_count": fb_data.get("play_count", 0),
+                            "share_count": fb_data.get("share_count", 0)
+                        },
+                        "video": {
+                            "cover": {
+                                "url_list": [fb_data.get("cover", "")]
                             },
-                            "statistics": {
-                                "comment_count": fb_data.get("comment_count", 0),
-                                "digg_count": fb_data.get("digg_count", 0),
-                                "play_count": fb_data.get("play_count", 0),
-                                "share_count": fb_data.get("share_count", 0)
-                            },
-                            "video": {
-                                "cover": {
-                                    "url_list": [fb_data.get("cover", "")]
-                                },
-                                "play_addr": {
-                                    "url_list": [fb_data.get("play", "")]
-                                }
+                            "play_addr": {
+                                "url_list": [fb_data.get("play", "")]
                             }
                         }
-        except Exception as fb_err:
-            pass
-            
-        # Re-raise error if both main API and fallback fail
-        raise HTTPException(status_code=400, detail=f"Failed to fetch TikTok video. Error: {str(e)}")
+                    }
+    except Exception as fb_err:
+        print(f"TikWM fallback error: {fb_err}")
+        pass
+        
+    # Re-raise error if both main API and fallback fail
+    raise HTTPException(status_code=400, detail=f"Failed to fetch TikTok video. Last Custom API error: {str(last_err)}")
 
 @app.get("/api/hybrid/video_data")
 async def get_video_data(request: Request, url: str = Query(..., description="TikTok or Douyin Video URL")):
@@ -210,58 +225,62 @@ async def get_video_data(request: Request, url: str = Query(..., description="Ti
         return JSONResponse(status_code=500, content={"code": 500, "msg": str(e)})
 
 async def fetch_tiktok_comments(video_id: str, count: int = 50, cursor: str = "0") -> dict:
-    """Fetch one page of comments of a TikTok video with pagination."""
+    """Fetch one page of comments of a TikTok video with pagination using domain failover."""
     comments = []
     has_more = False
     next_cursor = "0"
     
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
-        "Referer": "https://www.tiktok.com/"
-    }
+    domains = [
+        "api22-normal-c-alisg.tiktokv.com",
+        "api22-normal-c-useast1a.tiktokv.com"
+    ]
     
-    # Try official Alisg API first
-    api_url = (
-        f"https://api22-normal-c-alisg.tiktokv.com/aweme/v1/comment/list/?"
-        f"aweme_id={video_id}&"
-        f"cursor={cursor}&"
-        f"count={count}&"
-        f"device_type=SM-ASUS_Z01QD&"
-        f"device_platform=android&"
-        f"iid=7318518857994389254&"
-        f"device_id=7318517321748022790&"
-        f"version_code=300904&"
-        f"app_name=musical_ly"
-    )
-    
-    try:
-        async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
-            response = await client.get(api_url, headers=headers)
-            if response.status_code == 200:
-                data = response.json()
-                comments_list = data.get("comments", [])
-                if comments_list:
-                    for c in comments_list:
-                        user_info = c.get("user", {})
-                        comments.append({
-                            "comment_id": str(c.get("cid", "")),
-                            "text": c.get("text", ""),
-                            "create_time": c.get("create_time", 0),
-                            "digg_count": c.get("digg_count", 0),
-                            "reply_comment_total": c.get("reply_comment_total", 0),
-                            "author": {
-                                "unique_id": user_info.get("unique_id", ""),
-                                "nickname": user_info.get("nickname", ""),
-                                "avatar": user_info.get("avatar_thumb", {}).get("url_list", [""])[0]
-                            }
-                        })
-                    has_more = data.get("has_more", 0) == 1
-                    next_cursor = str(data.get("cursor", "0"))
-                    return {"comments": comments, "cursor": next_cursor, "has_more": has_more}
-    except Exception as e:
-        print(f"Error fetching comments from Alisg: {e}")
-        
+    for domain in domains:
+        api_url = (
+            f"https://{domain}/aweme/v1/comment/list/?"
+            f"aweme_id={video_id}&"
+            f"cursor={cursor}&"
+            f"count={count}&"
+            f"device_type=SM-ASUS_Z01QD&"
+            f"device_platform=android&"
+            f"iid=7318518857994389254&"
+            f"device_id=7318517321748022790&"
+            f"version_code=300904&"
+            f"app_name=musical_ly"
+        )
+        try:
+            print(f"Trying official comments API: {domain}")
+            async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+                response = await client.get(api_url, headers=TIKTOK_APP_HEADERS)
+                if response.status_code == 200:
+                    if not response.text or len(response.text.strip()) == 0:
+                        raise Exception("Response body is empty")
+                    data = response.json()
+                    comments_list = data.get("comments", [])
+                    if comments_list:
+                        for c in comments_list:
+                            user_info = c.get("user", {})
+                            comments.append({
+                                "comment_id": str(c.get("cid", "")),
+                                "text": c.get("text", ""),
+                                "create_time": c.get("create_time", 0),
+                                "digg_count": c.get("digg_count", 0),
+                                "reply_comment_total": c.get("reply_comment_total", 0),
+                                "author": {
+                                    "unique_id": user_info.get("unique_id", ""),
+                                    "nickname": user_info.get("nickname", ""),
+                                    "avatar": user_info.get("avatar_thumb", {}).get("url_list", [""])[0]
+                                }
+                            })
+                        has_more = data.get("has_more", 0) == 1
+                        next_cursor = str(data.get("cursor", "0"))
+                        print(f"Successfully fetched comments from {domain}")
+                        return {"comments": comments, "cursor": next_cursor, "has_more": has_more}
+        except Exception as e:
+            print(f"Error fetching comments from {domain}: {e}")
+            
     # Fallback to TikWM API if the official API is empty or fails
+    print("All official comments domains failed or returned empty. Falling back to TikWM.")
     tikwm_url = f"https://www.tikwm.com/api/comment/list?url=https://www.tiktok.com/video/{video_id}&count={count}&cursor={cursor}"
     try:
         async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
@@ -291,45 +310,48 @@ async def fetch_tiktok_comments(video_id: str, count: int = 50, cursor: str = "0
                         next_cursor = str(data_obj.get("cursor", "0"))
                         return {"comments": comments, "cursor": next_cursor, "has_more": has_more}
     except Exception as e:
-        print(f"Error fetching comments from TikWM: {e}")
+        print(f"Error fetching comments from TikWM fallback: {e}")
         
     return {"comments": [], "cursor": "0", "has_more": False}
 
 async def fetch_sec_uid_from_username(username: str) -> str:
-    """Fetch sec_user_id from username using Alisg profile endpoint with TikWM fallback."""
+    """Fetch sec_user_id from username using official profile endpoints with TikWM fallback."""
     username = username.lstrip("@").strip()
     
-    api_url = (
-        f"https://api22-normal-c-alisg.tiktokv.com/aweme/v1/user/profile/other/?"
-        f"unique_id={username}&"
-        f"device_type=SM-ASUS_Z01QD&"
-        f"device_platform=android&"
-        f"iid=7318518857994389254&"
-        f"device_id=7318517321748022790&"
-        f"version_code=300904&"
-        f"app_name=musical_ly"
-    )
+    domains = [
+        "api22-normal-c-alisg.tiktokv.com",
+        "api22-normal-c-useast1a.tiktokv.com"
+    ]
     
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
-        "Referer": "https://www.tiktok.com/"
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
-            response = await client.get(api_url, headers=headers)
-            if response.status_code == 200:
-                data = response.json()
-                user_info = data.get("user", {})
-                sec_uid = user_info.get("sec_uid", "")
-                if sec_uid:
-                    return sec_uid
-            else:
-                print(f"Alisg profile responded with status {response.status_code}")
-    except Exception as e:
-        print(f"Error fetching sec_uid from Alisg: {e}")
-        
+    for domain in domains:
+        api_url = (
+            f"https://{domain}/aweme/v1/user/profile/other/?"
+            f"unique_id={username}&"
+            f"device_type=SM-ASUS_Z01QD&"
+            f"device_platform=android&"
+            f"iid=7318518857994389254&"
+            f"device_id=7318517321748022790&"
+            f"version_code=300904&"
+            f"app_name=musical_ly"
+        )
+        try:
+            print(f"Trying official profile API: {domain}")
+            async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+                response = await client.get(api_url, headers=TIKTOK_APP_HEADERS)
+                if response.status_code == 200:
+                    if not response.text or len(response.text.strip()) == 0:
+                        raise Exception("Response body is empty")
+                    data = response.json()
+                    user_info = data.get("user", {})
+                    sec_uid = user_info.get("sec_uid", "")
+                    if sec_uid:
+                        print(f"Successfully fetched sec_uid from {domain}: {sec_uid}")
+                        return sec_uid
+        except Exception as e:
+            print(f"Error fetching profile from {domain}: {e}")
+            
     # Fallback to TikWM API
+    print("All official profile domains failed or returned empty. Falling back to TikWM.")
     tikwm_url = f"https://www.tikwm.com/api/user/info?unique_id={username}"
     try:
         async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
@@ -341,15 +363,13 @@ async def fetch_sec_uid_from_username(username: str) -> str:
                     sec_uid = user_obj.get("secUid", "")
                     if sec_uid:
                         return sec_uid
-            else:
-                print(f"TikWM user/info responded with status {response.status_code}")
     except Exception as e:
-        print(f"Error fetching sec_uid from TikWM: {e}")
+        print(f"Error fetching sec_uid from TikWM fallback: {e}")
         
     return ""
 
 async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 33, unique_id: str = "", cursor: str = "0") -> dict:
-    """Fetch one page of posts/videos of a TikTok user with pagination cursor."""
+    """Fetch one page of posts/videos of a TikTok user with pagination cursor using domain failover."""
     videos = []
     has_more = False
     next_cursor = 0
@@ -357,75 +377,79 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 33, unique_id:
     if unique_id:
         unique_id = unique_id.lstrip("@").strip()
         
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
-        "Referer": "https://www.tiktok.com/"
-    }
+    domains = [
+        "api22-normal-c-alisg.tiktokv.com",
+        "api22-normal-c-useast1a.tiktokv.com"
+    ]
     
-    # Try official Alisg API first
-    api_url = (
-        f"https://api22-normal-c-alisg.tiktokv.com/aweme/v1/aweme/post/?"
-        f"sec_user_id={sec_uid}&"
-        f"cursor={cursor}&"
-        f"count={max_count}&"
-        f"device_type=SM-ASUS_Z01QD&"
-        f"device_platform=android&"
-        f"iid=7318518857994389254&"
-        f"device_id=7318517321748022790&"
-        f"version_code=300904&"
-        f"app_name=musical_ly"
-    )
-    
-    try:
-        async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
-            response = await client.get(api_url, headers=headers)
-            if response.status_code == 200:
-                data = response.json()
-                aweme_list = data.get("aweme_list", [])
-                if aweme_list:
-                    for item in aweme_list:
-                        video_id = item.get("aweme_id", "")
-                        desc = item.get("desc", "")
-                        create_time = item.get("create_time", 0)
-                        
-                        video_info = item.get("video", {})
-                        cover_url = video_info.get("cover", {}).get("url_list", [""])[0]
-                        
-                        nwm_url = None
-                        play_addr = video_info.get("play_addr", {})
-                        if play_addr and play_addr.get("url_list"):
-                            nwm_url = play_addr["url_list"][0]
-                        if not nwm_url:
-                            download_addr = video_info.get("download_addr", {})
-                            if download_addr and download_addr.get("url_list"):
-                                nwm_url = download_addr["url_list"][0]
-                                
-                        stats = item.get("statistics", {})
-                        region = item.get("region", "VN")
-                        duration = int(video_info.get("duration", 0) / 1000)
-                        
-                        videos.append({
-                            "video_id": video_id,
-                            "desc": desc,
-                            "create_time": create_time,
-                            "cover": cover_url,
-                            "nwm_video_url": nwm_url,
-                            "region": region,
-                            "duration": duration,
-                            "statistics": {
-                                "comment_count": stats.get("comment_count", 0),
-                                "digg_count": stats.get("digg_count", 0),
-                                "play_count": stats.get("play_count", 0),
-                                "share_count": stats.get("share_count", 0)
-                            }
-                        })
-                    has_more = data.get("has_more", 0) == 1
-                    next_cursor = data.get("max_cursor", 0)
-                    return {"videos": videos, "cursor": next_cursor, "has_more": has_more}
-    except Exception as e:
-        print(f"Error fetching user videos from Alisg: {e}")
-        
+    for domain in domains:
+        api_url = (
+            f"https://{domain}/aweme/v1/aweme/post/?"
+            f"sec_user_id={sec_uid}&"
+            f"cursor={cursor}&"
+            f"count={max_count}&"
+            f"device_type=SM-ASUS_Z01QD&"
+            f"device_platform=android&"
+            f"iid=7318518857994389254&"
+            f"device_id=7318517321748022790&"
+            f"version_code=300904&"
+            f"app_name=musical_ly"
+        )
+        try:
+            print(f"Trying official user posts API: {domain}")
+            async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
+                response = await client.get(api_url, headers=TIKTOK_APP_HEADERS)
+                if response.status_code == 200:
+                    if not response.text or len(response.text.strip()) == 0:
+                        raise Exception("Response body is empty")
+                    data = response.json()
+                    aweme_list = data.get("aweme_list", [])
+                    if aweme_list:
+                        for item in aweme_list:
+                            video_id = item.get("aweme_id", "")
+                            desc = item.get("desc", "")
+                            create_time = item.get("create_time", 0)
+                            
+                            video_info = item.get("video", {})
+                            cover_url = video_info.get("cover", {}).get("url_list", [""])[0]
+                            
+                            nwm_url = None
+                            play_addr = video_info.get("play_addr", {})
+                            if play_addr and play_addr.get("url_list"):
+                                nwm_url = play_addr["url_list"][0]
+                            if not nwm_url:
+                                download_addr = video_info.get("download_addr", {})
+                                if download_addr and download_addr.get("url_list"):
+                                    nwm_url = download_addr["url_list"][0]
+                                    
+                            stats = item.get("statistics", {})
+                            region = item.get("region", "VN")
+                            duration = int(video_info.get("duration", 0) / 1000)
+                            
+                            videos.append({
+                                "video_id": video_id,
+                                "desc": desc,
+                                "create_time": create_time,
+                                "cover": cover_url,
+                                "nwm_video_url": nwm_url,
+                                "region": region,
+                                "duration": duration,
+                                "statistics": {
+                                    "comment_count": stats.get("comment_count", 0),
+                                    "digg_count": stats.get("digg_count", 0),
+                                    "play_count": stats.get("play_count", 0),
+                                    "share_count": stats.get("share_count", 0)
+                                }
+                            })
+                        has_more = data.get("has_more", 0) == 1
+                        next_cursor = data.get("max_cursor", 0)
+                        print(f"Successfully fetched user videos from {domain}")
+                        return {"videos": videos, "cursor": next_cursor, "has_more": has_more}
+        except Exception as e:
+            print(f"Error fetching user videos from {domain}: {e}")
+            
     # Fallback to TikWM API
+    print("All official posts domains failed or returned empty. Falling back to TikWM.")
     if unique_id:
         tikwm_url = f"https://www.tikwm.com/api/user/posts?unique_id={unique_id}&count={max_count}&cursor={cursor}"
     else:
@@ -468,7 +492,7 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 33, unique_id:
                         next_cursor = data_obj.get("cursor", 0)
                         return {"videos": videos, "cursor": next_cursor, "has_more": has_more}
     except Exception as e:
-        print(f"Error fetching user videos from TikWM: {e}")
+        print(f"Error fetching user videos from TikWM fallback: {e}")
         
     return {"videos": [], "cursor": 0, "has_more": False}
 
