@@ -74,6 +74,68 @@ if (isset($_GET['ajax'])) {
         exit;
     }
 
+    // ── Search by username ──────────────────────────────────────────────────────
+    if ($ajax === 'username') {
+        $username = trim($_GET['username'] ?? '');
+        $count    = max(1, min(300, intval($_GET['count'] ?? 10)));
+
+        if ($username === '') {
+            echo json_encode(['status' => 'error', 'message' => 'Vui lòng nhập username kênh TikTok.']); exit;
+        }
+
+        // Get TikTok API URL
+        $tiktok_api_url = 'http://127.0.0.1:8000';
+        $ss_stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'tiktok_api_url'");
+        if ($ss_stmt) {
+            $db_url = trim($ss_stmt->fetchColumn() ?: '');
+            if ($db_url !== '') {
+                $tiktok_api_url = $db_url;
+            }
+        }
+
+        $api_url = rtrim($tiktok_api_url, '/') . '/api/tiktok/user_videos?' . http_build_query([
+            'username' => $username,
+            'count'    => $count,
+        ]);
+
+        ['raw' => $raw, 'err' => $err] = tiktok_curl($api_url);
+        if ($err) { echo json_encode(['status' => 'error', 'message' => 'Lỗi cURL: ' . $err]); exit; }
+
+        $data = json_decode($raw, true);
+        if (!$data || ($data['code'] ?? 0) !== 200) {
+            echo json_encode(['status' => 'error', 'message' => $data['detail'] ?? ($data['msg'] ?? 'Không thể tải danh sách video của username này.')]); exit;
+        }
+
+        $formatted_videos = [];
+        $videos = $data['videos'] ?? [];
+        foreach ($videos as $vid) {
+            $stats = $vid['statistics'] ?? [];
+            $formatted_videos[] = [
+                'video_id'      => $vid['video_id'] ?? null,
+                'title'         => $vid['desc'] ?? null,
+                'play_count'    => $stats['play_count'] ?? 0,
+                'digg_count'    => $stats['digg_count'] ?? 0,
+                'comment_count' => $stats['comment_count'] ?? 0,
+                'share_count'   => $stats['share_count'] ?? 0,
+                'create_time'   => $vid['create_time'] ?? 0,
+                'author'        => [
+                    'unique_id' => $username,
+                    'nickname'  => $username
+                ],
+                'region'        => $vid['region'] ?? 'VN',
+                'duration'      => $vid['duration'] ?? 0,
+            ];
+        }
+
+        echo json_encode([
+            'status'  => 'success',
+            'data'    => $formatted_videos,
+            'cursor'  => 0,
+            'hasMore' => false,
+        ]);
+        exit;
+    }
+
     // ── Search hashtags by keyword — mirrors getHashTagBYKeyword() ───────────────
     // path: api/challenge/search | returns challenge_list [{id, cha_name, user_count, view_count}]
     if ($ajax === 'hashtag_search') {
@@ -419,6 +481,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="mode-tabs">
     <button class="mode-tab active" id="tab-keyword" onclick="switchMode('keyword')">🔍 Tìm theo Từ khóa</button>
     <button class="mode-tab" id="tab-hashtag" onclick="switchMode('hashtag')">🏷️ Tìm theo Hashtag</button>
+    <button class="mode-tab" id="tab-username" onclick="switchMode('username')">👤 Tìm theo Username</button>
 </div>
 
 <!-- Search Card: KEYWORD -->
@@ -482,6 +545,27 @@ require_once __DIR__ . '/includes/header.php';
     <div id="ht-info-bar" style="display:none; margin-top:14px;"></div>
 </div>
 
+<!-- Search Card: USERNAME -->
+<div class="search-form-card" id="form-username" style="display:none;">
+    <form onsubmit="return false;">
+        <div class="search-row">
+            <div class="search-field grow">
+                <label for="us-input">Username kênh TikTok (ví dụ: @copphavietcom)</label>
+                <input type="text" id="us-input" placeholder="Nhập username..." autocomplete="off">
+            </div>
+            <div class="search-field">
+                <label for="us-count">Số video <span style="color:var(--text-muted);font-weight:400;text-transform:none;">(tối đa 300)</span></label>
+                <input type="number" id="us-count" value="10" min="1" max="300" style="width:110px;">
+            </div>
+            <div style="display:flex; align-items:flex-end;">
+                <button class="btn-search" id="btn-search-us" onclick="doSearchUsername()">
+                    <span>🔍</span> Tìm kiếm
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
 <!-- Column Filter Chips -->
 <div class="col-filter-wrap" id="col-filter-wrap" style="display:none;">
     <div class="col-filter-label">🎛 Hiển thị cột</div>
@@ -542,7 +626,7 @@ let allVideos  = [];
 let sortKey    = null;
 let sortDir    = 'desc';
 let colVisible = {};
-let currentMode = 'keyword'; // 'keyword' | 'hashtag'
+let currentMode = 'keyword'; // 'keyword' | 'hashtag' | 'username'
 
 COLUMNS.forEach(c => { colVisible[c.key] = c.visible; });
 
@@ -552,11 +636,14 @@ function switchMode(mode) {
 
     document.getElementById('form-keyword').style.display = mode === 'keyword' ? 'block' : 'none';
     document.getElementById('form-hashtag').style.display = mode === 'hashtag' ? 'block' : 'none';
+    document.getElementById('form-username').style.display = mode === 'username' ? 'block' : 'none';
 
     const tabKw = document.getElementById('tab-keyword');
     const tabHt = document.getElementById('tab-hashtag');
+    const tabUs = document.getElementById('tab-username');
     tabKw.className = 'mode-tab' + (mode === 'keyword' ? ' active' : '');
     tabHt.className = 'mode-tab' + (mode === 'hashtag' ? ' active-ht' : '');
+    tabUs.className = 'mode-tab' + (mode === 'username' ? ' active' : '');
 
     // Reset results
     resetResults();
@@ -678,6 +765,8 @@ function fetchNextPage() {
     let url;
     if (s.mode === 'keyword') {
         url = `tiktok_search.php?ajax=keyword&keyword=${encodeURIComponent(s.keyword)}&cursor=${s.cursor}`;
+    } else if (s.mode === 'username') {
+        url = `tiktok_search.php?ajax=username&username=${encodeURIComponent(s.username)}&count=${s.needed}`;
     } else {
         url = `tiktok_search.php?ajax=hashtag&challenge_id=${encodeURIComponent(s.challengeId)}&cursor=${s.cursor}`;
     }
@@ -761,6 +850,8 @@ function finalizeResults() {
     const infoEl = document.getElementById('result-count');
     if (s.mode === 'keyword') {
         infoEl.innerHTML = `Tìm thấy <strong>${allVideos.length}</strong> video cho từ khóa "<strong>${escHtml(s.keyword)}</strong>"`;
+    } else if (s.mode === 'username') {
+        infoEl.innerHTML = `Tìm thấy <strong>${allVideos.length}</strong> video từ kênh "<strong>${escHtml(s.username)}</strong>"`;
     } else {
         infoEl.innerHTML = `<strong>${allVideos.length}</strong> video trong hashtag "<strong>#${escHtml(s.challengeName)}</strong>"`;
         // Update ht-info-bar
@@ -773,6 +864,19 @@ function finalizeResults() {
             </div>`;
     }
     renderTable(); // Final render (may re-apply sort)
+}
+
+function doSearchUsername() {
+    const username = document.getElementById('us-input').value.trim();
+    if (!username) { alert('Vui lòng nhập username!'); return; }
+    const needed = parseInt(document.getElementById('us-count').value) || 10;
+
+    allVideos = [];
+    sortKey = null; sortDir = 'desc';
+    resetResults();
+    pgState = { mode: 'username', username, cursor: 0, needed, fetchCount: 0, seenIds: new Set() };
+    setLoading(true, '🔍 Đang tải video từ kênh ' + username + '...');
+    fetchNextPage();
 }
 
 // ─── Display Results (legacy — kept for backward compat) ──────────────────────
@@ -950,6 +1054,8 @@ function setLoading(on, msg) {
     else if (on)   spinner.innerHTML = `<span class="spin-ring"></span>&nbsp; Đang tìm kiếm video TikTok...`;
     document.getElementById('btn-search-kw').disabled = on;
     document.getElementById('btn-search-ht').disabled = on;
+    const btnUs = document.getElementById('btn-search-us');
+    if (btnUs) btnUs.disabled = on;
 }
 function showError(msg) {
     const el = document.getElementById('search-error');
@@ -976,6 +1082,7 @@ function escHtml(str) {
 // ─── Enter key ────────────────────────────────────────────────────────────────
 document.getElementById('kw-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearchKeyword(); });
 document.getElementById('ht-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearchHashtagKeyword(); });
+document.getElementById('us-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearchUsername(); });
 </script>
 
 <?php include 'includes/footer.php'; ?>
