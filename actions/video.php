@@ -109,6 +109,7 @@ if (!empty($custom_api_url)) {
                     'count'      => 1,
                     'keyword'    => '',
                     'shop_count' => 0,
+                    'extractor_source' => $json['data']['source'] ?? 'custom_api',
                     'videos'     => [
                         $videoFormatted
                     ],
@@ -255,6 +256,7 @@ $output = [
     'count'      => 1,
     'keyword'    => '',
     'shop_count' => 0,
+    'extractor_source' => 'main_api',
     'videos'     => [
         $videoFormatted
     ],

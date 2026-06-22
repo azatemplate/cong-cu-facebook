@@ -143,6 +143,7 @@ async def get_video_data(request: Request, url: str = Query(..., description="Ti
             
         # Structure payload to match both Douyin_TikTok_Download_API structure
         mapped_data = {
+            "source": "tikwm" if aweme_data.get("is_fallback") else "main_api",
             "type": "video",
             "platform": "tiktok",
             "id": video_id,
