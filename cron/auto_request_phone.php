@@ -140,6 +140,14 @@ try {
                         ");
                         $upd_fail->execute([$page_id, $c['sender_id']]);
                     }
+                } else {
+                    // Thông tin đã đầy đủ hoặc không có cấu hình tin nhắn mẫu, cập nhật info_requested_at để tránh quét lại liên tục
+                    $upd_skip = $pdo->prepare("
+                        UPDATE fb_customers 
+                        SET info_requested_at = CURRENT_TIMESTAMP 
+                        WHERE page_id = ? AND sender_id = ?
+                    ");
+                    $upd_skip->execute([$page_id, $c['sender_id']]);
                 }
             }
         }
@@ -269,6 +277,14 @@ try {
                         ");
                         $upd_fail->execute([$oa_id, $c['sender_id']]);
                     }
+                } else {
+                    // Thông tin đã đầy đủ hoặc không có cấu hình tin nhắn mẫu, cập nhật info_requested_at để tránh quét lại liên tục
+                    $upd_skip = $pdo->prepare("
+                        UPDATE zalo_customers 
+                        SET info_requested_at = CURRENT_TIMESTAMP 
+                        WHERE oa_id = ? AND sender_id = ?
+                    ");
+                    $upd_skip->execute([$oa_id, $c['sender_id']]);
                 }
             }
         }
