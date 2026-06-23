@@ -84,7 +84,7 @@ async def fetch_tiktok_data(video_id: str) -> dict:
         try:
             print(f"Trying official Custom API domain: {domain}")
             async with httpx.AsyncClient(timeout=4.0, verify=False) as client:
-                response = await client.get(api_url, headers=TIKTOK_APP_HEADERS)
+                response = await client.get(api_url, headers=TIKTOK_HEADERS)
                 if response.status_code != 200:
                     raise Exception(f"Status code {response.status_code}")
                 
@@ -101,7 +101,7 @@ async def fetch_tiktok_data(video_id: str) -> dict:
             
     # Fallback logic using the free public TikWM API
     print(f"All Custom API domains failed. Falling back to TikWM. Last error: {last_err}")
-    fallback_url = f"https://www.tikwm.com/api/?url=https://www.tiktok.com/video/{video_id}"
+    fallback_url = f"https://www.tikwm.com/api/?url=https://www.tiktok.com/video/{video_id}&hd=1"
     try:
         import asyncio
         for attempt in range(2):
@@ -133,7 +133,12 @@ async def fetch_tiktok_data(video_id: str) -> dict:
                                     "url_list": [fb_data.get("cover", "")]
                                 },
                                 "play_addr": {
-                                    "url_list": [fb_data.get("play", "")]
+                                    "url_list": [fb_data.get("hdplay") or fb_data.get("play", "")]
+                                }
+                            },
+                            "music": {
+                                "play_url": {
+                                    "url_list": [fb_data.get("music", "")]
                                 }
                             }
                         }
@@ -259,7 +264,7 @@ async def fetch_tiktok_comments(video_id: str, count: int = 50, cursor: str = "0
         try:
             print(f"Trying official comments API: {domain}")
             async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
-                response = await client.get(api_url, headers=TIKTOK_APP_HEADERS)
+                response = await client.get(api_url, headers=TIKTOK_HEADERS)
                 if response.status_code == 200:
                     if not response.text or len(response.text.strip()) == 0:
                         raise Exception("Response body is empty")
@@ -345,7 +350,7 @@ async def fetch_sec_uid_from_username(username: str) -> str:
         try:
             print(f"Trying official profile API: {domain}")
             async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
-                response = await client.get(api_url, headers=TIKTOK_APP_HEADERS)
+                response = await client.get(api_url, headers=TIKTOK_HEADERS)
                 if response.status_code == 200:
                     if not response.text or len(response.text.strip()) == 0:
                         raise Exception("Response body is empty")
@@ -406,7 +411,7 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 33, unique_id:
         try:
             print(f"Trying official user posts API: {domain}")
             async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
-                response = await client.get(api_url, headers=TIKTOK_APP_HEADERS)
+                response = await client.get(api_url, headers=TIKTOK_HEADERS)
                 if response.status_code == 200:
                     if not response.text or len(response.text.strip()) == 0:
                         raise Exception("Response body is empty")

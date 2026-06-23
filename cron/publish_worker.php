@@ -204,7 +204,9 @@ function getApi22Data($videoId) {
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'User-Agent: com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; ru_RU; Rootkit; Build/NJH47F; Cronet/TTNetVersion:b4d74d15 2020-04-23 QuicVersion:0144d138 2020-03-24)'
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36',
+            'Referer: https://www.tiktok.com/',
+            'Cookie: CykaBlyat=XD'
         ]);
         $res = curl_exec($ch);
         curl_close($ch);
@@ -384,7 +386,7 @@ function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?ar
     }
 
     // ==================== Logic 2: TikWM API GET Mặc định (Nếu App API lỗi) ====================
-    $tikwm_url = 'https://www.tikwm.com/api/?url=' . urlencode($tiktok_url);
+    $tikwm_url = 'https://www.tikwm.com/api/?url=' . urlencode($tiktok_url) . '&hd=1';
     $ch = curl_init($tikwm_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 7);
@@ -424,7 +426,7 @@ function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?ar
         $d = $data['data'];
         if (!empty($d['play'])) {
             return [
-                'download_url' => $d['play'],
+                'download_url' => $d['hdplay'] ?? $d['play'],
                 'title'        => $d['title'] ?? 'tiktok_video',
                 'video_id'     => $d['id'] ?? null,
             ];
