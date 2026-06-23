@@ -100,6 +100,15 @@ class ProxyManager:
 
         return None
 
+    def invalidate_proxy(self, ip_port):
+        if not ip_port:
+            return
+        for key, cache in list(self.proxy_cache.items()):
+            if cache.get("ip_port") == ip_port:
+                print(f"[ProxyManager] Invalidating bad/rate-limited proxy: {ip_port}")
+                del self.proxy_cache[key]
+                break
+
 proxy_manager = ProxyManager()
 
 TIKTOK_APP_HEADERS = {
@@ -194,6 +203,8 @@ async def fetch_tiktok_data(video_id: str) -> dict:
                 return aweme_list[0]
         except Exception as e:
             print(f"Error calling {domain}: {e}")
+            if proxy:
+                proxy_manager.invalidate_proxy(proxy)
             last_err = e
             
     # Fallback logic using the free public TikWM API
@@ -392,6 +403,8 @@ async def fetch_tiktok_comments(video_id: str, count: int = 50, cursor: str = "0
                         return {"comments": comments, "cursor": next_cursor, "has_more": has_more}
         except Exception as e:
             print(f"Error fetching comments from {domain}: {e}")
+            if proxy:
+                proxy_manager.invalidate_proxy(proxy)
             
     # Fallback to TikWM API if the official API is empty or fails
     print("All official comments domains failed or returned empty. Falling back to TikWM.")
@@ -467,6 +480,8 @@ async def fetch_sec_uid_from_username(username: str) -> str:
                         return sec_uid
         except Exception as e:
             print(f"Error fetching profile from {domain}: {e}")
+            if proxy:
+                proxy_manager.invalidate_proxy(proxy)
             
     # Fallback to TikWM API
     print("All official profile domains failed or returned empty. Falling back to TikWM.")
@@ -569,6 +584,8 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 33, unique_id:
                         return {"videos": videos, "cursor": next_cursor, "has_more": has_more}
         except Exception as e:
             print(f"Error fetching user videos from {domain}: {e}")
+            if proxy:
+                proxy_manager.invalidate_proxy(proxy)
             
     # Fallback to TikWM API
     print("All official posts domains failed or returned empty. Falling back to TikWM.")
