@@ -1,4 +1,6 @@
 import re
+import time
+import random
 import httpx
 import uvicorn
 from fastapi import FastAPI, Query, HTTPException, Request
@@ -13,13 +15,104 @@ TIKTOK_HEADERS = {
     "Cookie": "CykaBlyat=XD"
 }
 
+class ProxyManager:
+    def __init__(self):
+        self.master_key = "AyrLPrQDMOIujeiSAfixaG"
+        self.keys_url = f"https://proxy.vn/proxyxoay/apigetkeyxoay.php?key={self.master_key}"
+        self.proxy_cache = {}  # keyxoay -> {"ip_port": "...", "expires_at": ...}
+        self.last_keys_fetch = 0
+        self.active_keys = []
+
+    async def get_keys(self):
+        now = time.time()
+        if now - self.last_keys_fetch < 300 and self.active_keys:
+            return self.active_keys
+
+        try:
+            async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+                resp = await client.get(self.keys_url)
+                if resp.status_code == 200:
+                    text = resp.text.strip()
+                    matches = re.findall(r'\{[^{}]+\}', text)
+                    keys = []
+                    for m in matches:
+                        try:
+                            import json
+                            data = json.loads(m)
+                            if data.get("status") == 100 and data.get("keyxoay"):
+                                keys.append(data["keyxoay"])
+                        except Exception:
+                            pass
+                    if keys:
+                        self.active_keys = keys
+                        self.last_keys_fetch = now
+                        print(f"[ProxyManager] Loaded active keys: {keys}")
+        except Exception as e:
+            print(f"[ProxyManager] Error loading keys: {e}")
+
+        return self.active_keys
+
+    async def get_active_proxy(self):
+        keys = await self.get_keys()
+        if not keys:
+            return None
+
+        shuffled_keys = list(keys)
+        random.shuffle(shuffled_keys)
+        now = time.time()
+
+        for key in shuffled_keys:
+            cache = self.proxy_cache.get(key)
+            if cache and now < cache["expires_at"]:
+                return cache["ip_port"]
+
+            get_url = f"https://proxyxoay.shop/api/get.php?key={key}&&nhamang=random&&tinhthanh=0&whitelist="
+            try:
+                async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+                    resp = await client.get(get_url)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("status") == 100 and data.get("proxyhttp"):
+                            raw_proxy = data["proxyhttp"]
+                            clean_proxy = raw_proxy.rstrip(":")
+                            if clean_proxy:
+                                self.proxy_cache[key] = {
+                                    "ip_port": clean_proxy,
+                                    "expires_at": now + 180
+                                }
+                                print(f"[ProxyManager] New proxy for key {key}: {clean_proxy}")
+                                return clean_proxy
+                        elif data.get("status") == 101:
+                            print(f"[ProxyManager] Key {key} error: {data.get('comen')}")
+                        else:
+                            if cache:
+                                print(f"[ProxyManager] Rate limited. Reusing expired proxy for key {key}.")
+                                cache["expires_at"] = now + 15
+                                return cache["ip_port"]
+            except Exception as e:
+                print(f"[ProxyManager] Error getting proxy for key {key}: {e}")
+                if cache:
+                    return cache["ip_port"]
+
+        for key, cache in self.proxy_cache.items():
+            if cache.get("ip_port"):
+                return cache["ip_port"]
+
+        return None
+
+proxy_manager = ProxyManager()
+
 TIKTOK_APP_HEADERS = {
     "User-Agent": "com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; ru_RU; Rootkit; Build/NJH47F; Cronet/TTNetVersion:b4d74d15 2020-04-23 QuicVersion:0144d138 2020-03-24)"
 }
 
 async def resolve_url(url: str) -> str:
     """Resolve short URLs and redirects to get the final TikTok URL."""
-    async with httpx.AsyncClient(follow_redirects=True, timeout=3.0, verify=False) as client:
+    proxy = await proxy_manager.get_active_proxy()
+    client_kwargs = {"follow_redirects": True, "timeout": 3.0, "verify": False}
+    if proxy:
+        client_kwargs["proxy"] = f"http://{proxy}"
+    async with httpx.AsyncClient(**client_kwargs) as client:
         # Perform a HEAD request to quickly follow redirects without downloading the body
         response = await client.head(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
         return str(response.url)
@@ -83,7 +176,11 @@ async def fetch_tiktok_data(video_id: str) -> dict:
         )
         try:
             print(f"Trying official Custom API domain: {domain}")
-            async with httpx.AsyncClient(timeout=4.0, verify=False) as client:
+            proxy = await proxy_manager.get_active_proxy()
+            client_kwargs = {"timeout": 4.0, "verify": False}
+            if proxy:
+                client_kwargs["proxy"] = f"http://{proxy}"
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 response = await client.get(api_url, headers=TIKTOK_HEADERS)
                 if response.status_code != 200:
                     raise Exception(f"Status code {response.status_code}")
@@ -263,7 +360,11 @@ async def fetch_tiktok_comments(video_id: str, count: int = 50, cursor: str = "0
         )
         try:
             print(f"Trying official comments API: {domain}")
-            async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+            proxy = await proxy_manager.get_active_proxy()
+            client_kwargs = {"timeout": 5.0, "verify": False}
+            if proxy:
+                client_kwargs["proxy"] = f"http://{proxy}"
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 response = await client.get(api_url, headers=TIKTOK_HEADERS)
                 if response.status_code == 200:
                     if not response.text or len(response.text.strip()) == 0:
@@ -349,7 +450,11 @@ async def fetch_sec_uid_from_username(username: str) -> str:
         )
         try:
             print(f"Trying official profile API: {domain}")
-            async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+            proxy = await proxy_manager.get_active_proxy()
+            client_kwargs = {"timeout": 5.0, "verify": False}
+            if proxy:
+                client_kwargs["proxy"] = f"http://{proxy}"
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 response = await client.get(api_url, headers=TIKTOK_HEADERS)
                 if response.status_code == 200:
                     if not response.text or len(response.text.strip()) == 0:
@@ -410,7 +515,11 @@ async def fetch_tiktok_user_videos(sec_uid: str, max_count: int = 33, unique_id:
         )
         try:
             print(f"Trying official user posts API: {domain}")
-            async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
+            proxy = await proxy_manager.get_active_proxy()
+            client_kwargs = {"timeout": 6.0, "verify": False}
+            if proxy:
+                client_kwargs["proxy"] = f"http://{proxy}"
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 response = await client.get(api_url, headers=TIKTOK_HEADERS)
                 if response.status_code == 200:
                     if not response.text or len(response.text.strip()) == 0:
