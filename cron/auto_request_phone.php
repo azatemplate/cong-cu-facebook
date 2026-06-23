@@ -12,6 +12,18 @@ require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/zalo_api.php';
 
+// Helper để thay thế các biến {name} và {phone-sales|fallback}
+function replace_message_tags($text, $customer_name, $sales_phone) {
+    $text = str_replace('{name}', $customer_name, $text);
+    $sales_phone = trim($sales_phone ?? '');
+    return preg_replace_callback('/\{phone-sales(?:\|([^}]+))?\}/', function($matches) use ($sales_phone) {
+        if (!empty($sales_phone)) {
+            return $sales_phone;
+        }
+        return isset($matches[1]) ? $matches[1] : '';
+    }, $text);
+}
+
 echo "\n========================================\n";
 echo "  AUTO-REQUEST INFO WORKER — " . date('Y-m-d H:i:s') . "\n";
 echo "========================================\n";
@@ -119,8 +131,7 @@ try {
                                 if (empty($customer_name)) {
                                     $customer_name = 'bạn';
                                 }
-                                $message_text = str_replace('{name}', $customer_name, $msg_to_send);
-                                $message_text = str_replace('{phone-sales}', trim($c['sales_phone'] ?? ''), $message_text);
+                                $message_text = replace_message_tags($msg_to_send, $customer_name, $c['sales_phone']);
 
                                 echo "[FB] Đang gửi auto-request cho khách {$c['sender_id']} ({$customer_name}): \"$message_text\"\n";
                                 
@@ -183,8 +194,7 @@ try {
                             if (empty($customer_name)) {
                                 $customer_name = 'bạn';
                             }
-                            $message_text = str_replace('{name}', $customer_name, $followup_request_text);
-                            $message_text = str_replace('{phone-sales}', trim($c['sales_phone'] ?? ''), $message_text);
+                            $message_text = replace_message_tags($followup_request_text, $customer_name, $c['sales_phone']);
 
                             echo "[FB] Đang gửi CSKH/Follow-up cho khách {$c['sender_id']} ({$customer_name}): \"$message_text\"\n";
                             
@@ -326,8 +336,7 @@ try {
                                 if (empty($customer_name)) {
                                     $customer_name = 'bạn';
                                 }
-                                $message_text = str_replace('{name}', $customer_name, $msg_to_send);
-                                $message_text = str_replace('{phone-sales}', trim($c['sales_phone'] ?? ''), $message_text);
+                                $message_text = replace_message_tags($msg_to_send, $customer_name, $c['sales_phone']);
 
                                 echo "[ZALO] Đang gửi auto-request cho khách Zalo {$c['sender_id']} ({$customer_name}): \"$message_text\"\n";
 
@@ -396,8 +405,7 @@ try {
                             if (empty($customer_name)) {
                                 $customer_name = 'bạn';
                             }
-                            $message_text = str_replace('{name}', $customer_name, $followup_request_text);
-                            $message_text = str_replace('{phone-sales}', trim($c['sales_phone'] ?? ''), $message_text);
+                            $message_text = replace_message_tags($followup_request_text, $customer_name, $c['sales_phone']);
 
                             echo "[ZALO] Đang gửi CSKH/Follow-up cho khách Zalo {$c['sender_id']} ({$customer_name}): \"$message_text\"\n";
 
