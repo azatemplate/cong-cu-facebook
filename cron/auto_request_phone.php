@@ -68,21 +68,45 @@ try {
             continue;
         }
 
-        // Truy vấn khách hàng tương tác trong vòng 14 ngày qua và bot không bị khóa
+        // Truy vấn khách hàng tương tác và thực sự đủ điều kiện xử lý trong CSDL (để tối ưu hóa hiệu năng)
         $sql_fb_customers = "
             SELECT c.name, c.phone, c.province, c.notes, c.sender_id, c.last_message_at, c.info_requested_at, c.followup_requested_at, c.sales_phone
             FROM fb_customers c
             WHERE c.page_id = :page_id
               AND c.last_sender = 'customer'
-              AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
               AND NOT EXISTS (
                   SELECT 1 FROM bot_chat_locks l
                   WHERE l.page_id = c.page_id AND l.sender_id = c.sender_id AND l.expire_at > NOW()
               )
+              AND (
+                  -- Case 1: Cần tự động xin thông tin
+                  (
+                      :phone_request_enabled = 1
+                      AND NOT (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
+                      AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
+                      AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                      AND (c.info_requested_at IS NULL OR c.last_message_at > c.info_requested_at)
+                  )
+                  OR
+                  -- Case 2: Cần tự động gửi tin CSKH/Follow-up
+                  (
+                      :followup_request_enabled = 1
+                      AND (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
+                      AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :followup_hours HOUR)
+                      AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+                      AND (c.followup_requested_at IS NULL OR c.last_message_at > c.followup_requested_at)
+                  )
+              )
         ";
         $stmt_cust = $pdo->prepare($sql_fb_customers);
         $stmt_cust->execute([
-            ':page_id' => $page_id
+            ':page_id' => $page_id,
+            ':phone_request_enabled' => $phone_request_enabled,
+            ':has_province_req' => empty($province_request_text) ? 0 : 1,
+            ':has_product_req' => empty($product_request_text) ? 0 : 1,
+            ':hours' => $hours,
+            ':followup_request_enabled' => $followup_request_enabled,
+            ':followup_hours' => $followup_hours
         ]);
         $customers = $stmt_cust->fetchAll(PDO::FETCH_ASSOC);
 
@@ -277,17 +301,41 @@ try {
             continue;
         }
 
-        // Truy vấn khách hàng tương tác trong vòng 14 ngày qua
+        // Truy vấn khách hàng tương tác và thực sự đủ điều kiện xử lý trong CSDL (để tối ưu hóa hiệu năng)
         $sql_zalo_customers = "
             SELECT name, phone, province, notes, sender_id, last_message_at, info_requested_at, followup_requested_at, sales_phone
             FROM zalo_customers
             WHERE oa_id = :oa_id
               AND last_sender = 'customer'
-              AND last_message_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+              AND (
+                  -- Case 1: Cần tự động xin thông tin
+                  (
+                      :phone_request_enabled = 1
+                      AND NOT (phone IS NOT NULL AND phone != '' AND (:has_province_req = 0 OR (province IS NOT NULL AND province != '')) AND (:has_product_req = 0 OR (notes IS NOT NULL AND notes != '')))
+                      AND last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
+                      AND last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                      AND (info_requested_at IS NULL OR last_message_at > info_requested_at)
+                  )
+                  OR
+                  -- Case 2: Cần tự động gửi tin CSKH/Follow-up
+                  (
+                      :followup_request_enabled = 1
+                      AND (phone IS NOT NULL AND phone != '' AND (:has_province_req = 0 OR (province IS NOT NULL AND province != '')) AND (:has_product_req = 0 OR (notes IS NOT NULL AND notes != '')))
+                      AND last_message_at <= DATE_SUB(NOW(), INTERVAL :followup_hours HOUR)
+                      AND last_message_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+                      AND (followup_requested_at IS NULL OR last_message_at > followup_requested_at)
+                  )
+              )
         ";
         $stmt_cust = $pdo->prepare($sql_zalo_customers);
         $stmt_cust->execute([
-            ':oa_id' => $oa_id
+            ':oa_id' => $oa_id,
+            ':phone_request_enabled' => $phone_request_enabled,
+            ':has_province_req' => empty($province_request_text) ? 0 : 1,
+            ':has_product_req' => empty($product_request_text) ? 0 : 1,
+            ':hours' => $hours,
+            ':followup_request_enabled' => $followup_request_enabled,
+            ':followup_hours' => $followup_hours
         ]);
         $customers = $stmt_cust->fetchAll(PDO::FETCH_ASSOC);
 
