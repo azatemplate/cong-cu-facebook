@@ -49,7 +49,7 @@ echo "========================================================\n";
 
 try {
     $sql_fb_pages = "
-        SELECT p.page_id, p.page_name, p.user_id,
+        SELECT p.page_id, p.name as page_name, p.user_id,
                sa.username, sa.phone_request_enabled, sa.phone_request_hours, sa.phone_request_text, 
                sa.province_request_text, sa.product_request_text,
                sa.followup_request_enabled, sa.followup_request_hours, sa.followup_request_text
