@@ -813,6 +813,34 @@ $sales_list = $acc_setup['sales_list'] ?? '';
                     <span style="font-size:11px; color:var(--text-muted);">Gửi khi đã có SĐT và Tỉnh thành nhưng chưa có ghi chú/nhu cầu. Để trống để bỏ qua bước này.</span>
                 </div>
 
+                <hr style="border:0; border-top:1px dashed var(--border-color); margin:10px 0;">
+
+                <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-color); padding:10px; border-radius:6px; border:1px solid var(--border-color);">
+                    <label style="font-weight:600; font-size:14px; color:var(--text-main); cursor:pointer; display:flex; align-items:center; gap:8px; margin:0;">
+                        <input type="checkbox" id="zalo_followup_request_enabled" name="followup_request_enabled" value="1" style="width:18px; height:18px; cursor:pointer;">
+                        Kích hoạt gửi tin CSKH/Follow-up sau khi đủ thông tin
+                    </label>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:var(--text-main);">Thời gian chờ gửi tin</label>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <input type="number" id="zalo_followup_request_val" min="1" max="720" value="12" style="width:80px; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:14px; background:var(--card-bg); color:var(--text-main);">
+                        <select id="zalo_followup_request_unit" style="padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:14px; background:var(--card-bg); color:var(--text-main);">
+                            <option value="hours" selected>Giờ</option>
+                            <option value="days">Ngày</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:5px;">
+                    <label style="font-weight:600; font-size:13px; color:var(--text-main); display:flex; align-items:center; gap:5px;">
+                        ✉️ Mẫu tin nhắn CSKH/Follow-up
+                    </label>
+                    <textarea id="zalo_followup_request_text" name="followup_request_text" rows="2" placeholder="Ví dụ: Dạ {name} đã nhận được báo giá bên em chưa ạ?" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:13px; resize:vertical; background:var(--card-bg); color:var(--text-main);"></textarea>
+                    <span style="font-size:11px; color:var(--text-muted);">Gửi sau khi khách hàng đã cung cấp đủ thông tin (không còn thông tin nào cần xin). Dùng {name} để gọi tên.</span>
+                </div>
+
                 <div style="text-align:right; margin-top:5px;">
                     <button type="submit" class="btn btn-primary" style="background:#0068ff; color:#fff; border:none; padding:8px 20px; font-weight:600; border-radius:6px; cursor:pointer;">Lưu cấu hình</button>
                 </div>
@@ -1768,6 +1796,18 @@ $sales_list = $acc_setup['sales_list'] ?? '';
                 document.getElementById('zalo_phone_request_text').value = res.data.phone_request_text || '';
                 document.getElementById('zalo_province_request_text').value = res.data.province_request_text || '';
                 document.getElementById('zalo_product_request_text').value = res.data.product_request_text || '';
+                
+                // Load follow-up settings
+                document.getElementById('zalo_followup_request_enabled').checked = res.data.followup_request_enabled == 1;
+                const followupHours = res.data.followup_request_hours || 12;
+                if (followupHours >= 24 && followupHours % 24 === 0) {
+                    document.getElementById('zalo_followup_request_val').value = followupHours / 24;
+                    document.getElementById('zalo_followup_request_unit').value = 'days';
+                } else {
+                    document.getElementById('zalo_followup_request_val').value = followupHours;
+                    document.getElementById('zalo_followup_request_unit').value = 'hours';
+                }
+                document.getElementById('zalo_followup_request_text').value = res.data.followup_request_text || '';
             }
         })
         .catch(err => console.error('Error loading Zalo phone settings:', err));
@@ -1785,6 +1825,14 @@ $sales_list = $acc_setup['sales_list'] ?? '';
         fd.append('phone_request_text', document.getElementById('zalo_phone_request_text').value);
         fd.append('province_request_text', document.getElementById('zalo_province_request_text').value);
         fd.append('product_request_text', document.getElementById('zalo_product_request_text').value);
+        
+        const followupVal = parseInt(document.getElementById('zalo_followup_request_val').value) || 12;
+        const followupUnit = document.getElementById('zalo_followup_request_unit').value;
+        const followupHours = followupUnit === 'days' ? followupVal * 24 : followupVal;
+        
+        fd.append('followup_request_enabled', document.getElementById('zalo_followup_request_enabled').checked ? 1 : 0);
+        fd.append('followup_request_hours', followupHours);
+        fd.append('followup_request_text', document.getElementById('zalo_followup_request_text').value);
         
         fetch('actions/zalo_save_phone_settings.php', {
             method: 'POST',

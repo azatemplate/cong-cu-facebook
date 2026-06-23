@@ -468,7 +468,18 @@ try {
         "ALTER TABLE zalo_customers ADD COLUMN info_requested_at TIMESTAMP NULL DEFAULT NULL",
 
         "ALTER TABLE fb_customers ADD COLUMN consulted TINYINT DEFAULT 0",
-        "ALTER TABLE zalo_customers ADD COLUMN consulted TINYINT DEFAULT 0"
+        "ALTER TABLE zalo_customers ADD COLUMN consulted TINYINT DEFAULT 0",
+        
+        "ALTER TABLE system_accounts ADD COLUMN followup_request_enabled TINYINT DEFAULT 0",
+        "ALTER TABLE system_accounts ADD COLUMN followup_request_hours INT DEFAULT 12",
+        "ALTER TABLE system_accounts ADD COLUMN followup_request_text TEXT DEFAULT NULL",
+        
+        "ALTER TABLE zalo_settings ADD COLUMN followup_request_enabled TINYINT DEFAULT 0",
+        "ALTER TABLE zalo_settings ADD COLUMN followup_request_hours INT DEFAULT 12",
+        "ALTER TABLE zalo_settings ADD COLUMN followup_request_text TEXT DEFAULT NULL",
+        
+        "ALTER TABLE fb_customers ADD COLUMN followup_requested_at TIMESTAMP NULL DEFAULT NULL",
+        "ALTER TABLE zalo_customers ADD COLUMN followup_requested_at TIMESTAMP NULL DEFAULT NULL"
     ];
 
     foreach ($auto_req_migrations as $query) {
