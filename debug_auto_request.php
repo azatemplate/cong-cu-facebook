@@ -59,19 +59,13 @@ try {
         WHERE sa.phone_request_enabled = 1 OR sa.followup_request_enabled = 1
     ";
     $pages = $pdo->query($sql_fb_pages)->fetchAll(PDO::FETCH_ASSOC);
-    echo "Found " . count($pages) . " Facebook Fanpages with auto-request/follow-up enabled.\n\n";
+    echo "Found " . count($pages) . " Facebook Fanpages with auto-request/follow-up enabled.\n";
+    echo "Filtering and showing only Fanpages that have waiting customers...\n\n";
 
+    $active_fb_pages = 0;
     foreach ($pages as $page) {
         $page_id = $page['page_id'];
         $page_name = $page['page_name'];
-        echo "--------------------------------------------------------\n";
-        echo "Fanpage: $page_name ($page_id) | Account: {$page['username']}\n";
-        echo "  [Phone Request] Enabled: {$page['phone_request_enabled']}, Hours: {$page['phone_request_hours']}\n";
-        echo "    Template Phone: '" . ($page['phone_request_text']) . "'\n";
-        echo "    Template Province: '" . ($page['province_request_text']) . "'\n";
-        echo "    Template Product: '" . ($page['product_request_text']) . "'\n";
-        echo "  [Follow-up CSKH] Enabled: {$page['followup_request_enabled']}, Hours: {$page['followup_request_hours']}\n";
-        echo "    Template Follow-up: '" . ($page['followup_request_text']) . "'\n";
 
         $phone_request_enabled = (int)($page['phone_request_enabled'] ?? 0);
         $hours = max(1, intval($page['phone_request_hours']));
@@ -124,71 +118,87 @@ try {
             ':followup_hours' => $followup_hours
         ]);
         $customers = $stmt_cust->fetchAll(PDO::FETCH_ASSOC);
-        echo "  => SQL detected: " . count($customers) . " customers waiting.\n";
+        
+        if (count($customers) > 0) {
+            $active_fb_pages++;
+            echo "--------------------------------------------------------\n";
+            echo "Fanpage: $page_name ($page_id) | Account: {$page['username']}\n";
+            echo "  [Phone Request] Enabled: {$page['phone_request_enabled']}, Hours: {$page['phone_request_hours']}\n";
+            echo "    Template Phone: '" . ($page['phone_request_text']) . "'\n";
+            echo "    Template Province: '" . ($page['province_request_text']) . "'\n";
+            echo "    Template Product: '" . ($page['product_request_text']) . "'\n";
+            echo "  [Follow-up CSKH] Enabled: {$page['followup_request_enabled']}, Hours: {$page['followup_request_hours']}\n";
+            echo "    Template Follow-up: '" . ($page['followup_request_text']) . "'\n";
+            echo "  => SQL detected: " . count($customers) . " customers waiting.\n";
 
-        $limit = 5;
-        $idx = 0;
-        foreach ($customers as $c) {
-            $idx++;
-            if ($idx > $limit) {
-                echo "  (and " . (count($customers) - $limit) . " more customers...)\n";
-                break;
-            }
-            echo "  [Customer #$idx] Name: '{$c['name']}' | Sender ID: {$c['sender_id']}\n";
-            echo "    Phone: '" . ($c['phone'] ?? 'NULL') . "' | Province: '" . ($c['province'] ?? 'NULL') . "' | Notes: '" . ($c['notes'] ?? 'NULL') . "'\n";
-            echo "    last_message_at: {$c['last_message_at']} | info_requested_at: " . ($c['info_requested_at'] ?? 'NULL') . " | followup_requested_at: " . ($c['followup_requested_at'] ?? 'NULL') . "\n";
-            
-            // Check completeness
-            $is_info_complete = !empty($c['phone']) 
-                && (empty($province_request_text) || !empty($c['province'])) 
-                && (empty($product_request_text) || !empty($c['notes']));
-            echo "    is_info_complete (PHP calculation): " . ($is_info_complete ? "TRUE" : "FALSE") . "\n";
-            
-            $last_msg_ts = strtotime($c['last_message_at']);
-            $diff_hours = (time() - $last_msg_ts) / 3600;
-            echo "    Time diff: " . round($diff_hours, 2) . " hours (PHP time() - last_message_at)\n";
-            
-            if (!$is_info_complete) {
-                echo "    => Logic Path: TỰ ĐỘNG XIN THÔNG TIN\n";
-                echo "      - phone_request_enabled: " . ($phone_request_enabled ? "YES" : "NO") . "\n";
-                echo "      - Hours wait check: is " . round($diff_hours, 2) . " >= $hours AND " . round($diff_hours, 2) . " <= 24? " . (($diff_hours >= $hours && $diff_hours <= 24) ? "YES" : "NO") . "\n";
+            $limit = 5;
+            $idx = 0;
+            foreach ($customers as $c) {
+                $idx++;
+                if ($idx > $limit) {
+                    echo "  (and " . (count($customers) - $limit) . " more customers...)\n";
+                    break;
+                }
+                echo "  [Customer #$idx] Name: '{$c['name']}' | Sender ID: {$c['sender_id']}\n";
+                echo "    Phone: '" . ($c['phone'] ?? 'NULL') . "' | Province: '" . ($c['province'] ?? 'NULL') . "' | Notes: '" . ($c['notes'] ?? 'NULL') . "'\n";
+                echo "    last_message_at: {$c['last_message_at']} | info_requested_at: " . ($c['info_requested_at'] ?? 'NULL') . " | followup_requested_at: " . ($c['followup_requested_at'] ?? 'NULL') . "\n";
                 
-                if ($phone_request_enabled && ($diff_hours >= $hours && $diff_hours <= 24)) {
-                    $has_newer_msg = !empty($c['info_requested_at']) && strtotime($c['last_message_at']) <= strtotime($c['info_requested_at']);
-                    echo "      - Has newer message check: (info_requested_at empty OR last_message_at > info_requested_at)? " . ($has_newer_msg ? "NO (Skipped, already requested for this message)" : "YES") . "\n";
+                // Check completeness
+                $is_info_complete = !empty($c['phone']) 
+                    && (empty($province_request_text) || !empty($c['province'])) 
+                    && (empty($product_request_text) || !empty($c['notes']));
+                echo "    is_info_complete (PHP calculation): " . ($is_info_complete ? "TRUE" : "FALSE") . "\n";
+                
+                $last_msg_ts = strtotime($c['last_message_at']);
+                $diff_hours = (time() - $last_msg_ts) / 3600;
+                echo "    Time diff: " . round($diff_hours, 2) . " hours (PHP time() - last_message_at)\n";
+                
+                if (!$is_info_complete) {
+                    echo "    => Logic Path: TỰ ĐỘNG XIN THÔNG TIN\n";
+                    echo "      - phone_request_enabled: " . ($phone_request_enabled ? "YES" : "NO") . "\n";
+                    echo "      - Hours wait check: is " . round($diff_hours, 2) . " >= $hours AND " . round($diff_hours, 2) . " <= 24? " . (($diff_hours >= $hours && $diff_hours <= 24) ? "YES" : "NO") . "\n";
                     
-                    if (!$has_newer_msg) {
-                        $msg_to_send = '';
-                        if (empty($c['phone']) && !empty($phone_request_text)) $msg_to_send = $phone_request_text;
-                        elseif (empty($c['province']) && !empty($province_request_text)) $msg_to_send = $province_request_text;
-                        elseif (empty($c['notes']) && !empty($product_request_text)) $msg_to_send = $product_request_text;
+                    if ($phone_request_enabled && ($diff_hours >= $hours && $diff_hours <= 24)) {
+                        $has_newer_msg = !empty($c['info_requested_at']) && strtotime($c['last_message_at']) <= strtotime($c['info_requested_at']);
+                        echo "      - Has newer message check: (info_requested_at empty OR last_message_at > info_requested_at)? " . ($has_newer_msg ? "NO (Skipped, already requested for this message)" : "YES") . "\n";
                         
-                        echo "      - Message to send: '" . $msg_to_send . "'\n";
-                        if (empty($msg_to_send)) {
-                            echo "      - SKIP REASON: No template message text configured for the missing information field.\n";
-                        } else {
-                            $message_text = replace_message_tags_debug($msg_to_send, $c['name'] ?? 'bạn', $c['sales_phone']);
-                            echo "      - READY TO SEND: \"$message_text\"\n";
+                        if (!$has_newer_msg) {
+                            $msg_to_send = '';
+                            if (empty($c['phone']) && !empty($phone_request_text)) $msg_to_send = $phone_request_text;
+                            elseif (empty($c['province']) && !empty($province_request_text)) $msg_to_send = $province_request_text;
+                            elseif (empty($c['notes']) && !empty($product_request_text)) $msg_to_send = $product_request_text;
+                            
+                            echo "      - Message to send: '" . $msg_to_send . "'\n";
+                            if (empty($msg_to_send)) {
+                                echo "      - SKIP REASON: No template message text configured for the missing information field.\n";
+                            } else {
+                                $message_text = replace_message_tags_debug($msg_to_send, $c['name'] ?? 'bạn', $c['sales_phone']);
+                                echo "      - READY TO SEND: \"$message_text\"\n";
+                            }
                         }
                     }
-                }
-            } else {
-                echo "    => Logic Path: TỰ ĐỘNG GỬI TIN CSKH / FOLLOW-UP\n";
-                echo "      - followup_request_enabled: " . ($followup_request_enabled ? "YES" : "NO") . "\n";
-                echo "      - Followup text empty?: " . (empty($followup_request_text) ? "YES (Skipped, text is empty!)" : "NO") . "\n";
-                echo "      - Hours wait check: is " . round($diff_hours, 2) . " >= $followup_hours? " . (($diff_hours >= $followup_hours) ? "YES" : "NO") . "\n";
-                
-                if ($followup_request_enabled && !empty($followup_request_text) && $diff_hours >= $followup_hours) {
-                    $has_newer_msg = !empty($c['followup_requested_at']) && strtotime($c['last_message_at']) <= strtotime($c['followup_requested_at']);
-                    echo "      - Has newer message check: (followup_requested_at empty OR last_message_at > followup_requested_at)? " . ($has_newer_msg ? "NO (Skipped, already followed up for this message)" : "YES") . "\n";
+                } else {
+                    echo "    => Logic Path: TỰ ĐỘNG GỬI TIN CSKH / FOLLOW-UP\n";
+                    echo "      - followup_request_enabled: " . ($followup_request_enabled ? "YES" : "NO") . "\n";
+                    echo "      - Followup text empty?: " . (empty($followup_request_text) ? "YES (Skipped, text is empty!)" : "NO") . "\n";
+                    echo "      - Hours wait check: is " . round($diff_hours, 2) . " >= $followup_hours? " . (($diff_hours >= $followup_hours) ? "YES" : "NO") . "\n";
                     
-                    if (!$has_newer_msg) {
-                        $message_text = replace_message_tags_debug($followup_request_text, $c['name'] ?? 'bạn', $c['sales_phone']);
-                        echo "      - READY TO SEND CSKH: \"$message_text\"\n";
+                    if ($followup_request_enabled && !empty($followup_request_text) && $diff_hours >= $followup_hours) {
+                        $has_newer_msg = !empty($c['followup_requested_at']) && strtotime($c['last_message_at']) <= strtotime($c['followup_requested_at']);
+                        echo "      - Has newer message check: (followup_requested_at empty OR last_message_at > followup_requested_at)? " . ($has_newer_msg ? "NO (Skipped, already followed up for this message)" : "YES") . "\n";
+                        
+                        if (!$has_newer_msg) {
+                            $message_text = replace_message_tags_debug($followup_request_text, $c['name'] ?? 'bạn', $c['sales_phone']);
+                            echo "      - READY TO SEND CSKH: \"$message_text\"\n";
+                        }
                     }
                 }
             }
         }
+    }
+    
+    if ($active_fb_pages === 0) {
+        echo "No Facebook Fanpages have active waiting customers.\n";
     }
 } catch (Exception $e) {
     echo "Facebook Diagnostics Error: " . $e->getMessage() . "\n";
@@ -211,19 +221,13 @@ try {
         WHERE zs.phone_request_enabled = 1 OR zs.followup_request_enabled = 1
     ";
     $oas = $pdo->query($sql_zalo_oas)->fetchAll(PDO::FETCH_ASSOC);
-    echo "Found " . count($oas) . " Zalo OAs with auto-request/follow-up enabled.\n\n";
+    echo "Found " . count($oas) . " Zalo OAs with auto-request/follow-up enabled.\n";
+    echo "Filtering and showing only OAs that have waiting customers...\n\n";
 
+    $active_zalo_oas = 0;
     foreach ($oas as $oa) {
         $oa_id = $oa['oa_id'];
-        echo "--------------------------------------------------------\n";
-        echo "Zalo OA: $oa_id | Account: {$oa['account_id']}\n";
-        echo "  [Phone Request] Enabled: {$oa['phone_request_enabled']}, Hours: {$oa['phone_request_hours']}\n";
-        echo "    Template Phone: '" . ($oa['phone_request_text']) . "'\n";
-        echo "    Template Province: '" . ($oa['province_request_text']) . "'\n";
-        echo "    Template Product: '" . ($oa['product_request_text']) . "'\n";
-        echo "  [Follow-up CSKH] Enabled: {$oa['followup_request_enabled']}, Hours: {$oa['followup_request_hours']}\n";
-        echo "    Template Follow-up: '" . ($oa['followup_request_text']) . "'\n";
-
+        
         $phone_request_enabled = (int)($oa['phone_request_enabled'] ?? 0);
         $hours = max(1, intval($oa['phone_request_hours']));
         $phone_request_text = trim($oa['phone_request_text'] ?? '');
@@ -271,71 +275,87 @@ try {
             ':followup_hours' => $followup_hours
         ]);
         $customers = $stmt_cust->fetchAll(PDO::FETCH_ASSOC);
-        echo "  => SQL detected: " . count($customers) . " Zalo customers waiting.\n";
+        
+        if (count($customers) > 0) {
+            $active_zalo_oas++;
+            echo "--------------------------------------------------------\n";
+            echo "Zalo OA: $oa_id | Account: {$oa['account_id']}\n";
+            echo "  [Phone Request] Enabled: {$oa['phone_request_enabled']}, Hours: {$oa['phone_request_hours']}\n";
+            echo "    Template Phone: '" . ($oa['phone_request_text']) . "'\n";
+            echo "    Template Province: '" . ($oa['province_request_text']) . "'\n";
+            echo "    Template Product: '" . ($oa['product_request_text']) . "'\n";
+            echo "  [Follow-up CSKH] Enabled: {$oa['followup_request_enabled']}, Hours: {$oa['followup_request_hours']}\n";
+            echo "    Template Follow-up: '" . ($oa['followup_request_text']) . "'\n";
+            echo "  => SQL detected: " . count($customers) . " Zalo customers waiting.\n";
 
-        $limit = 5;
-        $idx = 0;
-        foreach ($customers as $c) {
-            $idx++;
-            if ($idx > $limit) {
-                echo "  (and " . (count($customers) - $limit) . " more customers...)\n";
-                break;
-            }
-            echo "  [Customer #$idx] Name: '{$c['name']}' | Sender ID: {$c['sender_id']}\n";
-            echo "    Phone: '" . ($c['phone'] ?? 'NULL') . "' | Province: '" . ($c['province'] ?? 'NULL') . "' | Notes: '" . ($c['notes'] ?? 'NULL') . "'\n";
-            echo "    last_message_at: {$c['last_message_at']} | info_requested_at: " . ($c['info_requested_at'] ?? 'NULL') . " | followup_requested_at: " . ($c['followup_requested_at'] ?? 'NULL') . "\n";
-            
-            // Check completeness
-            $is_info_complete = !empty($c['phone']) 
-                && (empty($province_request_text) || !empty($c['province'])) 
-                && (empty($product_request_text) || !empty($c['notes']));
-            echo "    is_info_complete (PHP calculation): " . ($is_info_complete ? "TRUE" : "FALSE") . "\n";
-            
-            $last_msg_ts = strtotime($c['last_message_at']);
-            $diff_hours = (time() - $last_msg_ts) / 3600;
-            echo "    Time diff: " . round($diff_hours, 2) . " hours (PHP time() - last_message_at)\n";
-            
-            if (!$is_info_complete) {
-                echo "    => Logic Path: TỰ ĐỘNG XIN THÔNG TIN\n";
-                echo "      - phone_request_enabled: " . ($phone_request_enabled ? "YES" : "NO") . "\n";
-                echo "      - Hours wait check: is " . round($diff_hours, 2) . " >= $hours AND " . round($diff_hours, 2) . " <= 24? " . (($diff_hours >= $hours && $diff_hours <= 24) ? "YES" : "NO") . "\n";
+            $limit = 5;
+            $idx = 0;
+            foreach ($customers as $c) {
+                $idx++;
+                if ($idx > $limit) {
+                    echo "  (and " . (count($customers) - $limit) . " more customers...)\n";
+                    break;
+                }
+                echo "  [Customer #$idx] Name: '{$c['name']}' | Sender ID: {$c['sender_id']}\n";
+                echo "    Phone: '" . ($c['phone'] ?? 'NULL') . "' | Province: '" . ($c['province'] ?? 'NULL') . "' | Notes: '" . ($c['notes'] ?? 'NULL') . "'\n";
+                echo "    last_message_at: {$c['last_message_at']} | info_requested_at: " . ($c['info_requested_at'] ?? 'NULL') . " | followup_requested_at: " . ($c['followup_requested_at'] ?? 'NULL') . "\n";
                 
-                if ($phone_request_enabled && ($diff_hours >= $hours && $diff_hours <= 24)) {
-                    $has_newer_msg = !empty($c['info_requested_at']) && strtotime($c['last_message_at']) <= strtotime($c['info_requested_at']);
-                    echo "      - Has newer message check: (info_requested_at empty OR last_message_at > info_requested_at)? " . ($has_newer_msg ? "NO (Skipped, already requested for this message)" : "YES") . "\n";
+                // Check completeness
+                $is_info_complete = !empty($c['phone']) 
+                    && (empty($province_request_text) || !empty($c['province'])) 
+                    && (empty($product_request_text) || !empty($c['notes']));
+                echo "    is_info_complete (PHP calculation): " . ($is_info_complete ? "TRUE" : "FALSE") . "\n";
+                
+                $last_msg_ts = strtotime($c['last_message_at']);
+                $diff_hours = (time() - $last_msg_ts) / 3600;
+                echo "    Time diff: " . round($diff_hours, 2) . " hours (PHP time() - last_message_at)\n";
+                
+                if (!$is_info_complete) {
+                    echo "    => Logic Path: TỰ ĐỘNG XIN THÔNG TIN\n";
+                    echo "      - phone_request_enabled: " . ($phone_request_enabled ? "YES" : "NO") . "\n";
+                    echo "      - Hours wait check: is " . round($diff_hours, 2) . " >= $hours AND " . round($diff_hours, 2) . " <= 24? " . (($diff_hours >= $hours && $diff_hours <= 24) ? "YES" : "NO") . "\n";
                     
-                    if (!$has_newer_msg) {
-                        $msg_to_send = '';
-                        if (empty($c['phone']) && !empty($phone_request_text)) $msg_to_send = $phone_request_text;
-                        elseif (empty($c['province']) && !empty($province_request_text)) $msg_to_send = $province_request_text;
-                        elseif (empty($c['notes']) && !empty($product_request_text)) $msg_to_send = $product_request_text;
+                    if ($phone_request_enabled && ($diff_hours >= $hours && $diff_hours <= 24)) {
+                        $has_newer_msg = !empty($c['info_requested_at']) && strtotime($c['last_message_at']) <= strtotime($c['info_requested_at']);
+                        echo "      - Has newer message check: (info_requested_at empty OR last_message_at > info_requested_at)? " . ($has_newer_msg ? "NO (Skipped, already requested for this message)" : "YES") . "\n";
                         
-                        echo "      - Message to send: '" . $msg_to_send . "'\n";
-                        if (empty($msg_to_send)) {
-                            echo "      - SKIP REASON: No template message text configured for the missing information field.\n";
-                        } else {
-                            $message_text = replace_message_tags_debug($msg_to_send, $c['name'] ?? 'bạn', $c['sales_phone']);
-                            echo "      - READY TO SEND: \"$message_text\"\n";
+                        if (!$has_newer_msg) {
+                            $msg_to_send = '';
+                            if (empty($c['phone']) && !empty($phone_request_text)) $msg_to_send = $phone_request_text;
+                            elseif (empty($c['province']) && !empty($province_request_text)) $msg_to_send = $province_request_text;
+                            elseif (empty($c['notes']) && !empty($product_request_text)) $msg_to_send = $product_request_text;
+                            
+                            echo "      - Message to send: '" . $msg_to_send . "'\n";
+                            if (empty($msg_to_send)) {
+                                echo "      - SKIP REASON: No template message text configured for the missing information field.\n";
+                            } else {
+                                $message_text = replace_message_tags_debug($msg_to_send, $c['name'] ?? 'bạn', $c['sales_phone']);
+                                echo "      - READY TO SEND: \"$message_text\"\n";
+                            }
                         }
                     }
-                }
-            } else {
-                echo "    => Logic Path: TỰ ĐỘNG GỬI TIN CSKH / FOLLOW-UP\n";
-                echo "      - followup_request_enabled: " . ($followup_request_enabled ? "YES" : "NO") . "\n";
-                echo "      - Followup text empty?: " . (empty($followup_request_text) ? "YES (Skipped, text is empty!)" : "NO") . "\n";
-                echo "      - Hours wait check: is " . round($diff_hours, 2) . " >= $followup_hours? " . (($diff_hours >= $followup_hours) ? "YES" : "NO") . "\n";
-                
-                if ($followup_request_enabled && !empty($followup_request_text) && $diff_hours >= $followup_hours) {
-                    $has_newer_msg = !empty($c['followup_requested_at']) && strtotime($c['last_message_at']) <= strtotime($c['followup_requested_at']);
-                    echo "      - Has newer message check: (followup_requested_at empty OR last_message_at > followup_requested_at)? " . ($has_newer_msg ? "NO (Skipped, already followed up for this message)" : "YES") . "\n";
+                } else {
+                    echo "    => Logic Path: TỰ ĐỘNG GỬI TIN CSKH / FOLLOW-UP\n";
+                    echo "      - followup_request_enabled: " . ($followup_request_enabled ? "YES" : "NO") . "\n";
+                    echo "      - Followup text empty?: " . (empty($followup_request_text) ? "YES (Skipped, text is empty!)" : "NO") . "\n";
+                    echo "      - Hours wait check: is " . round($diff_hours, 2) . " >= $followup_hours? " . (($diff_hours >= $followup_hours) ? "YES" : "NO") . "\n";
                     
-                    if (!$has_newer_msg) {
-                        $message_text = replace_message_tags_debug($followup_request_text, $c['name'] ?? 'bạn', $c['sales_phone']);
-                        echo "      - READY TO SEND CSKH: \"$message_text\"\n";
+                    if ($followup_request_enabled && !empty($followup_request_text) && $diff_hours >= $followup_hours) {
+                        $has_newer_msg = !empty($c['followup_requested_at']) && strtotime($c['last_message_at']) <= strtotime($c['followup_requested_at']);
+                        echo "      - Has newer message check: (followup_requested_at empty OR last_message_at > followup_requested_at)? " . ($has_newer_msg ? "NO (Skipped, already followed up for this message)" : "YES") . "\n";
+                        
+                        if (!$has_newer_msg) {
+                            $message_text = replace_message_tags_debug($followup_request_text, $c['name'] ?? 'bạn', $c['sales_phone']);
+                            echo "      - READY TO SEND CSKH: \"$message_text\"\n";
+                        }
                     }
                 }
             }
         }
+    }
+    
+    if ($active_zalo_oas === 0) {
+        echo "No Zalo OAs have active waiting customers.\n";
     }
 } catch (Exception $e) {
     echo "Zalo Diagnostics Error: " . $e->getMessage() . "\n";
