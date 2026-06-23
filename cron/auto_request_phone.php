@@ -58,7 +58,7 @@ try {
 
         // Truy vấn khách hàng tương tác trong vòng 14 ngày qua và bot không bị khóa
         $sql_fb_customers = "
-            SELECT c.name, c.phone, c.province, c.notes, c.sender_id, c.last_message_at, c.info_requested_at, c.followup_requested_at
+            SELECT c.name, c.phone, c.province, c.notes, c.sender_id, c.last_message_at, c.info_requested_at, c.followup_requested_at, c.sales_phone
             FROM fb_customers c
             WHERE c.page_id = :page_id
               AND c.last_sender = 'customer'
@@ -120,6 +120,7 @@ try {
                                     $customer_name = 'bạn';
                                 }
                                 $message_text = str_replace('{name}', $customer_name, $msg_to_send);
+                                $message_text = str_replace('{phone-sales}', trim($c['sales_phone'] ?? ''), $message_text);
 
                                 echo "[FB] Đang gửi auto-request cho khách {$c['sender_id']} ({$customer_name}): \"$message_text\"\n";
                                 
@@ -183,6 +184,7 @@ try {
                                 $customer_name = 'bạn';
                             }
                             $message_text = str_replace('{name}', $customer_name, $followup_request_text);
+                            $message_text = str_replace('{phone-sales}', trim($c['sales_phone'] ?? ''), $message_text);
 
                             echo "[FB] Đang gửi CSKH/Follow-up cho khách {$c['sender_id']} ({$customer_name}): \"$message_text\"\n";
                             
@@ -267,7 +269,7 @@ try {
 
         // Truy vấn khách hàng tương tác trong vòng 14 ngày qua
         $sql_zalo_customers = "
-            SELECT name, phone, province, notes, sender_id, last_message_at, info_requested_at, followup_requested_at
+            SELECT name, phone, province, notes, sender_id, last_message_at, info_requested_at, followup_requested_at, sales_phone
             FROM zalo_customers
             WHERE oa_id = :oa_id
               AND last_sender = 'customer'
@@ -325,6 +327,7 @@ try {
                                     $customer_name = 'bạn';
                                 }
                                 $message_text = str_replace('{name}', $customer_name, $msg_to_send);
+                                $message_text = str_replace('{phone-sales}', trim($c['sales_phone'] ?? ''), $message_text);
 
                                 echo "[ZALO] Đang gửi auto-request cho khách Zalo {$c['sender_id']} ({$customer_name}): \"$message_text\"\n";
 
@@ -394,6 +397,7 @@ try {
                                 $customer_name = 'bạn';
                             }
                             $message_text = str_replace('{name}', $customer_name, $followup_request_text);
+                            $message_text = str_replace('{phone-sales}', trim($c['sales_phone'] ?? ''), $message_text);
 
                             echo "[ZALO] Đang gửi CSKH/Follow-up cho khách Zalo {$c['sender_id']} ({$customer_name}): \"$message_text\"\n";
 
