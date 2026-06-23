@@ -6,6 +6,10 @@
 // NEVER hardcode passwords or secrets here.
 // ============================================================
 
+// Tắt hiển thị các cảnh báo Deprecated (như curl_close) và Notice trực tiếp ra màn hình để tránh làm hỏng JSON response
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED & ~E_NOTICE);
+ini_set('display_errors', '0');
+
 // ── Load .env file (if exists) ───────────────────────────────────────────────
 (function () {
     $envFile = __DIR__ . '/../.env';

@@ -131,6 +131,14 @@ try {
                         $fb_error_count++;
                         $err_msg = $res['data']['error']['message'] ?? 'Lỗi không xác định.';
                         echo "[FB] Gửi thất bại cho khách {$c['sender_id']}: $err_msg\n";
+                        
+                        // Cập nhật info_requested_at để tránh lặp lại gửi liên tục khi lỗi (bị chặn, không hoạt động...)
+                        $upd_fail = $pdo->prepare("
+                            UPDATE fb_customers 
+                            SET info_requested_at = CURRENT_TIMESTAMP 
+                            WHERE page_id = ? AND sender_id = ?
+                        ");
+                        $upd_fail->execute([$page_id, $c['sender_id']]);
                     }
                 }
             }
@@ -252,6 +260,14 @@ try {
                         $zalo_error_count++;
                         $err_msg = $res['data']['message'] ?? 'Lỗi không xác định.';
                         echo "[ZALO] Gửi thất bại cho khách {$c['sender_id']}: $err_msg\n";
+
+                        // Cập nhật info_requested_at để tránh lặp lại gửi liên tục khi lỗi
+                        $upd_fail = $pdo->prepare("
+                            UPDATE zalo_customers 
+                            SET info_requested_at = CURRENT_TIMESTAMP 
+                            WHERE oa_id = ? AND sender_id = ?
+                        ");
+                        $upd_fail->execute([$oa_id, $c['sender_id']]);
                     }
                 }
             }

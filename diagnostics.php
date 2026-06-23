@@ -191,20 +191,29 @@ $php_bin_simple = 'php';
 $php_bin_full = 'php';
 $php_bin_note = '';
 
-if (defined('PHP_BINARY') && PHP_BINARY
-    && strpos(PHP_BINARY, 'php-fpm') === false
-    && strpos(PHP_BINARY, 'php-cgi') === false
-    && file_exists(PHP_BINARY)) {
-    $php_bin_full = PHP_BINARY;
-    $php_bin_note = 'tu PHP_BINARY';
-}
-if ($php_bin_full === 'php' || strpos($php_bin_full, 'fpm') !== false) {
-    foreach (['/www/server/php/84/bin/php','/www/server/php/83/bin/php',
-              '/www/server/php/82/bin/php','/www/server/php/81/bin/php',
-              '/www/server/php/80/bin/php','/usr/bin/php8.4',
-              '/usr/bin/php8.3','/usr/bin/php8.2','/usr/bin/php8.1',
-              '/usr/bin/php','/usr/local/bin/php'] as $p) {
-        if (file_exists($p)) { $php_bin_full = $p; $php_bin_note = 'tim thay tren server'; break; }
+// Tu dong lay duong dan PHP CLI theo phien ban PHP Web dang chay de tranh bi chan boi open_basedir
+$current_php_version = phpversion();
+$version_parts = explode('.', $current_php_version);
+if (count($version_parts) >= 2) {
+    $ver_num = $version_parts[0] . $version_parts[1]; // VD: "85" hoac "83"
+    $php_bin_full = "/www/server/php/{$ver_num}/bin/php";
+    $php_bin_note = 'tự động nhận diện từ PHP Web';
+} else {
+    if (defined('PHP_BINARY') && PHP_BINARY
+        && strpos(PHP_BINARY, 'php-fpm') === false
+        && strpos(PHP_BINARY, 'php-cgi') === false
+        && @file_exists(PHP_BINARY)) {
+        $php_bin_full = PHP_BINARY;
+        $php_bin_note = 'tu PHP_BINARY';
+    }
+    if ($php_bin_full === 'php' || strpos($php_bin_full, 'fpm') !== false) {
+        foreach (['/www/server/php/85/bin/php','/www/server/php/84/bin/php',
+                  '/www/server/php/83/bin/php','/www/server/php/82/bin/php',
+                  '/www/server/php/81/bin/php','/www/server/php/80/bin/php',
+                  '/usr/bin/php8.5','/usr/bin/php8.4','/usr/bin/php8.3',
+                  '/usr/bin/php8.2','/usr/bin/php8.1','/usr/bin/php','/usr/local/bin/php'] as $p) {
+            if (@file_exists($p)) { $php_bin_full = $p; $php_bin_note = 'tim thay tren server'; break; }
+        }
     }
 }
 if ($exec_ok && $php_bin_full === 'php') {

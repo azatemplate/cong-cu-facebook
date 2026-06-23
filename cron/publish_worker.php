@@ -177,219 +177,25 @@ try {
 // Fetch system settings for retry logic
 $sys_retry_interval = 1;
 $sys_max_retries = 3;
-$sys_tiktok_api_url = '';
+$sys_tikwm_api_key = '';
 try {
-    $ss_stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'tiktok_api_url'");
+    $ss_stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'tikwm_api_key'");
     if ($ss_stmt) {
-        $sys_tiktok_api_url = trim($ss_stmt->fetchColumn() ?: '');
+        $sys_tikwm_api_key = trim($ss_stmt->fetchColumn() ?: '');
     }
 } catch (Exception $e) {
 }
 
-// Thứ tự ưu tiên: Custom API → TikWM → Direct Scrape (Cách 3) → oEmbed fallback
-function getApi22Data($videoId) {
-    if (empty($videoId)) return null;
-    
-    $domains = [
-        "api22-normal-c-alisg.tiktokv.com",
-        "api22-normal-c-useast1a.tiktokv.com",
-        "api16-normal-c-useast1a.tiktokv.com"
-    ];
-    
-    foreach ($domains as $domain) {
-        $apiUrl = "https://" . $domain . "/aweme/v1/feed/?aweme_id=" . $videoId . "&iid=7318518857994389254&device_id=7318517321748022790&channel=googleplay&app_name=musical_ly&version_code=300904&device_platform=android&device_type=ASUS_Z01QD&os_version=9";
-        $ch = curl_init($apiUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36',
-            'Referer: https://www.tiktok.com/',
-            'Cookie: CykaBlyat=XD'
-        ]);
-        $res = curl_exec($ch);
-        curl_close($ch);
-        if ($res) {
-            $data = json_decode($res, true);
-            if (isset($data['aweme_list'][0])) {
-                return $data['aweme_list'][0];
-            }
-        }
-    }
-    return null;
-}
-
-function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?array
+// Thứ tự ưu tiên: TikWM Miễn Phí → TikWM Trả Phí HD (nếu có key, khi miễn phí lỗi)
+function fetch_tiktok_info(string $tiktok_url, string $tikwm_api_key = ''): ?array
 {
     $tiktok_url = trim($tiktok_url);
-    $tikwm_fallback_data = null;
-    
-    // ==================== Logic 0: Custom API (Evil0ctal / TikHub) - Nhanh nhất ====================
-    if (!empty($custom_api_url)) {
-        $api_target = $custom_api_url;
-        if (strpos($api_target, '?') === false) {
-            $api_target = rtrim($api_target, '/') . '/api/hybrid/video_data?url=' . urlencode($tiktok_url);
-        } else {
-            if (strpos($api_target, 'url=') === false) {
-                $api_target .= (strpos($api_target, '&') === false ? '' : '&') . 'url=' . urlencode($tiktok_url);
-            }
-        }
 
-        $ch = curl_init($api_target);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-        $resp = curl_exec($ch);
-        curl_close($ch);
-
-        if ($resp) {
-            $json = json_decode($resp, true);
-            if ($json && isset($json['data'])) {
-                $download_url = null;
-                $title = null;
-                $vid = null;
-                $hdAddr = $json['data']['video_data']['nwm_video_url_hd'] ?? null;
-                $fhdAddr = $json['data']['video_data']['nwm_video_url_fhd'] ?? null;
-
-                if (!empty($fhdAddr)) {
-                    $download_url = $fhdAddr;
-                } elseif (!empty($hdAddr)) {
-                    $download_url = $hdAddr;
-                } elseif (!empty($json['data']['play'])) {
-                    $download_url = $json['data']['play'];
-                } elseif (!empty($json['data']['video_data']['nwm_video_url_HQ'])) {
-                    $download_url = $json['data']['video_data']['nwm_video_url_HQ'];
-                } elseif (!empty($json['data']['video_data']['nwm_video_url'])) {
-                    $download_url = $json['data']['video_data']['nwm_video_url'];
-                } elseif (!empty($json['data']['video']['play_addr']['url_list'][0])) {
-                    $download_url = $json['data']['video']['play_addr']['url_list'][0];
-                } elseif (!empty($json['data']['url'])) {
-                    $download_url = $json['data']['url'];
-                } elseif (!empty($json['video_data']['nwm_video_url'])) {
-                    $download_url = $json['video_data']['nwm_video_url'];
-                } elseif (!empty($json['url'])) {
-                    $download_url = $json['url'];
-                }
-
-                if (!empty($json['data']['desc'])) {
-                    $title = $json['data']['desc'];
-                } elseif (!empty($json['data']['title'])) {
-                    $title = $json['data']['title'];
-                } elseif (!empty($json['video_data']['video_title'])) {
-                    $title = $json['video_data']['video_title'];
-                } elseif (!empty($json['desc'])) {
-                    $title = $json['desc'];
-                } elseif (!empty($json['title'])) {
-                    $title = $json['title'];
-                }
-
-                if (!empty($json['data']['id'])) {
-                    $vid = $json['data']['id'];
-                } elseif (!empty($json['data']['aweme_id'])) {
-                    $vid = $json['data']['aweme_id'];
-                } elseif (!empty($json['video_data']['id'])) {
-                    $vid = $json['video_data']['id'];
-                } elseif (!empty($json['id'])) {
-                    $vid = $json['id'];
-                }
-
-                if (!empty($download_url)) {
-                    $res_data = [
-                        'download_url' => $download_url,
-                        'title'        => $title ?? 'tiktok_video',
-                        'video_id'     => $vid,
-                    ];
-                    
-                    // Trả về kết quả ngay lập tức (kể cả tikwm) để tránh gọi lại API chính thức gây treo hoặc rate limit chéo
-                    return $res_data;
-                }
-            }
-        }
-    }
-
-    // ==================== Logic 1: API App nội bộ (Tích hợp từ video.php) ====================
-    preg_match('/video\/(\d+)/', $tiktok_url, $match);
-    $videoId = $match[1] ?? '';
-
-    if (empty($videoId)) {
-        $ch = curl_init($tiktok_url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HEADER, true);
-        curl_setopt($ch, CURLOPT_NOBODY, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
-            'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language: vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        ]);
-        $response = curl_exec($ch);
-        $finalUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
-        curl_close($ch);
-        preg_match('/video\/(\d+)/', $finalUrl, $match);
-        $videoId = $match[1] ?? '';
-        if (empty($videoId)) {
-            preg_match('/v=(\d+)/', $finalUrl, $match);
-            $videoId = $match[1] ?? '';
-        }
-    }
-
-    if (!empty($videoId)) {
-        $apiData = getApi22Data($videoId);
-        if ($apiData) {
-            $video = $apiData['video'] ?? [];
-            $hdAddr = null;
-            $fhdAddr = null;
-            if (!empty($video['bit_rate']) && is_array($video['bit_rate'])) {
-                foreach ($video['bit_rate'] as $br) {
-                    if (!empty($br['gear_name']) && !empty($br['play_addr']['url_list'][0])) {
-                        $gear = strtolower($br['gear_name']);
-                        $url = $br['play_addr']['url_list'][0];
-                        if (strpos($gear, '1080') !== false) {
-                            $fhdAddr = $url;
-                        } elseif (strpos($gear, '720') !== false) {
-                            $hdAddr = $url;
-                        }
-                    }
-                }
-            }
-            
-            $playAddr = $fhdAddr;
-            if (empty($playAddr)) {
-                $playAddr = $hdAddr;
-            }
-            if (empty($playAddr)) {
-                $playAddr = $video['play_addr']['url_list'][0] ?? null;
-            }
-            if (empty($playAddr)) {
-                $playAddr = $video['download_addr']['url_list'][0] ?? null;
-            }
-            
-            if (!empty($playAddr)) {
-                return [
-                    'download_url' => $playAddr,
-                    'title'        => $apiData['desc'] ?? 'tiktok_video',
-                    'video_id'     => $videoId,
-                ];
-            }
-        }
-    }
-
-    // Nếu cả Custom API (chính thức) và PHP direct API đều không thành công
-    // Nhưng Custom API trước đó có lấy được TikWM, ta dùng TikWM
-    if ($tikwm_fallback_data) {
-        return $tikwm_fallback_data;
-    }
-
-    // ==================== Logic 2: TikWM API GET Mặc định (Nếu App API lỗi) ====================
+    // ==================== Logic 1: TikWM API GET Miễn Phí (Mặc định) ====================
     $tikwm_url = 'https://www.tikwm.com/api/?url=' . urlencode($tiktok_url) . '&hd=1';
     $ch = curl_init($tikwm_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 7);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
@@ -408,7 +214,7 @@ function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?ar
         usleep(1500000); // Ngủ 1.5 giây
         $ch = curl_init($tikwm_url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 7);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
@@ -430,6 +236,37 @@ function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?ar
                 'title'        => $d['title'] ?? 'tiktok_video',
                 'video_id'     => $d['id'] ?? null,
             ];
+        }
+    }
+
+    // ==================== Logic 2: TikWM Trả Phí (Nếu miễn phí lỗi và có key) ====================
+    if (!empty($tikwm_api_key)) {
+        $paid_url = 'https://api.tikwmapi.com/?url=' . urlencode($tiktok_url) . '&hd=1';
+        $ch = curl_init($paid_url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'x-tikwmapi-key: ' . $tikwm_api_key,
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+            'Accept: application/json',
+        ]);
+        $resp = curl_exec($ch);
+        curl_close($ch);
+
+        if ($resp) {
+            $data = json_decode($resp, true);
+            if ($data && isset($data['code']) && $data['code'] === 0 && isset($data['data'])) {
+                $d = $data['data'];
+                if (!empty($d['play'])) {
+                    return [
+                        'download_url' => $d['hdplay'] ?? $d['play'],
+                        'title'        => $d['title'] ?? 'tiktok_video',
+                        'video_id'     => $d['id'] ?? null,
+                    ];
+                }
+            }
         }
     }
 
@@ -682,7 +519,7 @@ foreach ($pending_posts as $post) {
             $t_title_override = pathinfo($file_info['name'], PATHINFO_FILENAME);
         } elseif ($is_tiktok) {
             $tiktok_url = substr($raw_media, 7);
-            $tik_data = fetch_tiktok_info($tiktok_url, $sys_tiktok_api_url);
+            $tik_data = fetch_tiktok_info($tiktok_url, $sys_tikwm_api_key);
             if (!$tik_data || !isset($tik_data['download_url'])) {
                 marKAsFailed($pdo, $post['id'], "Không thể kết nối API tải video TikTok.", $sys_max_retries, $sys_retry_interval);
                 continue;
@@ -1101,7 +938,7 @@ foreach ($pending_posts as $post) {
 
     } elseif ($is_tiktok) {
         $tiktok_url = substr($post['media_path'], 7);
-        $tik_data = fetch_tiktok_info($tiktok_url, $sys_tiktok_api_url);
+        $tik_data = fetch_tiktok_info($tiktok_url, $sys_tikwm_api_key);
 
         if (!$tik_data || !isset($tik_data['download_url'])) {
             marKAsFailed($pdo, $post['id'], "Không thể kết nối API tải video TikTok.", $sys_max_retries, $sys_retry_interval);

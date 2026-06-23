@@ -14,6 +14,7 @@ try {
     $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('disable_local_upload', '0')");
     $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_publish_workers', '30')");
     $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_comment_workers', '15')");
+    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('tikwm_api_key', '')");
 } catch (Exception $e) {}
 
 // Auto-migrate Telegram columns per-user
@@ -151,13 +152,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $u_stmt = $pdo->prepare("UPDATE system_accounts SET post_delay_seconds = ?, retry_interval_minutes = ?, max_retries = ? WHERE id = ?");
         $u_stmt->execute([$delay, $interval, $max_retries, $account_id]);
         
-        // Save tiktok_api_url to system_settings (global config) - Admin only
-        if (($_SESSION['role'] === 'admin') && isset($_POST['tiktok_api_url'])) {
-            $tiktok_api_val = trim($_POST['tiktok_api_url']);
-            $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('tiktok_api_url', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
-                ->execute([$tiktok_api_val, $tiktok_api_val]);
-        }
-        
         $alert_type = 'success';
         $alert_message = 'Đã cập nhật cấu hình Đăng bài thành công.';
         
@@ -201,6 +195,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $alert_message = 'Đã cập nhật cấu hình Throttling Máy chủ thành công.';
     }
 
+    if (isset($_POST['update_tikwm_api']) && $_SESSION['role'] === 'admin') {
+        $tikwm_key = trim($_POST['tikwm_api_key'] ?? '');
+        $u_stmt = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('tikwm_api_key', ?) ON DUPLICATE KEY UPDATE setting_value = ?");
+        $u_stmt->execute([$tikwm_key, $tikwm_key]);
+        $alert_type = 'success';
+        $alert_message = 'Đã cập nhật API Key TikWM trả phí thành công.';
+    }
+
     if (isset($_POST['update_sales_list'])) {
         $sales_list = trim($_POST['sales_list'] ?? '');
         $u_stmt = $pdo->prepare("UPDATE system_accounts SET sales_list = ? WHERE id = ?");
@@ -232,14 +234,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $retry_interval = isset($account['retry_interval_minutes']) && $account['retry_interval_minutes'] !== null ? $account['retry_interval_minutes'] : '1';
 $max_retries = isset($account['max_retries']) && $account['max_retries'] !== null ? $account['max_retries'] : '3';
 
-// Load tiktok_api_url from system_settings
-$tiktok_api_url = '';
-try {
-    $stmt_tik = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'tiktok_api_url'");
-    $stmt_tik->execute();
-    $tiktok_api_url = $stmt_tik->fetchColumn() ?: '';
-} catch (Exception $e) {}
-
 // Lấy cấu hình Telegram từ account của user hiện tại
 $tg_bot_token = $account['telegram_bot_token'] ?? '';
 $tg_chat_id = $account['telegram_chat_id'] ?? '';
@@ -264,6 +258,15 @@ try {
         if ($row_limit['setting_key'] === 'max_publish_workers') $max_publish_workers = $row_limit['setting_value'];
         if ($row_limit['setting_key'] === 'max_comment_workers') $max_comment_workers = $row_limit['setting_value'];
     }
+} catch (Exception $e) {}
+
+// Đọc API Key TikWM trả phí
+$tikwm_api_key = '';
+try {
+    $stmt_tikwm = $pdo->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'tikwm_api_key'");
+    $stmt_tikwm->execute();
+    $row_tikwm = $stmt_tikwm->fetch(PDO::FETCH_ASSOC);
+    if ($row_tikwm) $tikwm_api_key = $row_tikwm['setting_value'];
 } catch (Exception $e) {}
 ?>
 
@@ -415,14 +418,6 @@ try {
                 <input type="number" name="post_delay_seconds" value="<?php echo htmlspecialchars($account['post_delay_seconds'] ?? '15'); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="0" max="3600">
             </div>
 
-            <?php if ($is_admin): ?>
-            <div class="form-group">
-                <label>TikTok Custom API URL (Tùy chọn)</label>
-                <p style="font-size: 11px; color: var(--text-muted); margin-top: -5px; margin-bottom: 5px;">Link API tải video TikTok tự chạy hoặc demo (Ví dụ: <code>http://127.0.0.1:8000</code>). Để trống sẽ tự động dùng API dự phòng mặc định.</p>
-                <input type="text" name="tiktok_api_url" value="<?php echo htmlspecialchars($tiktok_api_url); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" placeholder="http://127.0.0.1:8000">
-            </div>
-            <?php endif; ?>
-
             <div class="form-group">
                 <label>Thời gian chờ thử lại mặc định (Phút)</label>
                 <input type="number" name="retry_interval_minutes" value="<?php echo htmlspecialchars($retry_interval); ?>" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;" min="1" max="1440">
@@ -434,6 +429,25 @@ try {
             <button type="submit" name="update_retry_settings" class="btn btn-primary">Lưu Tùy Chỉnh</button>
         </form>
     </div>
+
+    <?php if ($is_admin): ?>
+    <div class="card" style="margin: 0; box-sizing: border-box;">
+        <h3 style="margin-bottom: 10px;">🔑 API TikWM Trả Phí (HD Video)</h3>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 15px;">
+            Nhập API Key từ <a href="https://api.tikwmapi.com" target="_blank" style="color: #38bdf8; font-weight: bold;">api.tikwmapi.com</a> để tải video TikTok chất lượng HD, không watermark.<br>
+            Nếu có Key, hệ thống sẽ ưu tiên dùng API trả phí. Nếu không có hoặc lỗi, sẽ tự động dùng TikWM miễn phí.
+        </p>
+        <form method="POST" action="settings.php">
+            <?php echo csrf_field(); ?>
+            <div class="form-group">
+                <label>TikWM API Key</label>
+                <p style="font-size: 11px; color: var(--text-muted); margin-top: -5px; margin-bottom: 5px;">Header: <code>x-tikwmapi-key</code>. Để trống nếu chỉ muốn dùng TikWM miễn phí.</p>
+                <input type="text" name="tikwm_api_key" value="<?php echo htmlspecialchars($tikwm_api_key); ?>" placeholder="ab54f681041b0c9101c610fc22ab9153" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace; font-size: 13px;">
+            </div>
+            <button type="submit" name="update_tikwm_api" class="btn btn-primary" style="background: #f59e0b; border-color: #f59e0b;">💾 Lưu API Key TikWM</button>
+        </form>
+    </div>
+    <?php endif; ?>
 
     <?php if ($is_admin): ?>
     <div class="card" style="margin: 0; box-sizing: border-box;">
