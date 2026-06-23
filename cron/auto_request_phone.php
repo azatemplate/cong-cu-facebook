@@ -307,6 +307,10 @@ try {
             FROM zalo_customers
             WHERE oa_id = :oa_id
               AND last_sender = 'customer'
+              AND NOT EXISTS (
+                  SELECT 1 FROM zalo_chat_locks l
+                  WHERE l.oa_id = zalo_customers.oa_id AND l.sender_id = zalo_customers.sender_id AND l.expire_at > NOW()
+              )
               AND (
                   -- Case 1: Cần tự động xin thông tin
                   (
