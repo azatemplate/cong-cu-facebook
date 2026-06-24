@@ -331,6 +331,23 @@ $pages_json = json_encode($pages);
         document.getElementById('driveSelectedCount').innerText = files.length;
         document.getElementById('driveSelectionInfo').style.display = 'block';
     }
+
+    function onDriveFolderSelected(folderId, folderName) {
+        document.getElementById('drive_file_id').value = 'folder:' + folderId;
+        if (document.getElementById('drive_file_names')) {
+            document.getElementById('drive_file_names').value = 'folder:' + folderName;
+        }
+        const mediaEl2 = document.getElementById('media');
+        if (mediaEl2) mediaEl2.value = ''; // Xóa local file
+
+        const listEl = document.getElementById('driveSelectedList');
+        if (listEl) {
+            listEl.innerHTML = `<li>📁 Thư mục Google Drive: <strong>${folderName}</strong></li>`;
+        }
+
+        document.getElementById('driveSelectedCount').innerText = 'Thư mục';
+        document.getElementById('driveSelectionInfo').style.display = 'block';
+    }
     
     function clearDriveSelection() {
         document.getElementById('drive_file_id').value = '';

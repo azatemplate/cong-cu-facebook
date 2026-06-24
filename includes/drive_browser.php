@@ -24,6 +24,7 @@
                 <button type="button" id="driveBtnDeselectAll" onclick="driveDeselectAllFiles()" class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px; background: #fff; border: 1px solid #e2e8f0; color: #64748b; border-radius: 4px; cursor: pointer; display: none; align-items: center; gap: 4px;">
                     ✖️ Bỏ chọn tất cả
                 </button>
+                <button type="button" id="driveBtnSelectFolder" onclick="driveSelectCurrentFolder()" class="btn btn-success" style="padding: 4px 12px; font-size: 12px; background: #059669; border: 1px solid #047857; color: #fff; border-radius: 4px; display: none; align-items: center; gap: 4px; cursor: pointer;">📁 Chọn thư mục này</button>
             </div>
             <span id="driveSelectionCount" style="font-size: 12px; color: #1d4ed8; font-weight: 600;">0 đã chọn</span>
         </div>
@@ -140,6 +141,12 @@ function loadDriveFiles(folderId, folderName) {
     listContainer.innerHTML = '<div style="text-align: center; color: #64748b; padding: 20px;">Đang tải danh sách...</div>';
     currentDriveFiles = []; // Reset
     document.getElementById('driveTotalCount').textContent = '';
+    
+    // Toggle Select Folder button visibility (only show when not in root)
+    const btnSelectFolder = document.getElementById('driveBtnSelectFolder');
+    if (btnSelectFolder) {
+        btnSelectFolder.style.display = (folderId === 'root') ? 'none' : 'flex';
+    }
     
     fetch(`actions/drive_proxy.php?action=list_files&parent_id=${folderId}`)
         .then(res => res.json())
@@ -325,6 +332,17 @@ function confirmDriveSelection() {
         onDriveFilesSelected(driveSelectedFiles);
     } else if (typeof onDriveFileSelected === 'function') {
         onDriveFileSelected(driveSelectedFiles[0].id, driveSelectedFiles[0].name);
+    }
+    closeDriveModal();
+}
+
+function driveSelectCurrentFolder() {
+    if (currentFolderId === 'root') {
+        return; // Don't allow root folder selection
+    }
+    const folderName = folderPathNames[folderPathNames.length - 1];
+    if (typeof onDriveFolderSelected === 'function') {
+        onDriveFolderSelected(currentFolderId, folderName);
     }
     closeDriveModal();
 }

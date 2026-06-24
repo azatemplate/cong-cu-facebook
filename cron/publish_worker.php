@@ -101,6 +101,62 @@ require_once __DIR__ . '/../includes/drive_utils.php';
 require_once __DIR__ . '/../includes/ai_rewriter.php';
 require_once __DIR__ . '/../includes/telegram.php';
 
+/**
+ * Resolves a file ID from a folder ID
+ * Returns array of [id, name, mimeType]
+ */
+function resolve_drive_folder_file($pdo, $access_token, $folder_id, $mime_filter = null) {
+    // 1. Get all posted files in this folder from DB
+    $posted_files = [];
+    try {
+        $stmt = $pdo->prepare("SELECT file_id FROM posted_folder_files WHERE folder_id = ?");
+        $stmt->execute([$folder_id]);
+        $posted_files = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Exception $e) {}
+
+    // 2. Get list of files in folder from Google Drive
+    $files = list_drive_files_in_folder($access_token, $folder_id);
+    if ($files === false) {
+        return ['error' => 'Không thể kết nối API Google Drive hoặc thư mục không tồn tại.'];
+    }
+
+    // 3. Find first file not posted
+    foreach ($files as $file) {
+        $file_id = $file['id'];
+        $mime = $file['mimeType'];
+        
+        // Skip folders or incompatible files
+        if ($mime === 'application/vnd.google-apps.folder') {
+            continue;
+        }
+        
+        // Apply mime filter if provided
+        if ($mime_filter !== null) {
+            $matched = false;
+            foreach ((array)$mime_filter as $filter) {
+                $pattern = '/^' . str_replace(['/', '*'], ['\/', '.+'], $filter) . '$/i';
+                if (preg_match($pattern, $mime)) {
+                    $matched = true;
+                    break;
+                }
+            }
+            if (!$matched) {
+                continue;
+            }
+        }
+        
+        // Skip if already posted
+        if (in_array($file_id, $posted_files)) {
+            continue;
+        }
+        
+        // Found! Return the file
+        return $file;
+    }
+    
+    return ['error' => 'Tất cả các tệp trong thư mục đã được đăng trước đó.'];
+}
+
 // ── Spin Syntax Helper ──────────────────────────────────────────────────────
 // Xử lý cú pháp spin: {nội dung 1|nội dung 2|nội dung 3} → random chọn 1
 function spin_text($text) {
@@ -498,13 +554,41 @@ foreach ($pending_posts as $post) {
 
         // Download Media (nếu là Tiktok hoặc Drive)
         $raw_media = $post['media_path'];
+        $is_folder = strpos($raw_media, 'folder:') === 0;
         $is_drive = strpos($raw_media, 'drive:') === 0;
         $is_tiktok = strpos($raw_media, 'tiktok:') === 0;
         $abs_media_path = '';
         $temp_drive_file = null;
         $t_title_override = '';
 
-        if ($is_drive) {
+        $resolved_file_id = null;
+        $folder_id_to_log = null;
+
+        if ($is_folder) {
+            $folder_id = substr($raw_media, 7);
+            $drive_token = get_drive_access_token($pdo, $post['account_id']);
+            if (!$drive_token) {
+                marKAsFailed($pdo, $post['id'], "Lỗi tải Google Drive: Thiếu Token", $sys_max_retries, $sys_retry_interval);
+                continue;
+            }
+            $resolved_file_info = resolve_drive_folder_file($pdo, $drive_token, $folder_id, 'video/*');
+            if (isset($resolved_file_info['error'])) {
+                marKAsFailed($pdo, $post['id'], "Lỗi quét thư mục Drive: " . $resolved_file_info['error'], $sys_max_retries, $sys_retry_interval);
+                continue;
+            }
+            $drive_file_id = $resolved_file_info['id'];
+            $resolved_file_id = $drive_file_id;
+            $folder_id_to_log = $folder_id;
+            
+            $file_info = download_drive_file_temp($drive_token, $drive_file_id);
+            if (isset($file_info['error'])) {
+                marKAsFailed($pdo, $post['id'], "Lỗi tải Video Drive từ thư mục: " . $file_info['error'], $sys_max_retries, $sys_retry_interval);
+                continue;
+            }
+            $abs_media_path = $file_info['path'];
+            $temp_drive_file = $abs_media_path;
+            $t_title_override = pathinfo($file_info['name'], PATHINFO_FILENAME);
+        } elseif ($is_drive) {
             $drive_file_id = substr($raw_media, 6);
             $drive_token = get_drive_access_token($pdo, $post['account_id']);
             if (!$drive_token) {
@@ -721,6 +805,14 @@ foreach ($pending_posts as $post) {
                     ->execute([$post['id']]);
             }
 
+            // Ghi nhận file đã đăng từ thư mục để chống trùng
+            if (!empty($folder_id_to_log) && !empty($resolved_file_id)) {
+                try {
+                    $stmt = $pdo->prepare("INSERT INTO posted_folder_files (folder_id, file_id) VALUES (?, ?)");
+                    $stmt->execute([$folder_id_to_log, $resolved_file_id]);
+                } catch (Exception $e) {}
+            }
+
             if (!empty($content_data['delete_drive_file']) && $is_drive) {
                 // SAFE DELETE: check usages
                 $check_usages = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing', 'failed') AND media_path = ? AND id != ?");
@@ -827,8 +919,11 @@ foreach ($pending_posts as $post) {
         }
     }
 
+    $is_folder = strpos($raw_media, 'folder:') === 0;
     $is_drive = strpos($raw_media, 'drive:') === 0;
     $is_tiktok = strpos($raw_media, 'tiktok:') === 0;
+    $resolved_file_id = null;
+    $folder_id_to_log = null;
     $has_media = false;
     $abs_media_path = '';
     $file_mime = '';
@@ -944,7 +1039,68 @@ foreach ($pending_posts as $post) {
         goto handle_response;
     }
 
-    if ($is_drive) {
+    if ($is_folder) {
+        $folder_id = substr($post['media_path'], 7);
+        $drive_token = get_drive_access_token($pdo, $post['account_id']);
+        if (!$drive_token) {
+            marKAsFailed($pdo, $post['id'], "Không thể lấy Google Access Token. Có thể Admin chưa liên kết.", $sys_max_retries, $sys_retry_interval);
+            continue;
+        }
+        
+        $mime_filter = null;
+        if ($post['post_type'] === 'Video' || $post['post_type'] === 'Reel') {
+            $mime_filter = 'video/*';
+        } elseif ($post['post_type'] === 'Status' || $post['post_type'] === 'Image') {
+            $mime_filter = 'image/*';
+        } elseif (strpos($post['post_type'], 'Story') !== false) {
+            $mime_filter = ['image/*', 'video/*'];
+        }
+        
+        $resolved_file_info = resolve_drive_folder_file($pdo, $drive_token, $folder_id, $mime_filter);
+        if (isset($resolved_file_info['error'])) {
+            marKAsFailed($pdo, $post['id'], "Lỗi quét thư mục Drive: " . $resolved_file_info['error'], $sys_max_retries, $sys_retry_interval);
+            continue;
+        }
+        
+        $drive_file_id = $resolved_file_info['id'];
+        $resolved_file_id = $drive_file_id;
+        $folder_id_to_log = $folder_id;
+        
+        // UPDATE OTHER POSTS IN THE SAME SLOT TO USE THIS RESOLVED FILE ID
+        $new_media_path = 'drive:' . $drive_file_id;
+        
+        // Update the current post's media_path in memory and database
+        $post['media_path'] = $new_media_path;
+        $raw_media = $new_media_path;
+        $is_folder = false;
+        $is_drive = true;
+        
+        $pdo->prepare("UPDATE scheduled_posts SET media_path = ? WHERE id = ?")
+            ->execute([$new_media_path, $post['id']]);
+
+        // Update other pending posts in the same campaign/slot
+        if (!empty($post['campaign_id'])) {
+            $upd_others = $pdo->prepare("UPDATE scheduled_posts SET media_path = ? WHERE campaign_id = ? AND media_path = ? AND status = 'pending'");
+            $upd_others->execute([$new_media_path, $post['campaign_id'], 'folder:' . $folder_id]);
+        } else {
+            $upd_others = $pdo->prepare("UPDATE scheduled_posts SET media_path = ? WHERE scheduled_time = ? AND content = ? AND media_path = ? AND status = 'pending'");
+            $upd_others->execute([$new_media_path, $post['scheduled_time'], $post['content'], 'folder:' . $folder_id]);
+        }
+        
+        $file_info = download_drive_file_temp($drive_token, $drive_file_id);
+        if (isset($file_info['error'])) {
+            marKAsFailed($pdo, $post['id'], "Lỗi tải file từ thư mục Google Drive: " . $file_info['error'], $sys_max_retries, $sys_retry_interval);
+            continue;
+        }
+        
+        $has_media = true;
+        $abs_media_path = $file_info['path'];
+        $file_mime = $file_info['mime'];
+        $file_name = $file_info['name'];
+        $t_title_override = pathinfo($file_name, PATHINFO_FILENAME);
+        $temp_drive_file = $abs_media_path;
+        
+    } elseif ($is_drive) {
         $drive_file_id = substr($post['media_path'], 6);
         $drive_token = get_drive_access_token($pdo, $post['account_id']);
         if (!$drive_token) {
@@ -1134,6 +1290,14 @@ foreach ($pending_posts as $post) {
         } else {
             $pdo->prepare("UPDATE scheduled_posts SET status = 'published' WHERE id = ?")
                 ->execute([$post['id']]);
+        }
+
+        // Ghi nhận file đã đăng từ thư mục để chống trùng
+        if (!empty($folder_id_to_log) && !empty($resolved_file_id)) {
+            try {
+                $stmt = $pdo->prepare("INSERT INTO posted_folder_files (folder_id, file_id) VALUES (?, ?)");
+                $stmt->execute([$folder_id_to_log, $resolved_file_id]);
+            } catch (Exception $e) {}
         }
 
         if (!empty($content_data['delete_drive_file'])) {

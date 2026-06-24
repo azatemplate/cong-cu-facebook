@@ -47,6 +47,7 @@ $comment_lines = isset($_POST['enable_comment']) && !empty(trim($_POST['comment_
     ? trim($_POST['comment_lines'])
     : null;
 $delete_drive_file   = isset($_POST['delete_drive_file']) && $_POST['delete_drive_file'] == '1';
+$is_drive_folder     = (strpos($drive_file_ids_str, 'folder:') === 0);
 
 // New: Insights-based comment mode
 $comment_mode = null;
@@ -119,7 +120,7 @@ if (isset($_FILES['video']) && is_array($_FILES['video']['name'])) {
     ];
 }
 
-if (empty($media_pool)) {
+if (empty($media_pool) && !$is_drive_folder) {
     echo json_encode(['status' => 'error', 'msg' => 'Vui lòng cung cấp ít nhất 1 Video (TikTok, Drive hoặc Tải lên).']);
     exit;
 }
@@ -278,12 +279,19 @@ try {
         // Scheduled matrix mode
         foreach ($schedule_dates as $datetime) {
             foreach ($page_ids as $p_id) {
-                if ($delete_drive_file) {
-                    $media = array_shift($drive_pool);
+                if ($is_drive_folder) {
+                    $media_path = $drive_file_ids_str;
+                    $t_title = $title_input;
+                    $t_desc = $desc_input;
+                    $original_source = 'Google Drive Folder';
                 } else {
-                    $media = $media_pool[array_rand($media_pool)];
+                    if ($delete_drive_file) {
+                        $media = array_shift($drive_pool);
+                    } else {
+                        $media = $media_pool[array_rand($media_pool)];
+                    }
+                    [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input);
                 }
-                [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input);
                 $content_arr = ['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source];
                 if ($delete_drive_file) {
                     $content_arr['delete_drive_file'] = 1;
@@ -299,12 +307,19 @@ try {
         // Immediate queue mode
         $now = date('Y-m-d H:i:s');
         foreach ($page_ids as $p_id) {
+            if ($is_drive_folder) {
+                $media_path = $drive_file_ids_str;
+                $t_title = $title_input;
+                $t_desc = $desc_input;
+                $original_source = 'Google Drive Folder';
+            } else {
                 if ($delete_drive_file) {
                     $media = array_shift($drive_pool);
                 } else {
                     $media = $media_pool[array_rand($media_pool)];
                 }
                 [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input);
+            }
             $content_arr = ['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source];
             if ($delete_drive_file) {
                 $content_arr['delete_drive_file'] = 1;

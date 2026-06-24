@@ -163,6 +163,15 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ");
 
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS posted_folder_files (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            folder_id VARCHAR(255) NOT NULL,
+            file_id VARCHAR(255) NOT NULL,
+            posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_folder_file (folder_id, file_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
 
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS page_shares (

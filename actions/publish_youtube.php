@@ -47,6 +47,7 @@ $comment_lines   = isset($_POST['enable_comment']) && !empty(trim($_POST['commen
     ? trim($_POST['comment_lines'])
     : null;
 $delete_drive_file   = isset($_POST['delete_drive_file']) && $_POST['delete_drive_file'] == '1';
+$is_drive_folder     = (strpos($drive_file_ids_str, 'folder:') === 0);
 
 // Determine Media
 $media_pool = [];
@@ -96,7 +97,7 @@ if (isset($_FILES['video']) && is_array($_FILES['video']['name'])) {
     ];
 }
 
-if (empty($media_pool)) {
+if (empty($media_pool) && !$is_drive_folder) {
     echo json_encode(['status' => 'error', 'msg' => 'Vui lòng cung cấp ít nhất 1 Video (TikTok, Drive hoặc Tải lên).']);
     exit;
 }

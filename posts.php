@@ -374,7 +374,15 @@ $pages_json = json_encode($pages);
         document.getElementById('driveSelectionInfo').style.display = 'block';
     }
 
-    
+    function onDriveFolderSelected(folderId, folderName) {
+        document.getElementById('drive_file_id').value = 'folder:' + folderId;
+        const imagesEl = document.getElementById('images');
+        if (imagesEl) imagesEl.value = ''; // Xóa local file
+        
+        document.getElementById('driveSelectedCount').innerText = 'Thư mục';
+        document.getElementById('driveSelectedName').innerText = folderName;
+        document.getElementById('driveSelectionInfo').style.display = 'block';
+    }
     
     function clearDriveSelection() {
         document.getElementById('drive_file_id').value = '';

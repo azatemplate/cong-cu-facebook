@@ -32,6 +32,7 @@ $comment_lines = isset($_POST['enable_comment']) && !empty(trim($_POST['comment_
     ? trim($_POST['comment_lines'])
     : null;
 $delete_drive_file   = isset($_POST['delete_drive_file']) && $_POST['delete_drive_file'] == '1';
+$is_drive_folder     = (strpos($drive_file_ids_str, 'folder:') === 0);
 
 $page_ids = [];
 if (isset($_POST['page_ids']) && is_array($_POST['page_ids'])) {
@@ -74,7 +75,7 @@ if (isset($_FILES['media']) && is_array($_FILES['media']['name'])) {
     ];
 }
 
-if (empty($media_pool)) {
+if (empty($media_pool) && !$is_drive_folder) {
     echo json_encode(['status' => 'error', 'msg' => 'Vui lòng cung cấp ít nhất 1 File (Ảnh/Video hoặc từ Google Drive).']);
     exit;
 }

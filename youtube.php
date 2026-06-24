@@ -499,6 +499,24 @@ $channels_json = json_encode($channels);
         document.getElementById('driveSelectedCount').innerText = files.length;
         document.getElementById('driveSelectionInfo').style.display = 'block';
     }
+
+    function onDriveFolderSelected(folderId, folderName) {
+        document.getElementById('drive_file_id').value = 'folder:' + folderId;
+        if (document.getElementById('drive_file_names')) {
+            document.getElementById('drive_file_names').value = 'folder:' + folderName;
+        }
+        if (document.getElementById('video')) {
+            document.getElementById('video').value = ''; 
+        }
+
+        const listEl = document.getElementById('driveSelectedList');
+        if (listEl) {
+            listEl.innerHTML = `<li>📁 Thư mục Google Drive: <strong>${folderName}</strong></li>`;
+        }
+
+        document.getElementById('driveSelectedCount').innerText = 'Thư mục';
+        document.getElementById('driveSelectionInfo').style.display = 'block';
+    }
     
     function clearDriveSelection() {
         document.getElementById('drive_file_id').value = '';

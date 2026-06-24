@@ -57,6 +57,7 @@ $drive_file_ids_str = isset($_POST['drive_file_id']) ? trim($_POST['drive_file_i
 $upload_dir = __DIR__ . '/../uploads/';
 
 // ── Build Media Pool ──────────────────────────────────────────────────────
+$is_drive_folder = (strpos($drive_file_ids_str, 'folder:') === 0);
 $media_pool = [];
 $post_type  = 'Status';
 
