@@ -128,6 +128,16 @@ $pages_json = json_encode($pages);
             </div>
         </div>
         
+        <div class="form-group" style="background: #f0fdfa; padding: 15px; border-radius: 6px; border: 1px dashed #99f6e4; margin-top: 15px;">
+            <label style="color: #0d9488; font-weight: 500; display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 0;">
+                <input type="checkbox" id="delete_drive_file" name="delete_drive_file" value="1" style="width: 16px; height: 16px; accent-color: #0d9488;">
+                🛡️ Chống trùng và xóa file đã đăng drive
+            </label>
+            <p style="font-size: 12px; color: #0f766e; margin-top: 5px; margin-bottom: 0;">
+                Khi chọn, nội dung đăng sẽ không trùng lặp và tự động xóa khỏi Google Drive sau khi đăng.
+            </p>
+        </div>
+        
         <div id="postResult" style="display: none; margin-top: 15px; padding: 10px; border-radius: 4px;"></div>
 
         <div style="display:flex; gap:14px; align-items:stretch; flex-wrap:wrap;">
@@ -363,6 +373,8 @@ $pages_json = json_encode($pages);
         document.getElementById('driveSelectedName').innerText = displayName;
         document.getElementById('driveSelectionInfo').style.display = 'block';
     }
+
+    
     
     function clearDriveSelection() {
         document.getElementById('drive_file_id').value = '';

@@ -65,6 +65,7 @@ try {
             gg_client_id VARCHAR(255) DEFAULT NULL,
             gg_client_secret VARCHAR(255) DEFAULT NULL,
             gg_refresh_token TEXT DEFAULT NULL,
+            youtube_multi_api TINYINT(1) DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ");
@@ -162,6 +163,7 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ");
 
+
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS page_shares (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -183,6 +185,8 @@ try {
             channel_title VARCHAR(255) NOT NULL,
             channel_avatar VARCHAR(500) DEFAULT NULL,
             refresh_token TEXT,
+            gg_client_id VARCHAR(255) DEFAULT NULL,
+            gg_client_secret VARCHAR(255) DEFAULT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY uniq_channel (account_id, channel_id),
             FOREIGN KEY (account_id) REFERENCES system_accounts(id) ON DELETE CASCADE
@@ -257,6 +261,24 @@ try {
             if (stripos($colInfo['Type'], 'varchar') !== false) {
                 $pdo->exec("ALTER TABLE pages MODIFY COLUMN avatar TEXT DEFAULT NULL");
             }
+        }
+    } catch (Exception $e) {}
+
+    // Add new columns to system_accounts and youtube_channels dynamically
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM system_accounts LIKE 'youtube_multi_api'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE system_accounts ADD COLUMN youtube_multi_api TINYINT(1) DEFAULT 0");
+        }
+        
+        $col = $pdo->query("SHOW COLUMNS FROM youtube_channels LIKE 'gg_client_id'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE youtube_channels ADD COLUMN gg_client_id VARCHAR(255) DEFAULT NULL");
+        }
+        
+        $col = $pdo->query("SHOW COLUMNS FROM youtube_channels LIKE 'gg_client_secret'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE youtube_channels ADD COLUMN gg_client_secret VARCHAR(255) DEFAULT NULL");
         }
     } catch (Exception $e) {}
 

@@ -141,6 +141,16 @@ $pages_json = json_encode($pages);
             <input type="hidden" id="drive_file_names" name="drive_file_names" value="">
         </div>
         
+        <div class="form-group" style="background: #f0fdfa; padding: 15px; border-radius: 6px; border: 1px dashed #99f6e4; margin-top: 15px;">
+            <label style="color: #0d9488; font-weight: 500; display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 0;">
+                <input type="checkbox" id="delete_drive_file" name="delete_drive_file" value="1" style="width: 16px; height: 16px; accent-color: #0d9488;">
+                🛡️ Chống trùng và xóa file đã đăng drive
+            </label>
+            <p style="font-size: 12px; color: #0f766e; margin-top: 5px; margin-bottom: 0;">
+                Khi chọn, nội dung đăng sẽ không trùng lặp và tự động xóa khỏi Google Drive sau khi đăng.
+            </p>
+        </div>
+
         <div id="videoResult" style="display: none; margin-top: 15px; padding: 10px; border-radius: 4px;"></div>
 
         <div style="display:flex; gap:14px; align-items:stretch; margin-top:4px; flex-wrap:wrap;">
@@ -361,6 +371,46 @@ $pages_json = json_encode($pages);
             btnSubmit.textContent = 'Xác nhận Đăng / Lên Lịch';
         });
     });
+
+    function onDriveFilesSelected(files) {
+        if (files.length === 0) return;
+        const fileIds = files.map(f => f.id).join(',');
+        const fileNames = files.map(f => f.name).join('|||');
+        
+        document.getElementById('drive_file_id').value = fileIds;
+        document.getElementById('drive_file_names').value = fileNames;
+        const videoEl = document.getElementById('video');
+        if (videoEl) videoEl.value = ''; // Xóa local file
+        
+        const listEl = document.getElementById('driveSelectedList');
+        listEl.innerHTML = '';
+        files.forEach(f => {
+            const li = document.createElement('li');
+            li.textContent = f.name;
+            listEl.appendChild(li);
+        });
+        
+        document.getElementById('driveSelectedCount').innerText = files.length;
+        document.getElementById('driveSelectionInfo').style.display = 'block';
+    }
+
+    
+
+        document.getElementById('driveSelectedCount').innerText = 'Thư mục';
+        document.getElementById('driveSelectionInfo').style.display = 'block';
+    }
+    
+    function clearDriveSelection() {
+        document.getElementById('drive_file_id').value = '';
+        document.getElementById('drive_file_names').value = '';
+        document.getElementById('driveSelectionInfo').style.display = 'none';
+        
+        const localStatus = document.getElementById('localUploadStatus');
+        if (localStatus) {
+            localStatus.style.display = 'none';
+            localStatus.innerText = '';
+        }
+    }
 </script>
 
 <?php include 'includes/drive_browser.php'; ?>

@@ -117,7 +117,7 @@ foreach ($rows as $row) {
     if ($row['post_type'] === 'YouTube') {
         // --- YOUTUBE COMMENT ---
         // Lấy thông tin kênh youtube_channels
-        $yt_stmt = $pdo->prepare("SELECT yc.*, sa.gg_client_id, sa.gg_client_secret FROM youtube_channels yc JOIN system_accounts sa ON yc.account_id = sa.id WHERE yc.id = ?");
+        $yt_stmt = $pdo->prepare("SELECT yc.*, COALESCE(yc.gg_client_id, sa.gg_client_id) AS gg_client_id, COALESCE(yc.gg_client_secret, sa.gg_client_secret) AS gg_client_secret FROM youtube_channels yc JOIN system_accounts sa ON yc.account_id = sa.id WHERE yc.id = ?");
         $yt_stmt->execute([$row['page_id']]);
         $yt_channel = $yt_stmt->fetch(PDO::FETCH_ASSOC);
 

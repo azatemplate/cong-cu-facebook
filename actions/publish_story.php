@@ -31,6 +31,7 @@ $drive_file_ids_str  = trim($_POST['drive_file_id'] ?? '');
 $comment_lines = isset($_POST['enable_comment']) && !empty(trim($_POST['comment_lines'] ?? ''))
     ? trim($_POST['comment_lines'])
     : null;
+$delete_drive_file   = isset($_POST['delete_drive_file']) && $_POST['delete_drive_file'] == '1';
 
 $page_ids = [];
 if (isset($_POST['page_ids']) && is_array($_POST['page_ids'])) {
@@ -98,6 +99,21 @@ if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
     }
 }
 
+if ($delete_drive_file && !$is_drive_folder) {
+    $drive_count = 0;
+    foreach ($media_pool as $m) {
+        if ($m['type'] === 'drive') {
+            $drive_count++;
+        }
+    }
+    
+    $total_posts = !empty($schedule_dates) ? count($schedule_dates) * count($page_ids) : count($page_ids);
+    if ($drive_count < $total_posts) {
+        echo json_encode(['status' => 'error', 'msg' => "Số lượng file Google Drive đã chọn ({$drive_count} file) không đủ. Bạn cần tối thiểu {$total_posts} file cho {$total_posts} story."]);
+        exit;
+    }
+}
+
 $upload_dir = __DIR__ . '/../uploads/';
 if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
 
@@ -157,6 +173,16 @@ $s_stmt_with    = $has_extra_cols
     : null;
 $s_stmt_without = $pdo->prepare("INSERT INTO scheduled_posts (account_id, page_id, post_type, content, media_path, scheduled_time, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')");
 
+$drive_pool = [];
+if ($delete_drive_file) {
+    foreach ($media_pool as $m) {
+        if ($m['type'] === 'drive') {
+            $drive_pool[] = $m;
+        }
+    }
+    shuffle($drive_pool);
+}
+
 $success_count  = 0;
 $dates_to_use   = !empty($schedule_dates) ? $schedule_dates : [date('Y-m-d H:i:s')];
 
@@ -164,12 +190,28 @@ try {
     $pdo->beginTransaction();
     foreach ($dates_to_use as $datetime) {
         foreach ($page_ids as $p_id) {
-            $media = $media_pool[array_rand($media_pool)];
-            [$media_path, $post_type] = resolve_story_media($media);
-            if ($campaign_id !== null && $s_stmt_with !== null) {
-                $s_stmt_with->execute([$account_id, $p_id, $post_type, 'Story', $media_path, $datetime, $campaign_id, $comment_lines]);
+            if ($is_drive_folder) {
+                $media_path = $drive_file_ids_str;
+                $post_type = 'Story';
             } else {
-                $s_stmt_without->execute([$account_id, $p_id, $post_type, 'Story', $media_path, $datetime]);
+                if ($delete_drive_file) {
+                    $media = array_shift($drive_pool);
+                } else {
+                    $media = $media_pool[array_rand($media_pool)];
+                }
+                [$media_path, $post_type] = resolve_story_media($media);
+            }
+            
+            $payload_arr = [];
+            if ($delete_drive_file) {
+                $payload_arr['delete_drive_file'] = 1;
+            }
+            $content_payload = !empty($payload_arr) ? json_encode($payload_arr) : 'Story';
+            
+            if ($campaign_id !== null && $s_stmt_with !== null) {
+                $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_payload, $media_path, $datetime, $campaign_id, $comment_lines]);
+            } else {
+                $s_stmt_without->execute([$account_id, $p_id, $post_type, $content_payload, $media_path, $datetime]);
             }
             $success_count++;
         }

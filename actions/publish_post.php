@@ -46,6 +46,7 @@ $comment_lines = isset($_POST['enable_comment']) && !empty(trim($_POST['comment_
 // Random image count feature
 $enable_random_images = isset($_POST['enable_random_images']) && $_POST['enable_random_images'] == '1';
 $random_image_count   = isset($_POST['random_image_count']) ? max(1, intval($_POST['random_image_count'])) : 5;
+$delete_drive_file    = isset($_POST['delete_drive_file']) && $_POST['delete_drive_file'] == '1';
 
 if (!$user_id || empty($page_ids) || empty($message)) {
     echo json_encode(['status' => 'error', 'msg' => 'Vui lòng điền đầy đủ các thông tin bắt buộc.']);
@@ -60,10 +61,14 @@ $media_pool = [];
 $post_type  = 'Status';
 
 if (!empty($drive_file_ids_str)) {
-    $ids = array_filter(array_map('trim', explode(",", $drive_file_ids_str)));
-    foreach ($ids as $id) {
-        $media_pool[] = ['type' => 'drive', 'id' => $id];
+    if ($is_drive_folder) {
         $post_type = 'Image';
+    } else {
+        $ids = array_filter(array_map('trim', explode(",", $drive_file_ids_str)));
+        foreach ($ids as $id) {
+            $media_pool[] = ['type' => 'drive', 'id' => $id];
+            $post_type = 'Image';
+        }
     }
 }
 
@@ -82,12 +87,16 @@ if (isset($_FILES['images']) && is_array($_FILES['images']['name'])) {
     }
 }
 
-$content_data = json_encode([
+$content_data_arr = [
     'description' => $message,
     'use_ai'      => $use_ai,
     'title'       => '',
     'auto_title'  => false
-]);
+];
+if ($delete_drive_file) {
+    $content_data_arr['delete_drive_file'] = 1;
+}
+$content_data = json_encode($content_data_arr);
 
 // ── Schedule Matrix Parsing (giống reels.php) ─────────────────────────────
 $start_date  = trim($_POST['start_date'] ?? '');
@@ -107,6 +116,29 @@ if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
             }
             $current = strtotime('+1 day', $current);
         }
+    }
+}
+
+if ($delete_drive_file && !$is_drive_folder) {
+    if (!$enable_random_images) {
+        echo json_encode(['status' => 'error', 'msg' => 'Khi chọn Chống trùng & Xóa file Drive, bạn bắt buộc phải bật tính năng "Random lấy X ảnh từ danh sách đã chọn".']);
+        exit;
+    }
+    
+    $drive_count = 0;
+    foreach ($media_pool as $m) {
+        if ($m['type'] === 'drive') {
+            $drive_count++;
+        }
+    }
+    
+    $page_count  = count($page_ids);
+    $total_posts = !empty($schedule_dates) ? count($schedule_dates) * $page_count : $page_count;
+    $required_count = $total_posts * $random_image_count;
+    
+    if ($drive_count < $required_count) {
+        echo json_encode(['status' => 'error', 'msg' => "Số lượng file Google Drive đã chọn ({$drive_count} ảnh) không đủ. Bạn cần tối thiểu {$required_count} ảnh cho {$total_posts} bài đăng (Mỗi bài cần {$random_image_count} ảnh)."]);
+        exit;
     }
 }
 
@@ -202,6 +234,16 @@ function build_media_path_shuffled($media_pool, $saved_local_files, $enable_rand
     return json_encode($paths);
 }
 
+$drive_pool = [];
+if ($delete_drive_file) {
+    foreach ($media_pool as $m) {
+        if ($m['type'] === 'drive') {
+            $drive_pool[] = $m;
+        }
+    }
+    shuffle($drive_pool);
+}
+
 $success_count = 0;
 try {
     $pdo->beginTransaction();
@@ -210,7 +252,18 @@ try {
         // Scheduled matrix mode (giống reels.php)
         foreach ($schedule_dates as $datetime) {
             foreach ($page_ids as $p_id) {
-                $media_path = build_media_path_shuffled($media_pool, $saved_local_files, $enable_random_images, $random_image_count);
+                if ($is_drive_folder) {
+                    $media_path = $drive_file_ids_str;
+                } else if ($delete_drive_file) {
+                    $selected_media = array_splice($drive_pool, 0, $random_image_count);
+                    $paths = [];
+                    foreach ($selected_media as $m) {
+                        $paths[] = 'drive:' . $m['id'];
+                    }
+                    $media_path = (count($paths) === 1) ? $paths[0] : json_encode($paths);
+                } else {
+                    $media_path = build_media_path_shuffled($media_pool, $saved_local_files, $enable_random_images, $random_image_count);
+                }
                 if ($campaign_id !== null && $s_stmt_with !== null) {
                     $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $datetime, $campaign_id, $comment_lines]);
                 } else {
@@ -225,7 +278,18 @@ try {
         // Immediate queue mode
         $now = date('Y-m-d H:i:s');
         foreach ($page_ids as $p_id) {
-            $media_path = build_media_path_shuffled($media_pool, $saved_local_files, $enable_random_images, $random_image_count);
+            if ($is_drive_folder) {
+                $media_path = $drive_file_ids_str;
+            } else if ($delete_drive_file) {
+                $selected_media = array_splice($drive_pool, 0, $random_image_count);
+                $paths = [];
+                foreach ($selected_media as $m) {
+                    $paths[] = 'drive:' . $m['id'];
+                }
+                $media_path = (count($paths) === 1) ? $paths[0] : json_encode($paths);
+            } else {
+                $media_path = build_media_path_shuffled($media_pool, $saved_local_files, $enable_random_images, $random_image_count);
+            }
             if ($campaign_id !== null && $s_stmt_with !== null) {
                 $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $now, $campaign_id, $comment_lines]);
             } else {

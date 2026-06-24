@@ -46,6 +46,7 @@ $drive_file_ids_str = trim($_POST['drive_file_id'] ?? '');
 $comment_lines   = isset($_POST['enable_comment']) && !empty(trim($_POST['comment_lines'] ?? ''))
     ? trim($_POST['comment_lines'])
     : null;
+$delete_drive_file   = isset($_POST['delete_drive_file']) && $_POST['delete_drive_file'] == '1';
 
 // Determine Media
 $media_pool = [];
@@ -57,7 +58,7 @@ if (!empty($tiktok_urls_str)) {
     }
 }
 
-if (!empty($drive_file_ids_str)) {
+if (!empty($drive_file_ids_str) && !$is_drive_folder) {
     // Lấy tên file từ frontend (đã có sẵn từ Drive browser) thay vì gọi API cho từng file
     $drive_names_str = trim($_POST['drive_file_names'] ?? '');
     $drive_ids_arr = array_filter(array_map('trim', explode(",", $drive_file_ids_str)));
@@ -156,6 +157,21 @@ if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
     }
 }
 
+if ($delete_drive_file && !$is_drive_folder) {
+    $drive_count = 0;
+    foreach ($media_pool as $m) {
+        if ($m['type'] === 'drive') {
+            $drive_count++;
+        }
+    }
+    
+    $total_posts = !empty($schedule_dates) ? count($schedule_dates) * count($channel_ids) : count($channel_ids);
+    if ($drive_count < $total_posts) {
+        echo json_encode(['status' => 'error', 'msg' => "Số lượng file Google Drive đã chọn ({$drive_count} file) không đủ. Bạn cần tối thiểu {$total_posts} file cho {$total_posts} video YouTube."]);
+        exit;
+    }
+}
+
 // ── Create Campaign ─────────────────────────────────────
 $campaign_id = null;
 $first_time    = !empty($schedule_dates) ? $schedule_dates[0] : date('Y-m-d H:i:s');
@@ -194,15 +210,40 @@ function insert_sp_yt($s_with, $s_without, $campaign_id, $comment_lines, ...$arg
     }
 }
 
+$drive_pool = [];
+if ($delete_drive_file) {
+    foreach ($media_pool as $m) {
+        if ($m['type'] === 'drive') {
+            $drive_pool[] = $m;
+        }
+    }
+    shuffle($drive_pool);
+}
+
 $success_count = 0;
 
 if (!empty($schedule_dates)) {
     // Scheduled matrix mode
     foreach ($schedule_dates as $datetime) {
         foreach ($channel_ids as $p_id) {
-            $media = $media_pool[array_rand($media_pool)];
-            [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input);
-            $content_data = json_encode(['description' => $t_desc, 'title' => $t_title, 'tags' => $tags_input, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source]);
+            if ($is_drive_folder) {
+                $media_path = $drive_file_ids_str;
+                $t_title = $title_input;
+                $t_desc = $desc_input;
+                $original_source = 'Google Drive Folder';
+            } else {
+                if ($delete_drive_file) {
+                    $media = array_shift($drive_pool);
+                } else {
+                    $media = $media_pool[array_rand($media_pool)];
+                }
+                [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input);
+            }
+            $content_arr = ['description' => $t_desc, 'title' => $t_title, 'tags' => $tags_input, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source];
+            if ($delete_drive_file) {
+                $content_arr['delete_drive_file'] = 1;
+            }
+            $content_data = json_encode($content_arr);
             insert_sp_yt($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $account_id, $p_id, $content_data, $media_path, $datetime);
             $success_count++;
         }
@@ -212,10 +253,24 @@ if (!empty($schedule_dates)) {
     // Immediate queue mode
     $now = date('Y-m-d H:i:s');
     foreach ($channel_ids as $p_id) {
-        $media = $media_pool[array_rand($media_pool)];
-        [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input);
-        
-        $content_data = json_encode(['description' => $t_desc, 'title' => $t_title, 'tags' => $tags_input, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source]);
+        if ($is_drive_folder) {
+            $media_path = $drive_file_ids_str;
+            $t_title = $title_input;
+            $t_desc = $desc_input;
+            $original_source = 'Google Drive Folder';
+        } else {
+            if ($delete_drive_file) {
+                $media = array_shift($drive_pool);
+            } else {
+                $media = $media_pool[array_rand($media_pool)];
+            }
+            [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input);
+        }
+        $content_arr = ['description' => $t_desc, 'title' => $t_title, 'tags' => $tags_input, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source];
+        if ($delete_drive_file) {
+            $content_arr['delete_drive_file'] = 1;
+        }
+        $content_data = json_encode($content_arr);
         insert_sp_yt($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $account_id, $p_id, $content_data, $media_path, $now);
         $success_count++;
     }

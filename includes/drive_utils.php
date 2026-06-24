@@ -88,7 +88,31 @@ function download_drive_file_temp($access_token, $file_id) {
 
     // Lấy extension từ tên file gốc (nếu có)
     $ext = pathinfo($file_name, PATHINFO_EXTENSION);
-    if (!$ext) $ext = 'tmp';
+    if (!$ext || strtolower($ext) === 'tmp') {
+        $map = [
+            'video/mp4' => 'mp4',
+            'video/quicktime' => 'mov',
+            'video/x-msvideo' => 'avi',
+            'video/x-matroska' => 'mkv',
+            'video/webm' => 'webm',
+            'video/3gpp' => '3gp',
+            'image/jpeg' => 'jpg',
+            'image/jpg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp'
+        ];
+        if (isset($map[$mime_type])) {
+            $ext = $map[$mime_type];
+        } else {
+            $ext = 'tmp';
+        }
+        
+        // Append extension to file name if it doesn't have it
+        if ($ext !== 'tmp') {
+            $file_name = rtrim($file_name, '.') . '.' . $ext;
+        }
+    }
 
     // 2. Download nội dung file
     $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media";
@@ -125,5 +149,43 @@ function download_drive_file_temp($access_token, $file_id) {
         'mime' => $mime_type,
         'name' => $file_name
     ];
+}
+
+/**
+ * Xóa file trên Google Drive
+ */
+function delete_drive_file($access_token, $file_id) {
+    $delete_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id);
+    $ch = curl_init($delete_url);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return ($http_code === 204);
+}
+
+/**
+ * Lấy danh sách file trong 1 thư mục từ Google Drive
+ * Sắp xếp theo thời gian tạo tăng dần (cũ nhất trước)
+ */
+function list_drive_files_in_folder($access_token, $folder_id) {
+    $q = "'" . str_replace("'", "\\'", $folder_id) . "' in parents and trashed = false";
+    $url = "https://www.googleapis.com/drive/v3/files?q=" . urlencode($q) . "&fields=files(id,name,mimeType,createdTime,size)&orderBy=createdTime&pageSize=1000";
+    
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($http_code !== 200) {
+        return false;
+    }
+    
+    $data = json_decode($response, true);
+    return isset($data['files']) ? $data['files'] : [];
 }
 ?>

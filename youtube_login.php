@@ -9,15 +9,49 @@ if (!isset($_SESSION['account_id'])) {
 
 $account_id = $_SESSION['account_id'];
 
-// Lấy Client ID từ Database
-$stmt = $pdo->prepare("SELECT gg_client_id FROM system_accounts WHERE id = ?");
+// Check user privilege and Client ID
+$stmt = $pdo->prepare("SELECT gg_client_id, youtube_multi_api FROM system_accounts WHERE id = ?");
 $stmt->execute([$account_id]);
 $account = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$account || empty($account['gg_client_id'])) {
-    die("Vui lòng nhập Google Client ID trong mục Cài Đặt (Settings) của bạn trước khi kết nối Kênh YouTube.");
+$youtube_multi_api = (!empty($account['youtube_multi_api']) || $_SESSION['role'] === 'admin') ? 1 : 0;
+$client_id = '';
+
+if ($youtube_multi_api === 1 && isset($_REQUEST['reauth_channel_id'])) {
+    $reauth_channel_id = intval($_REQUEST['reauth_channel_id']);
+    $ch_stmt = $pdo->prepare("SELECT gg_client_id, gg_client_secret FROM youtube_channels WHERE id = ? AND account_id = ?");
+    $ch_stmt->execute([$reauth_channel_id, $account_id]);
+    $ch_info = $ch_stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($ch_info && !empty($ch_info['gg_client_id'])) {
+        $_SESSION['custom_gg_client_id'] = $ch_info['gg_client_id'];
+        $_SESSION['custom_gg_client_secret'] = $ch_info['gg_client_secret'];
+        $client_id = $ch_info['gg_client_id'];
+    } else {
+        unset($_SESSION['custom_gg_client_id']);
+        unset($_SESSION['custom_gg_client_secret']);
+        if (!$account || empty($account['gg_client_id'])) {
+            die("Vui lòng nhập Google Client ID trong mục Cài Đặt (Settings) của bạn trước khi kết nối Kênh YouTube.");
+        }
+        $client_id = $account['gg_client_id'];
+    }
+} elseif ($youtube_multi_api === 1 && isset($_REQUEST['gg_client_id']) && !empty(trim($_REQUEST['gg_client_id']))) {
+    $client_id = trim($_REQUEST['gg_client_id']);
+    $client_secret = trim($_REQUEST['gg_client_secret'] ?? '');
+    
+    $_SESSION['custom_gg_client_id'] = $client_id;
+    $_SESSION['custom_gg_client_secret'] = $client_secret;
+} else {
+    // Clear custom credentials from session
+    unset($_SESSION['custom_gg_client_id']);
+    unset($_SESSION['custom_gg_client_secret']);
+    
+    if (!$account || empty($account['gg_client_id'])) {
+        die("Vui lòng nhập Google Client ID trong mục Cài Đặt (Settings) của bạn trước khi kết nối Kênh YouTube.");
+    }
+    $client_id = $account['gg_client_id'];
 }
-$client_id = $account['gg_client_id'];
+
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
 $base_dir = rtrim(dirname($_SERVER['PHP_SELF']), '/\\');
 $redirect_uri = $protocol . $_SERVER['HTTP_HOST'] . $base_dir . "/youtube_callback.php";

@@ -19,16 +19,31 @@ if (!isset($_GET['code'])) {
 $code = $_GET['code'];
 $account_id = $_SESSION['account_id'];
 
-// Lấy credentials
-$stmt = $pdo->prepare("SELECT gg_client_id, gg_client_secret FROM system_accounts WHERE id = ?");
+// Check user privilege and default credentials
+$stmt = $pdo->prepare("SELECT gg_client_id, gg_client_secret, youtube_multi_api FROM system_accounts WHERE id = ?");
 $stmt->execute([$account_id]);
 $account = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$account || empty($account['gg_client_id']) || empty($account['gg_client_secret'])) {
-    die("Thiếu cấu hình Cài Đặt Google Client ID và Secret của bạn. Vui lòng cấu hình trước khi kết nối.");
+$youtube_multi_api = (!empty($account['youtube_multi_api']) || $_SESSION['role'] === 'admin') ? 1 : 0;
+$client_id = '';
+$client_secret = '';
+$is_custom = false;
+
+if ($youtube_multi_api === 1 && !empty($_SESSION['custom_gg_client_id']) && !empty($_SESSION['custom_gg_client_secret'])) {
+    $client_id = $_SESSION['custom_gg_client_id'];
+    $client_secret = $_SESSION['custom_gg_client_secret'];
+    $is_custom = true;
+} else {
+    // Clear session variables to be safe
+    unset($_SESSION['custom_gg_client_id']);
+    unset($_SESSION['custom_gg_client_secret']);
+    
+    if (!$account || empty($account['gg_client_id']) || empty($account['gg_client_secret'])) {
+        die("Thiếu cấu hình Cài Đặt Google Client ID và Secret của bạn. Vui lòng cấu hình trước khi kết nối.");
+    }
+    $client_id = $account['gg_client_id'];
+    $client_secret = $account['gg_client_secret'];
 }
-$client_id = $account['gg_client_id'];
-$client_secret = $account['gg_client_secret'];
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
 $base_dir = rtrim(dirname($_SERVER['PHP_SELF']), '/\\');
 $redirect_uri = $protocol . $_SERVER['HTTP_HOST'] . $base_dir . "/youtube_callback.php";
@@ -139,17 +154,21 @@ foreach ($yt_data['items'] as $item) {
 
     if ($existing) {
         $final_refresh_token = $refresh_token ?: $existing['refresh_token'];
-        $u_stmt = $pdo->prepare("UPDATE youtube_channels SET channel_title=?, channel_avatar=?, refresh_token=? WHERE id=?");
-        $u_stmt->execute([$channel_title, $channel_avatar, $final_refresh_token, $existing['id']]);
+        $u_stmt = $pdo->prepare("UPDATE youtube_channels SET channel_title=?, channel_avatar=?, refresh_token=?, gg_client_id=?, gg_client_secret=? WHERE id=?");
+        $u_stmt->execute([$channel_title, $channel_avatar, $final_refresh_token, $is_custom ? $client_id : null, $is_custom ? $client_secret : null, $existing['id']]);
     } else {
         if (!$refresh_token) {
             continue; // Lỗi: mới thêm nhưng google không trả về refresh token
         }
-        $i_stmt = $pdo->prepare("INSERT INTO youtube_channels (account_id, channel_id, channel_title, channel_avatar, refresh_token) VALUES (?, ?, ?, ?, ?)");
-        $i_stmt->execute([$account_id, $channel_id, $channel_title, $channel_avatar, $refresh_token]);
+        $i_stmt = $pdo->prepare("INSERT INTO youtube_channels (account_id, channel_id, channel_title, channel_avatar, refresh_token, gg_client_id, gg_client_secret) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $i_stmt->execute([$account_id, $channel_id, $channel_title, $channel_avatar, $refresh_token, $is_custom ? $client_id : null, $is_custom ? $client_secret : null]);
     }
     $added_count++;
 }
+
+// Clear custom credentials from session
+unset($_SESSION['custom_gg_client_id']);
+unset($_SESSION['custom_gg_client_secret']);
 
 if ($added_count > 0) {
     $_SESSION['flash_msg'] = "Liên kết $added_count Kênh YouTube thành công!";

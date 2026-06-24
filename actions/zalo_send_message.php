@@ -172,11 +172,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
             $upd_stmt->execute([$oa_id, $recipient_id, $snippet]);
 
-            // Lock chatbot for 30 minutes due to manual admin activity
+            // Lock chatbot for 30 minutes due to manual admin activity (preserve existing permanent locks)
             $lock_stmt = $pdo->prepare("
                 INSERT INTO zalo_chat_locks (oa_id, sender_id, expire_at)
                 VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 MINUTE))
-                ON DUPLICATE KEY UPDATE expire_at = DATE_ADD(NOW(), INTERVAL 30 MINUTE)
+                ON DUPLICATE KEY UPDATE expire_at = GREATEST(expire_at, DATE_ADD(NOW(), INTERVAL 30 MINUTE))
             ");
             $lock_stmt->execute([$oa_id, $recipient_id]);
 

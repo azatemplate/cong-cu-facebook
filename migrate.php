@@ -94,6 +94,11 @@ $migrations = [
     ["ALTER TABLE dashboard_snapshots ADD COLUMN total_accounts INT DEFAULT 0", "dashboard_snapshots.total_accounts"],
     ["ALTER TABLE dashboard_snapshots ADD COLUMN total_reels INT DEFAULT 0", "dashboard_snapshots.total_reels"],
     ["ALTER TABLE dashboard_snapshots ADD COLUMN total_posts INT DEFAULT 0", "dashboard_snapshots.total_posts"],
+
+    // YouTube multi-API quota expansion
+    ["ALTER TABLE system_accounts ADD COLUMN youtube_multi_api TINYINT(1) DEFAULT 0", "system_accounts.youtube_multi_api"],
+    ["ALTER TABLE youtube_channels ADD COLUMN gg_client_id VARCHAR(255) DEFAULT NULL", "youtube_channels.gg_client_id"],
+    ["ALTER TABLE youtube_channels ADD COLUMN gg_client_secret VARCHAR(255) DEFAULT NULL", "youtube_channels.gg_client_secret"],
 ];
 
 // Default system settings seed

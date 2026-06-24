@@ -118,8 +118,6 @@ function spin_text($text) {
     return $text;
 }
 
-
-
 // Auto-migrate newly required columns
 try {
     $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");
@@ -179,27 +177,92 @@ try {
 // Fetch system settings for retry logic
 $sys_retry_interval = 1;
 $sys_max_retries = 3;
-$sys_tikwm_api_key = '';
+$sys_tiktok_api_url = '';
 try {
-    $ss_stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'tikwm_api_key'");
+    $ss_stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'tiktok_api_url'");
     if ($ss_stmt) {
-        $sys_tikwm_api_key = trim($ss_stmt->fetchColumn() ?: '');
+        $sys_tiktok_api_url = trim($ss_stmt->fetchColumn() ?: '');
     }
 } catch (Exception $e) {
 }
 
-// Thứ tự ưu tiên: TikWM Miễn Phí → TikWM Trả Phí HD (nếu có key, khi miễn phí lỗi)
-function fetch_tiktok_info(string $tiktok_url, string $tikwm_api_key = ''): ?array
-{
-    $tiktok_url = trim($tiktok_url);
-
-    // ==================== Logic 1: TikWM API GET Miễn Phí (Mặc định) ====================
-    $tikwm_url = 'https://www.tikwm.com/api/?url=' . urlencode($tiktok_url) . '&hd=1';
-    $ch = curl_init($tikwm_url);
+// Thứ tự ưu tiên: Custom API → TikWM → Direct Scrape (Cách 3) → oEmbed fallback
+function getApi22Data($videoId) {
+    if (empty($videoId)) return null;
+    $apiUrl = "https://api22-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id=" . $videoId . "&iid=7318518857994389254&device_id=7318517321748022790&channel=googleplay&app_name=musical_ly&version_code=300904&device_platform=android&device_type=ASUS_Z01QD&os_version=9";
+    $ch = curl_init($apiUrl);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 15);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'User-Agent: com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; ru_RU; Rootkit; Build/NJH47F; Cronet/TTNetVersion:b4d74d15 2020-04-23 QuicVersion:0144d138 2020-03-24)'
+    ]);
+    $res = curl_exec($ch);
+    curl_close($ch);
+    if ($res) {
+        $data = json_decode($res, true);
+        if (isset($data['aweme_list'][0])) {
+            return $data['aweme_list'][0];
+        }
+    }
+    return null;
+}
+
+function fetch_tiktok_info(string $tiktok_url, string $custom_api_url = ''): ?array
+{
+    $tiktok_url = trim($tiktok_url);
+    // ==================== Logic 1: API App nội bộ (Tích hợp từ video.php) ====================
+    preg_match('/video\/(\d+)/', $tiktok_url, $match);
+    $videoId = $match[1] ?? '';
+
+    if (empty($videoId)) {
+        $ch = curl_init($tiktok_url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HEADER, true);
+        curl_setopt($ch, CURLOPT_NOBODY, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+            'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language: vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+        ]);
+        $response = curl_exec($ch);
+        $finalUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+        curl_close($ch);
+        preg_match('/video\/(\d+)/', $finalUrl, $match);
+        $videoId = $match[1] ?? '';
+        if (empty($videoId)) {
+            preg_match('/v=(\d+)/', $finalUrl, $match);
+            $videoId = $match[1] ?? '';
+        }
+    }
+
+    if (!empty($videoId)) {
+        $apiData = getApi22Data($videoId);
+        if ($apiData) {
+            $video = $apiData['video'] ?? [];
+            $playAddr = $video['play_addr']['url_list'][0] ?? null;
+            if (empty($playAddr)) {
+                $playAddr = $video['download_addr']['url_list'][0] ?? null;
+            }
+            if (!empty($playAddr)) {
+                return [
+                    'download_url' => $playAddr,
+                    'title'        => $apiData['desc'] ?? 'tiktok_video',
+                    'video_id'     => $videoId,
+                ];
+            }
+        }
+    }
+
+    // ==================== Logic 2: TikWM API GET Mặc định (Nếu App API lỗi) ====================
+    $tikwm_url = 'https://www.tikwm.com/api/?url=' . urlencode($tiktok_url);
+    $ch = curl_init($tikwm_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 25);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
         'Referer: https://tikwm.com/',
@@ -210,65 +273,14 @@ function fetch_tiktok_info(string $tiktok_url, string $tikwm_api_key = ''): ?arr
     curl_close($ch);
 
     $data = json_decode($resp, true);
-    
-    // Tự động thử lại TikWM nếu bị rate limit 1 request/second
-    if ($data && isset($data['code']) && $data['code'] === -1 && strpos(strtolower($data['msg'] ?? ''), 'limit') !== false) {
-        usleep(1500000); // Ngủ 1.5 giây
-        $ch = curl_init($tikwm_url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
-            'Referer: https://tikwm.com/',
-            'Origin: https://tikwm.com',
-            'Accept: application/json, text/plain, */*'
-        ]);
-        $resp = curl_exec($ch);
-        curl_close($ch);
-        $data = json_decode($resp, true);
-    }
-
     if ($data && isset($data['code']) && $data['code'] === 0 && isset($data['data'])) {
         $d = $data['data'];
         if (!empty($d['play'])) {
             return [
-                'download_url' => $d['hdplay'] ?? $d['play'],
+                'download_url' => $d['play'],
                 'title'        => $d['title'] ?? 'tiktok_video',
                 'video_id'     => $d['id'] ?? null,
             ];
-        }
-    }
-
-    // ==================== Logic 2: TikWM Trả Phí (Nếu miễn phí lỗi và có key) ====================
-    if (!empty($tikwm_api_key)) {
-        $paid_url = 'https://api.tikwmapi.com/?url=' . urlencode($tiktok_url) . '&hd=1';
-        $ch = curl_init($paid_url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'x-tikwmapi-key: ' . $tikwm_api_key,
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
-            'Accept: application/json',
-        ]);
-        $resp = curl_exec($ch);
-        curl_close($ch);
-
-        if ($resp) {
-            $data = json_decode($resp, true);
-            if ($data && isset($data['code']) && $data['code'] === 0 && isset($data['data'])) {
-                $d = $data['data'];
-                if (!empty($d['play'])) {
-                    return [
-                        'download_url' => $d['hdplay'] ?? $d['play'],
-                        'title'        => $d['title'] ?? 'tiktok_video',
-                        'video_id'     => $d['id'] ?? null,
-                    ];
-                }
-            }
         }
     }
 
@@ -325,25 +337,6 @@ $retry_clause = $has_retry_count
 
 // Build placeholders cho IN clause
 $placeholders = implode(',', array_fill(0, count($target_page_ids), '?'));
-$params = $target_page_ids;
-$post_type_filter = "";
-$account_filter = "";
-
-if (!empty($user_id_lock)) {
-    if (strpos($user_id_lock, 'yt_') === 0) {
-        // Luồng YouTube: Chỉ lấy post_type = YouTube và account_id cụ thể
-        $post_type_filter = "AND sp.post_type = 'YouTube' ";
-        $actual_account_id = substr($user_id_lock, 3);
-        if (is_numeric($actual_account_id)) {
-            $account_filter = "AND sp.account_id = ? ";
-            array_unshift($params, (int)$actual_account_id);
-        }
-    } else {
-        // Luồng Facebook: Chỉ lấy post_type != YouTube
-        $post_type_filter = "AND sp.post_type != 'YouTube' ";
-    }
-}
-
 $sql = "
     SELECT sp.*, sa.max_retries AS sa_max_retries, sa.retry_interval_minutes AS sa_retry_interval, sa.post_delay_seconds AS sa_delay
     FROM scheduled_posts sp 
@@ -351,8 +344,6 @@ $sql = "
     WHERE (sp.status = 'pending' $retry_clause) 
       AND sp.scheduled_time <= NOW() 
       AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
-      $post_type_filter
-      $account_filter
       AND sp.page_id IN ($placeholders)
     ORDER BY sp.scheduled_time ASC
 ";
@@ -361,7 +352,7 @@ if (!$stmt) {
     file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - Prepare Error: " . print_r($pdo->errorInfo(), true) . "\n", FILE_APPEND);
     exit;
 }
-if (!$stmt->execute($params)) {
+if (!$stmt->execute($target_page_ids)) {
     file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - Execute Error: " . print_r($stmt->errorInfo(), true) . "\n", FILE_APPEND);
     exit;
 }
@@ -445,7 +436,7 @@ foreach ($pending_posts as $post) {
     if ($post['post_type'] === 'YouTube') {
         // Lấy thông tin kênh từ bảng youtube_channels (page_id = channel_id trong bảng)
         // Lưu ý: ở bước tạo post, $post['page_id'] lưu youtube_channels.id chứ không phải youtube channel id
-        $yt_stmt = $pdo->prepare("SELECT yc.*, COALESCE(yc.gg_client_id, sa.gg_client_id) AS gg_client_id, COALESCE(yc.gg_client_secret, sa.gg_client_secret) AS gg_client_secret FROM youtube_channels yc JOIN system_accounts sa ON yc.account_id = sa.id WHERE yc.id = ?");
+        $yt_stmt = $pdo->prepare("SELECT yc.*, sa.gg_client_id, sa.gg_client_secret FROM youtube_channels yc JOIN system_accounts sa ON yc.account_id = sa.id WHERE yc.id = ?");
         $yt_stmt->execute([$post['page_id']]);
         $yt_channel = $yt_stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -466,7 +457,6 @@ foreach ($pending_posts as $post) {
         $ch = curl_init('https://oauth2.googleapis.com/token');
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
             'client_id' => $client_id,
             'client_secret' => $client_secret,
@@ -521,7 +511,7 @@ foreach ($pending_posts as $post) {
             $t_title_override = pathinfo($file_info['name'], PATHINFO_FILENAME);
         } elseif ($is_tiktok) {
             $tiktok_url = substr($raw_media, 7);
-            $tik_data = fetch_tiktok_info($tiktok_url, $sys_tikwm_api_key);
+            $tik_data = fetch_tiktok_info($tiktok_url, $sys_tiktok_api_url);
             if (!$tik_data || !isset($tik_data['download_url'])) {
                 marKAsFailed($pdo, $post['id'], "Không thể kết nối API tải video TikTok.", $sys_max_retries, $sys_retry_interval);
                 continue;
@@ -641,10 +631,10 @@ foreach ($pending_posts as $post) {
         // --- RESUMABLE UPLOAD PROCESS ---
         $file_size = filesize($abs_media_path);
 
+        // 1. Khởi tạo Upload
         $ch_init = curl_init('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status');
         curl_setopt($ch_init, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch_init, CURLOPT_POST, true);
-        curl_setopt($ch_init, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         curl_setopt($ch_init, CURLOPT_POSTFIELDS, json_encode($metadata));
         curl_setopt($ch_init, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer $access_token",
@@ -691,7 +681,6 @@ foreach ($pending_posts as $post) {
         curl_setopt($ch_upload, CURLOPT_PUT, true);
         curl_setopt($ch_upload, CURLOPT_INFILE, $file_handle);
         curl_setopt($ch_upload, CURLOPT_INFILESIZE, $file_size);
-        curl_setopt($ch_upload, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         curl_setopt($ch_upload, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer $access_token",
             "Content-Type: video/*"
@@ -719,14 +708,6 @@ foreach ($pending_posts as $post) {
             } else {
                 $pdo->prepare("UPDATE scheduled_posts SET status = 'published' WHERE id = ?")
                     ->execute([$post['id']]);
-            }
-
-            if (!empty($content_data['delete_drive_file']) && $is_drive) {
-                $drive_file_id = substr($raw_media, 6);
-                $drive_token = get_drive_access_token($pdo, $post['account_id']);
-                if ($drive_token) {
-                    delete_drive_file($drive_token, $drive_file_id);
-                }
             }
 
             // Hẹn giờ Comment
@@ -786,11 +767,6 @@ foreach ($pending_posts as $post) {
 
     $page_access_token = decryptData($page['access_token']);
     $fanpage_name = isset($page['name']) ? $page['name'] : '';
-
-    $content_data = json_decode($post['content'], true);
-    if (!is_array($content_data)) {
-        $content_data = [];
-    }
 
     // Delay đã được xử lý ở đầu vòng lặp (sleep $user_delay_sec giữa mỗi post)
     // Không cần TokenLocker nữa vì 1 Token User = 1 Worker duy nhất
@@ -953,7 +929,7 @@ foreach ($pending_posts as $post) {
 
     } elseif ($is_tiktok) {
         $tiktok_url = substr($post['media_path'], 7);
-        $tik_data = fetch_tiktok_info($tiktok_url, $sys_tikwm_api_key);
+        $tik_data = fetch_tiktok_info($tiktok_url, $sys_tiktok_api_url);
 
         if (!$tik_data || !isset($tik_data['download_url'])) {
             marKAsFailed($pdo, $post['id'], "Không thể kết nối API tải video TikTok.", $sys_max_retries, $sys_retry_interval);
@@ -1120,27 +1096,6 @@ foreach ($pending_posts as $post) {
         } else {
             $pdo->prepare("UPDATE scheduled_posts SET status = 'published' WHERE id = ?")
                 ->execute([$post['id']]);
-        }
-
-        if (!empty($content_data['delete_drive_file'])) {
-            $drive_token = get_drive_access_token($pdo, $post['account_id']);
-            if ($drive_token) {
-                $raw_media = $post['media_path'];
-                if (strpos($raw_media, 'drive:') === 0) {
-                    $drive_file_id = substr($raw_media, 6);
-                    delete_drive_file($drive_token, $drive_file_id);
-                } elseif (strpos($raw_media, '[') === 0) {
-                    $media_paths = @json_decode($raw_media, true);
-                    if (is_array($media_paths)) {
-                        foreach ($media_paths as $path) {
-                            if (strpos($path, 'drive:') === 0) {
-                                $drive_file_id = substr($path, 6);
-                                delete_drive_file($drive_token, $drive_file_id);
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         // Schedule comment if needed (120s after now)

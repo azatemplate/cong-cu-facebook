@@ -291,6 +291,16 @@ $channels_json = json_encode($channels);
             </div>
         </div>
         
+        <div class="form-group" style="background: #f0fdfa; padding: 15px; border-radius: 6px; border: 1px dashed #99f6e4; margin-top: 15px;">
+            <label style="color: #0d9488; font-weight: 500; display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 0;">
+                <input type="checkbox" id="delete_drive_file" name="delete_drive_file" value="1" style="width: 16px; height: 16px; accent-color: #0d9488;">
+                🛡️ Chống trùng và xóa file đã đăng drive
+            </label>
+            <p style="font-size: 12px; color: #0f766e; margin-top: 5px; margin-bottom: 0;">
+                Khi chọn, nội dung đăng sẽ không trùng lặp và tự động xóa khỏi Google Drive sau khi đăng.
+            </p>
+        </div>
+
         <div id="youtubeResult" style="display: none; margin-top: 15px; padding: 10px; border-radius: 4px;"></div>
 
         <div class="form-group" style="margin-top: 15px;">
@@ -487,6 +497,20 @@ $channels_json = json_encode($channels);
         });
         
         document.getElementById('driveSelectedCount').innerText = files.length;
+        document.getElementById('driveSelectionInfo').style.display = 'block';
+    }
+
+    
+        if (document.getElementById('video')) {
+            document.getElementById('video').value = ''; 
+        }
+
+        const listEl = document.getElementById('driveSelectedList');
+        if (listEl) {
+            listEl.innerHTML = `<li>📁 Thư mục Google Drive: <strong>${folderName}</strong></li>`;
+        }
+
+        document.getElementById('driveSelectedCount').innerText = 'Thư mục';
         document.getElementById('driveSelectionInfo').style.display = 'block';
     }
     
