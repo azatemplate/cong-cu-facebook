@@ -722,15 +722,24 @@ foreach ($pending_posts as $post) {
             }
 
             if (!empty($content_data['delete_drive_file']) && $is_drive) {
-                $drive_file_id = substr($raw_media, 6);
-                $drive_token = get_drive_access_token($pdo, $post['account_id']);
-                if ($drive_token) {
-                    $del_res = delete_drive_file($drive_token, $drive_file_id);
-                    if ($del_res) {
-                        echo "   → Đã xóa file trên Google Drive thành công: $drive_file_id\n";
-                    } else {
-                        echo "   → [LỖI] Không thể xóa file trên Google Drive: $drive_file_id (Có thể do thiếu quyền/scope hoặc Token hết hạn)\n";
+                // SAFE DELETE: check usages
+                $check_usages = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing', 'failed') AND media_path = ? AND id != ?");
+                $check_usages->execute([$post['media_path'], $post['id']]);
+                $remaining_usages = $check_usages->fetchColumn();
+
+                if ($remaining_usages == 0) {
+                    $drive_file_id = substr($raw_media, 6);
+                    $drive_token = get_drive_access_token($pdo, $post['account_id']);
+                    if ($drive_token) {
+                        $del_res = delete_drive_file($drive_token, $drive_file_id);
+                        if ($del_res) {
+                            echo "   → [SAFE DELETE] Đã xóa file trên Google Drive thành công: $drive_file_id\n";
+                        } else {
+                            echo "   → [LỖI] Không thể xóa file trên Google Drive: $drive_file_id (Có thể do thiếu quyền/scope hoặc Token hết hạn)\n";
+                        }
                     }
+                } else {
+                    echo "   → File Drive {$post['media_path']} vẫn còn {$remaining_usages} kênh khác đang chờ hoặc lỗi cần dùng, chưa xóa.\n";
                 }
             }
 
@@ -1128,33 +1137,49 @@ foreach ($pending_posts as $post) {
         }
 
         if (!empty($content_data['delete_drive_file'])) {
-            $drive_token = get_drive_access_token($pdo, $post['account_id']);
-            if ($drive_token) {
-                $raw_media = $post['media_path'];
-                if (strpos($raw_media, 'drive:') === 0) {
-                    $drive_file_id = substr($raw_media, 6);
-                    $del_res = delete_drive_file($drive_token, $drive_file_id);
-                    if ($del_res) {
-                        echo "   → Đã xóa file trên Google Drive thành công: $drive_file_id\n";
-                    } else {
-                        echo "   → [LỖI] Không thể xóa file trên Google Drive: $drive_file_id (Có thể do thiếu quyền/scope hoặc Token hết hạn)\n";
-                    }
-                } elseif (strpos($raw_media, '[') === 0) {
-                    $media_paths = @json_decode($raw_media, true);
-                    if (is_array($media_paths)) {
-                        foreach ($media_paths as $path) {
-                            if (strpos($path, 'drive:') === 0) {
-                                $drive_file_id = substr($path, 6);
-                                $del_res = delete_drive_file($drive_token, $drive_file_id);
-                                if ($del_res) {
-                                    echo "   → Đã xóa file trên Google Drive thành công: $drive_file_id\n";
-                                } else {
-                                    echo "   → [LỖI] Không thể xóa file trên Google Drive: $drive_file_id (Có thể do thiếu quyền/scope hoặc Token hết hạn)\n";
+            $check_usages = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing', 'failed') AND media_path = ? AND id != ?");
+            $check_usages->execute([$post['media_path'], $post['id']]);
+            $remaining_usages = $check_usages->fetchColumn();
+
+            if ($remaining_usages == 0) {
+                $drive_token = get_drive_access_token($pdo, $post['account_id']);
+                if ($drive_token) {
+                    $raw_media = $post['media_path'];
+                    if (strpos($raw_media, 'drive:') === 0) {
+                        $drive_file_id = substr($raw_media, 6);
+                        $del_res = delete_drive_file($drive_token, $drive_file_id);
+                        if ($del_res) {
+                            echo "   → [SAFE DELETE] Đã xóa file trên Google Drive thành công: $drive_file_id\n";
+                        } else {
+                            echo "   → [LỖI] Không thể xóa file trên Google Drive: $drive_file_id (Có thể do thiếu quyền/scope hoặc Token hết hạn)\n";
+                        }
+                    } elseif (strpos($raw_media, '[') === 0) {
+                        $media_paths = @json_decode($raw_media, true);
+                        if (is_array($media_paths)) {
+                            foreach ($media_paths as $path) {
+                                if (strpos($path, 'drive:') === 0) {
+                                    $drive_file_id = substr($path, 6);
+                                    
+                                    // Check if this specific drive file is still needed by other posts
+                                    $check_sub = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing', 'failed') AND media_path LIKE ? AND id != ?");
+                                    $check_sub->execute(['%' . $drive_file_id . '%', $post['id']]);
+                                    if ($check_sub->fetchColumn() == 0) {
+                                        $del_res = delete_drive_file($drive_token, $drive_file_id);
+                                        if ($del_res) {
+                                            echo "   → [SAFE DELETE] Đã xóa file trên Google Drive thành công: $drive_file_id\n";
+                                        } else {
+                                            echo "   → [LỖI] Không thể xóa file trên Google Drive: $drive_file_id (Có thể do thiếu quyền/scope hoặc Token hết hạn)\n";
+                                        }
+                                    } else {
+                                        echo "   → File Drive $drive_file_id vẫn còn trang khác cần dùng, chưa xóa.\n";
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            } else {
+                echo "   → File Drive {$post['media_path']} vẫn còn {$remaining_usages} trang khác đang chờ hoặc lỗi cần dùng, chưa xóa.\n";
             }
         }
 
