@@ -1210,8 +1210,14 @@ foreach ($pending_posts as $post) {
         $tg_page_name = $fanpage_name ?: $post['page_id'];
         // send_telegram_notification($pdo, $post['account_id'], "<b>Đăng bài thành công!</b>\n📄 Page: {$tg_page_name}\n📝 Loại: {$post['post_type']}\n🆔 Post ID: {$post_id}", 'publish');
     } else {
-        $error_msg = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : json_encode($response['data']);
-        marKAsFailed($pdo, $post['id'], "Lỗi API: $error_msg", $sys_max_retries, $sys_retry_interval, $has_error_msg, $has_retry_count);
+        $status_code = isset($response['status_code']) ? $response['status_code'] : 'Unknown';
+        if (isset($response['data']['error']['message'])) {
+            $error_msg = $response['data']['error']['message'];
+        } else {
+            $error_msg = json_encode($response['data'] ?? $response);
+        }
+        $full_msg = "HTTP $status_code - $error_msg";
+        marKAsFailed($pdo, $post['id'], "Lỗi API: $full_msg", $sys_max_retries, $sys_retry_interval, $has_error_msg, $has_retry_count);
     }
 
     // Always cleanup temp drive file for this iteration
