@@ -394,12 +394,7 @@ $pages_json = json_encode($pages);
         document.getElementById('driveSelectionInfo').style.display = 'block';
     }
 
-    
-
-        document.getElementById('driveSelectedCount').innerText = 'Thư mục';
-        document.getElementById('driveSelectionInfo').style.display = 'block';
-    }
-    
+        
     function clearDriveSelection() {
         document.getElementById('drive_file_id').value = '';
         document.getElementById('drive_file_names').value = '';

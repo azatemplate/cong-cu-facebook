@@ -500,19 +500,6 @@ $pages_json = json_encode($pages);
         document.getElementById('driveSelectionInfo').style.display = 'block';
     }
 
-    
-        const videoEl2 = document.getElementById('video');
-        if (videoEl2) videoEl2.value = ''; // Xóa local file
-
-        const listEl = document.getElementById('driveSelectedList');
-        if (listEl) {
-            listEl.innerHTML = `<li>📁 Thư mục Google Drive: <strong>${folderName}</strong></li>`;
-        }
-
-        document.getElementById('driveSelectedCount').innerText = 'Thư mục';
-        document.getElementById('driveSelectionInfo').style.display = 'block';
-    }
-
     function clearDriveSelection() {
         document.getElementById('drive_file_id').value = '';
         document.getElementById('drive_file_names').value = '';
