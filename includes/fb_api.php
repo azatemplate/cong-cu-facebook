@@ -322,8 +322,10 @@ function get_fb_posts_multi($pages, $limit = 30, $cursors = []) {
 
 function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $is_photo, $original_name) {
     if ($is_photo) {
+        $safe_ext = pathinfo($original_name, PATHINFO_EXTENSION);
+        $safe_original_name = 'media_upload_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '');
         $post_data = [
-            'source'    => new CURLFile($file_path, $file_mime, $original_name),
+            'source'    => new CURLFile($file_path, $file_mime, $safe_original_name),
             'published' => 'false'
         ];
         $res1 = fb_api_request($page_id . '/photos', ['access_token' => $page_access_token], 'POST', $post_data);

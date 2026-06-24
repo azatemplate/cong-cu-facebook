@@ -997,9 +997,13 @@ foreach ($pending_posts as $post) {
                 }
             }
 
+            // Sanitize file name for CURLFile to prevent Facebook API upload issues due to diacritics/special characters
+            $safe_mi_ext = pathinfo($mi_name, PATHINFO_EXTENSION);
+            $safe_mi_name = 'media_upload_' . uniqid() . ($safe_mi_ext ? '.' . $safe_mi_ext : '');
+            
             // Upload as unpublished photo
             $upload_data = [
-                'source' => new CURLFile($mi_abs, $mi_mime, $mi_name),
+                'source' => new CURLFile($mi_abs, $mi_mime, $safe_mi_name),
                 'published' => 'false'
             ];
             $upload_res = fb_api_request($post['page_id'] . '/photos', ['access_token' => $page_access_token], 'POST', $upload_data);
@@ -1147,7 +1151,10 @@ foreach ($pending_posts as $post) {
     }
 
     if ($has_media && file_exists($abs_media_path)) {
-        $post_data['source'] = new CURLFile($abs_media_path, $file_mime, $file_name);
+        // Sanitize file name for CURLFile to prevent Facebook API upload issues due to diacritics/special characters
+        $safe_ext = pathinfo($file_name, PATHINFO_EXTENSION);
+        $safe_file_name = 'media_upload_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '');
+        $post_data['source'] = new CURLFile($abs_media_path, $file_mime, $safe_file_name);
     }
 
     $post_type = $post['post_type'];
