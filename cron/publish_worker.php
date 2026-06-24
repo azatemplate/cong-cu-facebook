@@ -725,7 +725,12 @@ foreach ($pending_posts as $post) {
                 $drive_file_id = substr($raw_media, 6);
                 $drive_token = get_drive_access_token($pdo, $post['account_id']);
                 if ($drive_token) {
-                    delete_drive_file($drive_token, $drive_file_id);
+                    $del_res = delete_drive_file($drive_token, $drive_file_id);
+                    if ($del_res) {
+                        echo "   → Đã xóa file trên Google Drive thành công: $drive_file_id\n";
+                    } else {
+                        echo "   → [LỖI] Không thể xóa file trên Google Drive: $drive_file_id (Có thể do thiếu quyền/scope hoặc Token hết hạn)\n";
+                    }
                 }
             }
 
@@ -1128,14 +1133,24 @@ foreach ($pending_posts as $post) {
                 $raw_media = $post['media_path'];
                 if (strpos($raw_media, 'drive:') === 0) {
                     $drive_file_id = substr($raw_media, 6);
-                    delete_drive_file($drive_token, $drive_file_id);
+                    $del_res = delete_drive_file($drive_token, $drive_file_id);
+                    if ($del_res) {
+                        echo "   → Đã xóa file trên Google Drive thành công: $drive_file_id\n";
+                    } else {
+                        echo "   → [LỖI] Không thể xóa file trên Google Drive: $drive_file_id (Có thể do thiếu quyền/scope hoặc Token hết hạn)\n";
+                    }
                 } elseif (strpos($raw_media, '[') === 0) {
                     $media_paths = @json_decode($raw_media, true);
                     if (is_array($media_paths)) {
                         foreach ($media_paths as $path) {
                             if (strpos($path, 'drive:') === 0) {
                                 $drive_file_id = substr($path, 6);
-                                delete_drive_file($drive_token, $drive_file_id);
+                                $del_res = delete_drive_file($drive_token, $drive_file_id);
+                                if ($del_res) {
+                                    echo "   → Đã xóa file trên Google Drive thành công: $drive_file_id\n";
+                                } else {
+                                    echo "   → [LỖI] Không thể xóa file trên Google Drive: $drive_file_id (Có thể do thiếu quyền/scope hoặc Token hết hạn)\n";
+                                }
                             }
                         }
                     }
