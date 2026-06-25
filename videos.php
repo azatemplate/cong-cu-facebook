@@ -238,10 +238,8 @@ $pages_json = json_encode($pages);
                     progressCallback(`⏳ Đang tải file ${index + 1}/${files.length} lên Google Drive: ${file.name}...`);
                 }
 
-                const formData = new FormData();
-                formData.append('file', file);
-
-                fetch('actions/drive_proxy.php?action=upload', {
+                const userId = document.getElementById('user_select')?.value || '';
+                fetch('actions/drive_proxy.php?action=upload&user_id=' + encodeURIComponent(userId), {
                     method: 'POST',
                     body: formData
                 })

@@ -118,13 +118,22 @@ function formatBytes(bytes, decimals = 2) {
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
-function openDriveModal() {
+let driveUserId = '';
+
+function openDriveModal(mode) {
+    const userSelect = document.getElementById('user_select');
+    driveUserId = userSelect ? userSelect.value : '';
+
     driveSelectedFiles = [];
     updateDriveSelectionUI();
     document.getElementById('driveModal').style.display = 'flex';
-    if (currentFolderId === 'root' && document.getElementById('driveFileList').innerHTML.includes('Đang tải')) {
-        loadDriveFiles('root', 'Root');
-    }
+    
+    // Always force reload from root so we show the correct files/folders for this user's connection
+    currentFolderId = 'root';
+    folderHistory = [];
+    folderPathNames = ['Root'];
+    updateDriveBreadcrumb();
+    loadDriveFiles('root', 'Root');
 }
 
 function closeDriveModal() {
@@ -148,7 +157,7 @@ function loadDriveFiles(folderId, folderName) {
         btnSelectFolder.style.display = (folderId === 'root') ? 'none' : 'flex';
     }
     
-    fetch(`actions/drive_proxy.php?action=list_files&parent_id=${folderId}`)
+    fetch(`actions/drive_proxy.php?action=list_files&parent_id=${folderId}&user_id=${driveUserId}`)
         .then(res => res.json())
         .then(data => {
             if (data.status === 'success') {

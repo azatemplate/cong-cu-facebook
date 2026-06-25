@@ -566,7 +566,7 @@ foreach ($pending_posts as $post) {
 
         if ($is_folder) {
             $folder_id = substr($raw_media, 7);
-            $drive_token = get_drive_access_token($pdo, $post['account_id']);
+            $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
             if (!$drive_token) {
                 marKAsFailed($pdo, $post['id'], "Lỗi tải Google Drive: Thiếu Token", $sys_max_retries, $sys_retry_interval);
                 continue;
@@ -590,7 +590,7 @@ foreach ($pending_posts as $post) {
             $t_title_override = pathinfo($file_info['name'], PATHINFO_FILENAME);
         } elseif ($is_drive) {
             $drive_file_id = substr($raw_media, 6);
-            $drive_token = get_drive_access_token($pdo, $post['account_id']);
+            $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
             if (!$drive_token) {
                 marKAsFailed($pdo, $post['id'], "Lỗi tải Google Drive: Thiếu Token", $sys_max_retries, $sys_retry_interval);
                 continue;
@@ -821,7 +821,7 @@ foreach ($pending_posts as $post) {
 
                 if ($remaining_usages == 0) {
                     $drive_file_id = substr($raw_media, 6);
-                    $drive_token = get_drive_access_token($pdo, $post['account_id']);
+                    $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
                     if ($drive_token) {
                         $del_res = delete_drive_file($drive_token, $drive_file_id);
                         if ($del_res) {
@@ -969,7 +969,7 @@ foreach ($pending_posts as $post) {
             if (strpos($mi_path, 'drive:') === 0) {
                 // Drive file
                 $drive_file_id = substr($mi_path, 6);
-                $drive_token = get_drive_access_token($pdo, $post['account_id']);
+                $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
                 if (!$drive_token) {
                     echo "   → Bỏ qua ảnh Drive (không có token): $mi_path\n";
                     continue;
@@ -1045,7 +1045,7 @@ foreach ($pending_posts as $post) {
 
     if ($is_folder) {
         $folder_id = substr($post['media_path'], 7);
-        $drive_token = get_drive_access_token($pdo, $post['account_id']);
+        $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
         if (!$drive_token) {
             marKAsFailed($pdo, $post['id'], "Không thể lấy Google Access Token. Có thể Admin chưa liên kết.", $sys_max_retries, $sys_retry_interval);
             continue;
@@ -1106,7 +1106,7 @@ foreach ($pending_posts as $post) {
         
     } elseif ($is_drive) {
         $drive_file_id = substr($post['media_path'], 6);
-        $drive_token = get_drive_access_token($pdo, $post['account_id']);
+        $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
         if (!$drive_token) {
             marKAsFailed($pdo, $post['id'], "Không thể lấy Google Access Token. Có thể Admin chưa liên kết.", $sys_max_retries, $sys_retry_interval);
             continue;
@@ -1313,7 +1313,7 @@ foreach ($pending_posts as $post) {
             $remaining_usages = $check_usages->fetchColumn();
 
             if ($remaining_usages == 0) {
-                $drive_token = get_drive_access_token($pdo, $post['account_id']);
+                $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
                 if ($drive_token) {
                     $raw_media = $post['media_path'];
                     if (strpos($raw_media, 'drive:') === 0) {

@@ -512,7 +512,10 @@ try {
         "ALTER TABLE fb_customers ADD COLUMN followup_requested_at TIMESTAMP NULL DEFAULT NULL",
         "ALTER TABLE zalo_customers ADD COLUMN followup_requested_at TIMESTAMP NULL DEFAULT NULL",
         "ALTER TABLE fb_customers ADD COLUMN info_request_count INT DEFAULT 0",
-        "ALTER TABLE zalo_customers ADD COLUMN info_request_count INT DEFAULT 0"
+        "ALTER TABLE zalo_customers ADD COLUMN info_request_count INT DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN gg_client_id VARCHAR(255) DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN gg_client_secret VARCHAR(255) DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN gg_refresh_token TEXT DEFAULT NULL"
     ];
 
     foreach ($auto_req_migrations as $query) {

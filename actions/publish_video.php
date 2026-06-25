@@ -90,7 +90,10 @@ if (!empty($drive_file_ids_str) && !$is_drive_folder) {
         $drive_title = '';
         $drive_name = isset($drive_names_arr[$idx]) ? trim($drive_names_arr[$idx]) : '';
         if (empty($drive_name)) {
-            if (!$drive_token) $drive_token = get_drive_access_token($pdo, $account_id);
+            if (!$drive_token) {
+                $first_page_id = !empty($page_ids) ? $page_ids[0] : null;
+                $drive_token = get_drive_access_token($pdo, $account_id, $first_page_id);
+            }
             if ($drive_token) $drive_name = get_drive_file_name($drive_token, $id);
         }
         if ($drive_name) {

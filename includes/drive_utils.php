@@ -4,26 +4,68 @@
 /**
  * Lấy Access Token từ Refresh Token
  */
-function get_drive_access_token($pdo, $account_id) {
-    $stmt = $pdo->prepare("SELECT gg_client_id, gg_client_secret, gg_refresh_token FROM system_accounts WHERE id = ?");
-    $stmt->execute([$account_id]);
-    $account = $stmt->fetch(PDO::FETCH_ASSOC);
+function get_drive_access_token($pdo, $account_id, $page_id = null) {
+    $client_id = null;
+    $client_secret = null;
+    $refresh_token = null;
 
-    if (!$account || empty($account['gg_refresh_token'])) {
-        return false;
+    if ($page_id !== null) {
+        // Find user_id and check if they have gg_refresh_token
+        $stmt_user = $pdo->prepare("
+            SELECT u.gg_client_id, u.gg_client_secret, u.gg_refresh_token 
+            FROM pages p 
+            JOIN users u ON p.user_id = u.id 
+            WHERE p.page_id = ? AND u.account_id = ?
+        ");
+        $stmt_user->execute([$page_id, $account_id]);
+        $user_drive = $stmt_user->fetch(PDO::FETCH_ASSOC);
+
+        if ($user_drive && !empty($user_drive['gg_refresh_token'])) {
+            $refresh_token = $user_drive['gg_refresh_token'];
+            $client_id = $user_drive['gg_client_id'];
+            $client_secret = $user_drive['gg_client_secret'];
+            
+            // If Client ID / Client Secret are empty for the user, fallback to the system account settings
+            if (empty($client_id) || empty($client_secret)) {
+                $stmt_sys = $pdo->prepare("SELECT gg_client_id, gg_client_secret FROM system_accounts WHERE id = ?");
+                $stmt_sys->execute([$account_id]);
+                $sys = $stmt_sys->fetch(PDO::FETCH_ASSOC);
+                if ($sys) {
+                    if (empty($client_id)) $client_id = $sys['gg_client_id'];
+                    if (empty($client_secret)) $client_secret = $sys['gg_client_secret'];
+                }
+            }
+        }
     }
 
-    if (empty($account['gg_client_id']) || empty($account['gg_client_secret'])) {
+    // Fallback to system account if no user drive token was retrieved
+    if (empty($refresh_token)) {
+        $stmt = $pdo->prepare("SELECT gg_client_id, gg_client_secret, gg_refresh_token FROM system_accounts WHERE id = ?");
+        $stmt->execute([$account_id]);
+        $account = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$account || empty($account['gg_refresh_token'])) {
+            return false;
+        }
+
+        if (empty($account['gg_client_id']) || empty($account['gg_client_secret'])) {
+            return false;
+        }
+        
+        $refresh_token = $account['gg_refresh_token'];
+        $client_id = $account['gg_client_id'];
+        $client_secret = $account['gg_client_secret'];
+    }
+
+    if (empty($client_id) || empty($client_secret) || empty($refresh_token)) {
         return false;
     }
-    $client_id = $account['gg_client_id'];
-    $client_secret = $account['gg_client_secret'];
 
     $token_url = 'https://oauth2.googleapis.com/token';
     $post_fields = [
         'client_id' => $client_id,
         'client_secret' => $client_secret,
-        'refresh_token' => $account['gg_refresh_token'],
+        'refresh_token' => $refresh_token,
         'grant_type' => 'refresh_token'
     ];
 

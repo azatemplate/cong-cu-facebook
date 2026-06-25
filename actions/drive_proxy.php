@@ -10,25 +10,56 @@ if (!isset($_SESSION['account_id'])) {
 }
 
 $account_id = $_SESSION['account_id'];
+$user_id = isset($_REQUEST['user_id']) ? intval($_REQUEST['user_id']) : 0;
 
-// Get Google Credentials and Refresh Token
-$stmt = $pdo->prepare("SELECT gg_client_id, gg_client_secret, gg_refresh_token FROM system_accounts WHERE id = ?");
-$stmt->execute([$account_id]);
-$account = $stmt->fetch(PDO::FETCH_ASSOC);
+$client_id = null;
+$client_secret = null;
+$refresh_token = null;
 
-if (!$account || empty($account['gg_refresh_token'])) {
-    echo json_encode(['status' => 'error', 'msg' => 'Vui lòng liên kết tài khoản Google Drive trong mục Cài đặt trước.']);
-    exit;
+if ($user_id > 0) {
+    // Select from users table where id = $user_id and account_id = $account_id
+    $stmt = $pdo->prepare("SELECT gg_client_id, gg_client_secret, gg_refresh_token FROM users WHERE id = ? AND account_id = ?");
+    $stmt->execute([$user_id, $account_id]);
+    $user_row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($user_row && !empty($user_row['gg_refresh_token'])) {
+        $refresh_token = $user_row['gg_refresh_token'];
+        $client_id = $user_row['gg_client_id'];
+        $client_secret = $user_row['gg_client_secret'];
+    }
 }
 
-if (empty($account['gg_client_id']) || empty($account['gg_client_secret'])) {
+// Fallback to system account if no user drive token was found
+if (empty($refresh_token)) {
+    $stmt = $pdo->prepare("SELECT gg_client_id, gg_client_secret, gg_refresh_token FROM system_accounts WHERE id = ?");
+    $stmt->execute([$account_id]);
+    $account = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$account || empty($account['gg_refresh_token'])) {
+        echo json_encode(['status' => 'error', 'msg' => 'Vui lòng liên kết tài khoản Google Drive trong mục Cài đặt trước.']);
+        exit;
+    }
+    
+    $refresh_token = $account['gg_refresh_token'];
+    $client_id = $account['gg_client_id'];
+    $client_secret = $account['gg_client_secret'];
+} else {
+    // If the user has a custom connection but did not specify a custom client_id/client_secret,
+    // fallback to the system account's client_id/client_secret
+    if (empty($client_id) || empty($client_secret)) {
+        $stmt_sys = $pdo->prepare("SELECT gg_client_id, gg_client_secret FROM system_accounts WHERE id = ?");
+        $stmt_sys->execute([$account_id]);
+        $sys = $stmt_sys->fetch(PDO::FETCH_ASSOC);
+        if ($sys) {
+            if (empty($client_id)) $client_id = $sys['gg_client_id'];
+            if (empty($client_secret)) $client_secret = $sys['gg_client_secret'];
+        }
+    }
+}
+
+if (empty($client_id) || empty($client_secret)) {
     echo json_encode(['status' => 'error', 'msg' => 'Thiếu cấu hình Cài Đặt Google Client ID và Secret cá nhân.']);
     exit;
 }
-$client_id = $account['gg_client_id'];
-$client_secret = $account['gg_client_secret'];
-
-$refresh_token = $account['gg_refresh_token'];
 
 // Step 1: Exchange Refresh Token for a fresh Access Token
 $token_url = 'https://oauth2.googleapis.com/token';
