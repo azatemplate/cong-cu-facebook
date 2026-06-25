@@ -510,7 +510,9 @@ try {
         "ALTER TABLE zalo_settings ADD COLUMN followup_request_text TEXT DEFAULT NULL",
         
         "ALTER TABLE fb_customers ADD COLUMN followup_requested_at TIMESTAMP NULL DEFAULT NULL",
-        "ALTER TABLE zalo_customers ADD COLUMN followup_requested_at TIMESTAMP NULL DEFAULT NULL"
+        "ALTER TABLE zalo_customers ADD COLUMN followup_requested_at TIMESTAMP NULL DEFAULT NULL",
+        "ALTER TABLE fb_customers ADD COLUMN info_request_count INT DEFAULT 0",
+        "ALTER TABLE zalo_customers ADD COLUMN info_request_count INT DEFAULT 0"
     ];
 
     foreach ($auto_req_migrations as $query) {

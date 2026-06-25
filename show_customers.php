@@ -54,7 +54,7 @@ echo "\n";
 echo "--- KHÁCH HÀNG FACEBOOK CHƯA CÓ SĐT (BẤT KỲ TIN NHẮN CUỐI NÀO) ---\n";
 try {
     $stmt = $pdo->query("
-        SELECT c.name, c.sender_id, c.page_id, c.last_message_at, c.info_requested_at, p.user_id, u.account_id
+        SELECT c.name, c.sender_id, c.page_id, c.last_message_at, c.info_requested_at, c.info_request_count, p.user_id, u.account_id
         FROM fb_customers c
         LEFT JOIN pages p ON c.page_id = p.page_id
         LEFT JOIN users u ON p.user_id = u.id
@@ -90,7 +90,7 @@ try {
             echo "    Thuộc Page ID: {$c['page_id']} | Thuộc Account ID: $acc_id\n";
             echo "    Cấu hình Account: Enabled=" . ($enabled ? "YES" : "NO") . ", Hours=$hours, HasTemplate=" . ($has_text ? "YES" : "NO") . "\n";
             echo "    last_message_at: {$c['last_message_at']} | Time elapsed: " . round($diff_hours, 2) . " giờ\n";
-            echo "    info_requested_at: " . ($c['info_requested_at'] ?? 'NULL') . "\n";
+            echo "    info_requested_at: " . ($c['info_requested_at'] ?? 'NULL') . " | info_request_count: " . intval($c['info_request_count'] ?? 0) . "\n";
             echo "    Chat lock status: " . ($lock ? "ĐANG BỊ KHÓA (đến $lock)" : "Không bị khóa") . "\n";
             
             // Đánh giá lý do bị bỏ qua
@@ -99,8 +99,20 @@ try {
             if ($diff_hours < $hours) $reasons[] = "Chưa đủ thời gian chờ (mới trôi qua " . round($diff_hours, 2) . " giờ / yêu cầu $hours giờ)";
             if ($lock) $reasons[] = "Chatbot đang bị khóa cho khách này";
             if (!$has_text) $reasons[] = "Mẫu tin nhắn xin SĐT đang để trống";
-            if (!empty($c['info_requested_at']) && strtotime($c['last_message_at']) <= strtotime($c['info_requested_at'])) {
-                $reasons[] = "Đã gửi yêu cầu cho tin nhắn này trước đó (info_requested_at mới hơn last_message_at)";
+            
+            $req_count = intval($c['info_request_count'] ?? 0);
+            if ($req_count >= 3) {
+                $reasons[] = "Đã gửi yêu cầu đủ 3 lần ($req_count/3 lần) nhưng khách chưa cung cấp thông tin";
+            } else {
+                if (!empty($c['info_requested_at'])) {
+                    $has_customer_replied = strtotime($c['last_message_at']) > strtotime($c['info_requested_at']);
+                    $time_since_req = (time() - strtotime($c['info_requested_at'])) / 3600;
+                    $req_time_reached = $time_since_req >= $hours;
+                    
+                    if (!$has_customer_replied && !$req_time_reached) {
+                        $reasons[] = "Đã gửi yêu cầu trước đó, cần chờ đủ thời gian kể từ yêu cầu cuối (mới trôi qua " . round($time_since_req, 2) . " giờ / yêu cầu $hours giờ)";
+                    }
+                }
             }
             
             if (empty($reasons)) {
@@ -123,7 +135,7 @@ echo "\n";
 echo "--- KHÁCH HÀNG ZALO CHƯA CÓ SĐT (BẤT KỲ TIN NHẮN CUỐI NÀO) ---\n";
 try {
     $stmt = $pdo->query("
-        SELECT c.name, c.sender_id, c.oa_id, c.last_message_at, c.info_requested_at, o.account_id
+        SELECT c.name, c.sender_id, c.oa_id, c.last_message_at, c.info_requested_at, c.info_request_count, o.account_id
         FROM zalo_customers c
         LEFT JOIN zalo_oas o ON c.oa_id = o.oa_id
         WHERE (c.phone IS NULL OR c.phone = '')
@@ -158,7 +170,7 @@ try {
             echo "    Thuộc OA ID: {$c['oa_id']} | Thuộc Account ID: $acc_id\n";
             echo "    Cấu hình Zalo: Enabled=" . ($enabled ? "YES" : "NO") . ", Hours=$hours, HasTemplate=" . ($has_text ? "YES" : "NO") . "\n";
             echo "    last_message_at: {$c['last_message_at']} | Time elapsed: " . round($diff_hours, 2) . " giờ\n";
-            echo "    info_requested_at: " . ($c['info_requested_at'] ?? 'NULL') . "\n";
+            echo "    info_requested_at: " . ($c['info_requested_at'] ?? 'NULL') . " | info_request_count: " . intval($c['info_request_count'] ?? 0) . "\n";
             echo "    Chat lock status: " . ($lock ? "ĐANG BỊ KHÓA (đến $lock)" : "Không bị khóa") . "\n";
             
             // Đánh giá lý do bị bỏ qua
@@ -167,8 +179,20 @@ try {
             if ($diff_hours < $hours) $reasons[] = "Chưa đủ thời gian chờ (mới trôi qua " . round($diff_hours, 2) . " giờ / yêu cầu $hours giờ)";
             if ($lock) $reasons[] = "Chatbot đang bị khóa cho khách này";
             if (!$has_text) $reasons[] = "Mẫu tin nhắn xin SĐT đang để trống";
-            if (!empty($c['info_requested_at']) && strtotime($c['last_message_at']) <= strtotime($c['info_requested_at'])) {
-                $reasons[] = "Đã gửi yêu cầu cho tin nhắn này trước đó (info_requested_at mới hơn last_message_at)";
+            
+            $req_count = intval($c['info_request_count'] ?? 0);
+            if ($req_count >= 3) {
+                $reasons[] = "Đã gửi yêu cầu đủ 3 lần ($req_count/3 lần) nhưng khách chưa cung cấp thông tin";
+            } else {
+                if (!empty($c['info_requested_at'])) {
+                    $has_customer_replied = strtotime($c['last_message_at']) > strtotime($c['info_requested_at']);
+                    $time_since_req = (time() - strtotime($c['info_requested_at'])) / 3600;
+                    $req_time_reached = $time_since_req >= $hours;
+                    
+                    if (!$has_customer_replied && !$req_time_reached) {
+                        $reasons[] = "Đã gửi yêu cầu trước đó, cần chờ đủ thời gian kể từ yêu cầu cuối (mới trôi qua " . round($time_since_req, 2) . " giờ / yêu cầu $hours giờ)";
+                    }
+                }
             }
             
             if (empty($reasons)) {

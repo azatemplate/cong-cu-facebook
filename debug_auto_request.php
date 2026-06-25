@@ -79,7 +79,7 @@ try {
 
         // Run the SQL query to get waiting customers
         $sql_fb_customers = "
-            SELECT c.name, c.phone, c.province, c.notes, c.sender_id, c.last_message_at, c.info_requested_at, c.followup_requested_at, c.sales_phone
+            SELECT c.name, c.phone, c.province, c.notes, c.sender_id, c.last_message_at, c.info_requested_at, c.info_request_count, c.followup_requested_at, c.sales_phone
             FROM fb_customers c
             WHERE c.page_id = :page_id
               AND NOT EXISTS (
@@ -92,7 +92,8 @@ try {
                       :phone_request_enabled = 1
                       AND NOT (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
                       AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
-                      AND (c.info_requested_at IS NULL OR c.last_message_at > c.info_requested_at)
+                      AND (c.info_request_count IS NULL OR c.info_request_count < 3)
+                      AND (c.info_requested_at IS NULL OR c.last_message_at > c.info_requested_at OR c.info_requested_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR))
                   )
                   OR
                   -- Case 2: Cần tự động gửi tin CSKH/Follow-up
@@ -101,7 +102,7 @@ try {
                       AND (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
                       AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :followup_hours HOUR)
                       AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
-                      AND (c.followup_requested_at IS NULL OR c.last_message_at > c.followup_requested_at)
+                      AND c.followup_requested_at IS NULL
                   )
               )
         ";
@@ -182,10 +183,10 @@ try {
                     echo "      - Hours wait check: is " . round($diff_hours, 2) . " >= $followup_hours? " . (($diff_hours >= $followup_hours) ? "YES" : "NO") . "\n";
                     
                     if ($followup_request_enabled && !empty($followup_request_text) && $diff_hours >= $followup_hours) {
-                        $has_newer_msg = !empty($c['followup_requested_at']) && strtotime($c['last_message_at']) <= strtotime($c['followup_requested_at']);
-                        echo "      - Has newer message check: (followup_requested_at empty OR last_message_at > followup_requested_at)? " . ($has_newer_msg ? "NO (Skipped, already followed up for this message)" : "YES") . "\n";
+                        $already_followed_up = !empty($c['followup_requested_at']);
+                        echo "      - Already followed up check: " . ($already_followed_up ? "YES (Skipped, follow-up sent before)" : "NO") . "\n";
                         
-                        if (!$has_newer_msg) {
+                        if (!$already_followed_up) {
                             $message_text = replace_message_tags_debug($followup_request_text, $c['name'] ?? 'bạn', $c['sales_phone']);
                             echo "      - READY TO SEND CSKH: \"$message_text\"\n";
                         }
@@ -238,7 +239,7 @@ try {
 
         // Run the SQL query to get waiting customers
         $sql_zalo_customers = "
-            SELECT name, phone, province, notes, sender_id, last_message_at, info_requested_at, followup_requested_at, sales_phone
+            SELECT name, phone, province, notes, sender_id, last_message_at, info_requested_at, info_request_count, followup_requested_at, sales_phone
             FROM zalo_customers
             WHERE oa_id = :oa_id
               AND NOT EXISTS (
@@ -251,7 +252,8 @@ try {
                       :phone_request_enabled = 1
                       AND NOT (phone IS NOT NULL AND phone != '' AND (:has_province_req = 0 OR (province IS NOT NULL AND province != '')) AND (:has_product_req = 0 OR (notes IS NOT NULL AND notes != '')))
                       AND last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
-                      AND (info_requested_at IS NULL OR last_message_at > info_requested_at)
+                      AND (info_request_count IS NULL OR info_request_count < 3)
+                      AND (info_requested_at IS NULL OR last_message_at > info_requested_at OR info_requested_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR))
                   )
                   OR
                   -- Case 2: Cần tự động gửi tin CSKH/Follow-up
@@ -260,7 +262,7 @@ try {
                       AND (phone IS NOT NULL AND phone != '' AND (:has_province_req = 0 OR (province IS NOT NULL AND province != '')) AND (:has_product_req = 0 OR (notes IS NOT NULL AND notes != '')))
                       AND last_message_at <= DATE_SUB(NOW(), INTERVAL :followup_hours HOUR)
                       AND last_message_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
-                      AND (followup_requested_at IS NULL OR last_message_at > followup_requested_at)
+                      AND followup_requested_at IS NULL
                   )
               )
         ";
@@ -341,10 +343,10 @@ try {
                     echo "      - Hours wait check: is " . round($diff_hours, 2) . " >= $followup_hours? " . (($diff_hours >= $followup_hours) ? "YES" : "NO") . "\n";
                     
                     if ($followup_request_enabled && !empty($followup_request_text) && $diff_hours >= $followup_hours) {
-                        $has_newer_msg = !empty($c['followup_requested_at']) && strtotime($c['last_message_at']) <= strtotime($c['followup_requested_at']);
-                        echo "      - Has newer message check: (followup_requested_at empty OR last_message_at > followup_requested_at)? " . ($has_newer_msg ? "NO (Skipped, already followed up for this message)" : "YES") . "\n";
+                        $already_followed_up = !empty($c['followup_requested_at']);
+                        echo "      - Already followed up check: " . ($already_followed_up ? "YES (Skipped, follow-up sent before)" : "NO") . "\n";
                         
-                        if (!$has_newer_msg) {
+                        if (!$already_followed_up) {
                             $message_text = replace_message_tags_debug($followup_request_text, $c['name'] ?? 'bạn', $c['sales_phone']);
                             echo "      - READY TO SEND CSKH: \"$message_text\"\n";
                         }

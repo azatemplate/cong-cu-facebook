@@ -83,7 +83,8 @@ try {
                       :phone_request_enabled = 1
                       AND NOT (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
                       AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
-                      AND (c.info_requested_at IS NULL OR c.last_message_at > c.info_requested_at)
+                      AND (c.info_request_count IS NULL OR c.info_request_count < 3)
+                      AND (c.info_requested_at IS NULL OR c.last_message_at > c.info_requested_at OR c.info_requested_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR))
                   )
                   OR
                   -- Case 2: Cần tự động gửi tin CSKH/Follow-up
@@ -92,7 +93,7 @@ try {
                       AND (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
                       AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :followup_hours HOUR)
                       AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
-                      AND (c.followup_requested_at IS NULL OR c.last_message_at > c.followup_requested_at)
+                      AND c.followup_requested_at IS NULL
                   )
               )
         ";
@@ -172,7 +173,8 @@ try {
                                         UPDATE fb_customers 
                                         SET last_sender = 'agent', 
                                             last_message_at = CURRENT_TIMESTAMP, 
-                                            info_requested_at = CURRENT_TIMESTAMP 
+                                            info_requested_at = CURRENT_TIMESTAMP,
+                                            info_request_count = COALESCE(info_request_count, 0) + 1
                                         WHERE page_id = ? AND sender_id = ?
                                     ");
                                     $upd->execute([$page_id, $c['sender_id']]);
@@ -186,7 +188,8 @@ try {
                                     // Cập nhật info_requested_at để tránh lặp lại gửi liên tục khi lỗi (bị chặn, không hoạt động...)
                                     $upd_fail = $pdo->prepare("
                                         UPDATE fb_customers 
-                                        SET info_requested_at = CURRENT_TIMESTAMP 
+                                        SET info_requested_at = CURRENT_TIMESTAMP,
+                                            info_request_count = COALESCE(info_request_count, 0) + 1
                                         WHERE page_id = ? AND sender_id = ?
                                     ");
                                     $upd_fail->execute([$page_id, $c['sender_id']]);
@@ -210,7 +213,7 @@ try {
                     $diff_hours = (time() - $last_msg_ts) / 3600;
 
                     if ($diff_hours >= $followup_hours) {
-                        if (empty($c['followup_requested_at']) || strtotime($c['last_message_at']) > strtotime($c['followup_requested_at'])) {
+                        if (empty($c['followup_requested_at'])) {
                             
                             $customer_name = trim($c['name'] ?? 'bạn');
                             if (empty($customer_name)) {
@@ -314,7 +317,8 @@ try {
                       :phone_request_enabled = 1
                       AND NOT (phone IS NOT NULL AND phone != '' AND (:has_province_req = 0 OR (province IS NOT NULL AND province != '')) AND (:has_product_req = 0 OR (notes IS NOT NULL AND notes != '')))
                       AND last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
-                      AND (info_requested_at IS NULL OR last_message_at > info_requested_at)
+                      AND (info_request_count IS NULL OR info_request_count < 3)
+                      AND (info_requested_at IS NULL OR last_message_at > info_requested_at OR info_requested_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR))
                   )
                   OR
                   -- Case 2: Cần tự động gửi tin CSKH/Follow-up
@@ -323,7 +327,7 @@ try {
                       AND (phone IS NOT NULL AND phone != '' AND (:has_province_req = 0 OR (province IS NOT NULL AND province != '')) AND (:has_product_req = 0 OR (notes IS NOT NULL AND notes != '')))
                       AND last_message_at <= DATE_SUB(NOW(), INTERVAL :followup_hours HOUR)
                       AND last_message_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
-                      AND (followup_requested_at IS NULL OR last_message_at > followup_requested_at)
+                      AND followup_requested_at IS NULL
                   )
               )
         ";
@@ -397,7 +401,8 @@ try {
                                         UPDATE zalo_customers 
                                         SET last_sender = 'agent', 
                                             last_message_at = CURRENT_TIMESTAMP, 
-                                            info_requested_at = CURRENT_TIMESTAMP 
+                                            info_requested_at = CURRENT_TIMESTAMP,
+                                            info_request_count = COALESCE(info_request_count, 0) + 1
                                         WHERE oa_id = ? AND sender_id = ?
                                     ");
                                     $upd->execute([$oa_id, $c['sender_id']]);
@@ -423,7 +428,8 @@ try {
                                     // Cập nhật info_requested_at để tránh lặp lại gửi liên tục khi lỗi
                                     $upd_fail = $pdo->prepare("
                                         UPDATE zalo_customers 
-                                        SET info_requested_at = CURRENT_TIMESTAMP 
+                                        SET info_requested_at = CURRENT_TIMESTAMP,
+                                            info_request_count = COALESCE(info_request_count, 0) + 1
                                         WHERE oa_id = ? AND sender_id = ?
                                     ");
                                     $upd_fail->execute([$oa_id, $c['sender_id']]);
@@ -447,7 +453,7 @@ try {
                     $diff_hours = (time() - $last_msg_ts) / 3600;
 
                     if ($diff_hours >= $followup_hours) {
-                        if (empty($c['followup_requested_at']) || strtotime($c['last_message_at']) > strtotime($c['followup_requested_at'])) {
+                        if (empty($c['followup_requested_at'])) {
                             
                             $customer_name = trim($c['name'] ?? 'bạn');
                             if (empty($customer_name)) {

@@ -103,11 +103,12 @@ if (!$is_message) {
 // Khởi tạo/Cập nhật thông tin tương tác cuối trong zalo_customers
 try {
     $st_last = $pdo->prepare("
-        INSERT INTO zalo_customers (oa_id, sender_id, name, last_sender, last_message_at)
-        VALUES (?, ?, 'Khách hàng Zalo', 'customer', CURRENT_TIMESTAMP)
+        INSERT INTO zalo_customers (oa_id, sender_id, name, last_sender, last_message_at, info_request_count)
+        VALUES (?, ?, 'Khách hàng Zalo', 'customer', CURRENT_TIMESTAMP, 0)
         ON DUPLICATE KEY UPDATE
             last_sender = 'customer',
-            last_message_at = CURRENT_TIMESTAMP
+            last_message_at = CURRENT_TIMESTAMP,
+            info_request_count = 0
     ");
     $st_last->execute([$oa_id, $sender_id]);
 } catch (Exception $e) {
@@ -202,14 +203,15 @@ try {
 
         if ($fetched_ok) {
             $stmt_ins = $pdo->prepare("
-                INSERT INTO zalo_customers (oa_id, sender_id, name, avatar, phone, province, notes, last_sender, last_message_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'customer', CURRENT_TIMESTAMP)
+                INSERT INTO zalo_customers (oa_id, sender_id, name, avatar, phone, province, notes, last_sender, last_message_at, info_request_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'customer', CURRENT_TIMESTAMP, 0)
                 ON DUPLICATE KEY UPDATE 
                     name = VALUES(name),
                     avatar = VALUES(avatar),
                     province = COALESCE(NULLIF(VALUES(province), ''), province),
                     last_sender = 'customer',
-                    last_message_at = CURRENT_TIMESTAMP
+                    last_message_at = CURRENT_TIMESTAMP,
+                    info_request_count = 0
             ");
             $stmt_ins->execute([$oa_id, $sender_id, $cust_name, $cust_avatar, $cust_phone, $cust_province, $cust_notes]);
             
