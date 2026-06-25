@@ -173,8 +173,6 @@ if ($fb_app_id) {
                             
                             <?php if (!empty($u['gg_refresh_token'])): ?>
                                 <span class="status-tag" style="background: #ecfdf5; color: #047857; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 500; margin-top: 3px; display: inline-block;">Drive: Đã liên kết</span>
-                            <?php else: ?>
-                                <span class="status-tag" style="background: #fff1f2; color: #be123c; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 500; margin-top: 3px; display: inline-block;">Drive: Dùng chung</span>
                             <?php endif; ?>
                         </td>
                         <td><?php echo htmlspecialchars($u['created_at']); ?></td>
