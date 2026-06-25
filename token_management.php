@@ -166,6 +166,7 @@ if ($fb_app_id) {
                         <td>
                             <?php if (!empty($u['gg_client_id'])): ?>
                                 <span class="status-tag" style="background: #e0f2fe; color: #0369a1; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 500;">API Riêng</span><br>
+                                <small style="color: var(--text-muted); font-size: 11px; word-break: break-all;">ID: <?php echo htmlspecialchars(substr($u['gg_client_id'], 0, 15)); ?>...</small><br>
                             <?php else: ?>
                                 <span class="status-tag" style="background: #f1f5f9; color: #475569; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 500;">Mặc định</span><br>
                             <?php endif; ?>
