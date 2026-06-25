@@ -99,6 +99,9 @@ $migrations = [
     ["ALTER TABLE system_accounts ADD COLUMN youtube_multi_api TINYINT(1) DEFAULT 0", "system_accounts.youtube_multi_api"],
     ["ALTER TABLE youtube_channels ADD COLUMN gg_client_id VARCHAR(255) DEFAULT NULL", "youtube_channels.gg_client_id"],
     ["ALTER TABLE youtube_channels ADD COLUMN gg_client_secret VARCHAR(255) DEFAULT NULL", "youtube_channels.gg_client_secret"],
+    
+    // Google Drive multi-API
+    ["ALTER TABLE system_accounts ADD COLUMN drive_multi_api TINYINT(1) DEFAULT 0", "system_accounts.drive_multi_api"],
 ];
 
 // Default system settings seed

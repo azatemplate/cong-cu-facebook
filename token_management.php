@@ -13,8 +13,24 @@ if (!isset($_SESSION['account_id'])) {
 
 $account_id = $_SESSION['account_id'];
 
+// Fetch system account permissions
+$stmt_acc = $pdo->prepare("SELECT role, drive_multi_api FROM system_accounts WHERE id = ?");
+$stmt_acc->execute([$account_id]);
+$current_account = $stmt_acc->fetch(PDO::FETCH_ASSOC);
+
+$is_admin = ($current_account['role'] ?? '') === 'admin';
+$drive_multi_api = (int)($current_account['drive_multi_api'] ?? 0);
+
 // Handle POST actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    if ($_POST['action'] === 'edit_api' || $_POST['action'] === 'disconnect_gg') {
+        if (!$is_admin && !$drive_multi_api) {
+            $_SESSION['flash_msg'] = "Bạn không có quyền thực hiện thao tác này.";
+            header("Location: token_management.php");
+            exit;
+        }
+    }
+
     if ($_POST['action'] === 'edit_api') {
         verify_csrf();
         $user_id_db = intval($_POST['user_id_db']);
@@ -151,7 +167,9 @@ if ($fb_app_id) {
                 <th>ID</th>
                 <th>Tên Người Dùng</th>
                 <th>Số Fanpage</th>
-                <th>Cấu hình API / Drive</th>
+                <?php if ($is_admin || $drive_multi_api): ?>
+                    <th>Cấu hình API / Drive</th>
+                <?php endif; ?>
                 <th>Ngày Thêm</th>
                 <th>Thao Tác</th>
             </tr>
@@ -163,31 +181,35 @@ if ($fb_app_id) {
                         <td><?php echo $u['id']; ?></td>
                         <td><?php echo htmlspecialchars($u['name']); ?></td>
                         <td style="font-weight: bold; color: var(--primary-color);"><?php echo (int) $u['page_count']; ?></td>
-                        <td>
-                            <?php if (!empty($u['gg_client_id'])): ?>
-                                <span class="status-tag" style="background: #e0f2fe; color: #0369a1; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 500;">API Riêng</span><br>
-                                <small style="color: var(--text-muted); font-size: 11px; word-break: break-all;">ID: <?php echo htmlspecialchars(substr($u['gg_client_id'], 0, 15)); ?>...</small><br>
-                            <?php else: ?>
-                                <span class="status-tag" style="background: #f1f5f9; color: #475569; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 500;">Mặc định</span><br>
-                            <?php endif; ?>
-                            
-                            <?php if (!empty($u['gg_refresh_token'])): ?>
-                                <span class="status-tag" style="background: #ecfdf5; color: #047857; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 500; margin-top: 3px; display: inline-block;">Drive: Đã liên kết</span>
-                            <?php endif; ?>
-                        </td>
+                        <?php if ($is_admin || $drive_multi_api): ?>
+                            <td>
+                                <?php if (!empty($u['gg_client_id'])): ?>
+                                    <span class="status-tag" style="background: #e0f2fe; color: #0369a1; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 500;">API Riêng</span><br>
+                                    <small style="color: var(--text-muted); font-size: 11px; word-break: break-all;">ID: <?php echo htmlspecialchars(substr($u['gg_client_id'], 0, 15)); ?>...</small><br>
+                                <?php else: ?>
+                                    <span class="status-tag" style="background: #f1f5f9; color: #475569; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 500;">Mặc định</span><br>
+                                <?php endif; ?>
+                                
+                                <?php if (!empty($u['gg_refresh_token'])): ?>
+                                    <span class="status-tag" style="background: #ecfdf5; color: #047857; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 500; margin-top: 3px; display: inline-block;">Drive: Đã liên kết</span>
+                                <?php endif; ?>
+                            </td>
+                        <?php endif; ?>
                         <td><?php echo htmlspecialchars($u['created_at']); ?></td>
                         <td>
-                            <button type="button" onclick="openEditApiModal(<?php echo $u['id']; ?>, '<?php echo htmlspecialchars($u['name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($u['gg_client_id'] ?? '', ENT_QUOTES); ?>', '<?php echo htmlspecialchars($u['gg_client_secret'] ?? '', ENT_QUOTES); ?>')" class="btn" style="background: var(--primary-color); color: white; padding: 4px 8px; font-size: 12px; margin-right: 5px; border: none; border-radius: 4px; cursor: pointer;">Sửa API</button>
-                            
-                            <a href="google_login.php?user_id=<?php echo $u['id']; ?>" class="btn" style="background: #10b981; color: white; padding: 4.5px 8px; font-size: 12px; margin-right: 5px; text-decoration: none; border-radius: 4px; display: inline-block;">Kết nối Drive</a>
-                            
-                            <?php if (!empty($u['gg_refresh_token'])): ?>
-                                <form method="POST" action="token_management.php" style="display:inline;" onsubmit="return confirm('Bạn có chắc chắn muốn ngắt kết nối Drive của tài khoản này?');">
-                                    <?php echo csrf_field(); ?>
-                                    <input type="hidden" name="action" value="disconnect_gg">
-                                    <input type="hidden" name="user_id_db" value="<?php echo $u['id']; ?>">
-                                    <button type="submit" class="btn" style="background: #f43f5e; color: white; padding: 4px 8px; font-size: 12px; margin-right: 5px; border: none; border-radius: 4px; cursor: pointer;">Hủy Drive</button>
-                                </form>
+                            <?php if ($is_admin || $drive_multi_api): ?>
+                                <button type="button" onclick="openEditApiModal(<?php echo $u['id']; ?>, '<?php echo htmlspecialchars($u['name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($u['gg_client_id'] ?? '', ENT_QUOTES); ?>', '<?php echo htmlspecialchars($u['gg_client_secret'] ?? '', ENT_QUOTES); ?>')" class="btn" style="background: var(--primary-color); color: white; padding: 4px 8px; font-size: 12px; margin-right: 5px; border: none; border-radius: 4px; cursor: pointer;">Sửa API</button>
+                                
+                                <a href="google_login.php?user_id=<?php echo $u['id']; ?>" class="btn" style="background: #10b981; color: white; padding: 4.5px 8px; font-size: 12px; margin-right: 5px; text-decoration: none; border-radius: 4px; display: inline-block;">Kết nối Drive</a>
+                                
+                                <?php if (!empty($u['gg_refresh_token'])): ?>
+                                    <form method="POST" action="token_management.php" style="display:inline;" onsubmit="return confirm('Bạn có chắc chắn muốn ngắt kết nối Drive của tài khoản này?');">
+                                        <?php echo csrf_field(); ?>
+                                        <input type="hidden" name="action" value="disconnect_gg">
+                                        <input type="hidden" name="user_id_db" value="<?php echo $u['id']; ?>">
+                                        <button type="submit" class="btn" style="background: #f43f5e; color: white; padding: 4px 8px; font-size: 12px; margin-right: 5px; border: none; border-radius: 4px; cursor: pointer;">Hủy Drive</button>
+                                    </form>
+                                <?php endif; ?>
                             <?php endif; ?>
 
                             <form id="del-form-<?php echo $u['id']; ?>" method="POST" action="actions/delete_token.php"
@@ -205,7 +227,7 @@ if ($fb_app_id) {
                 <?php endforeach; ?>
             <?php else: ?>
                 <tr>
-                    <td colspan="6" style="text-align:center; color:#6b7280;">Chưa có token nào.</td>
+                    <td colspan="<?php echo ($is_admin || $drive_multi_api) ? 6 : 5; ?>" style="text-align:center; color:#6b7280;">Chưa có token nào.</td>
                 </tr>
             <?php endif; ?>
         </tbody>

@@ -23,6 +23,17 @@ $client_id = null;
 $client_secret = null;
 
 if ($user_id > 0) {
+    // Kiểm tra quyền mở rộng API Drive của tài khoản hệ thống
+    $stmt_acc = $pdo->prepare("SELECT role, drive_multi_api FROM system_accounts WHERE id = ?");
+    $stmt_acc->execute([$account_id]);
+    $acc_row = $stmt_acc->fetch(PDO::FETCH_ASSOC);
+    $is_admin = ($acc_row['role'] ?? '') === 'admin';
+    $drive_multi_api = (int)($acc_row['drive_multi_api'] ?? 0);
+
+    if (!$is_admin && !$drive_multi_api) {
+        die("Tài khoản của bạn không có quyền mở rộng API Drive riêng.");
+    }
+
     // Luồng OAuth riêng của tài khoản Facebook (User)
     $stmt = $pdo->prepare("SELECT gg_client_id, gg_client_secret FROM users WHERE id = ? AND account_id = ?");
     $stmt->execute([$user_id, $account_id]);

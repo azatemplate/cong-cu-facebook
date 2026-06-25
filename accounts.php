@@ -40,14 +40,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $new_expire = trim($_POST['expire_date']);
         $new_limit = intval($_POST['page_limit']);
         $youtube_multi_api = isset($_POST['youtube_multi_api']) ? 1 : 0;
+        $drive_multi_api = isset($_POST['drive_multi_api']) ? 1 : 0;
         
         if ($new_limit < 0) $new_limit = 0;
         
-        $upd_stmt = $pdo->prepare("UPDATE system_accounts SET expire_date = ?, page_limit = ?, youtube_multi_api = ? WHERE id = ?");
+        $upd_stmt = $pdo->prepare("UPDATE system_accounts SET expire_date = ?, page_limit = ?, youtube_multi_api = ?, drive_multi_api = ? WHERE id = ?");
         $upd_stmt->execute([
             empty($new_expire) ? null : $new_expire, 
             $new_limit, 
             $youtube_multi_api,
+            $drive_multi_api,
             $edit_id
         ]);
         
@@ -268,7 +270,7 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     </td>
                     <td>
                         <?php if ($acc['role'] !== 'admin'): ?>
-                            <button onclick="openEditModal(<?php echo $acc['id']; ?>, '<?php echo htmlspecialchars($acc['username']); ?>', '<?php echo empty($acc['expire_date']) ? '' : date('Y-m-d\TH:i', strtotime($acc['expire_date'])); ?>', <?php echo (int)$acc['page_limit']; ?>, <?php echo (int)$acc['youtube_multi_api']; ?>)" style="background: none; border: none; color: var(--primary-color); cursor: pointer; padding: 0; margin-right: 10px; font-size: 13px; text-decoration: underline;">Sửa LH</button>
+                            <button onclick="openEditModal(<?php echo $acc['id']; ?>, '<?php echo htmlspecialchars($acc['username']); ?>', '<?php echo empty($acc['expire_date']) ? '' : date('Y-m-d\TH:i', strtotime($acc['expire_date'])); ?>', <?php echo (int)$acc['page_limit']; ?>, <?php echo (int)$acc['youtube_multi_api']; ?>, <?php echo (int)$acc['drive_multi_api']; ?>)" style="background: none; border: none; color: var(--primary-color); cursor: pointer; padding: 0; margin-right: 10px; font-size: 13px; text-decoration: underline;">Sửa LH</button>
                         <?php endif; ?>
                         
                         <form method="POST" action="accounts.php" style="display:inline;" onsubmit="return confirm('Reset mật khẩu về 123456?');">
@@ -316,12 +318,18 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <small style="color:#6b7280;">Nhập số lượng bài đăng tối đa mỗi ngày tài khoản này được phép đăng.</small>
             </div>
             
-            <div class="form-group" style="margin-bottom: 25px;">
+            <div class="form-group" style="margin-bottom: 15px;">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                     <input type="checkbox" id="e_youtube_multi_api" name="youtube_multi_api" value="1" style="width: 18px; height: 18px; accent-color: var(--primary-color);">
-                    <span>Mở rộng tính năng Google API</span>
+                    <span>Mở rộng tính năng API YouTube</span>
                 </label>
-                <small style="color:#6b7280; display: block; margin-top: 5px;">Mở rộng tính năng Google API riêng cho từng kênh YouTube để mở rộng Quota.</small>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 25px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="e_drive_multi_api" name="drive_multi_api" value="1" style="width: 18px; height: 18px; accent-color: var(--primary-color);">
+                    <span>Mở rộng tính năng API Drive</span>
+                </label>
             </div>
             
             <div style="text-align: right;">
@@ -333,12 +341,13 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 </div>
 
 <script>
-function openEditModal(id, username, expire, limit, youtube_multi_api) {
+function openEditModal(id, username, expire, limit, youtube_multi_api, drive_multi_api) {
     document.getElementById('e_id_input').value = id;
     document.getElementById('e_username_label').textContent = username;
     document.getElementById('e_expire_input').value = expire;
     document.getElementById('e_limit_input').value = limit;
     document.getElementById('e_youtube_multi_api').checked = (youtube_multi_api === 1);
+    document.getElementById('e_drive_multi_api').checked = (drive_multi_api === 1);
     
     document.getElementById('editLimitModal').style.display = 'flex';
 }

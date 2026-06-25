@@ -279,6 +279,10 @@ try {
         if ($col->rowCount() === 0) {
             $pdo->exec("ALTER TABLE system_accounts ADD COLUMN youtube_multi_api TINYINT(1) DEFAULT 0");
         }
+        $col = $pdo->query("SHOW COLUMNS FROM system_accounts LIKE 'drive_multi_api'");
+        if ($col->rowCount() === 0) {
+            $pdo->exec("ALTER TABLE system_accounts ADD COLUMN drive_multi_api TINYINT(1) DEFAULT 0");
+        }
         
         $col = $pdo->query("SHOW COLUMNS FROM youtube_channels LIKE 'gg_client_id'");
         if ($col->rowCount() === 0) {

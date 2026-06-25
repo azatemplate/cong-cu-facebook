@@ -21,6 +21,17 @@ if ($user_id > 0) {
     if (!$user_row) {
         die("Không tìm thấy tài khoản Facebook hoặc tài khoản không thuộc quyền quản lý của bạn.");
     }
+
+    // Kiểm tra quyền mở rộng API Drive của tài khoản hệ thống
+    $stmt_acc = $pdo->prepare("SELECT role, drive_multi_api FROM system_accounts WHERE id = ?");
+    $stmt_acc->execute([$account_id]);
+    $acc_row = $stmt_acc->fetch(PDO::FETCH_ASSOC);
+    $is_admin = ($acc_row['role'] ?? '') === 'admin';
+    $drive_multi_api = (int)($acc_row['drive_multi_api'] ?? 0);
+
+    if (!$is_admin && !$drive_multi_api) {
+        die("Tài khoản của bạn không có quyền mở rộng API Drive riêng.");
+    }
     
     $client_id = $user_row['gg_client_id'];
     $_SESSION['drive_auth_user_id'] = $user_id;
