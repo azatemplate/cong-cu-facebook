@@ -771,7 +771,7 @@ $sales_list = $acc_setup['sales_list'] ?? '';
 
         <!-- Nội dung Tab 4: Tự động xin thông tin Zalo (SĐT -> Tỉnh -> Nhu cầu) -->
         <div id="content_phone_request" style="display:none;">
-            <p style="font-size:13px; color:var(--text-muted); margin-top:0; text-align:left; margin-bottom:15px;">Hệ thống sẽ tự động quét và gửi tin nhắn xin các thông tin còn thiếu của khách hàng Zalo theo thứ tự ưu tiên (SĐT -> Tỉnh thành -> Nhu cầu/Sản phẩm) sau X giờ kể từ tin nhắn cuối cùng của họ (tối đa 24 giờ).</p>
+            <p style="font-size:13px; color:var(--text-muted); margin-top:0; text-align:left; margin-bottom:15px;">Hệ thống sẽ tự động quét và gửi tin nhắn xin các thông tin còn thiếu của khách hàng Zalo theo thứ tự ưu tiên (SĐT -> Tỉnh thành -> Nhu cầu/Sản phẩm) sau X giờ kể từ tin nhắn cuối cùng của họ (tối đa 7 ngày).</p>
             
             <form id="frm_zalo_phone_request" onsubmit="saveZaloPhoneRequestSettings(event)" style="display:flex; flex-direction:column; gap:15px; text-align:left;">
                 <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-color); padding:10px; border-radius:6px; border:1px solid var(--border-color);">
@@ -784,8 +784,8 @@ $sales_list = $acc_setup['sales_list'] ?? '';
                 <div style="display:flex; flex-direction:column; gap:5px;">
                     <label style="font-weight:600; font-size:13px; color:var(--text-main);">Thời gian chờ gửi tin nhắn (giờ)</label>
                     <div style="display:flex; align-items:center; gap:10px;">
-                        <input type="number" id="zalo_phone_request_hours" name="phone_request_hours" min="1" max="24" value="1" style="width:80px; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:14px; background:var(--card-bg); color:var(--text-main);">
-                        <span style="font-size:13px; color:var(--text-muted);">giờ (từ 1 đến 24 giờ. Khuyến nghị: 1-2 giờ)</span>
+                        <input type="number" id="zalo_phone_request_hours" name="phone_request_hours" min="1" max="168" value="1" style="width:80px; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:14px; background:var(--card-bg); color:var(--text-main);">
+                        <span style="font-size:13px; color:var(--text-muted);">giờ (từ 1 đến 168 giờ (7 ngày). Khuyến nghị: 1-2 giờ)</span>
                     </div>
                 </div>
 

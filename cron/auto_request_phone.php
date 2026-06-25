@@ -73,7 +73,6 @@ try {
             SELECT c.name, c.phone, c.province, c.notes, c.sender_id, c.last_message_at, c.info_requested_at, c.followup_requested_at, c.sales_phone
             FROM fb_customers c
             WHERE c.page_id = :page_id
-              AND c.last_sender = 'customer'
               AND NOT EXISTS (
                   SELECT 1 FROM bot_chat_locks l
                   WHERE l.page_id = c.page_id AND l.sender_id = c.sender_id AND l.expire_at > NOW()
@@ -84,7 +83,6 @@ try {
                       :phone_request_enabled = 1
                       AND NOT (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
                       AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
-                      AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
                       AND (c.info_requested_at IS NULL OR c.last_message_at > c.info_requested_at)
                   )
                   OR
@@ -124,7 +122,7 @@ try {
                     $last_msg_ts = strtotime($c['last_message_at']);
                     $diff_hours = (time() - $last_msg_ts) / 3600;
 
-                    if ($diff_hours >= $hours && $diff_hours <= 24) {
+                    if ($diff_hours >= $hours) {
                         if (empty($c['info_requested_at']) || strtotime($c['last_message_at']) > strtotime($c['info_requested_at'])) {
                             
                             $msg_to_send = '';
@@ -306,7 +304,6 @@ try {
             SELECT name, phone, province, notes, sender_id, last_message_at, info_requested_at, followup_requested_at, sales_phone
             FROM zalo_customers
             WHERE oa_id = :oa_id
-              AND last_sender = 'customer'
               AND NOT EXISTS (
                   SELECT 1 FROM zalo_chat_locks l
                   WHERE l.oa_id = zalo_customers.oa_id AND l.sender_id = zalo_customers.sender_id AND l.expire_at > NOW()
@@ -317,7 +314,6 @@ try {
                       :phone_request_enabled = 1
                       AND NOT (phone IS NOT NULL AND phone != '' AND (:has_province_req = 0 OR (province IS NOT NULL AND province != '')) AND (:has_product_req = 0 OR (notes IS NOT NULL AND notes != '')))
                       AND last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
-                      AND last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
                       AND (info_requested_at IS NULL OR last_message_at > info_requested_at)
                   )
                   OR
@@ -357,7 +353,7 @@ try {
                     $last_msg_ts = strtotime($c['last_message_at']);
                     $diff_hours = (time() - $last_msg_ts) / 3600;
 
-                    if ($diff_hours >= $hours && $diff_hours <= 24) {
+                    if ($diff_hours >= $hours) { // Follows custom user-configured hours only
                         if (empty($c['info_requested_at']) || strtotime($c['last_message_at']) > strtotime($c['info_requested_at'])) {
                             
                             $msg_to_send = '';

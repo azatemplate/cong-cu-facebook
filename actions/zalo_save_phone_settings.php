@@ -29,7 +29,7 @@ $followup_request_hours = isset($_POST['followup_request_hours']) ? intval($_POS
 $followup_request_text = isset($_POST['followup_request_text']) ? trim($_POST['followup_request_text']) : '';
 
 if ($phone_request_hours < 1) $phone_request_hours = 1;
-if ($phone_request_hours > 24) $phone_request_hours = 24;
+if ($phone_request_hours > 168) $phone_request_hours = 168; // Zalo OA interaction window is 7 days (168 hours)
 
 if ($followup_request_hours < 1) $followup_request_hours = 1;
 if ($followup_request_hours > 720) $followup_request_hours = 720;
