@@ -1082,53 +1082,6 @@ code {
                 <?php endif; ?>
             </div>
 
-            <!-- Table: Bài viết bị lỗi hôm nay (Failed) -->
-            <div class="card" style="border-top: 4px solid var(--color-danger);">
-                <h3 class="card-title" style="color: var(--color-danger);">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 22 22 22 12 2"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    Chi tiết bài viết bị lỗi hôm nay (<?= count($failed_posts_today) ?> bài)
-                </h3>
-                
-                <?php if (empty($failed_posts_today)): ?>
-                <div style="padding: 16px; color: var(--color-success); font-size:13px;">
-                    Không có bài viết nào bị lỗi trong ngày hôm nay.
-                </div>
-                <?php else: ?>
-                <div class="table-responsive">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Tài khoản</th>
-                                <th>Fanpage ID</th>
-                                <th>Loại</th>
-                                <th>Giờ hẹn</th>
-                                <th>Cập nhật cuối</th>
-                                <th>Lượt thử</th>
-                                <th>Thông tin lỗi</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($failed_posts_today as $p): ?>
-                            <tr>
-                                <td class="mono font-weight-bold">#<?= $p['id'] ?></td>
-                                <td><span style="color:#a78bfa; font-weight: 600;"><?= htmlspecialchars($p['account_name'] ?? 'System') ?></span></td>
-                                <td class="mono"><?= $p['page_id'] ?></td>
-                                <td><span style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;"><?= $p['post_type'] ?></span></td>
-                                <td class="mono"><?= $p['scheduled_time'] ?></td>
-                                <td class="mono"><?= $p['updated_at'] ?></td>
-                                <td class="mono"><?= $p['retry_count'] ?? 0 ?>/<?= $p['limit_retries'] ?></td>
-                                <td style="color:#f87171; max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size:12px;" title="<?= htmlspecialchars($p['error_msg'] ?? '') ?>">
-                                    <?= htmlspecialchars($p['error_msg'] ?? '-') ?>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-                <?php endif; ?>
-            </div>
-
             <!-- Table: Bài chờ Insights -->
             <div class="card" style="border-top: 4px solid var(--color-success);">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 18px;">
