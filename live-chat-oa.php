@@ -500,6 +500,9 @@ $sales_list = $acc_setup['sales_list'] ?? '';
     <a href="live-chat-oa.php" class="platform-tab-btn <?php echo ($current_page === 'live_chat_zalo') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'live_chat_zalo') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'live_chat_zalo') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>💬</span> Zalo Official Account
     </a>
+    <a href="customers.php" class="platform-tab-btn <?php echo ($current_page === 'customers') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'customers') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'customers') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
+        <span>👥</span> Khách Hàng
+    </a>
 </div>
 
 <!-- Page Header Title -->
@@ -862,6 +865,10 @@ $sales_list = $acc_setup['sales_list'] ?? '';
     let messagePollingInterval = null;
     let activeConvOver7Days = false;
     let activeOaName = '';
+    let currentOffset = 0;
+    let hasMoreMessages = true;
+    let isLoadingMore = false;
+    let latestMsgId = '';
 
     document.addEventListener('DOMContentLoaded', function() {
         // Tab switcher
@@ -889,6 +896,15 @@ $sales_list = $acc_setup['sales_list'] ?? '';
 
         // Initialize Live Chat tab - Load initial channels
         loadOAsForSelector();
+
+        const chatMessages = document.getElementById('chat_messages_container');
+        if (chatMessages) {
+            chatMessages.addEventListener('scroll', function() {
+                if (this.scrollTop === 0) {
+                    loadMoreMessages();
+                }
+            });
+        }
         
         // Setup polling for messages when tab is visible
         pollInterval = setInterval(() => {
@@ -1379,6 +1395,11 @@ $sales_list = $acc_setup['sales_list'] ?? '';
     }
 
     function loadMessages() {
+        currentOffset = 0;
+        hasMoreMessages = true;
+        isLoadingMore = false;
+        latestMsgId = '';
+
         const container = document.getElementById('chat_messages_container');
         container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);">Đang tải tin nhắn...</div>';
 
@@ -1388,7 +1409,12 @@ $sales_list = $acc_setup['sales_list'] ?? '';
             if (res.status === 'success') {
                 // Zalo returns messages in reverse order (most recent first)
                 const messages = res.data.reverse();
-                renderMessageBubbles(messages);
+                renderMessageBubbles(messages, true, false);
+                
+                currentOffset = res.data.length;
+                if (res.data.length < 10) {
+                    hasMoreMessages = false;
+                }
                 
                 // Enforce Zalo OA 7-day Policy check
                 checkPolicy7Days(messages);
@@ -1403,7 +1429,7 @@ $sales_list = $acc_setup['sales_list'] ?? '';
 
     function pollNewMessages() {
         // Simple polling to update the chat window if there is an active session
-        if (!activeOaId || !activeSenderId) return;
+        if (!activeOaId || !activeSenderId || isLoadingMore) return;
 
         fetch(`actions/zalo_get_messages.php?oa_id=${activeOaId}&sender_id=${activeSenderId}&offset=0&count=10`)
         .then(r => r.json())
@@ -1411,17 +1437,67 @@ $sales_list = $acc_setup['sales_list'] ?? '';
             if (res.status === 'success') {
                 const messages = res.data.reverse();
                 
+                if (messages.length > 0) {
+                    const newLatestId = messages[messages.length - 1].message_id || '';
+                    if (newLatestId === latestMsgId) {
+                        // No new messages, do absolutely nothing to prevent scrolling/resetting
+                        return;
+                    }
+                }
+                
                 // Check if scroll is at the bottom
                 const container = document.getElementById('chat_messages_container');
                 const isAtBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 80;
                 
-                renderMessageBubbles(messages);
-                checkPolicy7Days(messages);
-                
-                if (isAtBottom) {
-                    container.scrollTop = container.scrollHeight;
+                if (isAtBottom || currentOffset <= 10) {
+                    currentOffset = Math.max(10, messages.length);
+                    renderMessageBubbles(messages, true, false);
+                    checkPolicy7Days(messages);
                 }
             }
+        });
+    }
+
+    function loadMoreMessages() {
+        if (isLoadingMore || !hasMoreMessages || !activeOaId || !activeSenderId) return;
+
+        isLoadingMore = true;
+        const container = document.getElementById('chat_messages_container');
+        
+        const loader = document.createElement('div');
+        loader.id = 'load_more_spinner';
+        loader.style.cssText = 'text-align:center;padding:8px;color:#9ca3af;font-size:11px;clear:both;';
+        loader.innerText = 'Đang tải tin nhắn cũ...';
+        container.insertBefore(loader, container.firstChild);
+
+        fetch(`actions/zalo_get_messages.php?oa_id=${activeOaId}&sender_id=${activeSenderId}&offset=${currentOffset}&count=10`)
+        .then(r => r.json())
+        .then(res => {
+            const sp = document.getElementById('load_more_spinner');
+            if (sp) sp.remove();
+            
+            if (res.status === 'success') {
+                const newMsgs = res.data;
+                if (newMsgs.length === 0) {
+                    hasMoreMessages = false;
+                    isLoadingMore = false;
+                    return;
+                }
+                
+                const messages = newMsgs.reverse();
+                renderMessageBubbles(messages, false, true);
+                
+                currentOffset += newMsgs.length;
+                if (newMsgs.length < 10) {
+                    hasMoreMessages = false;
+                }
+            }
+            isLoadingMore = false;
+        })
+        .catch(() => {
+            const sp = document.getElementById('load_more_spinner');
+            if (sp) sp.remove();
+            isLoadingMore = false;
         });
     }
 
@@ -1475,11 +1551,24 @@ $sales_list = $acc_setup['sales_list'] ?? '';
         }
     }
 
-    function renderMessageBubbles(messages) {
+    function formatBytes(bytes, decimals = 2) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    }
+
+    function renderMessageBubbles(messages, shouldScroll = true, isLoadMore = false) {
         const container = document.getElementById('chat_messages_container');
-        if (messages.length === 0) {
+        if (messages.length === 0 && !isLoadMore) {
             container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted); font-size:13px;">Không có tin nhắn.</div>';
             return;
+        }
+
+        if (!isLoadMore && messages.length > 0) {
+            latestMsgId = messages[messages.length - 1].message_id || '';
         }
 
         let html = '';
@@ -1494,21 +1583,204 @@ $sales_list = $acc_setup['sales_list'] ?? '';
             
             let content = '';
             
-            // Render different types of message (text, image, sticker, etc.)
-            if (msg.type === 'text') {
-                content = `<div>${escapeHtml(msg.message)}</div>`;
-            } else if (msg.type === 'image' || msg.type === 'photo') {
-                const imgUrl = msg.url || msg.thumb || '';
-                content = `<img src="${imgUrl}" alt="Hình ảnh" onclick="window.open('${imgUrl}')" style="max-width:100%; max-height:300px; border-radius:8px; cursor:pointer; margin-top:5px;">`;
-                const imgDesc = msg.description || msg.message || '';
-                if (imgDesc) {
-                    content += `<div style="margin-top:5px;">${escapeHtml(imgDesc)}</div>`;
+            // Determine type from msg.type or first attachment type
+            let msgType = msg.type || '';
+            let firstAttachment = null;
+            if (msg.attachments && msg.attachments.length > 0) {
+                firstAttachment = msg.attachments[0];
+                if (firstAttachment.type) {
+                    msgType = firstAttachment.type;
                 }
-            } else if (msg.type === 'sticker') {
-                const stickerUrl = msg.url || '';
+            } else if (msg.attachment && msg.attachment.type) {
+                msgType = msg.attachment.type;
+            }
+            
+            // Zalo API v2.0: file/media messages often have NO type, NO message, NO url
+            // Detect these "empty" messages and mark them as unknown attachment
+            if (!msgType && !msg.message && !msg.url && !msg.thumb) {
+                msgType = '_unknown_attachment';
+            } else if (!msgType) {
+                msgType = 'text';
+            }
+            
+            // Helper: get file icon based on extension
+            function getFileIcon(fileName) {
+                const parts = (fileName || '').split('.');
+                const ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
+                const icons = {
+                    'pdf': { bg: '#fee2e2', color: '#dc2626', label: 'PDF' },
+                    'doc': { bg: '#dbeafe', color: '#2563eb', label: 'DOC' },
+                    'docx': { bg: '#dbeafe', color: '#2563eb', label: 'DOC' },
+                    'xls': { bg: '#dcfce7', color: '#16a34a', label: 'XLS' },
+                    'xlsx': { bg: '#dcfce7', color: '#16a34a', label: 'XLS' },
+                    'ppt': { bg: '#fef3c7', color: '#d97706', label: 'PPT' },
+                    'pptx': { bg: '#fef3c7', color: '#d97706', label: 'PPT' },
+                    'txt': { bg: '#f3f4f6', color: '#6b7280', label: 'TXT' },
+                    'zip': { bg: '#fef3c7', color: '#92400e', label: 'ZIP' },
+                    'rar': { bg: '#fef3c7', color: '#92400e', label: 'RAR' },
+                    'mp3': { bg: '#ede9fe', color: '#7c3aed', label: 'MP3' },
+                    'mp4': { bg: '#ede9fe', color: '#7c3aed', label: 'MP4' },
+                    'png': { bg: '#dbeafe', color: '#2563eb', label: 'PNG' },
+                    'jpg': { bg: '#dbeafe', color: '#2563eb', label: 'JPG' },
+                    'jpeg': { bg: '#dbeafe', color: '#2563eb', label: 'JPG' },
+                };
+                if (ext && icons[ext]) return icons[ext];
+                if (ext && ext.length <= 4) return { bg: '#e0e7ff', color: '#4f46e5', label: ext.toUpperCase() };
+                return { bg: '#e0e7ff', color: '#4f46e5', label: '📄' };
+            }
+
+            function renderFileCard(fileName, fileUrl, fileSize, fileType) {
+                const icon = getFileIcon(fileName);
+                const sizeStr = fileSize > 0 ? formatBytes(fileSize) : '';
+                
+                let downloadBtn = '';
+                if (fileUrl) {
+                    downloadBtn = `<a href="${fileUrl}" target="_blank" download title="Tải xuống" style="
+                        display:flex; align-items:center; justify-content:center;
+                        width:32px; height:32px; border-radius:6px;
+                        background:var(--bg-secondary, #f3f4f6); color:var(--text-muted, #6b7280);
+                        text-decoration:none; flex-shrink:0; transition:background 0.2s;
+                    " onmouseover="this.style.background='#e5e7eb'" onmouseout="this.style.background='var(--bg-secondary, #f3f4f6)'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                    </a>`;
+                }
+                
+                return `<div style="display:flex; align-items:center; gap:10px; padding:6px 2px; min-width:200px;">
+                    <div style="width:40px; height:40px; border-radius:8px; background:${icon.bg}; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                        <span style="font-size:11px; font-weight:700; color:${icon.color}; letter-spacing:0.5px;">${icon.label}</span>
+                    </div>
+                    <div style="flex:1; min-width:0; text-align:left;">
+                        <div style="font-weight:600; font-size:13px; color:var(--text-primary, #1a1a2e); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(fileName)}">${escapeHtml(fileName)}</div>
+                        <div style="font-size:11px; color:var(--text-muted, #9ca3af); margin-top:1px;">${sizeStr || (fileUrl ? 'Nhấp để tải' : 'Mở Zalo để xem')}</div>
+                    </div>
+                    ${downloadBtn}
+                </div>`;
+            }
+            
+            // Check for _file_meta injected by backend
+            const fileMeta = msg._file_meta || null;
+            
+            // Render different types of message (text, image, sticker, file, voice, link, etc.)
+            if (msgType === 'text') {
+                if (msg.message) {
+                    content = `<div>${escapeHtml(msg.message)}</div>`;
+                } else {
+                    content = renderFileCard('Tệp đính kèm', '', 0, 'file');
+                }
+            } else if (msgType === 'image' || msgType === 'photo') {
+                let imgUrl = msg.url || msg.thumb || '';
+                let imgDesc = msg.description || msg.message || '';
+                
+                if (firstAttachment && firstAttachment.payload) {
+                    imgUrl = firstAttachment.payload.url || firstAttachment.payload.thumbnail || imgUrl;
+                    imgDesc = firstAttachment.payload.description || firstAttachment.payload.title || imgDesc;
+                }
+                // Fallback to _file_meta
+                if (!imgUrl && fileMeta) {
+                    imgUrl = fileMeta.url || '';
+                }
+                
+                if (imgUrl) {
+                    content = `<img src="${imgUrl}" alt="Hình ảnh" onclick="window.open('${imgUrl}')" style="max-width:100%; max-height:300px; border-radius:8px; cursor:pointer; margin-top:5px;">`;
+                    if (imgDesc) {
+                        content += `<div style="margin-top:5px;">${escapeHtml(imgDesc)}</div>`;
+                    }
+                } else {
+                    content = renderFileCard(fileMeta ? fileMeta.name : 'Hình ảnh', '', fileMeta ? fileMeta.size : 0, 'image');
+                }
+            } else if (msgType === 'sticker') {
+                let stickerUrl = msg.url || '';
+                if (firstAttachment && firstAttachment.payload) {
+                    stickerUrl = firstAttachment.payload.url || stickerUrl;
+                }
                 content = `<img src="${stickerUrl}" style="max-width:120px;" alt="Sticker">`;
+            } else if (msgType === 'file') {
+                let fileUrl = msg.url || '';
+                let fileName = msg.name || msg.title || msg.message || 'Tệp đính kèm';
+                let fileSize = 0;
+                
+                if (firstAttachment && firstAttachment.payload) {
+                    fileUrl = firstAttachment.payload.url || fileUrl;
+                    fileName = firstAttachment.payload.name || firstAttachment.payload.title || fileName;
+                    fileSize = firstAttachment.payload.size || 0;
+                } else if (msg.attachment && msg.attachment.payload) {
+                    fileUrl = msg.attachment.payload.url || fileUrl;
+                    fileName = msg.attachment.payload.name || msg.attachment.payload.title || fileName;
+                    fileSize = msg.attachment.payload.size || 0;
+                }
+                
+                // Use _file_meta from backend (webhook-saved data)
+                if (fileMeta) {
+                    if (!fileUrl && fileMeta.url) fileUrl = fileMeta.url;
+                    if (fileName === 'Tệp đính kèm' && fileMeta.name) fileName = fileMeta.name;
+                    if (!fileSize && fileMeta.size) fileSize = fileMeta.size;
+                }
+                
+                content = renderFileCard(fileName, fileUrl, fileSize, 'file');
+            } else if (msgType === 'voice' || msgType === 'audio') {
+                let voiceUrl = msg.url || '';
+                if (firstAttachment && firstAttachment.payload) {
+                    voiceUrl = firstAttachment.payload.url || voiceUrl;
+                }
+                if (!voiceUrl && fileMeta) {
+                    voiceUrl = fileMeta.url || '';
+                }
+                if (voiceUrl) {
+                    content = `<div style="padding:5px 0;">
+                        <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px; display:flex; align-items:center; gap:4px;">
+                            <span>🔊</span> Tin nhắn thoại
+                        </div>
+                        <audio src="${voiceUrl}" controls style="max-width:100%; height:40px; border-radius:4px; outline:none;"></audio>
+                    </div>`;
+                } else {
+                    content = renderFileCard(fileMeta ? fileMeta.name : 'Tin nhắn thoại', '', fileMeta ? fileMeta.size : 0, 'audio');
+                }
+            } else if (msgType === 'link' || msgType === 'links') {
+                let linkUrl = msg.url || '';
+                let linkTitle = msg.title || msg.message || 'Liên kết';
+                let linkDesc = msg.description || '';
+                let linkThumb = msg.thumb || msg.thumbnail || '';
+                
+                if (firstAttachment && firstAttachment.payload) {
+                    linkUrl = firstAttachment.payload.url || linkUrl;
+                    linkTitle = firstAttachment.payload.title || linkTitle;
+                    linkDesc = firstAttachment.payload.description || linkDesc;
+                    linkThumb = firstAttachment.payload.thumbnail || linkThumb;
+                }
+                
+                if (linkUrl) {
+                    content = `<div style="text-align:left; border: 1px solid var(--border-color); border-radius:8px; overflow:hidden; background:rgba(0,0,0,0.02); max-width:300px; margin-top:5px;">`;
+                    if (linkThumb) {
+                        content += `<img src="${linkThumb}" style="width:100%; height:140px; object-fit:cover; display:block;">`;
+                    }
+                    content += `<div style="padding:10px;">
+                        <a href="${linkUrl}" target="_blank" style="font-weight:600; color:#0068ff; text-decoration:none; display:block; margin-bottom:4px; font-size:13px; line-height:1.4;">${escapeHtml(linkTitle)}</a>`;
+                    if (linkDesc) {
+                        content += `<div style="font-size:12px; color:var(--text-muted); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${escapeHtml(linkDesc)}</div>`;
+                    }
+                    content += `</div></div>`;
+                } else {
+                    content = `<div>🔗 <a href="${linkUrl}" target="_blank" style="color:#0068ff; text-decoration:underline;">${escapeHtml(linkTitle)}</a></div>`;
+                }
+            } else if (msgType === '_unknown_attachment') {
+                // No type, no message, no _file_meta — truly unknown
+                content = renderFileCard('Tệp đính kèm', '', 0, 'file');
             } else {
-                content = `<div>${escapeHtml(msg.message || '[Tin nhắn đính kèm]')}</div>`;
+                // Other unknown types
+                if (msg.message) {
+                    content = `<div>${escapeHtml(msg.message)}</div>`;
+                } else if (fileMeta) {
+                    content = renderFileCard(fileMeta.name, fileMeta.url, fileMeta.size, fileMeta.type);
+                } else {
+                    content = `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; color:var(--text-muted);">
+                        <span style="font-size:18px;">💬</span>
+                        <span style="font-size:12px;">[Tin nhắn không hỗ trợ xem trước]</span>
+                    </div>`;
+                }
             }
 
             html += `
@@ -1518,10 +1790,23 @@ $sales_list = $acc_setup['sales_list'] ?? '';
                 </div>
             `;
         });
-        container.innerHTML = html;
-        
-        // Auto scroll to bottom
-        container.scrollTop = container.scrollHeight;
+
+        const oldScrollTop = container.scrollTop;
+        const oldScrollHeight = container.scrollHeight;
+
+        if (!isLoadMore) {
+            container.innerHTML = html;
+            if (shouldScroll) {
+                container.scrollTop = container.scrollHeight;
+            }
+        } else {
+            const tmp = document.createElement('div');
+            tmp.innerHTML = html;
+            while (tmp.lastChild) {
+                container.insertBefore(tmp.lastChild, container.firstChild);
+            }
+            container.scrollTop = oldScrollTop + (container.scrollHeight - oldScrollHeight);
+        }
     }
 
     function escapeHtml(text) {

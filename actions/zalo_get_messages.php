@@ -58,6 +58,7 @@ try {
     
     if ($res['status_code'] === 200 && isset($res['data']['error']) && $res['data']['error'] === 0) {
         $messages = $res['data']['data'] ?? [];
+        file_put_contents(__DIR__ . '/../zalo_messages_debug.json', json_encode($messages, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         
         // Reset unread_count to 0 for this conversation in DB
         try {
@@ -126,6 +127,43 @@ try {
                 $stmt_upd_msg->execute([$extracted_name, $oa_id, $sender_id]);
             }
         }
+        
+        // Enrich messages with file metadata from DB (for file/image/audio attachments)
+        $msg_ids = [];
+        foreach ($messages as $msg) {
+            if (!empty($msg['message_id'])) {
+                $msg_ids[] = $msg['message_id'];
+            }
+        }
+        
+        $file_meta_map = [];
+        if (!empty($msg_ids)) {
+            $placeholders = implode(',', array_fill(0, count($msg_ids), '?'));
+            $stmt_files = $pdo->prepare("SELECT message_id, file_name, file_url, file_size, file_type FROM zalo_file_messages WHERE message_id IN ($placeholders)");
+            $stmt_files->execute($msg_ids);
+            while ($row = $stmt_files->fetch(PDO::FETCH_ASSOC)) {
+                $file_meta_map[$row['message_id']] = $row;
+            }
+        }
+        
+        // Inject file metadata into messages
+        foreach ($messages as &$msg) {
+            $mid = $msg['message_id'] ?? '';
+            if (!empty($mid) && isset($file_meta_map[$mid])) {
+                $meta = $file_meta_map[$mid];
+                $msg['_file_meta'] = [
+                    'name' => $meta['file_name'],
+                    'url' => $meta['file_url'],
+                    'size' => (int)$meta['file_size'],
+                    'type' => $meta['file_type']
+                ];
+                // Set message type if missing
+                if (empty($msg['type'])) {
+                    $msg['type'] = $meta['file_type'];
+                }
+            }
+        }
+        unset($msg);
         
         echo json_encode([
             'status' => 'success',

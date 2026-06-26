@@ -169,9 +169,23 @@ try {
             folder_id VARCHAR(255) NOT NULL,
             file_id VARCHAR(255) NOT NULL,
             posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_folder_file (folder_id, file_id)
+            INDEX idx_folder_file (folder_id, file_id),
+            UNIQUE KEY uq_folder_file (folder_id, file_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ");
+
+    // Migration: Clean duplicates and add UNIQUE key for existing tables
+    try {
+        $pdo->exec("
+            DELETE t1 FROM posted_folder_files t1
+            INNER JOIN posted_folder_files t2 
+            WHERE t1.id < t2.id AND t1.folder_id = t2.folder_id AND t1.file_id = t2.file_id
+        ");
+        $check_idx = $pdo->query("SHOW INDEX FROM posted_folder_files WHERE Key_name = 'uq_folder_file'");
+        if (!$check_idx->fetch()) {
+            $pdo->exec("ALTER TABLE posted_folder_files ADD UNIQUE KEY uq_folder_file (folder_id, file_id)");
+        }
+    } catch (Exception $e) {}
 
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS page_shares (
@@ -535,6 +549,23 @@ try {
             }
         }
     }
+
+    // ── Zalo File Messages table (stores file attachment metadata from webhooks) ──
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS zalo_file_messages (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            oa_id VARCHAR(64) NOT NULL,
+            message_id VARCHAR(128) NOT NULL UNIQUE,
+            sender_id VARCHAR(64) NOT NULL,
+            file_name VARCHAR(512) DEFAULT NULL,
+            file_url TEXT DEFAULT NULL,
+            file_size BIGINT DEFAULT 0,
+            file_type VARCHAR(50) DEFAULT 'file',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_oa_sender (oa_id, sender_id),
+            INDEX idx_message_id (message_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
 
 } catch (PDOException $e) {
     $err_msg = date('[Y-m-d H:i:s] ') . 'DB Connection Error: ' . $e->getMessage() . "\n";

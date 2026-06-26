@@ -84,6 +84,7 @@ if (empty($sender_id) || empty($oa_id)) {
 
 $is_message = false;
 $snippet = '';
+$msg_id = $data['message']['msg_id'] ?? '';
 
 if ($event_name === 'user_send_text') {
     $is_message = true;
@@ -91,12 +92,61 @@ if ($event_name === 'user_send_text') {
 } elseif ($event_name === 'user_send_image') {
     $is_message = true;
     $snippet = '[Hình ảnh]';
+} elseif ($event_name === 'user_send_file') {
+    $is_message = true;
+    $snippet = '[Tệp đính kèm]';
+} elseif ($event_name === 'user_send_audio') {
+    $is_message = true;
+    $snippet = '[Tin nhắn thoại]';
+} elseif ($event_name === 'user_send_link') {
+    $is_message = true;
+    $snippet = '[Liên kết]';
 }
 
 if (!$is_message) {
     http_response_code(200);
     echo "EVENT_IGNORED";
     exit;
+}
+
+// ── Save file/image/audio attachment metadata to DB ──────────────────────────
+if (in_array($event_name, ['user_send_file', 'user_send_image', 'user_send_audio']) && !empty($msg_id)) {
+    try {
+        $attachments = $data['message']['attachments'] ?? [];
+        if (!empty($attachments)) {
+            $att = $attachments[0];
+            $payload = $att['payload'] ?? [];
+            $file_name = $payload['name'] ?? $payload['file_name'] ?? ($payload['title'] ?? '');
+            $file_url = $payload['url'] ?? ($payload['thumbnail'] ?? '');
+            $file_size = intval($payload['size'] ?? 0);
+            $file_type = $att['type'] ?? $event_name; // 'file', 'image', 'audio'
+            
+            // Map event names to simpler types
+            if ($file_type === 'user_send_file') $file_type = 'file';
+            if ($file_type === 'user_send_image') $file_type = 'image';
+            if ($file_type === 'user_send_audio') $file_type = 'audio';
+            
+            // Default file name based on type
+            if (empty($file_name)) {
+                if ($file_type === 'image') $file_name = 'Hình ảnh';
+                elseif ($file_type === 'audio') $file_name = 'Tin nhắn thoại';
+                else $file_name = 'Tệp đính kèm';
+            }
+            
+            $stmt_file = $pdo->prepare("
+                INSERT INTO zalo_file_messages (oa_id, message_id, sender_id, file_name, file_url, file_size, file_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    file_name = VALUES(file_name),
+                    file_url = VALUES(file_url),
+                    file_size = VALUES(file_size),
+                    file_type = VALUES(file_type)
+            ");
+            $stmt_file->execute([$oa_id, $msg_id, $sender_id, $file_name, $file_url, $file_size, $file_type]);
+        }
+    } catch (Exception $e) {
+        error_log("Failed to save Zalo file metadata: " . $e->getMessage());
+    }
 }
 
 // 4. Update or Insert Customer Profile

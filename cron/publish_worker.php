@@ -120,7 +120,8 @@ function resolve_drive_folder_file($pdo, $access_token, $folder_id, $mime_filter
         return ['error' => 'Không thể kết nối API Google Drive hoặc thư mục không tồn tại.'];
     }
 
-    // 3. Find first file not posted
+    // 3. Find files not posted
+    $candidates = [];
     foreach ($files as $file) {
         $file_id = $file['id'];
         $mime = $file['mimeType'];
@@ -150,11 +151,70 @@ function resolve_drive_folder_file($pdo, $access_token, $folder_id, $mime_filter
             continue;
         }
         
-        // Found! Return the file
-        return $file;
+        $candidates[] = $file;
     }
-    
-    return ['error' => 'Tất cả các tệp trong thư mục đã được đăng trước đó.'];
+
+    // 4. Recycle if all files are posted
+    if (empty($candidates) && !empty($posted_files)) {
+        try {
+            $stmt = $pdo->prepare("DELETE FROM posted_folder_files WHERE folder_id = ?");
+            $stmt->execute([$folder_id]);
+            $posted_files = [];
+        } catch (Exception $e) {}
+
+        // Re-filter candidates
+        foreach ($files as $file) {
+            $file_id = $file['id'];
+            $mime = $file['mimeType'];
+            if ($mime === 'application/vnd.google-apps.folder') {
+                continue;
+            }
+            if ($mime_filter !== null) {
+                $matched = false;
+                foreach ((array)$mime_filter as $filter) {
+                    $pattern = '/^' . str_replace(['/', '*'], ['\/', '.+'], $filter) . '$/i';
+                    if (preg_match($pattern, $mime)) {
+                        $matched = true;
+                        break;
+                    }
+                }
+                if (!$matched) {
+                    continue;
+                }
+            }
+            $candidates[] = $file;
+        }
+    }
+
+    if (empty($candidates)) {
+        return ['error' => 'Không tìm thấy tệp tin phù hợp trong thư mục.'];
+    }
+
+    // 5. Shuffle candidates to ensure true randomization
+    shuffle($candidates);
+
+    // 6. Try to reserve a candidate by inserting into database immediately (concurrency safe)
+    foreach ($candidates as $file) {
+        $file_id = $file['id'];
+        try {
+            $stmt = $pdo->prepare("INSERT INTO posted_folder_files (folder_id, file_id) VALUES (?, ?)");
+            $stmt->execute([$folder_id, $file_id]);
+            
+            // Successfully reserved!
+            return $file;
+        } catch (PDOException $e) {
+            // Check if it's a duplicate key error (SQLSTATE 23000)
+            if ($e->getCode() == '23000') {
+                // Already reserved by another process running concurrently, try next candidate
+                continue;
+            } else {
+                // For other database errors, return the file as fallback
+                return $file;
+            }
+        }
+    }
+
+    return ['error' => 'Tất cả các tệp trong thư mục đã được đăng hoặc đang được đăng bởi kênh khác.'];
 }
 
 // ── Spin Syntax Helper ──────────────────────────────────────────────────────
@@ -580,6 +640,16 @@ foreach ($pending_posts as $post) {
             $resolved_file_id = $drive_file_id;
             $folder_id_to_log = $folder_id;
             
+            // Persist the resolved drive file path to the database
+            $new_media_path = 'drive:' . $drive_file_id;
+            $post['media_path'] = $new_media_path;
+            $raw_media = $new_media_path;
+            $is_folder = false;
+            $is_drive = true;
+            
+            $pdo->prepare("UPDATE scheduled_posts SET media_path = ? WHERE id = ?")
+                ->execute([$new_media_path, $post['id']]);
+            
             $file_info = download_drive_file_temp($drive_token, $drive_file_id);
             if (isset($file_info['error'])) {
                 marKAsFailed($pdo, $post['id'], "Lỗi tải Video Drive từ thư mục: " . $file_info['error'], $sys_max_retries, $sys_retry_interval);
@@ -736,6 +806,7 @@ foreach ($pending_posts as $post) {
             "X-Upload-Content-Length: $file_size"
         ]);
         curl_setopt($ch_init, CURLOPT_HEADER, true);
+        curl_setopt($ch_init, CURLOPT_TIMEOUT, 30);
         $init_response = curl_exec($ch_init);
         $init_code = curl_getinfo($ch_init, CURLINFO_HTTP_CODE);
         $init_header_size = curl_getinfo($ch_init, CURLINFO_HEADER_SIZE);
@@ -776,6 +847,7 @@ foreach ($pending_posts as $post) {
         curl_setopt($ch_upload, CURLOPT_INFILE, $file_handle);
         curl_setopt($ch_upload, CURLOPT_INFILESIZE, $file_size);
         curl_setopt($ch_upload, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch_upload, CURLOPT_TIMEOUT, 600);
         curl_setopt($ch_upload, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer $access_token",
             "Content-Type: video/*"
@@ -808,7 +880,7 @@ foreach ($pending_posts as $post) {
             // Ghi nhận file đã đăng từ thư mục để chống trùng
             if (!empty($folder_id_to_log) && !empty($resolved_file_id)) {
                 try {
-                    $stmt = $pdo->prepare("INSERT INTO posted_folder_files (folder_id, file_id) VALUES (?, ?)");
+                    $stmt = $pdo->prepare("INSERT IGNORE INTO posted_folder_files (folder_id, file_id) VALUES (?, ?)");
                     $stmt->execute([$folder_id_to_log, $resolved_file_id]);
                 } catch (Exception $e) {}
             }
@@ -1081,15 +1153,6 @@ foreach ($pending_posts as $post) {
         
         $pdo->prepare("UPDATE scheduled_posts SET media_path = ? WHERE id = ?")
             ->execute([$new_media_path, $post['id']]);
-
-        // Update other pending posts in the same campaign/slot
-        if (!empty($post['campaign_id'])) {
-            $upd_others = $pdo->prepare("UPDATE scheduled_posts SET media_path = ? WHERE campaign_id = ? AND media_path = ? AND status = 'pending'");
-            $upd_others->execute([$new_media_path, $post['campaign_id'], 'folder:' . $folder_id]);
-        } else {
-            $upd_others = $pdo->prepare("UPDATE scheduled_posts SET media_path = ? WHERE scheduled_time = ? AND content = ? AND media_path = ? AND status = 'pending'");
-            $upd_others->execute([$new_media_path, $post['scheduled_time'], $post['content'], 'folder:' . $folder_id]);
-        }
         
         $file_info = download_drive_file_temp($drive_token, $drive_file_id);
         if (isset($file_info['error'])) {
@@ -1302,7 +1365,7 @@ foreach ($pending_posts as $post) {
         // Ghi nhận file đã đăng từ thư mục để chống trùng
         if (!empty($folder_id_to_log) && !empty($resolved_file_id)) {
             try {
-                $stmt = $pdo->prepare("INSERT INTO posted_folder_files (folder_id, file_id) VALUES (?, ?)");
+                $stmt = $pdo->prepare("INSERT IGNORE INTO posted_folder_files (folder_id, file_id) VALUES (?, ?)");
                 $stmt->execute([$folder_id_to_log, $resolved_file_id]);
             } catch (Exception $e) {}
         }

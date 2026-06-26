@@ -101,6 +101,39 @@ $stats_today = $pdo->query("
     GROUP BY status
 ")->fetchAll(PDO::FETCH_KEY_PAIR);
 
+// ── Top 10 Tài khoản bị lỗi nhiều hôm nay ────────────────────────────────────
+$top_failed_accounts = [];
+try {
+    $top_failed_accounts = $pdo->query("
+        SELECT sa.username, COUNT(*) as cnt
+        FROM scheduled_posts sp
+        JOIN system_accounts sa ON sp.account_id = sa.id
+        WHERE sp.status = 'failed' AND (DATE(sp.scheduled_time) = CURDATE() OR DATE(sp.updated_at) = CURDATE())
+        GROUP BY sp.account_id, sa.username
+        ORDER BY cnt DESC
+        LIMIT 10
+    ")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {}
+
+// ── Bài viết bị lỗi hôm nay ──────────────────────────────────────────────────
+$failed_posts_today = [];
+try {
+    $failed_today_stmt = $pdo->prepare("
+        SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time, sp.error_msg, sp.retry_count, sp.updated_at,
+               sa.username AS account_name,
+               COALESCE(sa.max_retries, ?) AS limit_retries
+        FROM scheduled_posts sp
+        LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+        WHERE sp.status = 'failed' 
+          AND (DATE(sp.scheduled_time) = CURDATE() OR DATE(sp.updated_at) = CURDATE())
+        ORDER BY sp.updated_at DESC, sp.id DESC
+        LIMIT 50
+    ");
+    $failed_today_stmt->execute([$max_retries]);
+    $failed_posts_today = $failed_today_stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {}
+
+
 // ── Bài sẵn sàng đăng (đến/quá giờ) ─────────────────────────────────────────
 $ready_total_stmt = $pdo->prepare("
     SELECT COUNT(*)
@@ -878,6 +911,36 @@ code {
                 </table>
             </div>
 
+            <!-- Top 10 Failed Accounts Today -->
+            <div class="card" style="border-top: 3px solid var(--color-danger);">
+                <h3 class="card-title" style="color: var(--color-danger);">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 22 22 22 12 2"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    Tài khoản nhiều bài lỗi (Hôm nay)
+                </h3>
+                <?php if (empty($top_failed_accounts)): ?>
+                <div style="font-size: 13px; color: var(--color-success); font-weight: 500; padding: 4px 0;">
+                    ✔ Không có tài khoản bị lỗi đăng.
+                </div>
+                <?php else: ?>
+                <table style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="padding: 6px 8px;">Tài khoản</th>
+                            <th style="padding: 6px 8px; text-align: right;">Bài lỗi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($top_failed_accounts as $acc): ?>
+                        <tr>
+                            <td style="padding: 8px 8px; font-weight: 600; color: #a5b4fc;"><?= htmlspecialchars($acc['username']) ?></td>
+                            <td style="padding: 8px 8px; text-align: right; font-weight: 700; color: var(--color-danger);" class="mono"><?= number_format($acc['cnt']) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+            </div>
+
         </aside>
 
         <!-- Right Column: Main Dashboard Content -->
@@ -1015,6 +1078,53 @@ code {
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
                         Ép buộc Reset về Pending (Giải phóng bài treo)
                     </a>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- Table: Bài viết bị lỗi hôm nay (Failed) -->
+            <div class="card" style="border-top: 4px solid var(--color-danger);">
+                <h3 class="card-title" style="color: var(--color-danger);">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 22 22 22 12 2"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    Chi tiết bài viết bị lỗi hôm nay (<?= count($failed_posts_today) ?> bài)
+                </h3>
+                
+                <?php if (empty($failed_posts_today)): ?>
+                <div style="padding: 16px; color: var(--color-success); font-size:13px;">
+                    Không có bài viết nào bị lỗi trong ngày hôm nay.
+                </div>
+                <?php else: ?>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Tài khoản</th>
+                                <th>Fanpage ID</th>
+                                <th>Loại</th>
+                                <th>Giờ hẹn</th>
+                                <th>Cập nhật cuối</th>
+                                <th>Lượt thử</th>
+                                <th>Thông tin lỗi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($failed_posts_today as $p): ?>
+                            <tr>
+                                <td class="mono font-weight-bold">#<?= $p['id'] ?></td>
+                                <td><span style="color:#a78bfa; font-weight: 600;"><?= htmlspecialchars($p['account_name'] ?? 'System') ?></span></td>
+                                <td class="mono"><?= $p['page_id'] ?></td>
+                                <td><span style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;"><?= $p['post_type'] ?></span></td>
+                                <td class="mono"><?= $p['scheduled_time'] ?></td>
+                                <td class="mono"><?= $p['updated_at'] ?></td>
+                                <td class="mono"><?= $p['retry_count'] ?? 0 ?>/<?= $p['limit_retries'] ?></td>
+                                <td style="color:#f87171; max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size:12px;" title="<?= htmlspecialchars($p['error_msg'] ?? '') ?>">
+                                    <?= htmlspecialchars($p['error_msg'] ?? '-') ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
                 </div>
                 <?php endif; ?>
             </div>

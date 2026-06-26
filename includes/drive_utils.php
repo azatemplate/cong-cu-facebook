@@ -73,6 +73,7 @@ function get_drive_access_token($pdo, $account_id, $page_id = null) {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post_fields));
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     $token_response_raw = curl_exec($ch);
     curl_close($ch);
 
@@ -117,6 +118,7 @@ function download_drive_file_temp($access_token, $file_id) {
     $ch = curl_init($meta_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     $meta_response = curl_exec($ch);
     curl_close($ch);
 
@@ -176,6 +178,7 @@ function download_drive_file_temp($access_token, $file_id) {
     curl_setopt($ch2, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
     curl_setopt($ch2, CURLOPT_FILE, $fp);
     curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch2, CURLOPT_TIMEOUT, 600);
     $success = curl_exec($ch2);
     $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
     curl_close($ch2);
@@ -202,6 +205,7 @@ function delete_drive_file($access_token, $file_id) {
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     $response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
@@ -213,21 +217,35 @@ function delete_drive_file($access_token, $file_id) {
  * Sắp xếp theo thời gian tạo tăng dần (cũ nhất trước)
  */
 function list_drive_files_in_folder($access_token, $folder_id) {
+    $files = [];
+    $pageToken = null;
     $q = "'" . str_replace("'", "\\'", $folder_id) . "' in parents and trashed = false";
-    $url = "https://www.googleapis.com/drive/v3/files?q=" . urlencode($q) . "&fields=files(id,name,mimeType,createdTime,size)&orderBy=createdTime&pageSize=1000";
     
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
-    $response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    do {
+        $url = "https://www.googleapis.com/drive/v3/files?q=" . urlencode($q) . "&fields=nextPageToken,files(id,name,mimeType,createdTime,size)&orderBy=createdTime&pageSize=1000";
+        if ($pageToken) {
+            $url .= "&pageToken=" . urlencode($pageToken);
+        }
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($http_code !== 200) {
+            return empty($files) ? false : $files;
+        }
+        
+        $data = json_decode($response, true);
+        if (isset($data['files'])) {
+            $files = array_merge($files, $data['files']);
+        }
+        $pageToken = isset($data['nextPageToken']) ? $data['nextPageToken'] : null;
+    } while ($pageToken);
     
-    if ($http_code !== 200) {
-        return false;
-    }
-    
-    $data = json_decode($response, true);
-    return isset($data['files']) ? $data['files'] : [];
+    return $files;
 }
 ?>
