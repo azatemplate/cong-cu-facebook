@@ -122,7 +122,7 @@ try {
 } catch (Exception $e) {}
 
 
-$stats = ['pub' => 0, 'pend' => 0, 'proc' => 0, 'fail' => 0, 'total' => 0];
+$stats = ['pub' => 0, 'pend' => 0, 'proc' => 0, 'fail' => 0, 'total' => 0, 'yt_count' => 0];
 try {
     $st = $pdo->prepare("SELECT
         SUM(CASE WHEN status='published'  THEN 1 ELSE 0 END) AS pub,
@@ -130,6 +130,7 @@ try {
         SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS proc,
         SUM(CASE WHEN status='failed'     THEN 1 ELSE 0 END) AS fail,
         SUM(CASE WHEN status='checkpoint' THEN 1 ELSE 0 END) AS chk,
+        SUM(CASE WHEN post_type='YouTube' THEN 1 ELSE 0 END) AS yt_count,
         COUNT(*) AS total
         FROM scheduled_posts WHERE campaign_id = ?");
     $st->execute([$campaign_id]);
@@ -212,6 +213,9 @@ function status_label($s) {
         <?php endif; ?>
         <?php if ((int)$stats['total'] === 0): ?>
         <button onclick="showCampaignModal('delete_campaign_empty', <?php echo $campaign_id; ?>, 'Xóa chiến dịch trống này?', true)" style="padding:8px 16px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🗑 Xóa Campaign</button>
+        <?php endif ?>
+        <?php if ((int)($stats['yt_count'] ?? 0) > 0): ?>
+        <a href="debug_yt.php?campaign_id=<?php echo $campaign_id; ?>" style="padding:8px 16px;background:#0284c7;color:white;border-radius:6px;text-decoration:none;cursor:pointer;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;">⚡ Chẩn đoán & Sửa lỗi YouTube</a>
         <?php endif ?>
     </div>
 </div>

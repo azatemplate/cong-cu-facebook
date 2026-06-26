@@ -589,6 +589,7 @@ foreach ($pending_posts as $post) {
             'refresh_token' => $yt_channel['refresh_token'],
             'grant_type' => 'refresh_token'
         ]));
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
         $token_res = curl_exec($ch);
         curl_close($ch);
         $token_data = json_decode($token_res, true);
