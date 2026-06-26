@@ -32,10 +32,16 @@
         <div id="driveFileList" style="padding: 15px; overflow-y: auto; flex-grow: 1; min-height: 200px;">
             <div style="text-align: center; color: #64748b; padding: 20px;">Đang tải danh sách...</div>
         </div>
-        
-        <div style="padding: 15px; border-top: 1px solid var(--border-color); background: #f8fafc; display: flex; justify-content: flex-end; gap: 10px;">
-            <button type="button" class="btn btn-secondary" onclick="closeDriveModal()" style="background: #fff; border: 1px solid var(--border-color); color: #334155;">Thoát</button>
-            <button type="button" id="btnConfirmDriveSelection" class="btn btn-primary" onclick="confirmDriveSelection()" disabled>Xác nhận chọn (0)</button>
+        <div style="padding: 15px; border-top: 1px solid var(--border-color); background: #f8fafc; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <div>
+                <button type="button" id="driveBtnSelectFolderBottom" onclick="driveSelectCurrentFolder()" class="btn btn-success" style="display: none; align-items: center; gap: 6px; background: #10b981; border: 1px solid #059669; color: #fff; border-radius: 6px; padding: 8px 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                    📁 Chọn cả thư mục: <span id="driveSelectedFolderNameBottom" style="font-weight: 700; text-decoration: underline;"></span>
+                </button>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button type="button" class="btn btn-secondary" onclick="closeDriveModal()" style="background: #fff; border: 1px solid var(--border-color); color: #334155; padding: 8px 16px; border-radius: 6px; font-weight: 500; font-size: 13px;">Thoát</button>
+                <button type="button" id="btnConfirmDriveSelection" class="btn btn-primary" onclick="confirmDriveSelection()" style="padding: 8px 16px; border-radius: 6px; font-weight: 500; font-size: 13px;" disabled>Xác nhận chọn (0)</button>
+            </div>
         </div>
     </div>
 </div>
@@ -157,6 +163,19 @@ function loadDriveFiles(folderId, folderName) {
         btnSelectFolder.style.display = (folderId === 'root') ? 'none' : 'flex';
     }
     
+    const btnSelectFolderBottom = document.getElementById('driveBtnSelectFolderBottom');
+    const folderNameSpan = document.getElementById('driveSelectedFolderNameBottom');
+    if (btnSelectFolderBottom) {
+        if (folderId === 'root') {
+            btnSelectFolderBottom.style.display = 'none';
+        } else {
+            btnSelectFolderBottom.style.display = 'flex';
+            if (folderNameSpan) {
+                folderNameSpan.textContent = folderName;
+            }
+        }
+    }
+    
     fetch(`actions/drive_proxy.php?action=list_files&parent_id=${folderId}&user_id=${driveUserId}`)
         .then(res => res.json())
         .then(data => {
@@ -201,7 +220,15 @@ function loadDriveFiles(folderId, folderName) {
                         div.classList.add('drive-selected');
                     }
                     
-                    div.onclick = function() {
+                    div.onclick = function(e) {
+                        if (e.target.closest('.select-folder-row-btn')) {
+                            e.stopPropagation();
+                            if (typeof onDriveFolderSelected === 'function') {
+                                onDriveFolderSelected(file.id, file.name);
+                            }
+                            closeDriveModal();
+                            return;
+                        }
                         if (isFolder) {
                             folderHistory.push(currentFolderId);
                             folderPathNames.push(file.name);
@@ -219,6 +246,7 @@ function loadDriveFiles(folderId, folderName) {
                             <div class="drive-name">${file.name}</div>
                             <div class="drive-size">${isFolder ? 'Thư mục' : formatBytes(file.size)}</div>
                         </div>
+                        ${isFolder ? '<button type="button" class="select-folder-row-btn btn btn-success" style="padding: 4px 8px; font-size: 11px; background: #10b981; border: 1px solid #059669; color: #fff; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 3px; margin-left: 8px; font-weight: bold; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05); z-index: 10;">📁 Chọn</button>' : ''}
                         ${!isFolder ? '<svg class="drive-check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
                     `;
                     listContainer.appendChild(div);
