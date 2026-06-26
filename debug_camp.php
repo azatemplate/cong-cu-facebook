@@ -5,6 +5,16 @@ require_once __DIR__ . '/includes/db.php';
 $campaign_id = intval($_GET['id'] ?? 1722);
 header('Content-Type: text/plain; charset=utf-8');
 
+if (isset($_GET['fix_folder'])) {
+    $folder_id = trim($_GET['fix_folder']);
+    if ($folder_id) {
+        $stmt = $pdo->prepare("UPDATE scheduled_posts SET media_path = ? WHERE campaign_id = ? AND status = 'pending'");
+        $stmt->execute(['folder:' . $folder_id, $campaign_id]);
+        echo "=== FIXED CAMPAIGN $campaign_id ===\n";
+        echo "Updated pending posts to folder:$folder_id\n\n";
+    }
+}
+
 echo "=== CAMPAIGN $campaign_id POSTS ===\n";
 $stmt = $pdo->prepare("SELECT id, page_id, post_type, media_path, status, scheduled_time, error_msg, fb_post_id FROM scheduled_posts WHERE campaign_id = ? ORDER BY id DESC LIMIT 20");
 $stmt->execute([$campaign_id]);
