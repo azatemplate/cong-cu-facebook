@@ -62,7 +62,7 @@ try {
     $stmt_not->execute([$target_id]);
     $snd_id = $stmt_not->fetchColumn();
     if ($snd_id) {
-        $st_upd = $pdo->prepare("UPDATE fb_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP WHERE page_id = ? AND sender_id = ?");
+        $st_upd = $pdo->prepare("UPDATE fb_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP, followup_requested_at = NULL WHERE page_id = ? AND sender_id = ?");
         $st_upd->execute([$page_id, $snd_id]);
     }
 } catch (Exception $e) {}

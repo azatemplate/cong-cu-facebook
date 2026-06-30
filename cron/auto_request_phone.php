@@ -242,6 +242,17 @@ try {
                                     WHERE page_id = ? AND sender_id = ?
                                 ");
                                 $upd->execute([$page_id, $c['sender_id']]);
+
+                                // Khóa chatbot 24 giờ để tránh chatbot tự động trả lời khi khách hàng phản hồi tin CSKH
+                                try {
+                                    $stmt_lock = $pdo->prepare("
+                                        INSERT INTO bot_chat_locks (page_id, sender_id, expire_at)
+                                        VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))
+                                        ON DUPLICATE KEY UPDATE expire_at = GREATEST(expire_at, DATE_ADD(NOW(), INTERVAL 24 HOUR))
+                                    ");
+                                    $stmt_lock->execute([$page_id, $c['sender_id']]);
+                                } catch (Exception $e) {}
+
                                 $fb_success_count++;
                                 echo "[FB] Gửi CSKH thành công cho khách {$c['sender_id']}.\n";
                             } else {
@@ -476,6 +487,16 @@ try {
                                     WHERE oa_id = ? AND sender_id = ?
                                 ");
                                 $upd->execute([$oa_id, $c['sender_id']]);
+
+                                // Khóa chatbot 24 giờ để tránh chatbot tự động trả lời khi khách hàng phản hồi tin CSKH
+                                try {
+                                    $stmt_lock = $pdo->prepare("
+                                        INSERT INTO zalo_chat_locks (oa_id, sender_id, expire_at)
+                                        VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))
+                                        ON DUPLICATE KEY UPDATE expire_at = GREATEST(expire_at, DATE_ADD(NOW(), INTERVAL 24 HOUR))
+                                    ");
+                                    $stmt_lock->execute([$oa_id, $c['sender_id']]);
+                                } catch (Exception $e) {}
 
                                 // Cập nhật danh sách hội thoại đệm
                                 $upd_msg = $pdo->prepare("

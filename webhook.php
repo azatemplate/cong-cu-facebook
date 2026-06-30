@@ -180,13 +180,14 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                         // Đảm bảo thông tin khách hàng được khởi tạo/cập nhật trong fb_customers
                         try {
                             $stmt_cust = $pdo->prepare("
-                                INSERT INTO fb_customers (page_id, sender_id, name, last_sender, last_message_at, info_request_count) 
-                                VALUES (?, ?, ?, 'customer', CURRENT_TIMESTAMP, 0) 
+                                INSERT INTO fb_customers (page_id, sender_id, name, last_sender, last_message_at, info_request_count, followup_requested_at) 
+                                VALUES (?, ?, ?, 'customer', CURRENT_TIMESTAMP, 0, NULL) 
                                 ON DUPLICATE KEY UPDATE 
                                     name = VALUES(name),
                                     last_sender = 'customer',
                                     last_message_at = CURRENT_TIMESTAMP,
-                                    info_request_count = 0
+                                    info_request_count = 0,
+                                    followup_requested_at = NULL
                             ");
                             $stmt_cust->execute([$page_id, $sender_id, $sender_name]);
                             
