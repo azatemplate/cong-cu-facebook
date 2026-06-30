@@ -4,10 +4,17 @@ require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/fb_api.php';
 
 header('Content-Type: text/plain; charset=utf-8');
+// Disable output buffering so we can stream results
+if (function_exists('ob_end_clean')) {
+    @ob_end_clean();
+}
+ob_implicit_flush(true);
 
 $account_id = isset($_GET['account_id']) ? intval($_GET['account_id']) : 2;
+$test_page_id = isset($_GET['test_page_id']) ? trim($_GET['test_page_id']) : '';
 
-echo "=== DIAGNOSING PAGES AND TOKENS FOR ACCOUNT ID: $account_id ===\n\n";
+echo "=== DIAGNOSING PAGES AND TOKENS FOR ACCOUNT ID: $account_id ===\n";
+echo "To test a specific page token validity, visit: debug_pages.php?account_id=$account_id&test_page_id=[PAGE_ID]\n\n";
 
 try {
     $stmt = $pdo->prepare("
@@ -29,33 +36,36 @@ try {
         $user_db_id = $p['user_db_id'];
         
         $token = decryptData($p['encrypted_token']);
+        $token_snippet = !empty($token) ? (substr($token, 0, 15) . "..." . substr($token, -10)) : 'EMPTY';
         
         echo "Page Name: $page_name (ID: $page_id)\n";
         echo "Token owner in DB: $user_name (User DB ID: $user_db_id, FB ID: {$p['user_fb_id']})\n";
+        echo "Token Snippet: $token_snippet\n";
         
         if (empty($token)) {
             echo "→ ERROR: Token is EMPTY in database!\n";
-            echo str_repeat("-", 80) . "\n";
-            continue;
-        }
+        } elseif ($test_page_id === $page_id) {
+            echo "→ Testing Token with FB API...\n";
+            $url = "https://graph.facebook.com/v20.0/me?fields=id,name&access_token=" . urlencode($token);
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+            $res = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
 
-        // Test token validity with Facebook Graph API
-        $url = "https://graph.facebook.com/v20.0/me?fields=id,name&access_token=" . urlencode($token);
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        $res = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        echo "→ FB API Response Code: $http_code\n";
-        if ($http_code === 200) {
-            $data = json_decode($res, true);
-            echo "→ Token is VALID. Logged in as Page: {$data['name']} (ID: {$data['id']})\n";
+            echo "→ FB API Response Code: $http_code\n";
+            if ($http_code === 200) {
+                $data = json_decode($res, true);
+                echo "→ Token is VALID. Logged in as Page: {$data['name']} (ID: {$data['id']})\n";
+            } else {
+                echo "→ Token is INVALID! Response: $res\n";
+            }
         } else {
-            echo "→ Token is INVALID! Response: $res\n";
+            echo "→ [FB API verification skipped to save time]\n";
         }
         echo str_repeat("-", 80) . "\n";
+        flush();
     }
 } catch (Exception $e) {
     echo "ERROR: " . $e->getMessage() . "\n";
