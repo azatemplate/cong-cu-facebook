@@ -5,13 +5,21 @@ require_once __DIR__ . '/includes/fb_api.php';
 
 header('Content-Type: text/plain; charset=utf-8');
 
-echo "=== DIAGNOSING PAGES AND TOKENS ===\n\n";
+$account_id = isset($_GET['account_id']) ? intval($_GET['account_id']) : 2;
+
+echo "=== DIAGNOSING PAGES AND TOKENS FOR ACCOUNT ID: $account_id ===\n\n";
 
 try {
-    $stmt = $pdo->query("SELECT p.page_id, p.name as page_name, p.access_token as encrypted_token, u.id as user_db_id, u.name as user_name, u.fb_id as user_fb_id FROM pages p LEFT JOIN users u ON p.user_id = u.id");
+    $stmt = $pdo->prepare("
+        SELECT p.page_id, p.name as page_name, p.access_token as encrypted_token, u.id as user_db_id, u.name as user_name, u.fb_id as user_fb_id 
+        FROM pages p 
+        LEFT JOIN users u ON p.user_id = u.id
+        WHERE u.account_id = ?
+    ");
+    $stmt->execute([$account_id]);
     $pages = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    echo "Found " . count($pages) . " pages in DB.\n";
+    echo "Found " . count($pages) . " pages in DB for Account ID $account_id.\n";
     echo str_repeat("-", 80) . "\n";
 
     foreach ($pages as $p) {
