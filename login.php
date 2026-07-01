@@ -473,7 +473,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php endif; ?>
             </div>
 
-            <form method="POST" action="" onsubmit="return validateForm(event)">
+            <form method="POST" action="login.php" onsubmit="return validateForm()">
                 <?php echo csrf_field(); ?>
                 
                 <div class="form-group">
@@ -540,11 +540,10 @@ function togglePassword() {
     }
 }
 
-function validateForm(event) {
+function validateForm() {
     const agreeCheckbox = document.querySelector('input[name="agree_terms"]');
     const errorContainer = document.getElementById('error-container');
     if (!agreeCheckbox || !agreeCheckbox.checked) {
-        event.preventDefault();
         errorContainer.innerHTML = '<div class="error-msg">Bạn phải đồng ý với Điều khoản Dịch vụ (Terms of Service) để đăng nhập.</div>';
         errorContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         return false;
