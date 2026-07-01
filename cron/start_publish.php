@@ -173,7 +173,8 @@ $total_users = count($selected_users);
 echo "Co {$total_pages} Fanpage/Kênh tren {$total_users} Tai khoan/Token dang cho. Moi nhom = 1 Worker doc lap...\n";
 
 $is_web = isset($_SERVER['HTTP_HOST']);
-$exec_enabled = function_exists('exec') && strpos(ini_get('disable_functions'), 'exec') === false;
+$disabled_funcs = array_map('trim', explode(',', strtolower(ini_get('disable_functions'))));
+$exec_enabled = function_exists('exec') && !in_array('exec', $disabled_funcs);
 
 foreach ($selected_users as $uid) {
     $user_page_ids = $pages_by_user[$uid];

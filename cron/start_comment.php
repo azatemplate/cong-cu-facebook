@@ -40,7 +40,8 @@ $accounts = array_slice($accounts, 0, $available_slots);
 echo "Có " . count($accounts) . " user đang có bình luận cần đăng. Khởi chạy " . count($accounts) . " luồng độc lập...\n";
 
 $is_web = isset($_SERVER['HTTP_HOST']);
-$exec_enabled = function_exists('exec') && strpos(ini_get('disable_functions'), 'exec') === false;
+$disabled_funcs = array_map('trim', explode(',', strtolower(ini_get('disable_functions'))));
+$exec_enabled = function_exists('exec') && !in_array('exec', $disabled_funcs);
 
 foreach ($accounts as $aid) {
     if (!$aid) continue; 
