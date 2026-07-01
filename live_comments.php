@@ -182,6 +182,8 @@ function saveAutoSetup(e) {
         } else {
             showInlineAlert('alert-danger', res.msg);
         }
+        btn.disabled = false;
+        btn.innerText = 'Lưu Cấu Hình';
     }).catch(() => {
         showInlineAlert('alert-danger', 'Lỗi kết nối mạng hoặc máy chủ.');
         btn.disabled = false;

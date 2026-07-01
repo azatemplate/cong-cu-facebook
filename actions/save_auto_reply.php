@@ -17,6 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // verify_csrf(); // Tạm tắt nếu gọi qua AJAX không gửi theo csrf hoặc gửi theo request form
 $account_id = $_SESSION['account_id'];
+session_write_close(); // Release session file lock to prevent blocking other requests
 
 try {
     // Lấy cấu hình cũ để tránh ghi đè các tham số mới nếu gọi từ form cũ
