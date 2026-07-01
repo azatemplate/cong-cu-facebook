@@ -1,4 +1,11 @@
 <?php
+// Force HTTPS for secure context (required by Chrome/browsers to save passwords)
+if ((empty($_SERVER['HTTPS']) || $_SERVER['HTTPS'] === "off") && $_SERVER['HTTP_HOST'] !== 'localhost' && $_SERVER['HTTP_HOST'] !== '127.0.0.1') {
+    $redirect = 'https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+    header('HTTP/1.1 301 Moved Permanently');
+    header('Location: ' . $redirect);
+    exit;
+}
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/security.php';
 if (session_status() === PHP_SESSION_NONE) {
