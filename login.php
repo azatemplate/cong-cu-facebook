@@ -477,15 +477,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php echo csrf_field(); ?>
                 
                 <div class="form-group">
-                    <label><span>*</span> USERNAME / EMAIL</label>
+                    <label for="username"><span>*</span> USERNAME / EMAIL</label>
                     <div class="input-wrapper">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                        <input type="text" name="username" required placeholder="Username hoặc Email" autocomplete="username">
+                        <input type="text" id="username" name="username" required placeholder="Username hoặc Email" autocomplete="username">
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label><span>*</span> PASSWORD</label>
+                    <label for="password"><span>*</span> PASSWORD</label>
                     <div class="input-wrapper">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                         <input type="password" id="password" name="password" required placeholder="••••••••" autocomplete="current-password">
