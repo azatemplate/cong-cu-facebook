@@ -26,7 +26,7 @@ try {
         // Fetch page/channel name
         $name = 'Unknown';
         if ($post['post_type'] === 'YouTube') {
-            $p_stmt = $pdo->prepare("SELECT name FROM youtube_channels WHERE id = ?");
+            $p_stmt = $pdo->prepare("SELECT channel_title FROM youtube_channels WHERE id = ?");
             $p_stmt->execute([$post['page_id']]);
             $name = $p_stmt->fetchColumn() ?: 'Unknown';
         } else {
