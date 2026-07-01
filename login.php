@@ -51,20 +51,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // Clear rate limit on successful login
                 rate_limit_clear($client_ip);
-
-                // Ghi nhớ đăng nhập (Remember Me) bằng cách kéo dài thời hạn Cookie Session lên 30 ngày
-                if (isset($_POST['remember_me'])) {
-                    $params = session_get_cookie_params();
-                    setcookie(
-                        session_name(),
-                        session_id(),
-                        time() + 2592000, // 30 ngày
-                        $params["path"],
-                        $params["domain"],
-                        $params["secure"] ?? false,
-                        $params["httponly"] ?? true
-                    );
-                }
                 
                 header("Location: index.php");
                 exit;
@@ -495,18 +481,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <div class="form-options" style="margin-bottom: 20px; gap: 15px; display: flex; flex-direction: column; align-items: flex-start;">
-                    <label class="checkbox-container">
-                        <input type="checkbox" name="remember_me" checked>
-                        <div class="checkmark"></div>
-                        <span>Ghi nhớ đăng nhập</span>
-                    </label>
+                <div class="form-options" style="margin-bottom: 20px; flex-direction: column; align-items: flex-start;">
                     <label class="checkbox-container">
                         <input type="checkbox" name="agree_terms">
                         <div class="checkmark"></div>
                         <span>Tôi đồng ý với <a href="terms_of_service.php" target="_blank" style="color: var(--primary); text-decoration: none;">Điều khoản Dịch vụ</a></span>
                     </label>
-                    <span style="font-size: 11px; color: var(--gray-500); margin-top: -5px; margin-left: 28px;">(Khuyến khích người dùng nên đọc kỹ và đồng ý)</span>
+                    <span style="font-size: 11px; color: var(--gray-500); margin-top: 5px; margin-left: 28px;">(Khuyến khích người dùng nên đọc kỹ và đồng ý)</span>
                 </div>
 
                 <button type="submit" class="submit-btn" style="margin-top: 10px;">
