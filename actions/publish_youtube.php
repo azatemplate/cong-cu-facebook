@@ -249,7 +249,7 @@ if (!empty($schedule_dates)) {
             $success_count++;
         }
     }
-    echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} video vào hàng đợi Upload YouTube!", 'campaign_id' => $campaign_id]);
+    echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} video vào hàng đợi Upload YouTube!", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
 } else {
     // Immediate queue mode
     $now = date('Y-m-d H:i:s');

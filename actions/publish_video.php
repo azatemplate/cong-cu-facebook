@@ -305,7 +305,7 @@ try {
             }
         }
         $pdo->commit();
-        echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} bài vào hàng đợi lên lịch hàng loạt!", 'campaign_id' => $campaign_id]);
+        echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} bài vào hàng đợi lên lịch hàng loạt!", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
     } else {
         // Immediate queue mode
         $now = date('Y-m-d H:i:s');

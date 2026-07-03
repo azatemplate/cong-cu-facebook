@@ -274,7 +274,7 @@ try {
             }
         }
         $pdo->commit();
-        echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} bài vào hàng đợi lên lịch hàng loạt!", 'campaign_id' => $campaign_id]);
+        echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} bài vào hàng đợi lên lịch hàng loạt!", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
     } else {
         // Immediate queue mode
         $now = date('Y-m-d H:i:s');
@@ -302,7 +302,7 @@ try {
 
         $is_scheduled = false;
         if ($is_scheduled) {
-            echo json_encode(['status' => 'success', 'msg' => "Đã lên lịch thành công cho $success_count Fanpage.", 'campaign_id' => $campaign_id]);
+            echo json_encode(['status' => 'success', 'msg' => "Đã lên lịch thành công cho $success_count Fanpage.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
         } else {
             echo json_encode(['status' => 'success', 'msg' => "Đã đưa $success_count bài đăng vào hàng đợi xử lý ngay lập tức.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
         }

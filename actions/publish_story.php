@@ -220,7 +220,7 @@ try {
     $pdo->commit();
 
     if (!empty($schedule_dates)) {
-        echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} Story vào hàng đợi lên lịch hàng loạt!", 'campaign_id' => $campaign_id]);
+        echo json_encode(['status' => 'success', 'msg' => "Đã thả {$success_count} Story vào hàng đợi lên lịch hàng loạt!", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
     } else {
         echo json_encode(['status' => 'success', 'msg' => "Đã đưa $success_count Story vào hàng đợi xử lý ngay.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
     }
