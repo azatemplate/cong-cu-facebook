@@ -98,7 +98,7 @@ if ($merge_all === 1) {
         exit;
     }
     
-    $multi_result = get_fb_posts_multi($pages, 30, $cursors);
+    $multi_result = get_fb_posts_multi($pages, 15, $cursors);
     $data = $multi_result['data'];
     
     session_start();

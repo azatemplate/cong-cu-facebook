@@ -232,7 +232,7 @@ function get_fb_conversations_multi($pages, $limit = 5, $cursors = []) {
     ];
 }
 
-function get_fb_posts_multi($pages, $limit = 30, $cursors = []) {
+function get_fb_posts_multi($pages, $limit = 15, $cursors = []) {
     $all_posts = [];
     $next_cursors = [];
     $chunks = array_chunk($pages, 10);
