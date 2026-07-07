@@ -1,10 +1,18 @@
 <?php
 // test_multi_posts.php
 header('Content-Type: text/plain; charset=utf-8');
+
+// Turn off output buffering immediately for real-time logs
+while (ob_get_level() > 0) {
+    ob_end_flush();
+}
+ob_implicit_flush(true);
+set_time_limit(60);
+
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/fb_api.php';
 
-echo "=== PROFILING get_fb_posts_multi ===\n\n";
+echo "=== PROFILING get_fb_posts_multi (STREAMING LOGS) ===\n\n";
 
 $account_id = 16; // From user output
 
@@ -68,17 +76,25 @@ try {
         echo " - Initiating multi cURL execute...\n";
         $active = null;
         $exec_start = microtime(true);
+        
         do {
             $mrc = curl_multi_exec($multi_curl, $active);
-            if ($active) {
-                curl_multi_select($multi_curl, 0.2); // Smaller select sleep
+        } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+        while ($active && $mrc == CURLM_OK) {
+            if (curl_multi_select($multi_curl, 0.2) === -1) {
+                usleep(5000);
             }
+            do {
+                $mrc = curl_multi_exec($multi_curl, $active);
+            } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+            
             // Add a timeout break inside the loop just in case
             if (microtime(true) - $exec_start > 25) {
                 echo "   [WARNING] Chunk cURL execution took more than 25 seconds! Aborting loop.\n";
                 break;
             }
-        } while ($active && $mrc == CURLM_OK);
+        }
         
         echo " - Chunk cURL finished in " . round(microtime(true) - $exec_start, 3) . " seconds.\n";
 

@@ -131,10 +131,16 @@ function get_fb_page_insights_multi($pages, $period = 'day', $since = null, $unt
         $active = null;
         do {
             $mrc = curl_multi_exec($multi_curl, $active);
-            if ($active) {
-                curl_multi_select($multi_curl, 0.5);
+        } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+        while ($active && $mrc == CURLM_OK) {
+            if (curl_multi_select($multi_curl, 0.5) === -1) {
+                usleep(5000);
             }
-        } while ($active && $mrc == CURLM_OK);
+            do {
+                $mrc = curl_multi_exec($multi_curl, $active);
+            } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+        }
 
         foreach ($handles as $page_id => $ch) {
             $response = curl_multi_getcontent($ch);
@@ -182,10 +188,16 @@ function get_fb_conversations_multi($pages, $limit = 5, $cursors = []) {
         $active = null;
         do {
             $mrc = curl_multi_exec($multi_curl, $active);
-            if ($active) {
-                curl_multi_select($multi_curl, 0.5);
+        } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+        while ($active && $mrc == CURLM_OK) {
+            if (curl_multi_select($multi_curl, 0.5) === -1) {
+                usleep(5000);
             }
-        } while ($active && $mrc == CURLM_OK);
+            do {
+                $mrc = curl_multi_exec($multi_curl, $active);
+            } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+        }
 
         foreach ($handles as $page_id => $ch) {
             $response = curl_multi_getcontent($ch);
@@ -263,10 +275,16 @@ function get_fb_posts_multi($pages, $limit = 15, $cursors = []) {
         $active = null;
         do {
             $mrc = curl_multi_exec($multi_curl, $active);
-            if ($active) {
-                curl_multi_select($multi_curl, 0.5);
+        } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+        while ($active && $mrc == CURLM_OK) {
+            if (curl_multi_select($multi_curl, 0.5) === -1) {
+                usleep(5000);
             }
-        } while ($active && $mrc == CURLM_OK);
+            do {
+                $mrc = curl_multi_exec($multi_curl, $active);
+            } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+        }
 
         foreach ($handles as $page_id => $ch) {
             $response = curl_multi_getcontent($ch);
