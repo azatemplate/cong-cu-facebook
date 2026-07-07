@@ -5,27 +5,26 @@ require_once __DIR__ . '/includes/db.php';
 
 echo "=== ADDING MISSING DATABASE INDEXES ===\n\n";
 
-try {
-    // 1. Add index on comment_id
-    echo "Adding index idx_comment_id on page_notifications(comment_id)...\n";
-    $pdo->exec("ALTER TABLE page_notifications ADD INDEX IF NOT EXISTS idx_comment_id (comment_id)");
-    echo "Index idx_comment_id added or already exists.\n\n";
-
-    // 2. Add index on post_id
-    echo "Adding index idx_post_id on page_notifications(post_id)...\n";
-    $pdo->exec("ALTER TABLE page_notifications ADD INDEX IF NOT EXISTS idx_post_id (post_id)");
-    echo "Index idx_post_id added or already exists.\n\n";
-
-    // 3. Add index on conversation_id
-    echo "Adding index idx_conversation_id on page_notifications(conversation_id)...\n";
-    $pdo->exec("ALTER TABLE page_notifications ADD INDEX IF NOT EXISTS idx_conversation_id (conversation_id)");
-    echo "Index idx_conversation_id added or already exists.\n\n";
-
-    echo "ALL INDEXES VERIFIED/ADDED SUCCESSFULLY!\n";
-
-} catch (Exception $e) {
-    echo "ERROR: " . $e->getMessage() . "\n";
+// Helper function to safely add index
+function safely_add_index($pdo, $index_name, $column_name) {
+    try {
+        echo "Adding index $index_name on page_notifications($column_name)...\n";
+        $pdo->exec("ALTER TABLE page_notifications ADD INDEX $index_name ($column_name)");
+        echo "Index $index_name added successfully.\n\n";
+    } catch (Exception $e) {
+        // If index already exists, ignore it
+        if (strpos($e->getMessage(), 'Duplicate key name') !== false || strpos($e->getMessage(), 'already exists') !== false) {
+            echo "Index $index_name already exists.\n\n";
+        } else {
+            echo "Error adding $index_name: " . $e->getMessage() . "\n\n";
+        }
+    }
 }
 
+safely_add_index($pdo, 'idx_comment_id', 'comment_id');
+safely_add_index($pdo, 'idx_post_id', 'post_id');
+safely_add_index($pdo, 'idx_conversation_id', 'conversation_id');
+
+echo "ALL INDEXES PROCESSED!\n";
 exit;
 ?>
