@@ -122,6 +122,44 @@ foreach ($pages as $page) {
                     $lbl_stmt->execute([$conv_id, $pid, $sender_id]);
                 }
             } catch (Exception $e) {}
+
+            // Đồng bộ nhãn (tags/labels) từ Facebook Page Inbox để phát hiện quảng cáo cũ
+            if (isset($c['tags']['data'])) {
+                $is_ads_tag = 0;
+                $ad_id_tag = null;
+                foreach ($c['tags']['data'] as $tag) {
+                    $tag_name = trim($tag['name'] ?? '');
+                    if ($tag_name === '') continue;
+
+                    // Lưu nhãn vào bảng conversation_labels
+                    try {
+                        $stmt_lbl = $pdo->prepare("INSERT IGNORE INTO conversation_labels (conv_id, page_id, recipient_id, label_name) VALUES (?, ?, ?, ?)");
+                        $stmt_lbl->execute([$conv_id, $pid, $sender_id, $tag_name]);
+                    } catch (Exception $e) {}
+
+                    // Kiểm tra xem nhãn có phải là quảng cáo không
+                    if ($tag_name === 'messenger_ads') {
+                        $is_ads_tag = 1;
+                    } elseif (strpos($tag_name, 'ad_id.') === 0) {
+                        $is_ads_tag = 1;
+                        $ad_id_tag = substr($tag_name, 6); // Lấy phần số sau "ad_id."
+                    }
+                }
+
+                // Nếu phát hiện nhãn quảng cáo, cập nhật thông tin trong fb_customers
+                if ($is_ads_tag === 1) {
+                    try {
+                        $stmt_upd_ads = $pdo->prepare("
+                            UPDATE fb_customers 
+                            SET is_ads = 1, 
+                                ad_id = COALESCE(?, ad_id),
+                                ad_title = COALESCE(ad_title, 'Quảng cáo Facebook (Đồng bộ nhãn)')
+                            WHERE page_id = ? AND sender_id = ?
+                        ");
+                        $stmt_upd_ads->execute([$ad_id_tag, $pid, $sender_id]);
+                    } catch (Exception $e) {}
+                }
+            }
         }
 
         if (isset($response['data']['paging']['cursors']['after'])) {
