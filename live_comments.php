@@ -439,6 +439,14 @@ document.getElementById('page_search').addEventListener('input', function() {
     });
 });
 
+let postsAbortController = null;
+let commentsAbortController = null;
+
+window.addEventListener('beforeunload', () => {
+    if (postsAbortController) postsAbortController.abort();
+    if (commentsAbortController) commentsAbortController.abort();
+});
+
 let isMergeAll = false;
 
 document.getElementById('chk_merge_all').addEventListener('change', function() {
@@ -506,6 +514,11 @@ if (!sessionStorage.getItem('webhook_subscribed_v2')) {
 function loadPosts(append = false, cursorOverride = null) {
     if (!currentPageId || !currentUserId) return;
     
+    if (postsAbortController) postsAbortController.abort();
+    if (commentsAbortController) commentsAbortController.abort();
+    postsAbortController = new AbortController();
+    const signal = postsAbortController.signal;
+    
     if (!append) {
         convList.innerHTML = '<div style="padding:40px 20px;text-align:center;"><div class="spinner"></div><div style="color:#6b7280;font-size:13px;margin-top:10px;">Đang tải bài viết...</div></div>';
         chatMessages.innerHTML = '';
@@ -520,7 +533,7 @@ function loadPosts(append = false, cursorOverride = null) {
     // Nv1: Khai báo tham số target_post_id nếu có
     let targetParam = (selectedPostId && !append) ? '&target_post_id=' + selectedPostId : '';
 
-    fetch('actions/get_posts_with_comments.php?page_id=' + currentPageId + '&user_id=' + currentUserId + '&merge_all=' + mergeAll + targetParam + (append ? '&after=' + activeCursor + '&append=1' : ''))
+    fetch('actions/get_posts_with_comments.php?page_id=' + currentPageId + '&user_id=' + currentUserId + '&merge_all=' + mergeAll + targetParam + (append ? '&after=' + activeCursor + '&append=1' : ''), { signal })
         .then(r => r.text())
         .then(text => {
             let data;
@@ -553,6 +566,7 @@ function loadPosts(append = false, cursorOverride = null) {
             }
         })
         .catch(err => {
+            if (err.name === 'AbortError') return;
             console.error("Lỗi mạng:", err);
             if (!append) convList.innerHTML = '<div style="padding:16px;color:red;font-size:12px;">Lỗi kết nối máy chủ Mạng.</div>';
         });
@@ -662,10 +676,14 @@ convList.addEventListener('scroll', function() {
 
 // ── Load & Render Comments ────────────────────────────────────────────────
 function loadComments(postId) {
+    if (commentsAbortController) commentsAbortController.abort();
+    commentsAbortController = new AbortController();
+    const signal = commentsAbortController.signal;
+
     chatMessages.innerHTML = '<div style="padding:40px 20px;text-align:center;"><div class="spinner"></div><div style="color:#6b7280;font-size:13px;margin-top:10px;">Đang tải bình luận...</div></div>';
     setChatEnabled(false);
     
-    fetch('actions/get_post_comments.php?page_id=' + currentPageId + '&user_id=' + currentUserId + '&post_id=' + postId)
+    fetch('actions/get_post_comments.php?page_id=' + currentPageId + '&user_id=' + currentUserId + '&post_id=' + postId, { signal })
         .then(r => r.json())
         .then(data => {
             if (data.status === 'success') {
@@ -674,6 +692,11 @@ function loadComments(postId) {
             } else {
                 chatMessages.innerHTML = '<div style="color:red;text-align:center;padding:16px;">' + data.msg + '</div>';
             }
+        })
+        .catch(err => {
+            if (err.name === 'AbortError') return;
+            console.error("Lỗi tải bình luận:", err);
+            chatMessages.innerHTML = '<div style="color:red;text-align:center;padding:16px;">Lỗi kết nối khi tải bình luận.</div>';
         });
 }
 

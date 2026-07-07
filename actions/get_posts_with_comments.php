@@ -31,19 +31,28 @@ $formatted_posts = [];
 $next_cursor = '';
 $next_cursors_multi = [];
 
-// Get Unread post IDs for this account (bao gồm cả shared pages)
+// Get Unread post IDs for this account or specific page
 $unread_post_ids = [];
 try {
-    $stmt_notif = $pdo->prepare("
-        SELECT n.post_id FROM page_notifications n
-        JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
-        JOIN users u ON p.user_id = u.id
-        WHERE (
-            u.account_id = ?
-            OR EXISTS (SELECT 1 FROM page_shares ps WHERE ps.page_id = p.page_id AND ps.shared_with_account_id = ?)
-        ) AND n.is_read = 0 AND n.type = 'comment' AND n.post_id IS NOT NULL
-    ");
-    if ($stmt_notif && $stmt_notif->execute([$_SESSION['account_id'], $_SESSION['account_id']])) {
+    if ($merge_all === 1) {
+        $stmt_notif = $pdo->prepare("
+            SELECT n.post_id FROM page_notifications n
+            JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
+            JOIN users u ON p.user_id = u.id
+            WHERE (
+                u.account_id = ?
+                OR EXISTS (SELECT 1 FROM page_shares ps WHERE ps.page_id = p.page_id AND ps.shared_with_account_id = ?)
+            ) AND n.is_read = 0 AND n.type = 'comment' AND n.post_id IS NOT NULL
+        ");
+        $stmt_notif->execute([$_SESSION['account_id'], $_SESSION['account_id']]);
+    } else {
+        $stmt_notif = $pdo->prepare("
+            SELECT post_id FROM page_notifications 
+            WHERE page_id = ? AND is_read = 0 AND type = 'comment' AND post_id IS NOT NULL
+        ");
+        $stmt_notif->execute([$page_id]);
+    }
+    if ($stmt_notif) {
         $unread_post_ids = $stmt_notif->fetchAll(PDO::FETCH_COLUMN);
     }
 } catch (Exception $e) {
