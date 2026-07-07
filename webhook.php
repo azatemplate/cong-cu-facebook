@@ -176,14 +176,46 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                         $ref_comment_id = $referral['comment_id'] ?? null;
                         if ($ref_comment_id) {
                             try {
+                                // 1. Lấy feed_uid trước khi update
+                                $stmt_get_feed = $pdo->prepare("
+                                    SELECT sender_id FROM page_notifications 
+                                    WHERE comment_id = ? AND type = 'comment' 
+                                    ORDER BY id DESC LIMIT 1
+                                ");
+                                $stmt_get_feed->execute([$ref_comment_id]);
+                                $feed_uid = $stmt_get_feed->fetchColumn();
+
+                                // 2. Cập nhật comment sang messenger ID
                                 $stmt_upd_cmt = $pdo->prepare("
                                     UPDATE page_notifications 
                                     SET sender_id = ? 
                                     WHERE comment_id = ? AND type = 'comment'
-                                    ORDER BY id DESC LIMIT 1
                                 ");
                                 $stmt_upd_cmt->execute([$sender_id, $ref_comment_id]);
                                 webhook_log("REPLY_TO_FEED MAP SUCCESS: comment_id=$ref_comment_id mapped to sender_id=$sender_id");
+
+                                // 3. Đồng bộ SĐT và Tỉnh thành từ profile feed_uid sang messenger_uid
+                                if ($feed_uid && $feed_uid !== $sender_id) {
+                                    $stmt_get_old = $pdo->prepare("SELECT phone, province FROM fb_customers WHERE page_id = ? AND sender_id = ?");
+                                    $stmt_get_old->execute([$page_id, $feed_uid]);
+                                    $old_cust = $stmt_get_old->fetch(PDO::FETCH_ASSOC);
+
+                                    if ($old_cust && (!empty($old_cust['phone']) || !empty($old_cust['province']))) {
+                                        $stmt_upd_new = $pdo->prepare("
+                                            UPDATE fb_customers 
+                                            SET phone = COALESCE(NULLIF(phone, ''), ?),
+                                                province = COALESCE(NULLIF(province, ''), ?)
+                                            WHERE page_id = ? AND sender_id = ?
+                                        ");
+                                        $stmt_upd_new->execute([
+                                            $old_cust['phone'] ?: null,
+                                            $old_cust['province'] ?: null,
+                                            $page_id,
+                                            $sender_id
+                                        ]);
+                                        webhook_log("SYNCED PROFILE FROM FEED_UID $feed_uid TO MESSENGER_UID $sender_id: phone=" . $old_cust['phone']);
+                                    }
+                                }
                             } catch (Exception $e) {
                                 webhook_log("REPLY_TO_FEED MAP ERR: " . $e->getMessage());
                             }

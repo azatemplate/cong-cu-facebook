@@ -128,6 +128,26 @@ try {
         return strtotime($b['created_at']) - strtotime($a['created_at']);
     });
     $customer['recent_comments'] = array_slice($final_comments, 0, 5);
+
+    // Nếu khách chưa có SĐT trong hồ sơ chat, tự động bóc tách từ các bình luận cũ của họ
+    if (empty($customer['phone'])) {
+        foreach ($final_comments as $cmt) {
+            $cmt_text = $cmt['snippet'] ?? '';
+            if ($cmt_text && $cmt_text !== '[Rep từ bình luận bài viết]') {
+                if (preg_match('/(03|05|07|08|09)+([0-9]{8})\b/', $cmt_text, $match_ph)) {
+                    $found_phone = $match_ph[0];
+                    $stmt_upd_ph = $pdo->prepare("UPDATE fb_customers SET phone = ? WHERE page_id = ? AND sender_id = ?");
+                    $stmt_upd_ph->execute([$found_phone, $page_id, $sender_id]);
+                    $customer['phone'] = $found_phone;
+                    
+                    // Tự động gắn nhãn cục bộ 'Đã cho số điện thoại'
+                    $stmt_lbl = $pdo->prepare("INSERT IGNORE INTO conversation_labels (conv_id, page_id, recipient_id, label_name) VALUES (?, ?, ?, 'Đã cho số điện thoại')");
+                    $stmt_lbl->execute([$conv_id ?: 'c_' . $sender_id, $page_id, $sender_id, 'Đã cho số điện thoại']);
+                    break;
+                }
+            }
+        }
+    }
     
     echo json_encode(['status' => 'success', 'data' => $customer]);
 } catch (PDOException $e) {
