@@ -247,7 +247,7 @@ function get_fb_conversations_multi($pages, $limit = 5, $cursors = []) {
 function get_fb_posts_multi($pages, $limit = 15, $cursors = []) {
     $all_posts = [];
     $next_cursors = [];
-    $chunks = array_chunk($pages, 10);
+    $chunks = array_chunk($pages, 30);
 
     foreach ($chunks as $chunk) {
         $multi_curl = curl_multi_init();
@@ -266,7 +266,7 @@ function get_fb_posts_multi($pages, $limit = 15, $cursors = []) {
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, $url);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 6);
             fb_curl_setssl($ch);
             curl_multi_add_handle($multi_curl, $ch);
             $handles[$page_id] = $ch;

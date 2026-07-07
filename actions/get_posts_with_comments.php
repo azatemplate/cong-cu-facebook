@@ -65,43 +65,63 @@ session_write_close();
 if ($merge_all === 1) {
     $append = isset($_GET['append']) ? intval($_GET['append']) : 0;
     
-    // Tối ưu: Chỉ lấy tối đa 20 Fanpage có hoạt động chat hoặc thông báo bình luận gần đây nhất
-    // Việc này giúp tránh quá tải kết nối API Facebook khi tài khoản có tới 750+ Fanpage vệ tinh
-    $stmt_pages = $pdo->prepare("
-        SELECT page_id, name, user_id, access_token, MAX(last_active) as max_active
-        FROM (
-            (SELECT p.page_id, p.name, p.user_id, p.access_token,
-                   GREATEST(
-                       COALESCE(MAX(c.updated_time), '1970-01-01 00:00:00'),
-                       COALESCE(MAX(n.created_at), '1970-01-01 00:00:00')
-                   ) as last_active
-            FROM pages p
-            JOIN users u ON p.user_id = u.id
-            LEFT JOIN fb_conversations c ON p.page_id = c.page_id
-            LEFT JOIN page_notifications n ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
-            WHERE u.account_id = :aid
-            GROUP BY p.page_id, p.name, p.user_id, p.access_token)
-            UNION
-            (SELECT p.page_id, p.name, p.user_id, p.access_token,
-                   GREATEST(
-                       COALESCE(MAX(c.updated_time), '1970-01-01 00:00:00'),
-                       COALESCE(MAX(n.created_at), '1970-01-01 00:00:00')
-                   ) as last_active
-            FROM pages p
-            JOIN page_shares ps ON p.page_id = ps.page_id
-            LEFT JOIN fb_conversations c ON p.page_id = c.page_id
-            LEFT JOIN page_notifications n ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
-            WHERE ps.shared_with_account_id = :aid2
-            GROUP BY p.page_id, p.name, p.user_id, p.access_token)
-        ) as combined_pages
-        GROUP BY page_id, name, user_id, access_token
-        ORDER BY max_active DESC, page_id DESC
-        LIMIT 20
-    ");
-    $stmt_pages->bindValue(':aid', $_SESSION['account_id'], PDO::PARAM_INT);
-    $stmt_pages->bindValue(':aid2', $_SESSION['account_id'], PDO::PARAM_INT);
-    $stmt_pages->execute();
-    $all_pages_raw = $stmt_pages->fetchAll(PDO::FETCH_ASSOC);
+    // Lấy 40 page_id có tin nhắn cập nhật mới nhất (rất nhanh vì có index trên updated_time)
+    $stmt1 = $pdo->prepare("SELECT DISTINCT page_id FROM fb_conversations ORDER BY updated_time DESC LIMIT 40");
+    $stmt1->execute();
+    $pages_conv = $stmt1->fetchAll(PDO::FETCH_COLUMN);
+
+    // Lấy 40 page_id có thông báo mới nhất (rất nhanh vì có index trên PRIMARY KEY id)
+    $stmt2 = $pdo->prepare("SELECT DISTINCT page_id FROM page_notifications ORDER BY id DESC LIMIT 40");
+    $stmt2->execute();
+    $pages_notif = $stmt2->fetchAll(PDO::FETCH_COLUMN);
+
+    $active_ids = array_unique(array_merge($pages_conv, $pages_notif));
+    $all_pages_raw = [];
+
+    if (!empty($active_ids)) {
+        // Lấy thông tin 20 trang đang hoạt động thuộc account này hoặc được chia sẻ
+        $in_clause = implode(',', array_fill(0, count($active_ids), '?'));
+        $stmt_pages = $pdo->prepare("
+            SELECT p.page_id, p.name, p.user_id, p.access_token FROM pages p 
+            JOIN users u ON p.user_id = u.id 
+            WHERE (u.account_id = ? OR EXISTS (SELECT 1 FROM page_shares ps WHERE ps.page_id = p.page_id AND ps.shared_with_account_id = ?))
+              AND p.page_id IN ($in_clause)
+            LIMIT 20
+        ");
+        $params = array_merge([$_SESSION['account_id'], $_SESSION['account_id']], array_values($active_ids));
+        $stmt_pages->execute($params);
+        $all_pages_raw = $stmt_pages->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    // Nếu vẫn chưa đủ 20 trang, lấy thêm các trang bất kỳ thuộc account để điền đầy
+    if (count($all_pages_raw) < 20) {
+        $loaded_ids = array_column($all_pages_raw, 'page_id');
+        $needed = 20 - count($all_pages_raw);
+        
+        $exclude_clause = "";
+        if (!empty($loaded_ids)) {
+            $exclude_clause = "AND p.page_id NOT IN (" . implode(',', array_fill(0, count($loaded_ids), '?')) . ")";
+        }
+
+        $stmt_more = $pdo->prepare("
+            SELECT page_id, name, user_id, access_token FROM (
+                (SELECT p.page_id, p.name, p.user_id, p.access_token FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = ? $exclude_clause LIMIT $needed)
+                UNION
+                (SELECT p.page_id, p.name, p.user_id, p.access_token FROM pages p JOIN page_shares ps ON p.page_id = ps.page_id JOIN users u ON p.user_id = u.id WHERE ps.shared_with_account_id = ? $exclude_clause LIMIT $needed)
+            ) as extra LIMIT $needed
+        ");
+        
+        $more_params = [];
+        if (!empty($loaded_ids)) {
+            $more_params = array_merge([$_SESSION['account_id']], $loaded_ids, [$_SESSION['account_id']], $loaded_ids);
+        } else {
+            $more_params = [$_SESSION['account_id'], $_SESSION['account_id']];
+        }
+        
+        $stmt_more->execute($more_params);
+        $more_pages = $stmt_more->fetchAll(PDO::FETCH_ASSOC);
+        $all_pages_raw = array_merge($all_pages_raw, $more_pages);
+    }
     
     $pages = [];
     $cursors = [];
