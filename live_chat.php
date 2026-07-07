@@ -1942,7 +1942,11 @@ function loadCustomerInfo(senderId, pageId, senderName = '') {
                         `;
                         data.recent_comments.forEach(cmt => {
                             let link = `https://facebook.com/${cmt.post_id}`;
-                            let commentLink = cmt.comment_id ? `https://facebook.com/${cmt.post_id}?comment_id=${cmt.comment_id}` : link;
+                            if (cmt.post_id && cmt.post_id.includes('_')) {
+                                let parts = cmt.post_id.split('_');
+                                link = `https://facebook.com/${parts[0]}/posts/${parts[1]}`;
+                            }
+                            let commentLink = cmt.comment_id ? `${link}?comment_id=${cmt.comment_id}` : link;
                             let cmtTime = new Date(cmt.created_at).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit'});
                             html += `
                                 <li style="line-height:1.3;">
