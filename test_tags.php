@@ -20,10 +20,11 @@ try {
     $token = decryptData($page['access_token']);
     echo "Decrypted Page Token successfully.\n\n";
     
-    // Step 1: Query custom_labels for the PSID directly
+    // Step 1: Query custom_labels for the PSID with page_label_name field
     echo "Querying custom_labels for PSID: $sender_id...\n";
     $endpoint = "{$sender_id}/custom_labels";
     $params = [
+        'fields' => 'page_label_name',
         'access_token' => $token
     ];
     
@@ -32,9 +33,10 @@ try {
     echo "API Raw Response:\n";
     print_r($response['data']);
     
-    // Step 2: Also query all custom labels created for the Page to verify what labels exist
+    // Step 2: Query all custom labels for Page with page_label_name field
     echo "\nQuerying all custom labels for Page: $page_id...\n";
     $page_lbl_response = fb_api_request("{$page_id}/custom_labels", [
+        'fields' => 'page_label_name',
         'access_token' => $token
     ], 'GET');
     echo "Page custom labels response:\n";
