@@ -131,8 +131,9 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
             foreach ($entry['messaging'] as $messaging_event) {
                 $is_message = isset($messaging_event['message']) && !isset($messaging_event['message']['is_echo']);
                 $is_postback = isset($messaging_event['postback']);
+                $is_referral = isset($messaging_event['referral']);
 
-                if ($is_message || $is_postback) {
+                if ($is_message || $is_postback || $is_referral) {
                     $sender_id = $messaging_event['sender']['id'];
                     $text = '';
                     $is_welcome_trigger = false;
@@ -143,6 +144,8 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                         $payload = $messaging_event['postback']['payload'] ?? '';
                         $is_welcome_trigger = true;
                         $text = '[Hành động: Bấm nút/Bắt đầu]';
+                    } elseif ($is_referral) {
+                        $text = '[Hành động: Click quảng cáo]';
                     }
                     
                     // Trích xuất thông tin quảng cáo (Ads Tracking) từ sự kiện referral
