@@ -632,8 +632,8 @@ function renderPosts() {
             
             activeTarget.value = post.id;
             originalPostId = post.id;
-            activePageIdEl.value = currentPageId;
-            activeUserIdEl.value = currentUserId;
+            activePageIdEl.value = post.page_id || currentPageId;
+            activeUserIdEl.value = post.user_id || currentUserId;
             
             cancelReply(); // Reset state
             loadComments(post.id);
@@ -683,7 +683,12 @@ function loadComments(postId) {
     chatMessages.innerHTML = '<div style="padding:40px 20px;text-align:center;"><div class="spinner"></div><div style="color:#6b7280;font-size:13px;margin-top:10px;">Đang tải bình luận...</div></div>';
     setChatEnabled(false);
     
-    fetch('actions/get_post_comments.php?page_id=' + currentPageId + '&user_id=' + currentUserId + '&post_id=' + postId, { signal })
+    // Tìm post trong danh sách để lấy đúng page_id & user_id (để khi gộp fanpage không bị lỗi token)
+    const post = currentPosts.find(p => p.id === postId);
+    const targetPageId = post ? (post.page_id || currentPageId) : currentPageId;
+    const targetUserId = post ? (post.user_id || currentUserId) : currentUserId;
+    
+    fetch('actions/get_post_comments.php?page_id=' + targetPageId + '&user_id=' + targetUserId + '&post_id=' + postId, { signal })
         .then(r => r.json())
         .then(data => {
             if (data.status === 'success') {
@@ -711,8 +716,8 @@ function renderComments(commentsList) {
             postMedia = `<img src="${post.picture}" style="max-width:100%; max-height:400px; object-fit:contain; display:block; margin:0 auto;">`;
         }
         let msgHtml = post.message ? post.message.replace(/\n/g, '<br>') : '';
-        const activeTab = document.querySelector('.page-tab.active');
-        let pageName = activeTab ? activeTab.dataset.name : 'Page';
+        const activeTab = document.querySelector(`.page-tab[data-page-id="${post.page_id}"]`) || document.querySelector('.page-tab.active');
+        let pageName = post.page_name || (activeTab ? activeTab.dataset.name : 'Page');
         let pageAvatar = activeTab ? activeTab.dataset.avatar : '';
         if (pageAvatar) {
             if (pageAvatar.indexOf('?') !== -1) {
