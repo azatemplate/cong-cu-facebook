@@ -421,12 +421,12 @@ $total_customers = count($customers);
             <thead>
                 <tr>
                     <th style="width:50px; text-align:center;">STT</th>
-                    <th>Tên khách hàng</th>
-                    <th>Số điện thoại</th>
-                    <th>Nền tảng</th>
-                    <th>Tỉnh thành</th>
+                    <th style="width:220px;">Tên khách hàng</th>
+                    <th style="width:140px;">Số điện thoại</th>
+                    <th style="width:130px;">Nền tảng</th>
+                    <th style="width:130px;">Tỉnh thành</th>
                     <th>Yêu cầu / Ghi chú tích lũy</th>
-                    <th style="width:100px;">Cập nhật</th>
+                    <th style="width:120px;">Cập nhật</th>
                 </tr>
             </thead>
             <tbody id="customerBody">
