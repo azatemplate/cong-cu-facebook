@@ -54,7 +54,8 @@ try {
     $stmt_lock->execute([$page_id, $sender_id]);
     $customer['is_locked'] = $stmt_lock->fetch() ? 1 : 0;
     
-    // Fetch recent comments from page_notifications for post attribution
+    // 1. Fetch recent comments from local page_notifications
+    $comments = [];
     $stmt_cmts = $pdo->prepare("
         SELECT snippet, post_id, comment_id, created_at 
         FROM page_notifications 
@@ -64,7 +65,69 @@ try {
         ORDER BY id DESC LIMIT 5
     ");
     $stmt_cmts->execute([$page_id, $sender_id, $customer['name'] ?? '']);
-    $customer['recent_comments'] = $stmt_cmts->fetchAll(PDO::FETCH_ASSOC);
+    $db_comments = $stmt_cmts->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($db_comments as $dc) {
+        $comments[$dc['comment_id']] = [
+            'snippet' => $dc['snippet'],
+            'post_id' => $dc['post_id'],
+            'comment_id' => $dc['comment_id'],
+            'created_at' => $dc['created_at']
+        ];
+    }
+    
+    // 2. Fetch conversation_id and scan first message from Facebook Graph API
+    $stmt_conv = $pdo->prepare("SELECT conversation_id FROM fb_conversations WHERE page_id = ? AND sender_id = ?");
+    $stmt_conv->execute([$page_id, $sender_id]);
+    $conv_id = $stmt_conv->fetchColumn();
+    
+    if ($conv_id) {
+        $stmt_token = $pdo->prepare("SELECT access_token FROM pages WHERE page_id = ?");
+        $stmt_token->execute([$page_id]);
+        $page_token_raw = $stmt_token->fetchColumn();
+        if ($page_token_raw) {
+            require_once __DIR__ . '/../includes/fb_api.php';
+            $page_token = decryptData($page_token_raw);
+            if ($page_token) {
+                // Fetch the oldest messages of the thread to find the system reply link
+                $msg_res = fb_api_request("{$conv_id}/messages", [
+                    'fields' => 'message,created_time',
+                    'limit' => 20,
+                    'access_token' => $page_token
+                ], 'GET');
+                
+                if ($msg_res['status_code'] === 200 && !empty($msg_res['data']['data'])) {
+                    foreach ($msg_res['data']['data'] as $msg) {
+                        $msg_text = $msg['message'] ?? '';
+                        if (strpos($msg_text, 'You are responding to a user comment') !== false) {
+                            $post_id = null;
+                            $comment_id = null;
+                            if (preg_match('/post_id=([0-9a-zA-Z_]+)/', $msg_text, $match_post)) {
+                                $post_id = $match_post[1];
+                            }
+                            if (preg_match('/comment_id=([0-9a-zA-Z_]+)/', $msg_text, $match_cmt)) {
+                                $comment_id = $match_cmt[1];
+                            }
+                            if ($post_id && $comment_id) {
+                                $comments[$comment_id] = [
+                                    'snippet' => '[Rep từ bình luận bài viết]',
+                                    'post_id' => $post_id,
+                                    'comment_id' => $comment_id,
+                                    'created_at' => date('Y-m-d H:i:s', strtotime($msg['created_time']))
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Sort and limit final merged array
+    $final_comments = array_values($comments);
+    usort($final_comments, function($a, $b) {
+        return strtotime($b['created_at']) - strtotime($a['created_at']);
+    });
+    $customer['recent_comments'] = array_slice($final_comments, 0, 5);
     
     echo json_encode(['status' => 'success', 'data' => $customer]);
 } catch (PDOException $e) {
