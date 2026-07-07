@@ -26,7 +26,7 @@ try {
     $stmt_z = $pdo->prepare("
         SELECT zc.name, zc.phone, zc.province, zc.notes, zc.sales_phone, zc.sales_notes, 
                zc.updated_at, zc.oa_id, zc.sender_id, zo.name AS oa_name,
-               'Zalo' AS platform
+               'Zalo' AS platform, 0 AS is_ads, NULL AS ad_title
         FROM zalo_customers zc
         JOIN zalo_oas zo ON zc.oa_id = zo.oa_id
         WHERE zo.account_id = ?
@@ -46,7 +46,7 @@ try {
     $stmt_f = $pdo->prepare("
         SELECT fc.name, fc.phone, fc.province, fc.notes, fc.sales_phone, fc.sales_notes,
                fc.updated_at, fc.page_id AS oa_id, fc.sender_id, p.name AS oa_name,
-               'Facebook' AS platform
+               'Facebook' AS platform, fc.is_ads, fc.ad_title
         FROM fb_customers fc
         JOIN pages p ON fc.page_id = p.page_id
         LEFT JOIN users u ON p.user_id = u.id
@@ -339,6 +339,13 @@ $total_customers = count($customers);
         </div>
     </div>
     <div class="stat-card">
+        <div class="stat-icon" style="background:linear-gradient(135deg,#ffe4e6,#fecdd3);">📢</div>
+        <div>
+            <div class="stat-value" id="stat_ads">0</div>
+            <div class="stat-label">Từ Quảng cáo</div>
+        </div>
+    </div>
+    <div class="stat-card">
         <div class="stat-icon" style="background:linear-gradient(135deg,#fef3c7,#fde68a);">📞</div>
         <div>
             <div class="stat-value" id="stat_phone">0</div>
@@ -362,6 +369,12 @@ $total_customers = count($customers);
         <option value="">Nền tảng</option>
         <option value="Zalo">💬 Zalo</option>
         <option value="Facebook">📘 Facebook</option>
+    </select>
+
+    <select id="filterSource" onchange="onFilterChange()" style="width:120px;">
+        <option value="">Nguồn khách</option>
+        <option value="ads">📢 Từ Ads</option>
+        <option value="free">🆓 Miễn phí</option>
     </select>
     
     <select id="filterPhone" onchange="onFilterChange()" style="width:130px;">
@@ -455,6 +468,7 @@ function updateStats(list) {
     document.getElementById('stat_total').textContent = list.length;
     document.getElementById('stat_zalo').textContent = list.filter(c => c.platform === 'Zalo').length;
     document.getElementById('stat_fb').textContent = list.filter(c => c.platform === 'Facebook').length;
+    document.getElementById('stat_ads').textContent = list.filter(c => c.platform === 'Facebook' && c.is_ads == 1).length;
     document.getElementById('stat_phone').textContent = list.filter(c => c.phone && c.phone.trim() !== '').length;
     document.getElementById('stat_province').textContent = list.filter(c => c.province && c.province.trim() !== '').length;
 }
@@ -463,6 +477,7 @@ function updateStats(list) {
 function filterAndRender() {
     const search = document.getElementById('searchInput').value.toLowerCase().trim();
     const platform = document.getElementById('filterPlatform').value;
+    const source = document.getElementById('filterSource').value;
     const phone = document.getElementById('filterPhone').value;
     const province = document.getElementById('filterProvince').value;
     const dateRange = document.getElementById('filterDateRange').value;
@@ -491,6 +506,14 @@ function filterAndRender() {
 
         // Platform
         const matchPlatform = !platform || c.platform === platform;
+
+        // Source (Ads vs Free)
+        let matchSource = true;
+        if (source === 'ads') {
+            matchSource = c.platform === 'Facebook' && c.is_ads == 1;
+        } else if (source === 'free') {
+            matchSource = c.platform === 'Zalo' || c.is_ads != 1;
+        }
 
         // Phone status
         const hasPhone = c.phone && c.phone.trim() !== '';
@@ -542,7 +565,7 @@ function filterAndRender() {
             }
         }
 
-        return matchSearch && matchPlatform && matchPhone && matchProvince && matchDate;
+        return matchSearch && matchPlatform && matchSource && matchPhone && matchProvince && matchDate;
     });
 
     // Update global dashboard stats cards dynamically based on the filtered list!
@@ -609,6 +632,18 @@ function renderTable() {
         let badgeClass = c.platform === 'Zalo' ? 'badge-zalo' : 'badge-fb';
         let badgeIcon = c.platform === 'Zalo' ? '💬 Zalo' : '📘 Facebook';
         
+        // Source Badge (Ads vs Free)
+        let sourceBadgeHtml = '';
+        if (c.platform === 'Facebook') {
+            if (c.is_ads == 1) {
+                let adTitleSnippet = c.ad_title ? `: ${c.ad_title}` : '';
+                if (adTitleSnippet.length > 20) adTitleSnippet = adTitleSnippet.substring(0, 20) + '...';
+                sourceBadgeHtml = `<div style="margin-top:5px;"><span style="background-color:#ffe4e6;color:#e11d48;border:1px solid #fda4af;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;display:inline-flex;align-items:center;gap:2px;" title="${c.ad_title || ''}">📢 Ads${adTitleSnippet}</span></div>`;
+            } else {
+                sourceBadgeHtml = `<div style="margin-top:5px;"><span style="background-color:#f0fdf4;color:#166534;border:1px solid #bbf7d0;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;display:inline-flex;align-items:center;gap:2px;">🆓 Miễn phí</span></div>`;
+            }
+        }
+        
         // Province Badge
         let provinceHtml = '<span style="color:#d1d5db; font-size:12px;">—</span>';
         if (c.province) {
@@ -637,7 +672,10 @@ function renderTable() {
                 <div style="font-size:11px; color:#9ca3af; margin-top:2px;">${oaNameText}</div>
             </td>
             <td>${phoneHtml}</td>
-            <td><span class="badge-platform ${badgeClass}">${badgeIcon}</span></td>
+            <td>
+                <span class="badge-platform ${badgeClass}">${badgeIcon}</span>
+                ${sourceBadgeHtml}
+            </td>
             <td>${provinceHtml}</td>
             <td class="notes-cell">
                 <div>${notesContent}</div>
