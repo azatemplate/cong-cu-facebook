@@ -66,3 +66,30 @@ if (file_exists($log_file)) {
 } else {
     echo "Log file webhook_db_errors.txt does not exist.\n";
 }
+
+// 6. AI debug logs (error_log)
+echo "\n--- error_log (AI logs) ---\n";
+$ai_log_file = __DIR__ . '/error_log';
+if (file_exists($ai_log_file)) {
+    $lines = file($ai_log_file);
+    $matched = 0;
+    foreach (array_reverse($lines) as $line) {
+        echo $line;
+        $matched++;
+        if ($matched >= 50) break;
+    }
+    if ($matched === 0) {
+        echo "No AI log entries found.\n";
+    }
+} else {
+    echo "AI log file error_log does not exist.\n";
+}
+
+// 7. ai_usage_logs
+if (isset($acc_id)) {
+    echo "\n--- ai_usage_logs (last 10 logs) ---\n";
+    $stmt = $pdo->prepare("SELECT id, provider, feature, prompt_length, response_length, status, error_message, created_at FROM ai_usage_logs WHERE account_id = ? ORDER BY id DESC LIMIT 10");
+    $stmt->execute([$acc_id]);
+    $ai_logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    print_r($ai_logs);
+}
