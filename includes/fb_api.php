@@ -26,7 +26,7 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 20);
     fb_curl_setssl($ch);
 
     if (strtoupper($method) === 'POST') {

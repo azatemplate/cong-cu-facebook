@@ -65,10 +65,38 @@ session_write_close();
 if ($merge_all === 1) {
     $append = isset($_GET['append']) ? intval($_GET['append']) : 0;
     
+    // Tối ưu: Chỉ lấy tối đa 20 Fanpage có hoạt động chat hoặc thông báo bình luận gần đây nhất
+    // Việc này giúp tránh quá tải kết nối API Facebook khi tài khoản có tới 750+ Fanpage vệ tinh
     $stmt_pages = $pdo->prepare("
-        (SELECT p.page_id, p.name, p.user_id, p.access_token FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = :aid)
-        UNION
-        (SELECT p.page_id, p.name, p.user_id, p.access_token FROM pages p JOIN page_shares ps ON p.page_id = ps.page_id JOIN users u ON p.user_id = u.id WHERE ps.shared_with_account_id = :aid2)
+        SELECT page_id, name, user_id, access_token, MAX(last_active) as max_active
+        FROM (
+            (SELECT p.page_id, p.name, p.user_id, p.access_token,
+                   GREATEST(
+                       COALESCE(MAX(c.updated_time), '1970-01-01 00:00:00'),
+                       COALESCE(MAX(n.created_at), '1970-01-01 00:00:00')
+                   ) as last_active
+            FROM pages p
+            JOIN users u ON p.user_id = u.id
+            LEFT JOIN fb_conversations c ON p.page_id = c.page_id
+            LEFT JOIN page_notifications n ON p.page_id = n.page_id
+            WHERE u.account_id = :aid
+            GROUP BY p.page_id)
+            UNION
+            (SELECT p.page_id, p.name, p.user_id, p.access_token,
+                   GREATEST(
+                       COALESCE(MAX(c.updated_time), '1970-01-01 00:00:00'),
+                       COALESCE(MAX(n.created_at), '1970-01-01 00:00:00')
+                   ) as last_active
+            FROM pages p
+            JOIN page_shares ps ON p.page_id = ps.page_id
+            LEFT JOIN fb_conversations c ON p.page_id = c.page_id
+            LEFT JOIN page_notifications n ON p.page_id = n.page_id
+            WHERE ps.shared_with_account_id = :aid2
+            GROUP BY p.page_id)
+        ) as combined_pages
+        GROUP BY page_id
+        ORDER BY max_active DESC, page_id DESC
+        LIMIT 20
     ");
     $stmt_pages->bindValue(':aid', $_SESSION['account_id'], PDO::PARAM_INT);
     $stmt_pages->bindValue(':aid2', $_SESSION['account_id'], PDO::PARAM_INT);
