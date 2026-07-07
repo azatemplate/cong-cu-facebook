@@ -21,6 +21,13 @@ $stmt->execute([$sender_id]);
 $locks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 print_r($locks);
 
+// 2.5 ai_configs
+echo "\n--- ai_configs ---\n";
+$stmt = $pdo->prepare("SELECT id, provider, endpoint, model, is_active FROM ai_configs");
+$stmt->execute();
+$ai_configs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+print_r($ai_configs);
+
 // 3. Page Info & Bot Rules
 if (!empty($cust)) {
     $page_id = $cust[0]['page_id'];
