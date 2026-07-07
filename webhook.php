@@ -705,6 +705,40 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                             webhook_log("CMT INSERT: page=$page_id post=$post_id sender=$sender_name result=" . ($r ? 'OK id='.$pdo->lastInsertId() : 'FAIL'));
                         } catch (Exception $e) { webhook_log('CMT DB ERR: ' . $e->getMessage()); }
 
+                        // ── Trích xuất SĐT và Tỉnh thành từ bình luận và lưu hồ sơ khách hàng ──
+                        $detected_phone = '';
+                        if (preg_match('/(03|05|07|08|09)+([0-9]{8})\b/', $text, $matches)) {
+                            $detected_phone = $matches[0];
+                        }
+                        $detected_province = detect_vietnam_province($text);
+                        
+                        try {
+                            $stmt_cust = $pdo->prepare("
+                                INSERT INTO fb_customers (page_id, sender_id, name, phone, province, last_message_at)
+                                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                                ON DUPLICATE KEY UPDATE
+                                    name = VALUES(name),
+                                    phone = COALESCE(NULLIF(VALUES(phone), ''), phone),
+                                    province = COALESCE(NULLIF(VALUES(province), ''), province),
+                                    last_message_at = CURRENT_TIMESTAMP
+                            ");
+                            $stmt_cust->execute([
+                                $page_id, 
+                                $sender_id, 
+                                $sender_name, 
+                                $detected_phone ?: null, 
+                                $detected_province ?: null
+                            ]);
+                            
+                            // Nếu có SĐT, gắn nhãn cục bộ 'Đã cho số điện thoại'
+                            if ($detected_phone) {
+                                $stmt_lbl = $pdo->prepare("INSERT IGNORE INTO conversation_labels (conv_id, page_id, recipient_id, label_name) VALUES (?, ?, ?, 'Đã cho số điện thoại')");
+                                $stmt_lbl->execute(['c_' . $comment_id, $page_id, $sender_id, 'Đã cho số điện thoại']);
+                            }
+                        } catch (Exception $e) {
+                            webhook_log("COMMENT CUST SAVE ERR: " . $e->getMessage());
+                        }
+
                         // ── Bắt đầu Phản Hồi Tự Động ──
                         try {
                             // Lấy access_token và account_id
