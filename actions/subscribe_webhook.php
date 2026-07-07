@@ -45,7 +45,7 @@ foreach ($pages as $p) {
         'access_token' => $token
     ];
     $post_data = [
-        'subscribed_fields' => 'messages,feed'
+        'subscribed_fields' => 'messages,messaging_postbacks,messaging_referrals,feed'
     ];
     
     $response = fb_api_request($endpoint, $params, 'POST', $post_data);
