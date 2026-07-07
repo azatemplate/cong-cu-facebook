@@ -834,6 +834,7 @@ function savePhoneRequestSettings(e) {
                 <div id="info_name_display" style="font-weight:700;font-size:15px;color:#1f2937;">Khách hàng</div>
                 <div id="info_id_display" style="font-size:11px;color:#9ca3af;margin-top:2px;">ID: -</div>
                 <div id="info_ad_badge" style="margin-top:6px;"></div>
+                <div id="info_comments_section" style="margin-top:6px;"></div>
             </div>
             
             <form id="frm_customer_info" onsubmit="saveCustomerInfo(event)" style="display:flex;flex-direction:column;gap:12px;">
@@ -1886,6 +1887,11 @@ function loadCustomerInfo(senderId, pageId, senderName = '') {
         adBadgeEl.innerHTML = '';
     }
     
+    const commentsSection = document.getElementById('info_comments_section');
+    if (commentsSection) {
+        commentsSection.innerHTML = '';
+    }
+    
     fetch(`actions/get_customer_info.php?sender_id=${encodeURIComponent(senderId)}&page_id=${encodeURIComponent(pageId)}`)
         .then(r => r.json())
         .then(res => {
@@ -1923,6 +1929,39 @@ function loadCustomerInfo(senderId, pageId, senderName = '') {
                                 🆓 Đến từ nguồn tự nhiên (Miễn phí)
                             </div>
                         `;
+                    }
+                }
+
+                // Render recent comments on posts (attribution for free customers)
+                if (commentsSection) {
+                    if (data.recent_comments && data.recent_comments.length > 0) {
+                        let html = `
+                            <div style="background-color:#f8fafc;color:#334155;border:1px solid #e2e8f0;padding:8px 12px;border-radius:6px;font-size:11px;text-align:left;box-sizing:border-box;margin-top:4px;">
+                                <div style="font-weight:700;display:flex;align-items:center;gap:4px;margin-bottom:6px;color:#0284c7;">💬 Bình luận gần đây</div>
+                                <ul style="margin:0;padding-left:14px;display:flex;flex-direction:column;gap:8px;">
+                        `;
+                        data.recent_comments.forEach(cmt => {
+                            let link = `https://facebook.com/${cmt.post_id}`;
+                            let commentLink = cmt.comment_id ? `https://facebook.com/${cmt.post_id}?comment_id=${cmt.comment_id}` : link;
+                            let cmtTime = new Date(cmt.created_at).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit'});
+                            html += `
+                                <li style="line-height:1.3;">
+                                    <span style="font-weight:600;display:block;word-break:break-word;">"${cmt.snippet}"</span>
+                                    <span style="color:#64748b;font-size:9px;">${cmtTime}</span>
+                                    <span style="margin-left:4px;">
+                                        <a href="${link}" target="_blank" style="color:#0284c7;text-decoration:none;font-weight:600;">[Xem Bài]</a>
+                                        <a href="${commentLink}" target="_blank" style="color:#10b981;text-decoration:none;font-weight:600;margin-left:4px;">[Xem CMT]</a>
+                                    </span>
+                                </li>
+                            `;
+                        });
+                        html += `
+                                </ul>
+                            </div>
+                        `;
+                        commentsSection.innerHTML = html;
+                    } else {
+                        commentsSection.innerHTML = '';
                     }
                 }
                 

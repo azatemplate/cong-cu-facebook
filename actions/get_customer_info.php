@@ -54,6 +54,16 @@ try {
     $stmt_lock->execute([$page_id, $sender_id]);
     $customer['is_locked'] = $stmt_lock->fetch() ? 1 : 0;
     
+    // Fetch recent comments from page_notifications for post attribution
+    $stmt_cmts = $pdo->prepare("
+        SELECT snippet, post_id, comment_id, created_at 
+        FROM page_notifications 
+        WHERE page_id = ? AND sender_id = ? AND type = 'comment' 
+        ORDER BY id DESC LIMIT 5
+    ");
+    $stmt_cmts->execute([$page_id, $sender_id]);
+    $customer['recent_comments'] = $stmt_cmts->fetchAll(PDO::FETCH_ASSOC);
+    
     echo json_encode(['status' => 'success', 'data' => $customer]);
 } catch (PDOException $e) {
     echo json_encode(['status' => 'error', 'msg' => 'Lỗi DB: ' . $e->getMessage()]);
