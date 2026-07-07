@@ -170,6 +170,25 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                         $ad_photo_url = $referral['ads_context_data']['photo_url'] ?? $referral['ads_context_data']['video_url'] ?? null;
                         webhook_log("REFERRAL ADS DETECTED: ad_id=$ad_id, title=$ad_title");
                     }
+
+                    // Ánh xạ comment từ Feed-scoped ID sang Messenger-scoped ID khi khách rep từ bình luận
+                    if ($referral && ($referral['type'] ?? '') === 'REPLY_TO_FEED') {
+                        $ref_comment_id = $referral['comment_id'] ?? null;
+                        if ($ref_comment_id) {
+                            try {
+                                $stmt_upd_cmt = $pdo->prepare("
+                                    UPDATE page_notifications 
+                                    SET sender_id = ? 
+                                    WHERE comment_id = ? AND type = 'comment'
+                                    ORDER BY id DESC LIMIT 1
+                                ");
+                                $stmt_upd_cmt->execute([$sender_id, $ref_comment_id]);
+                                webhook_log("REPLY_TO_FEED MAP SUCCESS: comment_id=$ref_comment_id mapped to sender_id=$sender_id");
+                            } catch (Exception $e) {
+                                webhook_log("REPLY_TO_FEED MAP ERR: " . $e->getMessage());
+                            }
+                        }
+                    }
                     
                     // Lấy thông tin người gửi và conversation_id qua Graph API
                     $sender_name = 'Khách hàng';
