@@ -106,8 +106,13 @@ while ($batch_iteration < 5) {
         if (empty($sender_id)) continue;
 
         $snippet = '';
+        $last_sender_is_page = false;
         if (!empty($c['messages']['data'])) {
             $snippet = $c['messages']['data'][0]['message'] ?? '';
+            $msg_from_id = $c['messages']['data'][0]['from']['id'] ?? '';
+            if (trim($msg_from_id) == trim($pid)) {
+                $last_sender_is_page = true;
+            }
         }
 
         // Sync to fb_conversations
@@ -125,8 +130,11 @@ while ($batch_iteration < 5) {
 
         // Sync to fb_customers
         try {
-            // Trích xuất số điện thoại trực tiếp từ tin nhắn mới nhất (snippet) - Hoàn toàn không mất thêm API call
-            $phone = extract_phone_number($snippet);
+            // Trích xuất số điện thoại trực tiếp từ tin nhắn mới nhất (snippet) nếu không phải do Page gửi
+            $phone = '';
+            if (!$last_sender_is_page) {
+                $phone = extract_phone_number($snippet);
+            }
 
             $stmt_cust = $pdo->prepare("
                 INSERT INTO fb_customers (page_id, sender_id, name, phone, last_message_at)

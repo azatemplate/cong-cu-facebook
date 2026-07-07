@@ -105,7 +105,7 @@ foreach ($targets as $t) {
             $from_id = $msg['from']['id'] ?? '';
             
             // Chỉ quét tin nhắn của KHÁCH HÀNG gửi (không quét tin của Page gửi)
-            if ($from_id !== $pid) {
+            if (trim($from_id) != trim($pid)) {
                 $msg_text = $msg['message'] ?? '';
                 $phone = extract_phone_number($msg_text);
                 

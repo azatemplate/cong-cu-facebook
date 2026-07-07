@@ -87,8 +87,13 @@ foreach ($pages as $page) {
             if (empty($sender_id)) continue;
 
             $snippet = '';
+            $last_sender_is_page = false;
             if (!empty($c['messages']['data'])) {
                 $snippet = $c['messages']['data'][0]['message'] ?? '';
+                $msg_from_id = $c['messages']['data'][0]['from']['id'] ?? '';
+                if (trim($msg_from_id) == trim($pid)) {
+                    $last_sender_is_page = true;
+                }
             }
 
             // Sync to fb_conversations
@@ -106,7 +111,10 @@ foreach ($pages as $page) {
 
             // Sync to fb_customers
             try {
-                $phone = extract_phone_number($snippet);
+                $phone = '';
+                if (!$last_sender_is_page) {
+                    $phone = extract_phone_number($snippet);
+                }
 
                 $stmt_cust = $pdo->prepare("
                     INSERT INTO fb_customers (page_id, sender_id, name, phone, last_message_at)
