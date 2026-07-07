@@ -1,18 +1,21 @@
 <?php
 // test_multi_posts.php
 header('Content-Type: text/plain; charset=utf-8');
+header('X-Accel-Buffering: no'); // Tell Nginx not to buffer output
 
 // Turn off output buffering immediately for real-time logs
 while (ob_get_level() > 0) {
     ob_end_flush();
 }
 ob_implicit_flush(true);
-set_time_limit(60);
+set_time_limit(120);
+
+// Output padding to bypass Gzip/browser buffering (requires at least 4KB in some browsers)
+echo str_repeat(" ", 4096) . "\n";
+echo "=== PROFILING get_fb_posts_multi (STREAMING LOGS) ===\n\n";
 
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/fb_api.php';
-
-echo "=== PROFILING get_fb_posts_multi (STREAMING LOGS) ===\n\n";
 
 $account_id = 16; // From user output
 
@@ -46,7 +49,6 @@ try {
     echo "\nStarting get_fb_posts_multi with limit = 15...\n";
     $start_time = microtime(true);
     
-    // Inline implementation of get_fb_posts_multi with echo statements for profiling
     $all_posts = [];
     $next_cursors = [];
     $chunks = array_chunk($pages, 10);
@@ -67,7 +69,7 @@ try {
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, $url);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 15); // Reduce timeout to 15s to fail faster
+            curl_setopt($ch, CURLOPT_TIMEOUT, 10); // Reduce timeout to 10s
             fb_curl_setssl($ch);
             curl_multi_add_handle($multi_curl, $ch);
             $handles[$page_id] = $ch;
@@ -89,9 +91,8 @@ try {
                 $mrc = curl_multi_exec($multi_curl, $active);
             } while ($mrc == CURLM_CALL_MULTI_PERFORM);
             
-            // Add a timeout break inside the loop just in case
-            if (microtime(true) - $exec_start > 25) {
-                echo "   [WARNING] Chunk cURL execution took more than 25 seconds! Aborting loop.\n";
+            if (microtime(true) - $exec_start > 15) {
+                echo "   [WARNING] Chunk cURL execution exceeded 15s. Breaking.\n";
                 break;
             }
         }
