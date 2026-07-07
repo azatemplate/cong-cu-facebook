@@ -390,6 +390,24 @@ try {
 
     try {
         $pdo->exec("
+            CREATE TABLE IF NOT EXISTS fb_conversations (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                page_id VARCHAR(100) NOT NULL,
+                sender_id VARCHAR(100) NOT NULL,
+                sender_name VARCHAR(255) NULL,
+                type VARCHAR(20) DEFAULT 'message',
+                snippet TEXT NULL,
+                unread_count INT DEFAULT 0,
+                updated_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                conversation_id VARCHAR(100) NULL,
+                UNIQUE KEY uq_page_sender (page_id, sender_id),
+                INDEX idx_upd_time (updated_time)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+    } catch (Exception $e) {}
+
+    try {
+        $pdo->exec("
             CREATE TABLE IF NOT EXISTS conversation_labels (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 conv_id VARCHAR(100) NOT NULL,

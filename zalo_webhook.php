@@ -158,8 +158,8 @@ try {
         ON DUPLICATE KEY UPDATE
             last_sender = 'customer',
             last_message_at = CURRENT_TIMESTAMP,
-            info_request_count = 0,
-            followup_requested_at = NULL
+            followup_requested_at = IF(consulted IN (1, 3) AND last_message_at <= DATE_SUB(NOW(), INTERVAL 48 HOUR), NULL, followup_requested_at),
+            consulted = IF(consulted IN (1, 3) AND last_message_at <= DATE_SUB(NOW(), INTERVAL 48 HOUR), 2, consulted)
     ");
     $st_last->execute([$oa_id, $sender_id]);
 } catch (Exception $e) {
@@ -174,9 +174,10 @@ $cust_province = '';
 $cust_notes = '';
 $cust_sales_phone = '';
 $cust_sales_notes = '';
+$cust_consulted = 0;
 
 try {
-    $stmt_cust = $pdo->prepare("SELECT name, avatar, phone, province, notes, sales_phone, sales_notes FROM zalo_customers WHERE oa_id = ? AND sender_id = ?");
+    $stmt_cust = $pdo->prepare("SELECT name, avatar, phone, province, notes, consulted, sales_phone, sales_notes FROM zalo_customers WHERE oa_id = ? AND sender_id = ?");
     $stmt_cust->execute([$oa_id, $sender_id]);
     $cust = $stmt_cust->fetch(PDO::FETCH_ASSOC);
 
@@ -186,6 +187,7 @@ try {
         $cust_phone = $cust['phone'];
         $cust_province = $cust['province'];
         $cust_notes = $cust['notes'];
+        $cust_consulted = (int)($cust['consulted'] ?? 0);
         $cust_sales_phone = $cust['sales_phone'] ?? '';
         $cust_sales_notes = $cust['sales_notes'] ?? '';
     }
@@ -262,8 +264,8 @@ try {
                     province = COALESCE(NULLIF(VALUES(province), ''), province),
                     last_sender = 'customer',
                     last_message_at = CURRENT_TIMESTAMP,
-                    info_request_count = 0,
-                    followup_requested_at = NULL
+                    followup_requested_at = IF(consulted IN (1, 3) AND last_message_at <= DATE_SUB(NOW(), INTERVAL 48 HOUR), NULL, followup_requested_at),
+                    consulted = IF(consulted IN (1, 3) AND last_message_at <= DATE_SUB(NOW(), INTERVAL 48 HOUR), 2, consulted)
             ");
             $stmt_ins->execute([$oa_id, $sender_id, $cust_name, $cust_avatar, $cust_phone, $cust_province, $cust_notes]);
             
@@ -304,9 +306,9 @@ try {
     $stmt_lock->execute([$oa_id, $sender_id]);
     $is_locked = (bool)$stmt_lock->fetch();
 
-    if ($is_locked) {
+    if ($is_locked || $cust_consulted === 3) {
         http_response_code(200);
-        echo "LOCKED: Chatbot disabled due to manual admin activity";
+        echo "LOCKED: Chatbot disabled due to active lock or consulted status = 3";
         exit;
     }
 

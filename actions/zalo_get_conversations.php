@@ -30,8 +30,10 @@ try {
         exit;
     }
 
-    // Select conversations from zalo_messages joined with zalo_customers details
-    $stmt = $pdo->prepare("
+    $search = trim($_GET['search'] ?? '');
+    $search_param = '%' . $search . '%';
+
+    $sql = "
         SELECT 
             m.sender_id,
             COALESCE(c.name, m.sender_name, 'Khách hàng Zalo') AS sender_name,
@@ -43,10 +45,20 @@ try {
             m.updated_time
         FROM zalo_messages m
         LEFT JOIN zalo_customers c ON m.oa_id = c.oa_id AND m.sender_id = c.sender_id
-        WHERE m.oa_id = ?
-        ORDER BY m.updated_time DESC
-    ");
-    $stmt->execute([$oa_id]);
+        WHERE m.oa_id = :oa_id
+    ";
+    if ($search !== '') {
+        $sql .= " AND (COALESCE(c.name, m.sender_name) LIKE :search OR m.snippet LIKE :search OR m.sender_id LIKE :search OR c.phone LIKE :search2)";
+    }
+    $sql .= " ORDER BY m.updated_time DESC";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->bindValue(':oa_id', $oa_id, PDO::PARAM_STR);
+    if ($search !== '') {
+        $stmt->bindValue(':search', $search_param, PDO::PARAM_STR);
+        $stmt->bindValue(':search2', $search_param, PDO::PARAM_STR);
+    }
+    $stmt->execute();
     $conversations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     echo json_encode([

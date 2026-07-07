@@ -109,6 +109,20 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
     } catch (Exception $e) {}
 
+    // Migration cho các cột quảng cáo (Ads Tracking) nếu chưa có trong fb_customers
+    try {
+        $pdo->exec("ALTER TABLE fb_customers ADD COLUMN is_ads TINYINT DEFAULT 0");
+    } catch (Exception $e) {}
+    try {
+        $pdo->exec("ALTER TABLE fb_customers ADD COLUMN ad_id VARCHAR(50) DEFAULT NULL");
+    } catch (Exception $e) {}
+    try {
+        $pdo->exec("ALTER TABLE fb_customers ADD COLUMN ad_title VARCHAR(255) DEFAULT NULL");
+    } catch (Exception $e) {}
+    try {
+        $pdo->exec("ALTER TABLE fb_customers ADD COLUMN ad_photo_url TEXT DEFAULT NULL");
+    } catch (Exception $e) {}
+
     foreach ($data['entry'] as $entry) {
         $page_id = $entry['id'];
 
@@ -129,6 +143,29 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                         $payload = $messaging_event['postback']['payload'] ?? '';
                         $is_welcome_trigger = true;
                         $text = '[Hành động: Bấm nút/Bắt đầu]';
+                    }
+                    
+                    // Trích xuất thông tin quảng cáo (Ads Tracking) từ sự kiện referral
+                    $is_ads = 0;
+                    $ad_id = null;
+                    $ad_title = null;
+                    $ad_photo_url = null;
+
+                    $referral = null;
+                    if (isset($messaging_event['referral'])) {
+                        $referral = $messaging_event['referral'];
+                    } elseif (isset($messaging_event['message']['referral'])) {
+                        $referral = $messaging_event['message']['referral'];
+                    } elseif (isset($messaging_event['postback']['referral'])) {
+                        $referral = $messaging_event['postback']['referral'];
+                    }
+
+                    if ($referral && ($referral['source'] ?? '') === 'ADS') {
+                        $is_ads = 1;
+                        $ad_id = $referral['ad_id'] ?? null;
+                        $ad_title = $referral['ads_context_data']['ad_title'] ?? null;
+                        $ad_photo_url = $referral['ads_context_data']['photo_url'] ?? $referral['ads_context_data']['video_url'] ?? null;
+                        webhook_log("REFERRAL ADS DETECTED: ad_id=$ad_id, title=$ad_title");
                     }
                     
                     // Lấy thông tin người gửi và conversation_id qua Graph API
@@ -177,19 +214,40 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                         $r = $stmt->execute([$page_id, $sender_id, $sender_name, $conversation_id, $text]);
                         webhook_log("MSG INSERT: page=$page_id sender=$sender_id result=" . ($r ? 'OK id='.$pdo->lastInsertId() : 'FAIL'));
 
+                        // Cập nhật cuộc hội thoại đệm fb_conversations
+                        try {
+                            $stmt_conv = $pdo->prepare("
+                                INSERT INTO fb_conversations (page_id, sender_id, sender_name, snippet, unread_count, updated_time, conversation_id)
+                                VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP, ?)
+                                ON DUPLICATE KEY UPDATE
+                                    sender_name = COALESCE(VALUES(sender_name), sender_name),
+                                    snippet = VALUES(snippet),
+                                    unread_count = unread_count + 1,
+                                    updated_time = CURRENT_TIMESTAMP,
+                                    conversation_id = COALESCE(VALUES(conversation_id), conversation_id)
+                            ");
+                            $stmt_conv->execute([$page_id, $sender_id, $sender_name, $text, $conversation_id]);
+                        } catch (Exception $e) {
+                            webhook_log("CONV INSERT ERR: " . $e->getMessage());
+                        }
+
                         // Đảm bảo thông tin khách hàng được khởi tạo/cập nhật trong fb_customers
                         try {
                             $stmt_cust = $pdo->prepare("
-                                INSERT INTO fb_customers (page_id, sender_id, name, last_sender, last_message_at, info_request_count, followup_requested_at) 
-                                VALUES (?, ?, ?, 'customer', CURRENT_TIMESTAMP, 0, NULL) 
+                                INSERT INTO fb_customers (page_id, sender_id, name, last_sender, last_message_at, info_request_count, followup_requested_at, is_ads, ad_id, ad_title, ad_photo_url) 
+                                VALUES (?, ?, ?, 'customer', CURRENT_TIMESTAMP, 0, NULL, ?, ?, ?, ?) 
                                 ON DUPLICATE KEY UPDATE 
                                     name = VALUES(name),
                                     last_sender = 'customer',
                                     last_message_at = CURRENT_TIMESTAMP,
-                                    info_request_count = 0,
-                                    followup_requested_at = NULL
+                                    followup_requested_at = IF(consulted IN (1, 3) AND last_message_at <= DATE_SUB(NOW(), INTERVAL 48 HOUR), NULL, followup_requested_at),
+                                    consulted = IF(consulted IN (1, 3) AND last_message_at <= DATE_SUB(NOW(), INTERVAL 48 HOUR), 2, consulted),
+                                    is_ads = IF(VALUES(is_ads) = 1, 1, is_ads),
+                                    ad_id = IF(VALUES(is_ads) = 1, VALUES(ad_id), ad_id),
+                                    ad_title = IF(VALUES(is_ads) = 1, VALUES(ad_title), ad_title),
+                                    ad_photo_url = IF(VALUES(is_ads) = 1, VALUES(ad_photo_url), ad_photo_url)
                             ");
-                            $stmt_cust->execute([$page_id, $sender_id, $sender_name]);
+                            $stmt_cust->execute([$page_id, $sender_id, $sender_name, $is_ads, $ad_id, $ad_title, $ad_photo_url]);
                             
                             if ($is_message && !empty($text) && $text !== 'Đã gửi một tệp đính kèm' && strpos($text, '[Hành động:') === false) {
                                 $detected_phone = '';
@@ -248,8 +306,13 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                             $stmt_lock->execute([$page_id, $sender_id]);
                             $is_locked = (bool)$stmt_lock->fetch();
 
-                            if ($is_locked) {
-                                webhook_log("BOT_CHAT_LOCKED: Chatbot disabled due to active lock (manual admin activity) for sender $sender_id on page $page_id");
+                            // Kiểm tra trạng thái tư vấn (consulted = 3 nghĩa là Dừng tư vấn)
+                            $stmt_cust_status = $pdo->prepare("SELECT consulted FROM fb_customers WHERE page_id = ? AND sender_id = ?");
+                            $stmt_cust_status->execute([$page_id, $sender_id]);
+                            $cust_consulted = (int)$stmt_cust_status->fetchColumn();
+
+                            if ($is_locked || $cust_consulted === 3) {
+                                webhook_log("BOT_CHAT_LOCKED: Chatbot disabled due to active lock or consulted status = 3 for sender $sender_id on page $page_id");
                             } else {
                                 // Hàm xử lý gửi tin nhắn
                                 $send_bot_msg = function($msg_text) use ($sender_id, $sender_name, $page_token, $page_id, $pdo) {

@@ -139,8 +139,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($file_success || $text_success) {
         try {
-            $st_upd = $pdo->prepare("UPDATE fb_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP, followup_requested_at = NULL WHERE page_id = ? AND sender_id = ?");
+            $st_upd = $pdo->prepare("UPDATE fb_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP WHERE page_id = ? AND sender_id = ?");
             $st_upd->execute([$page_id, $recipient_id]);
+        } catch (Exception $e) {}
+
+        // Cập nhật cuộc hội thoại đệm fb_conversations
+        try {
+            $snippet_text = $message ?: ($has_file ? (($attachment_type ?? 'file') === 'image' ? '[Hình ảnh]' : '[Tệp tin]') : '');
+            $stmt_conv = $pdo->prepare("
+                INSERT INTO fb_conversations (page_id, sender_id, snippet, unread_count, updated_time)
+                VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
+                ON DUPLICATE KEY UPDATE
+                    snippet = VALUES(snippet),
+                    unread_count = 0,
+                    updated_time = CURRENT_TIMESTAMP
+            ");
+            $stmt_conv->execute([$page_id, $recipient_id, $snippet_text]);
         } catch (Exception $e) {}
 
         // Lock chatbot for 30 minutes due to manual admin activity (preserve existing permanent locks)

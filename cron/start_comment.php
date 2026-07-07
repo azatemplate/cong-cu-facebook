@@ -47,21 +47,17 @@ foreach ($accounts as $aid) {
     if (!$aid) continue; 
     
     if ($exec_enabled) {
-        $php_bin = 'php';
-        if (defined('PHP_BINARY') && PHP_BINARY && strpos(PHP_BINARY, 'php-fpm') === false && strpos(PHP_BINARY, 'php-cgi') === false) {
-            $php_bin = PHP_BINARY;
-        } elseif (file_exists('/www/server/php/81/bin/php')) {
-            $php_bin = '/www/server/php/81/bin/php';
-        } elseif (file_exists('/usr/bin/php')) {
-            $php_bin = '/usr/bin/php';
+        if (!function_exists('get_php_cli_bin')) {
+            require_once __DIR__ . '/../includes/php_cli.php';
         }
+        $php_bin = get_php_cli_bin();
         
         $script_path = __DIR__ . DIRECTORY_SEPARATOR . 'comment_worker.php';
         
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
             pclose(popen("start /B \"\" \"$php_bin\" \"$script_path\" $aid", "r"));
         } else {
-            exec("\"$php_bin\" \"$script_path\" $aid > /dev/null 2>&1 &");
+            exec("nohup \"$php_bin\" \"$script_path\" $aid > /dev/null 2>&1 &");
         }
         echo "  -> Đã kích hoạt luồng bình luận CLI ($php_bin) cho Account ID: $aid\n";
     } elseif ($is_web) {

@@ -21,7 +21,7 @@ if (!$sender_id || !$page_id) {
 
 try {
     // Check if customer exists in the local database
-    $stmt = $pdo->prepare("SELECT name, phone, province, notes, consulted, sales_phone, sales_notes FROM fb_customers WHERE page_id = ? AND sender_id = ?");
+    $stmt = $pdo->prepare("SELECT name, phone, province, notes, consulted, sales_phone, sales_notes, is_ads, ad_id, ad_title, ad_photo_url FROM fb_customers WHERE page_id = ? AND sender_id = ?");
     $stmt->execute([$page_id, $sender_id]);
     $customer = $stmt->fetch(PDO::FETCH_ASSOC);
     
@@ -42,7 +42,11 @@ try {
             'notes' => '',
             'consulted' => 0,
             'sales_phone' => '',
-            'sales_notes' => ''
+            'sales_notes' => '',
+            'is_ads' => 0,
+            'ad_id' => '',
+            'ad_title' => '',
+            'ad_photo_url' => ''
         ];
     }
     

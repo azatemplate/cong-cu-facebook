@@ -471,14 +471,19 @@ $sql = "
       $account_filter
       AND sp.page_id IN ($placeholders)
     ORDER BY sp.scheduled_time ASC
+    LIMIT 5
 ";
 $stmt = $pdo->prepare($sql);
 if (!$stmt) {
     file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - Prepare Error: " . print_r($pdo->errorInfo(), true) . "\n", FILE_APPEND);
+    if ($lock_fp) { @flock($lock_fp, LOCK_UN); @fclose($lock_fp); }
+    @unlink($lock_file);
     exit;
 }
 if (!$stmt->execute($params)) {
     file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - Execute Error: " . print_r($stmt->errorInfo(), true) . "\n", FILE_APPEND);
+    if ($lock_fp) { @flock($lock_fp, LOCK_UN); @fclose($lock_fp); }
+    @unlink($lock_file);
     exit;
 }
 $pending_posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -495,6 +500,8 @@ if (!empty($pending_posts)) {
 if (empty($pending_posts)) {
     echo "Không có bài viết nào cần đăng cho " . count($target_page_ids) . " Pages.\n";
     echo "-------------------------------------------\n";
+    if ($lock_fp) { @flock($lock_fp, LOCK_UN); @fclose($lock_fp); }
+    @unlink($lock_file);
     exit;
 }
 

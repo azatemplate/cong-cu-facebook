@@ -86,6 +86,40 @@ try {
     echo "Loi reset stuck posts: " . $e->getMessage() . "\n";
 }
 
+// --- TỰ ĐỘNG QUÉT SĐT TỪ TIN NHẮN CŨ (Chạy ngầm 200 khách hàng mỗi 5 phút) ---
+try {
+    $stmt_scan_time = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'last_auto_phone_scan_time'");
+    $last_auto_scan = $stmt_scan_time ? (int)$stmt_scan_time->fetchColumn() : 0;
+    
+    if (time() - $last_auto_scan >= 300) { // Mỗi 5 phút
+        $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('last_auto_phone_scan_time', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
+            ->execute([time(), time()]);
+            
+        // Lấy danh sách account_id hoạt động để quét
+        $stmt_accs = $pdo->query("SELECT DISTINCT u.account_id FROM pages p JOIN users u ON p.user_id = u.id");
+        $active_accs = $stmt_accs->fetchAll(PDO::FETCH_COLUMN);
+        
+        if (!empty($active_accs)) {
+            if (!function_exists('get_php_cli_bin')) {
+                require_once __DIR__ . '/../includes/php_cli.php';
+            }
+            $php_bin = get_php_cli_bin();
+            $script = dirname(__DIR__) . '/actions/scan_old_phones.php';
+            
+            foreach ($active_accs as $aid) {
+                if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+                    pclose(popen("start /B \"\" \"$php_bin\" \"$script\" \"$aid\"", "r"));
+                } else {
+                    exec("nohup \"$php_bin\" \"$script\" \"$aid\" > /dev/null 2>&1 &");
+                }
+            }
+            echo "  [AUTO-SCAN] Da kich hoat tu dong quet SĐT ngam cho active accounts.\n";
+        }
+    }
+} catch (Exception $e) {
+    echo "Loi tu dong quet SĐT: " . $e->getMessage() . "\n";
+}
+
 // Cấu hình giới hạn luồng cho máy chủ (Throttling)
 $MAX_WORKERS = 30;
 try {
@@ -180,25 +214,32 @@ foreach ($selected_users as $uid) {
     $user_page_ids = $pages_by_user[$uid];
     // Truyền danh sách page_ids cho worker, cách nhau bởi dấu phẩy
     $page_ids_str = implode(',', $user_page_ids);
+
+    // Kiểm tra và giải phóng lock cũ trước khi spawn worker
+    // Nếu lock > 15 phút → worker cũ đã crash hoặc account vừa được gia hạn
+    $lock_dir = dirname(__DIR__) . '/locks';
+    $lock_key = md5('uid_' . $uid);
+    $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
+    if (file_exists($lock_file)) {
+        $lock_age = time() - filemtime($lock_file);
+        if ($lock_age > 900) { // > 15 phút
+            @unlink($lock_file);
+            echo "  ⚠ Đã dọn lock cũ ($lock_age giây) cho user #$uid trước khi spawn worker.\n";
+        }
+    }
     
     if ($exec_enabled) {
-        $php_bin = 'php';
-        if (defined('PHP_BINARY') && PHP_BINARY && strpos(PHP_BINARY, 'php-fpm') === false && strpos(PHP_BINARY, 'php-cgi') === false) {
-            $php_bin = PHP_BINARY;
-        } elseif (file_exists('/www/server/php/81/bin/php')) {
-            $php_bin = '/www/server/php/81/bin/php'; // Fallback manh nhat cho aaPanel
-        } elseif (file_exists('/www/server/php/82/bin/php')) {
-            $php_bin = '/www/server/php/82/bin/php';
-        } elseif (file_exists('/usr/bin/php')) {
-            $php_bin = '/usr/bin/php';
+        if (!function_exists('get_php_cli_bin')) {
+            require_once __DIR__ . '/../includes/php_cli.php';
         }
+        $php_bin = get_php_cli_bin();
         
         $script_path = __DIR__ . DIRECTORY_SEPARATOR . 'publish_worker.php';
         
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
             pclose(popen("start /B \"\" \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$uid\"", "r"));
         } else {
-            exec("\"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$uid\" > /dev/null 2>&1 &");
+            exec("nohup \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$uid\" > /dev/null 2>&1 &");
         }
         echo "  -> Da kich hoat luong CLI cho nhom #$uid (" . count($user_page_ids) . " pages: $page_ids_str)\n";
     } elseif ($is_web) {

@@ -754,6 +754,10 @@ function savePhoneRequestSettings(e) {
             <button class="filter-btn" data-filter="unread">Chưa đọc</button>
             <button class="filter-btn" data-filter="phone">SĐT</button>
         </div>
+        <!-- Search Input -->
+        <div style="padding:8px 10px;border-bottom:1px solid var(--border-color);background:#f9fafb;">
+            <input type="text" id="conv_search" placeholder="🔍 Tìm tên khách hàng..." style="width:100%;padding:6px 10px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;box-sizing:border-box;outline:none;">
+        </div>
         <div id="conversation_list" style="flex:1;overflow-y:auto;">
             <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px;">Chọn fanpage để xem hội thoại.</div>
         </div>
@@ -829,6 +833,7 @@ function savePhoneRequestSettings(e) {
                 <img id="info_avatar" src="https://ui-avatars.com/api/?name=KH&background=random" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #e2e8f0;margin-bottom:8px;" onerror="this.src='https://ui-avatars.com/api/?name='+encodeURIComponent(document.getElementById('info_name_display').innerText)+'&background=random'">
                 <div id="info_name_display" style="font-weight:700;font-size:15px;color:#1f2937;">Khách hàng</div>
                 <div id="info_id_display" style="font-size:11px;color:#9ca3af;margin-top:2px;">ID: -</div>
+                <div id="info_ad_badge" style="margin-top:6px;"></div>
             </div>
             
             <form id="frm_customer_info" onsubmit="saveCustomerInfo(event)" style="display:flex;flex-direction:column;gap:12px;">
@@ -853,6 +858,8 @@ function savePhoneRequestSettings(e) {
                     <select id="info_consulted" style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;box-sizing:border-box;background:#fff;cursor:pointer;">
                         <option value="0">🆕 Chưa tư vấn</option>
                         <option value="1">✅ Đã tư vấn</option>
+                        <option value="2">🔄 Khách quay lại</option>
+                        <option value="3">⛔ Dừng tư vấn</option>
                     </select>
                 </div>
                 <div>
@@ -1200,12 +1207,26 @@ document.querySelectorAll('.page-tab').forEach(tab => {
 })();
 
 // ── Load Conversations ────────────────────────────────────────────────────
-function loadConversations(append = false) {
+function loadConversations(append = false, silent = false) {
     if (!currentPageId || !currentUserId) return;
+
+    // Kích hoạt đồng bộ cuộc hội thoại ngầm từ Facebook API về local DB
+    if (!append && !silent) {
+        const syncUrl = `actions/sync_fb_conversations.php?page_id=${currentPageId}&user_id=${currentUserId}${isMergedChat ? '&merge_all=1' : ''}`;
+        fetch(syncUrl)
+            .then(r => r.json())
+            .then(res => {
+                if (res.status === 'success' && res.synced > 0) {
+                    // Nếu có cuộc hội thoại mới được đồng bộ về, reload lại trang 1 âm thầm
+                    loadConversations(false, true);
+                }
+            })
+            .catch(err => console.error('Sync error:', err));
+    }
 
     const spinnerSvg = `<svg style="animation: spin 1s linear infinite; width: 24px; height: 24px; margin-bottom: 8px; color: #0284c7;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" style="opacity:0.25"></circle><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>`;
 
-    if (!append) {
+    if (!append && !silent) {
         convList.innerHTML = `<div style="padding:40px 20px;text-align:center;color:#6b7280;font-size:13px;">${spinnerSvg}<br>Đang tải dữ liệu...</div>`;
         chatMessages.innerHTML = '';
         chatHeader.innerText = 'Chọn một cuộc hội thoại để xem';
@@ -1213,7 +1234,7 @@ function loadConversations(append = false) {
         setChatEnabled(false);
         convCursor = '';
         activeConvId.value = '';
-    } else {
+    } else if (append) {
         if (!document.getElementById('conv_more_loader')) {
             convList.insertAdjacentHTML('beforeend', `<div id="conv_more_loader" style="text-align:center;padding:12px;font-size:12px;color:#6b7280;"><svg style="animation: spin 1s linear infinite; width: 16px; height: 16px; vertical-align: middle; margin-right: 6px; color: #0284c7;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" style="opacity:0.25"></circle><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Đang tải thêm...</div>`);
             convList.scrollTop = convList.scrollHeight;
@@ -1229,18 +1250,27 @@ function loadConversations(append = false) {
     let url = 'actions/get_conversations.php?page_id=' + currentPageId + '&user_id=' + currentUserId + targetParams;
     if (isMergedChat) {
         url = 'actions/get_conversations.php?merge_all=1' + targetParams;
-        if (append) url += '&append=1';
+        if (append && convCursor) url += '&after=' + convCursor;
     } else if (append && convCursor) {
         url += '&after=' + convCursor;
+    }
+
+    const searchInputEl = document.getElementById('conv_search');
+    const searchVal = searchInputEl ? searchInputEl.value.trim() : '';
+    if (searchVal) {
+        url += '&search=' + encodeURIComponent(searchVal);
     }
 
     fetch(url)
         .then(r => r.json())
         .then(data => {
+            isConvLoading = false;
             document.getElementById('conv_more_loader')?.remove();
             if (data.status === 'success') {
                 if (append) {
                     currentConversations = currentConversations.concat(data.data);
+                } else if (silent) {
+                    mergeConversations(data.data);
                 } else {
                     currentConversations = data.data;
                 }
@@ -1267,6 +1297,7 @@ function loadConversations(append = false) {
                 if (!append) convList.innerHTML = '<div style="padding:16px;color:red;font-size:12px;">' + (data.msg||'Lỗi tải') + '</div>';
             }
         }).catch(() => {
+            isConvLoading = false;
             document.getElementById('conv_more_loader')?.remove();
             if (!append) convList.innerHTML = '<div style="padding:16px;color:red;font-size:12px;">Lỗi mạng</div>';
         });
@@ -1315,6 +1346,26 @@ btnReadAll.addEventListener('click', function() {
         }).finally(() => { this.disabled = false; });
 });
 
+// ── Merge Conversations Silently ──────────────────────────────────────────
+function mergeConversations(newItems) {
+    if (!newItems || !newItems.length) return;
+    let updatedList = [...currentConversations];
+    newItems.forEach(newItem => {
+        const index = updatedList.findIndex(c => c.id === newItem.id);
+        if (index > -1) {
+            // Cập nhật thông tin mới
+            updatedList[index] = Object.assign({}, updatedList[index], newItem);
+        } else {
+            // Thêm mới lên đầu
+            updatedList.push(newItem);
+        }
+    });
+    // Sắp xếp lại theo thời gian mới nhất lên đầu
+    updatedList.sort((a, b) => new Date(b.updated_time) - new Date(a.updated_time));
+    currentConversations = updatedList;
+    renderConversations();
+}
+
 // ── Render Conversations ──────────────────────────────────────────────────
 function renderConversations() {
     const scrollTop = convList.scrollTop;
@@ -1331,6 +1382,20 @@ function renderConversations() {
         });
     } else if (currentFilter === 'phone') {
         filtered = filtered.filter(c => c.has_phone === true);
+    }
+
+    // Lọc theo từ khóa tìm kiếm (tên khách hàng)
+    const searchQuery = document.getElementById('conv_search')?.value.trim().toLowerCase() || '';
+    if (searchQuery) {
+        filtered = filtered.filter(c => {
+            const itemPageId = isMergedChat ? c._page_id : currentPageId;
+            if (c.participants && c.participants.data) {
+                const participants = c.participants.data.filter(p => p.id !== itemPageId);
+                const senderName = (participants[0]?.name || 'Unknown').toLowerCase();
+                return senderName.includes(searchQuery);
+            }
+            return false;
+        });
     }
 
     const hasUnread = currentConversations.some(c => {
@@ -1363,6 +1428,15 @@ function renderConversations() {
             if (new Date(conv.updated_time).getTime() <= locallyReadConvs[conv.id]) isUnread = false;
         }
 
+        let adBadgeHtml = '';
+        if (conv.is_ads === 1) {
+            let adSnippet = conv.ad_title ? `: ${conv.ad_title}` : '';
+            if (adSnippet.length > 25) adSnippet = adSnippet.substring(0, 25) + '...';
+            adBadgeHtml = `<span class="badge-ads" style="background-color:#ffe4e6;color:#e11d48;border:1px solid #fda4af;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;display:inline-flex;align-items:center;gap:3px;margin-top:4px;margin-right:4px;">📢 Ads${adSnippet}</span>`;
+        } else {
+            adBadgeHtml = `<span class="badge-free" style="background-color:#f0fdf4;color:#166534;border:1px solid #bbf7d0;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;display:inline-flex;align-items:center;gap:3px;margin-top:4px;margin-right:4px;">🆓 Miễn phí</span>`;
+        }
+
         const div = document.createElement('div');
         div.className = 'conv-item' + (isUnread ? ' conv-unread' : '');
         if (activeConvId.value === conv.id) div.classList.add('active');
@@ -1378,6 +1452,7 @@ function renderConversations() {
                     </div>
                     <div style="font-size:11px;color:${isUnread?'#111':'#6b7280'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${snippet}</div>
                     <div style="font-size:10px;color:#9ca3af;margin-top:2px;">${updTime}</div>
+                    ${adBadgeHtml}
                     ${conv.has_phone && conv.phone_number ? `<span class="badge-phone">📞 ${conv.phone_number}</span>` : ''}
                 </div>
             </div>
@@ -1762,10 +1837,10 @@ setInterval(() => {
         fetch(url)
             .then(r => r.json())
             .then(data => {
-                if (data.status === 'success') { currentConversations = data.data; renderConversations(); }
+                if (data.status === 'success') { mergeConversations(data.data); }
             }).catch(()=>{});
     }
-}, 15000);
+}, 4000);
 
 setInterval(() => {
     const convId  = activeConvId.value;
@@ -1774,7 +1849,7 @@ setInterval(() => {
     if (convId && recipId && isBottom) {
         loadMessages(convId, chatHeader.innerText, recipId, activePageIdEl.value, activeUserIdEl.value, true);
     }
-}, 10000);
+}, 4000);
 
 // ── Customer Info Panel Logic ─────────────────────────────────────────────
 function toggleInfoPanel() {
@@ -1796,7 +1871,7 @@ function loadCustomerInfo(senderId, pageId, senderName = '') {
     const fallbackName = senderName || 'Khách hàng';
     document.getElementById('info_avatar').src = `avatar.php?id=${senderId}&page_id=${pageId}&name=${encodeURIComponent(fallbackName)}`;
     
-    // Clear form inputs
+    // Clear form inputs & ad badge
     document.getElementById('info_name').value = '';
     document.getElementById('info_phone').value = '';
     document.getElementById('info_province').value = '';
@@ -1805,6 +1880,11 @@ function loadCustomerInfo(senderId, pageId, senderName = '') {
     document.getElementById('info_sales_phone').value = '';
     document.getElementById('info_sales_notes').value = '';
     document.getElementById('info_name_display').innerText = 'Đang tải...';
+    
+    const adBadgeEl = document.getElementById('info_ad_badge');
+    if (adBadgeEl) {
+        adBadgeEl.innerHTML = '';
+    }
     
     fetch(`actions/get_customer_info.php?sender_id=${encodeURIComponent(senderId)}&page_id=${encodeURIComponent(pageId)}`)
         .then(r => r.json())
@@ -1817,12 +1897,34 @@ function loadCustomerInfo(senderId, pageId, senderName = '') {
                 document.getElementById('info_phone').value = data.phone || '';
                 document.getElementById('info_province').value = data.province || '';
                 document.getElementById('info_notes').value = data.notes || '';
-                document.getElementById('info_consulted').value = data.consulted == 1 ? '1' : '0';
+                document.getElementById('info_consulted').value = String(data.consulted || 0);
                 document.getElementById('info_sales_phone').value = data.sales_phone || '';
                 document.getElementById('info_sales_notes').value = data.sales_notes || '';
                 
                 // Update avatar with proper DB name
                 document.getElementById('info_avatar').src = `avatar.php?id=${senderId}&page_id=${pageId}&name=${encodeURIComponent(finalName)}`;
+                
+                // Update Ad details badge on sidebar
+                if (adBadgeEl) {
+                    if (data.is_ads == 1) {
+                        let adTitle = data.ad_title ? data.ad_title : 'Quảng cáo Facebook';
+                        let photoHtml = data.ad_photo_url ? `<img src="${data.ad_photo_url}" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin-top:6px;border:1px solid #e2e8f0;">` : '';
+                        adBadgeEl.innerHTML = `
+                            <div style="background-color:#ffe4e6;color:#e11d48;border:1px solid #fda4af;padding:6px 10px;border-radius:6px;font-size:11px;text-align:left;margin-top:4px;box-sizing:border-box;">
+                                <div style="font-weight:700;display:flex;align-items:center;gap:4px;">📢 Đến từ Ads (Trả phí)</div>
+                                <div style="margin-top:3px;font-weight:500;word-break:break-word;">Bài viết: ${adTitle}</div>
+                                ${data.ad_id ? `<div style="font-size:10px;color:#f43f5e;margin-top:2px;">Ad ID: ${data.ad_id}</div>` : ''}
+                                ${photoHtml}
+                            </div>
+                        `;
+                    } else {
+                        adBadgeEl.innerHTML = `
+                            <div style="background-color:#f0fdf4;color:#166534;border:1px solid #bbf7d0;padding:6px 10px;border-radius:6px;font-size:11px;text-align:left;margin-top:4px;font-weight:700;box-sizing:border-box;">
+                                🆓 Đến từ nguồn tự nhiên (Miễn phí)
+                            </div>
+                        `;
+                    }
+                }
                 
                 // Update bot toggle button status (header + panel)
                 const isLocked = res.data.is_locked == 1;
@@ -1987,6 +2089,20 @@ if (showPanelState) {
 
 // Tab switcher
 document.addEventListener('DOMContentLoaded', function() {
+    // Tìm kiếm cuộc hội thoại Facebook
+    const searchInput = document.getElementById('conv_search');
+    let searchTimeout = null;
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            renderConversations(); // Phản hồi tức thì cho phần đã tải
+            
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                loadConversations(false, true); // Quét toàn bộ DB qua AJAX
+            }, 400);
+        });
+    }
+
     const tabs = document.querySelectorAll('.zalo-tab-btn');
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {

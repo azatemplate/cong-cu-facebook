@@ -304,6 +304,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // Tự động kích hoạt đồng bộ lịch sử hội thoại ngầm cho tất cả Fanpage vừa được thêm/cập nhật
+    try {
+        $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
+        $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : 'localhost';
+        $uri_dir = str_replace('\\', '/', dirname(isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : ''));
+        $base_url = $protocol . $host . rtrim($uri_dir, '/');
+
+        foreach ($all_fb_pages as $page) {
+            $page_id = $page['id'];
+            if (isset($conflict_map[$page_id]) && $conflict_action === 'skip') {
+                continue;
+            }
+            $sync_url = $base_url . "/sync_fb_conversations.php?page_id=" . urlencode($page_id) . "&user_id=" . intval($user_db_id);
+            
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $sync_url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 1); // Thiết lập timeout 1s để không chặn quá trình redirect của user (fire and forget)
+            curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            curl_exec($ch);
+            curl_close($ch);
+        }
+    } catch (Exception $e) {}
+
     // Clear Dashboard Cache
     $cache_dir = __DIR__ . '/../uploads/cache';
     foreach (glob($cache_dir . "/dashboard_user_{$account_id}_*.json") as $cf) { @unlink($cf); }

@@ -64,6 +64,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($http_code === 200) {
             $success_count++;
+            try {
+                $stmt_upd_unread = $pdo->prepare("UPDATE fb_conversations SET unread_count = 0 WHERE page_id = ? AND sender_id = ?");
+                $stmt_upd_unread->execute([$page_id, $uid]);
+            } catch (Exception $e) {}
         }
     }
 

@@ -2,36 +2,27 @@
 session_start();
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
+require_once __DIR__ . '/../includes/security.php';
 
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $merge_all = isset($_GET['merge_all']) ? intval($_GET['merge_all']) : 0;
-    $nocache = isset($_GET['nocache']) ? intval($_GET['nocache']) : 0;
     
-    // Determine the cache key (only cache page 1, i.e. append=0 or after is empty)
-    $cache_key = '';
-    if ($merge_all === 1) {
-        if (isset($_SESSION['account_id'])) {
-            $append = isset($_GET['append']) ? intval($_GET['append']) : 0;
-            if ($append === 0) {
-                $cache_key = 'fb_convs_merge_' . $_SESSION['account_id'];
-            }
-        }
-    } else {
-        $user_id = isset($_GET['user_id']) ? intval($_GET['user_id']) : 0;
-        $page_id = isset($_GET['page_id']) ? $_GET['page_id'] : '';
-        $after = isset($_GET['after']) ? $_GET['after'] : '';
-        if ($page_id && $user_id && empty($after)) {
-            $cache_key = 'fb_convs_' . $page_id . '_' . $user_id;
-        }
+    // Determine the offset
+    // Translate 'after' parameter to offset integer if it's numeric
+    $offset = 0;
+    if (isset($_GET['after']) && is_numeric($_GET['after'])) {
+        $offset = intval($_GET['after']);
+    } elseif (isset($_GET['offset']) && is_numeric($_GET['offset'])) {
+        $offset = intval($_GET['offset']);
     }
-    
-    // Check if cache exists and is not expired
-    if (!$nocache && !empty($cache_key) && isset($_SESSION[$cache_key]) && $_SESSION[$cache_key]['expires'] > time()) {
-        echo json_encode($_SESSION[$cache_key]['data']);
-        exit;
-    }
+
+    $limit = 20;
+    $rows = [];
+
+    $search = trim($_GET['search'] ?? '');
+    $search_param = '%' . $search . '%';
 
     if ($merge_all === 1) {
         if (!isset($_SESSION['account_id'])) {
@@ -39,196 +30,143 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             exit;
         }
         $account_id = $_SESSION['account_id'];
-        $append = isset($_GET['append']) ? intval($_GET['append']) : 0;
-        
-        $stmt_pages = $pdo->prepare("
-            (SELECT p.page_id, p.name, p.user_id, p.access_token
-             FROM pages p JOIN users u ON p.user_id = u.id
-             WHERE u.account_id = :aid)
-            UNION
-            (SELECT p.page_id, p.name, p.user_id, p.access_token
-             FROM pages p
-             JOIN page_shares ps ON p.page_id = ps.page_id
-             JOIN users u ON p.user_id = u.id
-             WHERE ps.shared_with_account_id = :aid2)
-        ");
-        $stmt_pages->bindValue(':aid', $account_id, PDO::PARAM_INT);
-        $stmt_pages->bindValue(':aid2', $account_id, PDO::PARAM_INT);
-        $stmt_pages->execute();
-        $all_pages_raw = $stmt_pages->fetchAll(PDO::FETCH_ASSOC);
-        
-        $pages = [];
-        $cursors = [];
-        
-        if ($append === 1 && isset($_SESSION['merge_cursors'])) {
-            $cursors = $_SESSION['merge_cursors'];
-        } elseif ($append === 0) {
-            $_SESSION['merge_cursors'] = [];
-        }
-
         session_write_close();
 
-        foreach ($all_pages_raw as $p) {
-            if (!empty($p['access_token'])) {
-                if ($append === 1 && empty($cursors[$p['page_id']])) {
-                    continue; 
-                }
-                $p['access_token'] = decryptData($p['access_token']);
-                $pages[] = $p;
-            }
+        // Query conversations for all pages belonging to/shared with this account
+        $sql = "
+            SELECT 
+                c.conversation_id, 
+                c.page_id, 
+                c.sender_id, 
+                c.sender_name, 
+                c.snippet, 
+                c.unread_count, 
+                c.updated_time,
+                p.name AS page_name,
+                p.user_id,
+                cust.is_ads,
+                cust.ad_title,
+                cust.ad_photo_url
+            FROM fb_conversations c
+            JOIN pages p ON c.page_id = p.page_id
+            JOIN users u ON p.user_id = u.id
+            LEFT JOIN fb_customers cust ON c.page_id = cust.page_id AND c.sender_id = cust.sender_id
+            WHERE (u.account_id = :aid OR p.page_id IN (SELECT page_id FROM page_shares WHERE shared_with_account_id = :aid2))
+        ";
+        if ($search !== '') {
+            $sql .= " AND (c.sender_name LIKE :search OR c.snippet LIKE :search OR c.sender_id LIKE :search OR cust.phone LIKE :search2)";
         }
+        $sql .= " ORDER BY c.updated_time DESC LIMIT :limit OFFSET :offset";
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->bindValue(':aid', $account_id, PDO::PARAM_INT);
+        $stmt->bindValue(':aid2', $account_id, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        if ($search !== '') {
+            $stmt->bindValue(':search', $search_param, PDO::PARAM_STR);
+            $stmt->bindValue(':search2', $search_param, PDO::PARAM_STR);
+        }
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $user_id = isset($_GET['user_id']) ? intval($_GET['user_id']) : 0;
+        $page_id = isset($_GET['page_id']) ? $_GET['page_id'] : '';
         
-        if (empty($pages)) {
-            $output_array = ['status' => 'success', 'data' => [], 'next_cursor' => '', 'merged' => true];
-            if (!empty($cache_key)) {
-                session_start();
-                $_SESSION[$cache_key] = [
-                    'data' => $output_array,
-                    'expires' => time() + 15
-                ];
-                session_write_close();
-            }
-            echo json_encode($output_array);
+        if (!$user_id || empty($page_id)) {
+            echo json_encode(['status' => 'error', 'msg' => 'Vui lòng chọn đầy đủ User và Fanpage.']);
             exit;
         }
-        
-        $multi_result = get_fb_conversations_multi($pages, 8, $cursors);
-        $merged_conversations = $multi_result['data'];
-        $returned_cursors = $multi_result['cursors'];
-        
-        session_start();
-        if ($append === 0) {
-            $_SESSION['merge_cursors'] = $returned_cursors;
-        } else {
-            foreach ($returned_cursors as $pid => $cur) {
-                $_SESSION['merge_cursors'][$pid] = $cur;
-            }
-            foreach ($pages as $p) {
-                if (empty($returned_cursors[$p['page_id']])) {
-                    unset($_SESSION['merge_cursors'][$p['page_id']]);
-                }
-            }
-        }
-        
-        $next_cursor = !empty($_SESSION['merge_cursors']) ? 'merging' : '';
-
-        // Đính kèm trạng thái SĐT từ DB
-        attach_phone_status_to_conversations($merged_conversations, $pdo);
-
-        $output_array = ['status' => 'success', 'data' => $merged_conversations, 'next_cursor' => $next_cursor, 'merged' => true];
-        
-        if (!empty($cache_key)) {
-            $_SESSION[$cache_key] = [
-                'data' => $output_array,
-                'expires' => time() + 15
-            ];
-        }
         session_write_close();
 
-        echo json_encode($output_array);
-        exit;
-    }
-
-    $user_id = isset($_GET['user_id']) ? intval($_GET['user_id']) : 0;
-    $page_id = isset($_GET['page_id']) ? $_GET['page_id'] : '';
-    
-    if (!$user_id || empty($page_id)) {
-        echo json_encode(['status' => 'error', 'msg' => 'Vui lòng chọn đầy đủ User và Fanpage.']);
-        exit;
-    }
-
-    session_write_close();
-
-    $stmt = $pdo->prepare("SELECT access_token FROM pages WHERE page_id = ? AND user_id = ?");
-    $stmt->execute([$page_id, $user_id]);
-    $page = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if (!$page || empty($page['access_token'])) {
-        echo json_encode(['status' => 'error', 'msg' => 'Không tìm thấy Token của Fanpage này.']);
-        exit;
-    }
-
-    $page_access_token = decryptData($page['access_token']);
-
-    $after = isset($_GET['after']) ? $_GET['after'] : '';
-
-    // Lấy danh sách conversations
-    $endpoint = $page_id . '/conversations';
-    $params = [
-        'fields' => 'id,updated_time,unread_count,tags{name},participants{id,name,email,custom_labels},messages.limit(5){message,from}',
-        'access_token' => $page_access_token,
-        'limit' => 20
-    ];
-
-    if ($after) {
-        $params['after'] = $after;
-    }
-
-    $response = fb_api_request($endpoint, $params, 'GET');
-
-    $target_conv_id = $_GET['target_conv_id'] ?? '';
-    $target_sender_id = $_GET['target_sender_id'] ?? '';
-
-    if (($target_conv_id || $target_sender_id) && !$after && $response['status_code'] === 200) {
-        $single_data = null;
-        if ($target_conv_id) {
-            $single_res = fb_api_request($target_conv_id, [
-                'fields' => 'id,updated_time,unread_count,tags{name},participants{id,name,email,custom_labels},messages.limit(5){message,from}',
-                'access_token' => $page_access_token
-            ], 'GET');
-            if (isset($single_res['data']['id'])) {
-                $single_data = $single_res['data'];
-            }
-        } elseif ($target_sender_id) {
-            $single_res = fb_api_request($page_id . '/conversations', [
-                'user_id' => $target_sender_id,
-                'fields' => 'id,updated_time,unread_count,tags{name},participants{id,name,email,custom_labels},messages.limit(5){message,from}',
-                'access_token' => $page_access_token
-            ], 'GET');
-            if (!empty($single_res['data']['data'][0])) {
-                $single_data = $single_res['data']['data'][0];
-            }
+        // Query conversations for this specific page
+        $sql = "
+            SELECT 
+                c.conversation_id, 
+                c.page_id, 
+                c.sender_id, 
+                c.sender_name, 
+                c.snippet, 
+                c.unread_count, 
+                c.updated_time,
+                p.name AS page_name,
+                p.user_id,
+                cust.is_ads,
+                cust.ad_title,
+                cust.ad_photo_url
+            FROM fb_conversations c
+            JOIN pages p ON c.page_id = p.page_id
+            LEFT JOIN fb_customers cust ON c.page_id = cust.page_id AND c.sender_id = cust.sender_id
+            WHERE c.page_id = :page_id AND p.user_id = :user_id
+        ";
+        if ($search !== '') {
+            $sql .= " AND (c.sender_name LIKE :search OR c.snippet LIKE :search OR c.sender_id LIKE :search OR cust.phone LIKE :search2)";
         }
+        $sql .= " ORDER BY c.updated_time DESC LIMIT :limit OFFSET :offset";
 
-        if ($single_data) {
-            $data_arr = $response['data']['data'] ?? [];
-            $found = false;
-            foreach ($data_arr as $c) {
-                if (isset($c['id']) && $c['id'] === $single_data['id']) { $found = true; break; }
-            }
-            if (!$found) {
-                array_unshift($data_arr, $single_data);
-                $response['data']['data'] = $data_arr;
-            }
+        $stmt = $pdo->prepare($sql);
+        $stmt->bindValue(':page_id', $page_id, PDO::PARAM_STR);
+        $stmt->bindValue(':user_id', $user_id, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        if ($search !== '') {
+            $stmt->bindValue(':search', $search_param, PDO::PARAM_STR);
+            $stmt->bindValue(':search2', $search_param, PDO::PARAM_STR);
         }
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    if ($response['status_code'] === 200) {
-        $next_cursor = '';
-        if (isset($response['data']['paging']['cursors']['after'])) {
-            $next_cursor = $response['data']['paging']['cursors']['after'];
-        }
-        
-        $conv_data = $response['data']['data'] ?? [];
-        // Đính kèm trạng thái SĐT từ DB
-        attach_phone_status_to_conversations($conv_data, $pdo, $page_id);
-        
-        $output_array = ['status' => 'success', 'data' => $conv_data, 'next_cursor' => $next_cursor];
-        
-        if (!empty($cache_key)) {
-            session_start();
-            $_SESSION[$cache_key] = [
-                'data' => $output_array,
-                'expires' => time() + 15
-            ];
-            session_write_close();
-        }
-        
-        echo json_encode($output_array);
-    } else {
-        $error_msg = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : 'Lỗi không xác định';
-        echo json_encode(['status' => 'error', 'msg' => $error_msg]);
+    // Format rows to look exactly like Facebook Graph API response object
+    $formatted = [];
+    foreach ($rows as $row) {
+        $formatted[] = [
+            'id' => $row['conversation_id'],
+            'updated_time' => date('Y-m-d\TH:i:sP', strtotime($row['updated_time'])),
+            'unread_count' => (int)$row['unread_count'],
+            'participants' => [
+                'data' => [
+                    [
+                        'id' => $row['sender_id'],
+                        'name' => $row['sender_name']
+                    ],
+                    [
+                        'id' => $row['page_id'],
+                        'name' => $row['page_name']
+                    ]
+                ]
+            ],
+            'messages' => [
+                'data' => [
+                    [
+                        'message' => $row['snippet']
+                    ]
+                ]
+            ],
+            '_page_id' => $row['page_id'],
+            '_user_id' => (int)$row['user_id'],
+            '_page_name' => $row['page_name'],
+            'is_ads' => (int)($row['is_ads'] ?? 0),
+            'ad_title' => $row['ad_title'] ?? null,
+            'ad_photo_url' => $row['ad_photo_url'] ?? null
+        ];
     }
+
+    // Attach phone number info from fb_customers table
+    attach_phone_status_to_conversations($formatted, $pdo, $merge_all === 1 ? '' : $page_id);
+
+    // Calculate the next cursor (offset + count of fetched rows)
+    $next_cursor = '';
+    if (count($rows) === $limit) {
+        $next_cursor = (string)($offset + $limit);
+    }
+
+    echo json_encode([
+        'status' => 'success',
+        'data' => $formatted,
+        'next_cursor' => $next_cursor
+    ]);
+    exit;
 } else {
     echo json_encode(['status' => 'error', 'msg' => 'Method not allowed']);
 }

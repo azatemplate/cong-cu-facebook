@@ -62,8 +62,21 @@ try {
     $stmt_not->execute([$target_id]);
     $snd_id = $stmt_not->fetchColumn();
     if ($snd_id) {
-        $st_upd = $pdo->prepare("UPDATE fb_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP, followup_requested_at = NULL WHERE page_id = ? AND sender_id = ?");
+        $st_upd = $pdo->prepare("UPDATE fb_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP WHERE page_id = ? AND sender_id = ?");
         $st_upd->execute([$page_id, $snd_id]);
+
+        // Cập nhật cuộc hội thoại đệm fb_conversations
+        try {
+            $stmt_conv = $pdo->prepare("
+                INSERT INTO fb_conversations (page_id, sender_id, snippet, unread_count, updated_time)
+                VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
+                ON DUPLICATE KEY UPDATE
+                    snippet = VALUES(snippet),
+                    unread_count = 0,
+                    updated_time = CURRENT_TIMESTAMP
+            ");
+            $stmt_conv->execute([$page_id, $snd_id, $message]);
+        } catch (Exception $e) {}
     }
 } catch (Exception $e) {}
 

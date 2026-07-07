@@ -52,9 +52,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $drive_multi_api,
             $edit_id
         ]);
+
+        // Tự động giải phóng tất cả file lock đăng bài của các tài khoản con khi gia hạn
+        try {
+            $u_stmt = $pdo->prepare("SELECT id FROM users WHERE account_id = ?");
+            $u_stmt->execute([$edit_id]);
+            $user_ids = $u_stmt->fetchAll(PDO::FETCH_COLUMN);
+            if (!empty($user_ids)) {
+                foreach ($user_ids as $uid) {
+                    $lock_key = md5('uid_' . $uid);
+                    $lock_file = __DIR__ . "/locks/publish_user_" . $lock_key . ".lock";
+                    if (file_exists($lock_file)) {
+                        @unlink($lock_file);
+                    }
+                }
+            }
+        } catch (Exception $e) {}
+
+        // Tự động kích hoạt lại tiến trình đăng bài ngay sau khi gia hạn
+        try {
+            if (!function_exists('get_php_cli_bin')) {
+                require_once __DIR__ . '/includes/php_cli.php';
+            }
+            $php_bin = get_php_cli_bin();
+            $script = __DIR__ . '/cron/start_publish.php';
+            if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+                pclose(popen("start /B \"\" \"$php_bin\" \"$script\"", "r"));
+            } else {
+                exec("nohup \"$php_bin\" \"$script\" > /dev/null 2>&1 &");
+            }
+        } catch (Exception $e) {}
         
         $alert_type = 'success';
-        $alert_message = 'Cập nhật giới hạn thành công!';
+        $alert_message = 'Cập nhật giới hạn thành công! Tiến trình đăng bài đang được kích hoạt lại...';
     }
 }
 

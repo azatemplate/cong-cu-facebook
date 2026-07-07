@@ -544,6 +544,10 @@ $sales_list = $acc_setup['sales_list'] ?? '';
                     <button class="filter-btn" data-filter="unread" onclick="filterConversations('unread')">Chưa đọc</button>
                     <button class="filter-btn" data-filter="phone" onclick="filterConversations('phone')">Có SĐT</button>
                 </div>
+                <!-- Search Input -->
+                <div style="padding: 8px 0 0 0;">
+                    <input type="text" id="zalo_conv_search" placeholder="🔍 Tìm tên khách hàng..." style="width:100%; padding:6px 10px; border:1px solid var(--border-color); border-radius:6px; font-size:12px; box-sizing:border-box; outline:none; background: var(--card-bg); color: var(--text-main);">
+                </div>
             </div>
             <!-- Conversation nodes -->
             <div class="conv-list" id="conv_list_container">
@@ -633,6 +637,8 @@ $sales_list = $acc_setup['sales_list'] ?? '';
                         <select id="cust_consulted" disabled style="width:100%; padding:8px 10px; border:1px solid var(--border-color); border-radius:6px; font-size:13px; background:var(--card-bg); color:var(--text-main); cursor:pointer;">
                             <option value="0">🆕 Chưa tư vấn</option>
                             <option value="1">✅ Đã tư vấn</option>
+                            <option value="2">🔄 Khách quay lại</option>
+                            <option value="3">⛔ Dừng tư vấn</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -897,6 +903,20 @@ $sales_list = $acc_setup['sales_list'] ?? '';
         // Initialize Live Chat tab - Load initial channels
         loadOAsForSelector();
 
+        // Tìm kiếm cuộc hội thoại Zalo (Quét DB ngầm)
+        const searchInput = document.getElementById('zalo_conv_search');
+        let searchTimeout = null;
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                renderConversations(); // Phản hồi tức thì cho phần đã tải
+                
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    loadConversations('', true); // Quét toàn bộ DB qua AJAX
+                }, 400);
+            });
+        }
+
         const chatMessages = document.getElementById('chat_messages_container');
         if (chatMessages) {
             chatMessages.addEventListener('scroll', function() {
@@ -906,12 +926,33 @@ $sales_list = $acc_setup['sales_list'] ?? '';
             });
         }
         
-        // Setup polling for messages when tab is visible
+        // Setup polling for messages when tab is visible (Snappy 4s interval)
         pollInterval = setInterval(() => {
             if (document.getElementById('tab-livechat').classList.contains('active') && activeOaId && activeSenderId) {
                 pollNewMessages();
             }
-        }, 8000);
+        }, 4000);
+
+        // Setup polling for the left sidebar conversation list to bubble up new chats in real-time (4s interval)
+        setInterval(() => {
+            if (document.getElementById('tab-livechat').classList.contains('active') && activeOaId) {
+                let url = `actions/zalo_get_conversations.php?oa_id=${activeOaId}`;
+                const searchInputEl = document.getElementById('zalo_conv_search');
+                const searchVal = searchInputEl ? searchInputEl.value.trim() : '';
+                if (searchVal) {
+                    url += '&search=' + encodeURIComponent(searchVal);
+                }
+                fetch(url)
+                .then(r => r.json())
+                .then(res => {
+                    if (res.status === 'success') {
+                        // Cập nhật conversationsCache và render lại cột bên trái
+                        conversationsCache = res.data;
+                        renderConversations();
+                    }
+                }).catch(err => console.error("Zalo conversations polling error:", err));
+            }
+        }, 4000);
 
         // Check if redirected with success callback
         const urlParams = new URLSearchParams(window.location.search);
@@ -1099,11 +1140,13 @@ $sales_list = $acc_setup['sales_list'] ?? '';
         });
     }
 
-    function loadConversations(autoSelectSenderId = '') {
+    function loadConversations(autoSelectSenderId = '', keepActiveSender = false) {
         const selector = document.getElementById('selected_oa');
         activeOaId = selector.value;
-        activeSenderId = ''; // reset chatbox
-        resetChatboxUI();
+        if (!keepActiveSender) {
+            activeSenderId = ''; // reset chatbox
+            resetChatboxUI();
+        }
         
         const container = document.getElementById('conv_list_container');
         if (!activeOaId) {
@@ -1115,35 +1158,50 @@ $sales_list = $acc_setup['sales_list'] ?? '';
             return;
         }
 
-        container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted); font-size:13px;">Đang tải danh sách chat...</div>';
+        if (!keepActiveSender) {
+            container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted); font-size:13px;">Đang tải danh sách chat...</div>';
+        }
 
-        fetch(`actions/zalo_get_conversations.php?oa_id=${activeOaId}`)
+        let url = `actions/zalo_get_conversations.php?oa_id=${activeOaId}`;
+        const searchInputEl = document.getElementById('zalo_conv_search');
+        const searchVal = searchInputEl ? searchInputEl.value.trim() : '';
+        if (searchVal) {
+            url += '&search=' + encodeURIComponent(searchVal);
+        }
+
+        fetch(url)
         .then(r => r.json())
         .then(res => {
             if (res.status === 'success') {
                 conversationsCache = res.data;
                 renderConversations();
                 
-                // Auto select a specific customer chat if passed
-                if (autoSelectSenderId) {
-                    selectConversation(autoSelectSenderId);
-                    // Clear the URL query parameters so page refresh behaves normally
-                    const newUrl = window.location.pathname;
-                    window.history.replaceState({}, document.title, newUrl);
-                } else {
-                    // Auto select last active conversation from localStorage
-                    const savedSenderId = localStorage.getItem('last_zalo_sender_id_' + activeOaId);
-                    if (savedSenderId && conversationsCache.some(x => x.sender_id === savedSenderId)) {
-                        selectConversation(savedSenderId);
+                if (!keepActiveSender) {
+                    // Auto select a specific customer chat if passed
+                    if (autoSelectSenderId) {
+                        selectConversation(autoSelectSenderId);
+                        // Clear the URL query parameters so page refresh behaves normally
+                        const newUrl = window.location.pathname;
+                        window.history.replaceState({}, document.title, newUrl);
+                    } else {
+                        // Auto select last active conversation from localStorage
+                        const savedSenderId = localStorage.getItem('last_zalo_sender_id_' + activeOaId);
+                        if (savedSenderId && conversationsCache.some(x => x.sender_id === savedSenderId)) {
+                            selectConversation(savedSenderId);
+                        }
                     }
                 }
             } else {
-                showToast(res.msg, 'error');
-                container.innerHTML = `<div style="text-align:center; padding:20px; color:#ef4444; font-size:13px;">${res.msg}</div>`;
+                if (!keepActiveSender) {
+                    showToast(res.msg, 'error');
+                    container.innerHTML = `<div style="text-align:center; padding:20px; color:#ef4444; font-size:13px;">${res.msg}</div>`;
+                }
             }
         })
         .catch(() => {
-            container.innerHTML = '<div style="text-align:center; padding:20px; color:#ef4444; font-size:13px;">Lỗi tải dữ liệu.</div>';
+            if (!keepActiveSender) {
+                container.innerHTML = '<div style="text-align:center; padding:20px; color:#ef4444; font-size:13px;">Lỗi tải dữ liệu.</div>';
+            }
         });
     }
 
@@ -1167,6 +1225,15 @@ $sales_list = $acc_setup['sales_list'] ?? '';
             filtered = conversationsCache.filter(c => parseInt(c.unread_count) > 0);
         } else if (currentFilter === 'phone') {
             filtered = conversationsCache.filter(c => c.phone !== null && c.phone !== '');
+        }
+
+        // Lọc theo từ khóa tìm kiếm (tên khách hàng)
+        const searchQuery = document.getElementById('zalo_conv_search')?.value.trim().toLowerCase() || '';
+        if (searchQuery) {
+            filtered = filtered.filter(c => {
+                const name = (c.sender_name || 'Khách hàng Zalo').toLowerCase();
+                return name.includes(searchQuery);
+            });
         }
 
         if (filtered.length === 0) {
@@ -1332,7 +1399,7 @@ $sales_list = $acc_setup['sales_list'] ?? '';
                     document.getElementById('cust_phone').value = res.data.phone || '';
                     document.getElementById('cust_province').value = res.data.province || '';
                     document.getElementById('cust_notes').value = res.data.notes || '';
-                    document.getElementById('cust_consulted').value = res.data.consulted == 1 ? '1' : '0';
+                    document.getElementById('cust_consulted').value = String(res.data.consulted || 0);
                     document.getElementById('cust_sales_phone').value = res.data.sales_phone || '';
                     document.getElementById('cust_sales_notes').value = res.data.sales_notes || '';
 

@@ -7,6 +7,14 @@
 ignore_user_abort(true);
 set_time_limit(300);
 
+// Ngăn chạy trùng lặp tiến trình (Concurrency Lock)
+$lock_file = __DIR__ . '/../locks/auto_request_phone.lock';
+$lock_fp = fopen($lock_file, 'c');
+if (!$lock_fp || !flock($lock_fp, LOCK_EX | LOCK_NB)) {
+    echo "Another instance of auto_request_phone.php is already running. Exiting.\n";
+    return;
+}
+
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/fb_api.php';
@@ -68,9 +76,11 @@ try {
             continue;
         }
 
+
+
         // Truy vấn khách hàng tương tác và thực sự đủ điều kiện xử lý trong CSDL (để tối ưu hóa hiệu năng)
         $sql_fb_customers = "
-            SELECT c.name, c.phone, c.province, c.notes, c.sender_id, c.last_message_at, c.info_requested_at, c.followup_requested_at, c.sales_phone
+            SELECT c.name, c.phone, c.province, c.notes, c.sender_id, c.last_message_at, c.info_requested_at, c.followup_requested_at, c.sales_phone, c.consulted
             FROM fb_customers c
             WHERE c.page_id = :page_id
               AND NOT EXISTS (
@@ -83,8 +93,10 @@ try {
                       :phone_request_enabled = 1
                       AND NOT (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
                       AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
+                      AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) -- Chỉ gửi tin trong vòng 24h từ tương tác cuối
                       AND (c.info_request_count IS NULL OR c.info_request_count < 3)
                       AND (c.info_requested_at IS NULL OR c.last_message_at > c.info_requested_at OR c.info_requested_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR))
+                      AND c.consulted != 3
                   )
                   OR
                   -- Case 2: Cần tự động gửi tin CSKH/Follow-up
@@ -92,8 +104,9 @@ try {
                       :followup_request_enabled = 1
                       AND (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
                       AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :followup_hours HOUR)
-                      AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+                      AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) -- Tuân thủ chính sách 24h của Facebook
                       AND c.followup_requested_at IS NULL
+                      AND c.consulted = 1
                   )
               )
         ";
@@ -119,7 +132,7 @@ try {
                     && (empty($product_request_text) || !empty($c['notes']));
 
                 // --- TRƯỜNG HỢP 1: TỰ ĐỘNG XIN THÔNG TIN (Nếu thông tin chưa đầy đủ) ---
-                if (!$is_info_complete && $phone_request_enabled) {
+                if (!$is_info_complete && $phone_request_enabled && (int)($c['consulted'] ?? 0) !== 3) {
                     $last_msg_ts = strtotime($c['last_message_at']);
                     $diff_hours = (time() - $last_msg_ts) / 3600;
 
@@ -208,7 +221,7 @@ try {
                 }
 
                 // --- TRƯỜNG HỢP 2: TỰ ĐỘNG GỬI TIN CSKH / FOLLOW-UP (Nếu thông tin đã đầy đủ) ---
-                if ($is_info_complete && $followup_request_enabled && !empty($followup_request_text)) {
+                if ($is_info_complete && $followup_request_enabled && !empty($followup_request_text) && (int)($c['consulted'] ?? 0) === 1) {
                     $last_msg_ts = strtotime($c['last_message_at']);
                     $diff_hours = (time() - $last_msg_ts) / 3600;
 
@@ -315,7 +328,7 @@ try {
 
         // Truy vấn khách hàng tương tác và thực sự đủ điều kiện xử lý trong CSDL (để tối ưu hóa hiệu năng)
         $sql_zalo_customers = "
-            SELECT name, phone, province, notes, sender_id, last_message_at, info_requested_at, followup_requested_at, sales_phone
+            SELECT name, phone, province, notes, sender_id, last_message_at, info_requested_at, followup_requested_at, sales_phone, consulted
             FROM zalo_customers
             WHERE oa_id = :oa_id
               AND NOT EXISTS (
@@ -330,6 +343,7 @@ try {
                       AND last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
                       AND (info_request_count IS NULL OR info_request_count < 3)
                       AND (info_requested_at IS NULL OR last_message_at > info_requested_at OR info_requested_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR))
+                      AND consulted != 3
                   )
                   OR
                   -- Case 2: Cần tự động gửi tin CSKH/Follow-up
@@ -339,6 +353,7 @@ try {
                       AND last_message_at <= DATE_SUB(NOW(), INTERVAL :followup_hours HOUR)
                       AND last_message_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
                       AND followup_requested_at IS NULL
+                      AND consulted = 1
                   )
               )
         ";
@@ -364,7 +379,7 @@ try {
                     && (empty($product_request_text) || !empty($c['notes']));
 
                 // --- TRƯỜNG HỢP 1: TỰ ĐỘNG XIN THÔNG TIN (Nếu thông tin chưa đầy đủ) ---
-                if (!$is_info_complete && $phone_request_enabled) {
+                if (!$is_info_complete && $phone_request_enabled && (int)($c['consulted'] ?? 0) !== 3) {
                     $last_msg_ts = strtotime($c['last_message_at']);
                     $diff_hours = (time() - $last_msg_ts) / 3600;
 
@@ -459,7 +474,7 @@ try {
                 }
 
                 // --- TRƯỜNG HỢP 2: TỰ ĐỘNG GỬI TIN CSKH / FOLLOW-UP (Nếu thông tin đã đầy đủ) ---
-                if ($is_info_complete && $followup_request_enabled && !empty($followup_request_text)) {
+                if ($is_info_complete && $followup_request_enabled && !empty($followup_request_text) && (int)($c['consulted'] ?? 0) === 1) {
                     $last_msg_ts = strtotime($c['last_message_at']);
                     $diff_hours = (time() - $last_msg_ts) / 3600;
 

@@ -182,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Update last_sender to 'agent' in zalo_customers
             try {
-                $st_upd = $pdo->prepare("UPDATE zalo_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP, followup_requested_at = NULL WHERE oa_id = ? AND sender_id = ?");
+                $st_upd = $pdo->prepare("UPDATE zalo_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP WHERE oa_id = ? AND sender_id = ?");
                 $st_upd->execute([$oa_id, $recipient_id]);
             } catch (Exception $e) {}
 
