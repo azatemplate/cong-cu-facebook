@@ -564,4 +564,10 @@ echo "  Zalo thành công:       $zalo_success_count\n";
 echo "  Zalo thất bại:         $zalo_error_count\n";
 echo "========================================\n";
 echo "[DONE] Hoàn tất auto-request worker.\n";
+
+// Giải phóng file lock để tránh rò rỉ FD sang các tiến trình con được spawn sau đó (ví dụ publish_worker.php)
+if (isset($lock_fp) && is_resource($lock_fp)) {
+    flock($lock_fp, LOCK_UN);
+    fclose($lock_fp);
+}
 ?>
