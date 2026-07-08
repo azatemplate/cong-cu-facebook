@@ -32,6 +32,17 @@ function replace_message_tags($text, $customer_name, $sales_phone) {
     }, $text);
 }
 
+// Helper để định dạng thời gian chờ còn lại
+function format_remaining_time($seconds) {
+    if ($seconds <= 0) return '0 phút';
+    $hours = floor($seconds / 3600);
+    $minutes = ceil(($seconds % 3600) / 60);
+    if ($hours > 0) {
+        return "{$hours} giờ {$minutes} phút";
+    }
+    return "{$minutes} phút";
+}
+
 echo "\n========================================\n";
 echo "  AUTO-REQUEST INFO WORKER — " . date('Y-m-d H:i:s') . "\n";
 echo "========================================\n";
@@ -80,7 +91,7 @@ try {
 
 
 
-        // Truy vấn khách hàng tương tác và thực sự đủ điều kiện xử lý trong CSDL (để tối ưu hóa hiệu năng)
+        // Truy vấn khách hàng tương tác (bỏ bớt điều kiện giờ để tính toán và in log thời gian chờ trong PHP)
         $sql_fb_customers = "
             SELECT c.name, c.phone, c.province, c.notes, c.sender_id, c.last_message_at, c.info_requested_at, c.followup_requested_at, c.sales_phone, c.consulted
             FROM fb_customers c
@@ -94,10 +105,8 @@ try {
                   (
                       :phone_request_enabled = 1
                       AND NOT (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
-                      AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
                       AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) -- Chỉ gửi tin trong vòng 24h từ tương tác cuối
                       AND (c.info_request_count IS NULL OR c.info_request_count < :phone_request_limit)
-                      AND (c.info_requested_at IS NULL OR c.last_message_at > c.info_requested_at OR c.info_requested_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR))
                       AND c.consulted != 3
                   )
                   OR
@@ -105,7 +114,6 @@ try {
                   (
                       :followup_request_enabled = 1
                       AND (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
-                      AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :followup_hours HOUR)
                       AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) -- Tuân thủ chính sách 24h của Facebook
                       AND c.followup_requested_at IS NULL
                       AND c.consulted = 1
@@ -118,15 +126,13 @@ try {
             ':phone_request_enabled' => $phone_request_enabled,
             ':has_province_req' => empty($province_request_text) ? 0 : 1,
             ':has_product_req' => empty($product_request_text) ? 0 : 1,
-            ':hours' => $hours,
             ':phone_request_limit' => $phone_request_limit,
-            ':followup_request_enabled' => $followup_request_enabled,
-            ':followup_hours' => $followup_hours
+            ':followup_request_enabled' => $followup_request_enabled
         ]);
         $customers = $stmt_cust->fetchAll(PDO::FETCH_ASSOC);
 
         if (count($customers) > 0) {
-            echo "[FB] Fanpage $page_id: Phát hiện " . count($customers) . " khách hàng đang chờ xử lý.\n";
+            echo "[FB] Fanpage $page_id: Phát hiện " . count($customers) . " khách hàng trong danh sách tiềm năng.\n";
             
             foreach ($customers as $c) {
                 // Xác định khách hàng đã đầy đủ thông tin hay chưa
@@ -137,98 +143,100 @@ try {
                 // --- TRƯỜNG HỢP 1: TỰ ĐỘNG XIN THÔNG TIN (Nếu thông tin chưa đầy đủ) ---
                 if (!$is_info_complete && $phone_request_enabled && (int)($c['consulted'] ?? 0) !== 3) {
                     $last_msg_ts = strtotime($c['last_message_at']);
-                    $diff_hours = (time() - $last_msg_ts) / 3600;
+                    $target_ts = $last_msg_ts + ($hours * 3600);
+                    $remaining_seconds = $target_ts - time();
 
-                    if ($diff_hours >= $hours) {
-                        if (empty($c['info_requested_at']) || strtotime($c['last_message_at']) > strtotime($c['info_requested_at'])) {
-                            
-                            $msg_to_send = '';
-                            
-                            // 1. Kiểm tra Số điện thoại
-                            if (empty($c['phone'])) {
-                                if (!empty($phone_request_text)) {
-                                    $msg_to_send = $phone_request_text;
-                                }
-                            }
-                            
-                            // 2. Kiểm tra Tỉnh thành (Nếu có SĐT rồi hoặc bỏ qua xin SĐT)
-                            if (empty($msg_to_send) && empty($c['province'])) {
-                                if (!empty($province_request_text)) {
-                                    $msg_to_send = $province_request_text;
-                                }
-                            }
-                            
-                            // 3. Kiểm tra Nhu cầu/Sản phẩm (Nếu có SĐT và Tỉnh thành rồi hoặc bỏ qua)
-                            if (empty($msg_to_send) && empty($c['notes'])) {
-                                if (!empty($product_request_text)) {
-                                    $msg_to_send = $product_request_text;
-                                }
-                            }
-
-                            if (!empty($msg_to_send)) {
-                                $customer_name = trim($c['name'] ?? 'bạn');
-                                if (empty($customer_name)) {
-                                    $customer_name = 'bạn';
-                                }
-                                $message_text = replace_message_tags($msg_to_send, $customer_name, $c['sales_phone']);
-
-                                echo "[FB] Đang gửi auto-request cho khách {$c['sender_id']} ({$customer_name}): \"$message_text\"\n";
-                                
-                                // Gửi tin nhắn qua Facebook Graph API
-                                $post_data = [
-                                    'recipient' => json_encode(['id' => $c['sender_id']]),
-                                    'message' => json_encode(['text' => $message_text]),
-                                    'messaging_type' => 'RESPONSE'
-                                ];
-
-                                $res = fb_api_request('me/messages', ['access_token' => $page_access_token], 'POST', $post_data);
-                                
-                                if ($res['status_code'] === 200) {
-                                    // Cập nhật trạng thái tin nhắn cuối cùng và thời điểm yêu cầu
-                                    $upd = $pdo->prepare("
-                                        UPDATE fb_customers 
-                                        SET last_sender = 'agent', 
-                                            last_message_at = CURRENT_TIMESTAMP, 
-                                            info_requested_at = CURRENT_TIMESTAMP,
-                                            info_request_count = COALESCE(info_request_count, 0) + 1
-                                        WHERE page_id = ? AND sender_id = ?
-                                    ");
-                                    $upd->execute([$page_id, $c['sender_id']]);
-                                    $fb_success_count++;
-                                    echo "[FB] Gửi thành công cho khách {$c['sender_id']}.\n";
-                                } else {
-                                    $fb_error_count++;
-                                    $err_msg = $res['data']['error']['message'] ?? 'Lỗi không xác định.';
-                                    echo "[FB] Gửi thất bại cho khách {$c['sender_id']}: $err_msg\n";
-                                    
-                                    // Cập nhật info_requested_at để tránh lặp lại gửi liên tục khi lỗi (bị chặn, không hoạt động...)
-                                    $upd_fail = $pdo->prepare("
-                                        UPDATE fb_customers 
-                                        SET info_requested_at = CURRENT_TIMESTAMP,
-                                            info_request_count = COALESCE(info_request_count, 0) + 1
-                                        WHERE page_id = ? AND sender_id = ?
-                                    ");
-                                    $upd_fail->execute([$page_id, $c['sender_id']]);
-                                }
-                            } else {
-                                // Thông tin đã đầy đủ hoặc không có cấu hình tin nhắn mẫu, cập nhật info_requested_at để tránh quét lại liên tục
-                                $upd_skip = $pdo->prepare("
-                                    UPDATE fb_customers 
-                                    SET info_requested_at = CURRENT_TIMESTAMP 
-                                    WHERE page_id = ? AND sender_id = ?
-                                ");
-                                $upd_skip->execute([$page_id, $c['sender_id']]);
+                    if ($remaining_seconds <= 0) {
+                        $msg_to_send = '';
+                        
+                        // 1. Kiểm tra Số điện thoại
+                        if (empty($c['phone'])) {
+                            if (!empty($phone_request_text)) {
+                                $msg_to_send = $phone_request_text;
                             }
                         }
+                        
+                        // 2. Kiểm tra Tỉnh thành (Nếu có SĐT rồi hoặc bỏ qua xin SĐT)
+                        if (empty($msg_to_send) && empty($c['province'])) {
+                            if (!empty($province_request_text)) {
+                                $msg_to_send = $province_request_text;
+                            }
+                        }
+                        
+                        // 3. Kiểm tra Nhu cầu/Sản phẩm (Nếu có SĐT và Tỉnh thành rồi hoặc bỏ qua)
+                        if (empty($msg_to_send) && empty($c['notes'])) {
+                            if (!empty($product_request_text)) {
+                                $msg_to_send = $product_request_text;
+                            }
+                        }
+
+                        if (!empty($msg_to_send)) {
+                            $customer_name = trim($c['name'] ?? 'bạn');
+                            if (empty($customer_name)) {
+                                $customer_name = 'bạn';
+                            }
+                            $message_text = replace_message_tags($msg_to_send, $customer_name, $c['sales_phone']);
+
+                            echo "[FB] Đang gửi auto-request cho khách {$c['sender_id']} ({$customer_name}): \"$message_text\"\n";
+                            
+                            // Gửi tin nhắn qua Facebook Graph API
+                            $post_data = [
+                                'recipient' => json_encode(['id' => $c['sender_id']]),
+                                'message' => json_encode(['text' => $message_text]),
+                                'messaging_type' => 'RESPONSE'
+                            ];
+
+                            $res = fb_api_request('me/messages', ['access_token' => $page_access_token], 'POST', $post_data);
+                            
+                            if ($res['status_code'] === 200) {
+                                // Cập nhật trạng thái tin nhắn cuối cùng và thời điểm yêu cầu
+                                $upd = $pdo->prepare("
+                                    UPDATE fb_customers 
+                                    SET last_sender = 'agent', 
+                                        last_message_at = CURRENT_TIMESTAMP, 
+                                        info_requested_at = CURRENT_TIMESTAMP,
+                                        info_request_count = COALESCE(info_request_count, 0) + 1
+                                    WHERE page_id = ? AND sender_id = ?
+                                ");
+                                $upd->execute([$page_id, $c['sender_id']]);
+                                $fb_success_count++;
+                                echo "[FB] Gửi thành công cho khách {$c['sender_id']}.\n";
+                            } else {
+                                $fb_error_count++;
+                                $err_msg = $res['data']['error']['message'] ?? 'Lỗi không xác định.';
+                                echo "[FB] Gửi thất bại cho khách {$c['sender_id']}: $err_msg\n";
+                                
+                                // Cập nhật info_requested_at để tránh lặp lại gửi liên tục khi lỗi (bị chặn, không hoạt động...)
+                                $upd_fail = $pdo->prepare("
+                                    UPDATE fb_customers 
+                                    SET info_requested_at = CURRENT_TIMESTAMP,
+                                        info_request_count = COALESCE(info_request_count, 0) + 1
+                                    WHERE page_id = ? AND sender_id = ?
+                                ");
+                                $upd_fail->execute([$page_id, $c['sender_id']]);
+                            }
+                        } else {
+                            // Thông tin đã đầy đủ hoặc không có cấu hình tin nhắn mẫu, cập nhật info_requested_at để tránh quét lại liên tục
+                            $upd_skip = $pdo->prepare("
+                                UPDATE fb_customers 
+                                SET info_requested_at = CURRENT_TIMESTAMP 
+                                WHERE page_id = ? AND sender_id = ?
+                            ");
+                            $upd_skip->execute([$page_id, $c['sender_id']]);
+                        }
+                    } else {
+                        $remaining_str = format_remaining_time($remaining_seconds);
+                        echo "  [FB] Khách hàng {$c['sender_id']} ({$c['name']}): Chờ gửi xin thông tin (Còn $remaining_str).\n";
                     }
                 }
 
                 // --- TRƯỜNG HỢP 2: TỰ ĐỘNG GỬI TIN CSKH / FOLLOW-UP (Nếu thông tin đã đầy đủ) ---
                 if ($is_info_complete && $followup_request_enabled && !empty($followup_request_text) && (int)($c['consulted'] ?? 0) === 1) {
                     $last_msg_ts = strtotime($c['last_message_at']);
-                    $diff_hours = (time() - $last_msg_ts) / 3600;
+                    $target_ts = $last_msg_ts + ($followup_hours * 3600);
+                    $remaining_seconds = $target_ts - time();
 
-                    if ($diff_hours >= $followup_hours) {
+                    if ($remaining_seconds <= 0) {
                         if (empty($c['followup_requested_at'])) {
                             
                             $customer_name = trim($c['name'] ?? 'bạn');
@@ -285,6 +293,11 @@ try {
                                 $upd_fail->execute([$page_id, $c['sender_id']]);
                             }
                         }
+                    } else {
+                        if (empty($c['followup_requested_at'])) {
+                            $remaining_str = format_remaining_time($remaining_seconds);
+                            echo "  [FB] Khách hàng {$c['sender_id']} ({$c['name']}): Chờ gửi tin CSKH (Còn $remaining_str).\n";
+                        }
                     }
                 }
             }
@@ -331,7 +344,7 @@ try {
             continue;
         }
 
-        // Truy vấn khách hàng tương tác và thực sự đủ điều kiện xử lý trong CSDL (để tối ưu hóa hiệu năng)
+        // Truy vấn khách hàng tương tác (bỏ bớt điều kiện giờ để tính toán và in log thời gian chờ trong PHP)
         $sql_zalo_customers = "
             SELECT name, phone, province, notes, sender_id, last_message_at, info_requested_at, followup_requested_at, sales_phone, consulted
             FROM zalo_customers
@@ -345,9 +358,8 @@ try {
                   (
                       :phone_request_enabled = 1
                       AND NOT (phone IS NOT NULL AND phone != '' AND (:has_province_req = 0 OR (province IS NOT NULL AND province != '')) AND (:has_product_req = 0 OR (notes IS NOT NULL AND notes != '')))
-                      AND last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
+                      AND last_message_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) -- Chỉ quét khách tương tác trong 7 ngày (interaction window)
                       AND (info_request_count IS NULL OR info_request_count < :phone_request_limit)
-                      AND (info_requested_at IS NULL OR last_message_at > info_requested_at OR info_requested_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR))
                       AND consulted != 3
                   )
                   OR
@@ -355,7 +367,6 @@ try {
                   (
                       :followup_request_enabled = 1
                       AND (phone IS NOT NULL AND phone != '' AND (:has_province_req = 0 OR (province IS NOT NULL AND province != '')) AND (:has_product_req = 0 OR (notes IS NOT NULL AND notes != '')))
-                      AND last_message_at <= DATE_SUB(NOW(), INTERVAL :followup_hours HOUR)
                       AND last_message_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
                       AND followup_requested_at IS NULL
                       AND consulted = 1
@@ -368,15 +379,13 @@ try {
             ':phone_request_enabled' => $phone_request_enabled,
             ':has_province_req' => empty($province_request_text) ? 0 : 1,
             ':has_product_req' => empty($product_request_text) ? 0 : 1,
-            ':hours' => $hours,
             ':phone_request_limit' => $phone_request_limit,
-            ':followup_request_enabled' => $followup_request_enabled,
-            ':followup_hours' => $followup_hours
+            ':followup_request_enabled' => $followup_request_enabled
         ]);
         $customers = $stmt_cust->fetchAll(PDO::FETCH_ASSOC);
 
         if (count($customers) > 0) {
-            echo "[ZALO] OA $oa_id: Phát hiện " . count($customers) . " khách hàng đang chờ xử lý.\n";
+            echo "[ZALO] OA $oa_id: Phát hiện " . count($customers) . " khách hàng trong danh sách tiềm năng.\n";
 
             foreach ($customers as $c) {
                 // Xác định khách hàng đã đầy đủ thông tin hay chưa
@@ -387,66 +396,65 @@ try {
                 // --- TRƯỜNG HỢP 1: TỰ ĐỘNG XIN THÔNG TIN (Nếu thông tin chưa đầy đủ) ---
                 if (!$is_info_complete && $phone_request_enabled && (int)($c['consulted'] ?? 0) !== 3) {
                     $last_msg_ts = strtotime($c['last_message_at']);
-                    $diff_hours = (time() - $last_msg_ts) / 3600;
+                    $target_ts = $last_msg_ts + ($hours * 3600);
+                    $remaining_seconds = $target_ts - time();
 
-                    if ($diff_hours >= $hours) { // Follows custom user-configured hours only
-                        if (empty($c['info_requested_at']) || strtotime($c['last_message_at']) > strtotime($c['info_requested_at'])) {
-                            
-                            $msg_to_send = '';
+                    if ($remaining_seconds <= 0) { // Follows custom user-configured hours only
+                        $msg_to_send = '';
 
-                            // 1. Kiểm tra Số điện thoại
-                            if (empty($c['phone'])) {
-                                if (!empty($phone_request_text)) {
-                                    $msg_to_send = $phone_request_text;
-                                }
+                        // 1. Kiểm tra Số điện thoại
+                        if (empty($c['phone'])) {
+                            if (!empty($phone_request_text)) {
+                                $msg_to_send = $phone_request_text;
                             }
+                        }
 
-                            // 2. Kiểm tra Tỉnh thành (Nếu có SĐT rồi hoặc bỏ qua)
-                            if (empty($msg_to_send) && empty($c['province'])) {
-                                if (!empty($province_request_text)) {
-                                    $msg_to_send = $province_request_text;
-                                }
+                        // 2. Kiểm tra Tỉnh thành (Nếu có SĐT rồi hoặc bỏ qua)
+                        if (empty($msg_to_send) && empty($c['province'])) {
+                            if (!empty($province_request_text)) {
+                                $msg_to_send = $province_request_text;
                             }
+                        }
 
-                            // 3. Kiểm tra Nhu cầu/Sản phẩm (Nếu có SĐT và Tỉnh thành rồi hoặc bỏ qua)
-                            if (empty($msg_to_send) && empty($c['notes'])) {
-                                if (!empty($product_request_text)) {
-                                    $msg_to_send = $product_request_text;
-                                }
+                        // 3. Kiểm tra Nhu cầu/Sản phẩm (Nếu có SĐT và Tỉnh thành rồi hoặc bỏ qua)
+                        if (empty($msg_to_send) && empty($c['notes'])) {
+                            if (!empty($product_request_text)) {
+                                $msg_to_send = $product_request_text;
                             }
+                        }
 
-                            if (!empty($msg_to_send)) {
-                                $customer_name = trim($c['name'] ?? 'bạn');
-                                if (empty($customer_name)) {
-                                    $customer_name = 'bạn';
-                                }
-                                $message_text = replace_message_tags($msg_to_send, $customer_name, $c['sales_phone']);
+                        if (!empty($msg_to_send)) {
+                            $customer_name = trim($c['name'] ?? 'bạn');
+                            if (empty($customer_name)) {
+                                $customer_name = 'bạn';
+                            }
+                            $message_text = replace_message_tags($msg_to_send, $customer_name, $c['sales_phone']);
 
-                                echo "[ZALO] Đang gửi auto-request cho khách Zalo {$c['sender_id']} ({$customer_name}): \"$message_text\"\n";
+                            echo "[ZALO] Đang gửi auto-request cho khách Zalo {$c['sender_id']} ({$customer_name}): \"$message_text\"\n";
 
-                                // Gửi tin nhắn qua Zalo Open API
-                                $res = zalo_send_text_message($access_token, $c['sender_id'], $message_text);
+                            // Gửi tin nhắn qua Zalo Open API
+                            $res = zalo_send_text_message($access_token, $c['sender_id'], $message_text);
 
-                                if (isset($res['status_code']) && $res['status_code'] === 200 && isset($res['data']['error']) && $res['data']['error'] === 0) {
-                                    // Cập nhật khách hàng
-                                    $upd = $pdo->prepare("
-                                        UPDATE zalo_customers 
-                                        SET last_sender = 'agent', 
-                                            last_message_at = CURRENT_TIMESTAMP, 
-                                            info_requested_at = CURRENT_TIMESTAMP,
-                                            info_request_count = COALESCE(info_request_count, 0) + 1
-                                        WHERE oa_id = ? AND sender_id = ?
-                                    ");
-                                    $upd->execute([$oa_id, $c['sender_id']]);
+                            if (isset($res['status_code']) && $res['status_code'] === 200 && isset($res['data']['error']) && $res['data']['error'] === 0) {
+                                // Cập nhật khách hàng
+                                $upd = $pdo->prepare("
+                                    UPDATE zalo_customers 
+                                    SET last_sender = 'agent', 
+                                        last_message_at = CURRENT_TIMESTAMP, 
+                                        info_requested_at = CURRENT_TIMESTAMP,
+                                        info_request_count = COALESCE(info_request_count, 0) + 1
+                                    WHERE oa_id = ? AND sender_id = ?
+                                ");
+                                $upd->execute([$oa_id, $c['sender_id']]);
 
-                                    // Cập nhật danh sách hội thoại đệm
-                                    $upd_msg = $pdo->prepare("
-                                        INSERT INTO zalo_messages (oa_id, sender_id, snippet, unread_count, updated_time)
-                                        VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
-                                        ON DUPLICATE KEY UPDATE 
-                                            snippet = VALUES(snippet),
-                                            unread_count = 0,
-                                            updated_time = CURRENT_TIMESTAMP
+                                // Cập nhật danh sách hội thoại đệm
+                                $upd_msg = $pdo->prepare("
+                                    INSERT INTO zalo_messages (oa_id, sender_id, snippet, unread_count, updated_time)
+                                    VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
+                                    ON DUPLICATE KEY UPDATE 
+                                        snippet = VALUES(snippet),
+                                        unread_count = 0,
+                                        updated_time = CURRENT_TIMESTAMP
                                     ");
                                     $upd_msg->execute([$oa_id, $c['sender_id'], $message_text]);
 
@@ -475,6 +483,9 @@ try {
                                 ");
                                 $upd_skip->execute([$oa_id, $c['sender_id']]);
                             }
+                        } else {
+                            $remaining_str = format_remaining_time($remaining_seconds);
+                            echo "  [ZALO] Khách hàng {$c['sender_id']} ({$c['name']}): Chờ gửi xin thông tin (Còn $remaining_str).\n";
                         }
                     }
                 }
@@ -545,6 +556,11 @@ try {
                                 ");
                                 $upd_fail->execute([$oa_id, $c['sender_id']]);
                             }
+                        }
+                    } else {
+                        if (empty($c['followup_requested_at'])) {
+                            $remaining_str = format_remaining_time($remaining_seconds);
+                            echo "  [ZALO] Khách hàng {$c['sender_id']} ({$c['name']}): Chờ gửi tin CSKH (Còn $remaining_str).\n";
                         }
                     }
                 }
