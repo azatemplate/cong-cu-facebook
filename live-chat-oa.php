@@ -790,11 +790,20 @@ $sales_list = $acc_setup['sales_list'] ?? '';
                     </label>
                 </div>
 
-                <div style="display:flex; flex-direction:column; gap:5px;">
-                    <label style="font-weight:600; font-size:13px; color:var(--text-main);">Thời gian chờ gửi tin nhắn (giờ)</label>
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <input type="number" id="zalo_phone_request_hours" name="phone_request_hours" min="1" max="168" value="1" style="width:80px; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:14px; background:var(--card-bg); color:var(--text-main);">
-                        <span style="font-size:13px; color:var(--text-muted);">giờ (từ 1 đến 168 giờ (7 ngày). Khuyến nghị: 1-2 giờ)</span>
+                <div style="display:flex; gap:15px; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:200px; display:flex; flex-direction:column; gap:5px;">
+                        <label style="font-weight:600; font-size:13px; color:var(--text-main);">Thời gian chờ gửi tin nhắn (giờ)</label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="number" id="zalo_phone_request_hours" name="phone_request_hours" min="1" max="168" value="1" style="width:80px; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:14px; background:var(--card-bg); color:var(--text-main);">
+                            <span style="font-size:13px; color:var(--text-muted);">giờ (từ 1 đến 168 giờ (7 ngày). Khuyến nghị: 1-2 giờ)</span>
+                        </div>
+                    </div>
+                    <div style="flex:1; min-width:200px; display:flex; flex-direction:column; gap:5px;">
+                        <label style="font-weight:600; font-size:13px; color:var(--text-main);">Số lần xin tối đa</label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="number" id="zalo_phone_request_limit" name="phone_request_limit" min="1" max="10" value="3" style="width:80px; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:14px; background:var(--card-bg); color:var(--text-main);">
+                            <span style="font-size:13px; color:var(--text-muted);">lần (tối đa 10 lần. Mặc định: 3 lần)</span>
+                        </div>
                     </div>
                 </div>
 
@@ -2148,6 +2157,7 @@ $sales_list = $acc_setup['sales_list'] ?? '';
                 document.getElementById('zalo_phone_request_text').value = res.data.phone_request_text || '';
                 document.getElementById('zalo_province_request_text').value = res.data.province_request_text || '';
                 document.getElementById('zalo_product_request_text').value = res.data.product_request_text || '';
+                document.getElementById('zalo_phone_request_limit').value = res.data.phone_request_limit || 3;
                 
                 // Load follow-up settings
                 document.getElementById('zalo_followup_request_enabled').checked = res.data.followup_request_enabled == 1;
@@ -2177,6 +2187,7 @@ $sales_list = $acc_setup['sales_list'] ?? '';
         fd.append('phone_request_text', document.getElementById('zalo_phone_request_text').value);
         fd.append('province_request_text', document.getElementById('zalo_province_request_text').value);
         fd.append('product_request_text', document.getElementById('zalo_product_request_text').value);
+        fd.append('phone_request_limit', document.getElementById('zalo_phone_request_limit').value);
         
         const followupVal = parseInt(document.getElementById('zalo_followup_request_val').value) || 12;
         const followupUnit = document.getElementById('zalo_followup_request_unit').value;

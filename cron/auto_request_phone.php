@@ -49,7 +49,8 @@ try {
         SELECT p.page_id, p.access_token, p.user_id,
                sa.phone_request_enabled, sa.phone_request_hours, sa.phone_request_text, 
                sa.province_request_text, sa.product_request_text,
-               sa.followup_request_enabled, sa.followup_request_hours, sa.followup_request_text
+               sa.followup_request_enabled, sa.followup_request_hours, sa.followup_request_text,
+               sa.phone_request_limit
         FROM pages p
         JOIN users u ON p.user_id = u.id
         JOIN system_accounts sa ON u.account_id = sa.id
@@ -65,6 +66,7 @@ try {
         $phone_request_text = trim($page['phone_request_text'] ?? '');
         $province_request_text = trim($page['province_request_text'] ?? '');
         $product_request_text = trim($page['product_request_text'] ?? '');
+        $phone_request_limit = max(1, intval($page['phone_request_limit'] ?? 3));
         
         $followup_request_enabled = (int)($page['followup_request_enabled'] ?? 0);
         $followup_hours = max(1, intval($page['followup_request_hours']));
@@ -94,7 +96,7 @@ try {
                       AND NOT (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
                       AND c.last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
                       AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) -- Chỉ gửi tin trong vòng 24h từ tương tác cuối
-                      AND (c.info_request_count IS NULL OR c.info_request_count < 3)
+                      AND (c.info_request_count IS NULL OR c.info_request_count < :phone_request_limit)
                       AND (c.info_requested_at IS NULL OR c.last_message_at > c.info_requested_at OR c.info_requested_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR))
                       AND c.consulted != 3
                   )
@@ -117,6 +119,7 @@ try {
             ':has_province_req' => empty($province_request_text) ? 0 : 1,
             ':has_product_req' => empty($product_request_text) ? 0 : 1,
             ':hours' => $hours,
+            ':phone_request_limit' => $phone_request_limit,
             ':followup_request_enabled' => $followup_request_enabled,
             ':followup_hours' => $followup_hours
         ]);
@@ -299,7 +302,8 @@ try {
         SELECT zo.oa_id, zo.account_id,
                zs.phone_request_enabled, zs.phone_request_hours, zs.phone_request_text, 
                zs.province_request_text, zs.product_request_text,
-               zs.followup_request_enabled, zs.followup_request_hours, zs.followup_request_text
+               zs.followup_request_enabled, zs.followup_request_hours, zs.followup_request_text,
+               zs.phone_request_limit
         FROM zalo_oas zo
         JOIN zalo_settings zs ON zo.account_id = zs.account_id
         WHERE zs.phone_request_enabled = 1 OR zs.followup_request_enabled = 1
@@ -314,6 +318,7 @@ try {
         $phone_request_text = trim($oa['phone_request_text'] ?? '');
         $province_request_text = trim($oa['province_request_text'] ?? '');
         $product_request_text = trim($oa['product_request_text'] ?? '');
+        $phone_request_limit = max(1, intval($oa['phone_request_limit'] ?? 3));
         
         $followup_request_enabled = (int)($oa['followup_request_enabled'] ?? 0);
         $followup_hours = max(1, intval($oa['followup_request_hours']));
@@ -341,7 +346,7 @@ try {
                       :phone_request_enabled = 1
                       AND NOT (phone IS NOT NULL AND phone != '' AND (:has_province_req = 0 OR (province IS NOT NULL AND province != '')) AND (:has_product_req = 0 OR (notes IS NOT NULL AND notes != '')))
                       AND last_message_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR)
-                      AND (info_request_count IS NULL OR info_request_count < 3)
+                      AND (info_request_count IS NULL OR info_request_count < :phone_request_limit)
                       AND (info_requested_at IS NULL OR last_message_at > info_requested_at OR info_requested_at <= DATE_SUB(NOW(), INTERVAL :hours HOUR))
                       AND consulted != 3
                   )
@@ -364,6 +369,7 @@ try {
             ':has_province_req' => empty($province_request_text) ? 0 : 1,
             ':has_product_req' => empty($product_request_text) ? 0 : 1,
             ':hours' => $hours,
+            ':phone_request_limit' => $phone_request_limit,
             ':followup_request_enabled' => $followup_request_enabled,
             ':followup_hours' => $followup_hours
         ]);

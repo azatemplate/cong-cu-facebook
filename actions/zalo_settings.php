@@ -17,7 +17,7 @@ $account_id = $_SESSION['account_id'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
-        $stmt = $pdo->prepare("SELECT app_id, app_secret, oa_secret, phone_request_enabled, phone_request_hours, phone_request_text, province_request_text, product_request_text, followup_request_enabled, followup_request_hours, followup_request_text FROM zalo_settings WHERE account_id = ?");
+        $stmt = $pdo->prepare("SELECT app_id, app_secret, oa_secret, phone_request_enabled, phone_request_hours, phone_request_text, province_request_text, product_request_text, followup_request_enabled, followup_request_hours, followup_request_text, phone_request_limit FROM zalo_settings WHERE account_id = ?");
         $stmt->execute([$account_id]);
         $settings = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -35,7 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     'product_request_text' => $settings['product_request_text'] ?? '',
                     'followup_request_enabled' => (int)($settings['followup_request_enabled'] ?? 0),
                     'followup_request_hours' => (int)($settings['followup_request_hours'] ?? 12),
-                    'followup_request_text' => $settings['followup_request_text'] ?? ''
+                    'followup_request_text' => $settings['followup_request_text'] ?? '',
+                    'phone_request_limit' => (int)($settings['phone_request_limit'] ?? 3)
                 ]
             ]);
         } else {
@@ -52,7 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     'product_request_text' => '',
                     'followup_request_enabled' => 0,
                     'followup_request_hours' => 12,
-                    'followup_request_text' => ''
+                    'followup_request_text' => '',
+                    'phone_request_limit' => 3
                 ]
             ]);
         }

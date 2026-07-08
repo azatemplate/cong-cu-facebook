@@ -551,7 +551,9 @@ try {
         "ALTER TABLE zalo_customers ADD COLUMN info_request_count INT DEFAULT 0",
         "ALTER TABLE users ADD COLUMN gg_client_id VARCHAR(255) DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN gg_client_secret VARCHAR(255) DEFAULT NULL",
-        "ALTER TABLE users ADD COLUMN gg_refresh_token TEXT DEFAULT NULL"
+        "ALTER TABLE users ADD COLUMN gg_refresh_token TEXT DEFAULT NULL",
+        "ALTER TABLE system_accounts ADD COLUMN phone_request_limit INT DEFAULT 3",
+        "ALTER TABLE zalo_settings ADD COLUMN phone_request_limit INT DEFAULT 3"
     ];
 
     foreach ($auto_req_migrations as $query) {

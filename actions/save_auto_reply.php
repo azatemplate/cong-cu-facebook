@@ -36,6 +36,7 @@ try {
     $phone_request_text = isset($_POST['phone_request_text']) ? trim($_POST['phone_request_text']) : ($old_acc['phone_request_text'] ?? '');
     $province_request_text = isset($_POST['province_request_text']) ? trim($_POST['province_request_text']) : ($old_acc['province_request_text'] ?? '');
     $product_request_text = isset($_POST['product_request_text']) ? trim($_POST['product_request_text']) : ($old_acc['product_request_text'] ?? '');
+    $phone_request_limit = isset($_POST['phone_request_limit']) ? intval($_POST['phone_request_limit']) : (int)($old_acc['phone_request_limit'] ?? 3);
 
     $followup_request_enabled = isset($_POST['followup_request_enabled']) ? intval($_POST['followup_request_enabled']) : (int)($old_acc['followup_request_enabled'] ?? 0);
     $followup_request_hours = isset($_POST['followup_request_hours']) ? intval($_POST['followup_request_hours']) : (int)($old_acc['followup_request_hours'] ?? 12);
@@ -44,10 +45,13 @@ try {
     if ($phone_request_hours < 1) $phone_request_hours = 1;
     if ($phone_request_hours > 24) $phone_request_hours = 24;
     
+    if ($phone_request_limit < 1) $phone_request_limit = 1;
+    if ($phone_request_limit > 10) $phone_request_limit = 10;
+    
     if ($followup_request_hours < 1) $followup_request_hours = 1;
     if ($followup_request_hours > 720) $followup_request_hours = 720;
 
-    $stmt = $pdo->prepare("UPDATE system_accounts SET auto_reply_enabled = ?, auto_reply_text = ?, auto_inbox_enabled = ?, auto_inbox_text = ?, auto_pages_scope = ?, phone_request_enabled = ?, phone_request_hours = ?, phone_request_text = ?, province_request_text = ?, product_request_text = ?, followup_request_enabled = ?, followup_request_hours = ?, followup_request_text = ? WHERE id = ?");
+    $stmt = $pdo->prepare("UPDATE system_accounts SET auto_reply_enabled = ?, auto_reply_text = ?, auto_inbox_enabled = ?, auto_inbox_text = ?, auto_pages_scope = ?, phone_request_enabled = ?, phone_request_hours = ?, phone_request_text = ?, province_request_text = ?, product_request_text = ?, followup_request_enabled = ?, followup_request_hours = ?, followup_request_text = ?, phone_request_limit = ? WHERE id = ?");
     $stmt->execute([
         $auto_reply_enabled, $auto_reply_text, 
         $auto_inbox_enabled, $auto_inbox_text, 
@@ -55,6 +59,7 @@ try {
         $phone_request_enabled, $phone_request_hours, 
         $phone_request_text, $province_request_text, $product_request_text,
         $followup_request_enabled, $followup_request_hours, $followup_request_text,
+        $phone_request_limit,
         $account_id
     ]);
     

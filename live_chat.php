@@ -10,7 +10,7 @@ require_once __DIR__ . '/setup_live_chat.php'; // auto run setup for DB table
 ob_end_clean(); // Clean output entirely so no random text is printed
 
 // Fetch system_accounts phone request config
-$stmt_acc = $pdo->prepare("SELECT phone_request_enabled, phone_request_hours, phone_request_text, province_request_text, product_request_text, followup_request_enabled, followup_request_hours, followup_request_text, sales_list FROM system_accounts WHERE id = ?");
+$stmt_acc = $pdo->prepare("SELECT phone_request_enabled, phone_request_hours, phone_request_text, province_request_text, product_request_text, followup_request_enabled, followup_request_hours, followup_request_text, sales_list, phone_request_limit FROM system_accounts WHERE id = ?");
 $stmt_acc->execute([$account_id]);
 $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC);
 $phone_request_enabled = (int)($acc_setup['phone_request_enabled'] ?? 0);
@@ -18,6 +18,7 @@ $phone_request_hours = (int)($acc_setup['phone_request_hours'] ?? 1);
 $phone_request_text = $acc_setup['phone_request_text'] ?? '';
 $province_request_text = $acc_setup['province_request_text'] ?? '';
 $product_request_text = $acc_setup['product_request_text'] ?? '';
+$phone_request_limit = (int)($acc_setup['phone_request_limit'] ?? 3);
 $followup_request_enabled = (int)($acc_setup['followup_request_enabled'] ?? 0);
 $followup_request_hours = (int)($acc_setup['followup_request_hours'] ?? 12);
 $followup_request_text = $acc_setup['followup_request_text'] ?? '';
@@ -183,11 +184,20 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
                     </label>
                 </div>
 
-                <div style="display:flex; flex-direction:column; gap:5px;">
-                    <label style="font-weight:600; font-size:13px; color:var(--text-main);">Thời gian chờ gửi tin nhắn (giờ)</label>
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <input type="number" id="phone_request_hours" name="phone_request_hours" min="1" max="24" value="<?php echo $phone_request_hours; ?>" style="width:80px; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:14px; background:var(--card-bg); color:var(--text-main);">
-                        <span style="font-size:13px; color:var(--text-muted);">giờ (từ 1 đến 24 giờ. Khuyến nghị: 1-2 giờ)</span>
+                <div style="display:flex; gap:15px; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:200px; display:flex; flex-direction:column; gap:5px;">
+                        <label style="font-weight:600; font-size:13px; color:var(--text-main);">Thời gian chờ gửi tin nhắn (giờ)</label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="number" id="phone_request_hours" name="phone_request_hours" min="1" max="24" value="<?php echo $phone_request_hours; ?>" style="width:80px; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:14px; background:var(--card-bg); color:var(--text-main);">
+                            <span style="font-size:13px; color:var(--text-muted);">giờ (từ 1 đến 24 giờ. Khuyến nghị: 1-2 giờ)</span>
+                        </div>
+                    </div>
+                    <div style="flex:1; min-width:200px; display:flex; flex-direction:column; gap:5px;">
+                        <label style="font-weight:600; font-size:13px; color:var(--text-main);">Số lần xin tối đa</label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="number" id="phone_request_limit" name="phone_request_limit" min="1" max="10" value="<?php echo $phone_request_limit; ?>" style="width:80px; padding:8px; border:1px solid var(--border-color); border-radius:6px; font-size:14px; background:var(--card-bg); color:var(--text-main);">
+                            <span style="font-size:13px; color:var(--text-muted);">lần (tối đa 10 lần. Mặc định: 3 lần)</span>
+                        </div>
                     </div>
                 </div>
 
@@ -671,6 +681,7 @@ function savePhoneRequestSettings(e) {
     fd.append('phone_request_text', document.getElementById('phone_request_text').value);
     fd.append('province_request_text', document.getElementById('province_request_text').value);
     fd.append('product_request_text', document.getElementById('product_request_text').value);
+    fd.append('phone_request_limit', document.getElementById('phone_request_limit').value);
     
     const followupVal = parseInt(document.getElementById('followup_request_val').value) || 12;
     const followupUnit = document.getElementById('followup_request_unit').value;
