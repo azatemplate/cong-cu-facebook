@@ -488,7 +488,6 @@ try {
                             echo "  [ZALO] Khách hàng {$c['sender_id']} ({$c['name']}): Chờ gửi xin thông tin (Còn $remaining_str).\n";
                         }
                     }
-                }
 
                 // --- TRƯỜNG HỢP 2: TỰ ĐỘNG GỬI TIN CSKH / FOLLOW-UP (Nếu thông tin đã đầy đủ) ---
                 if ($is_info_complete && $followup_request_enabled && !empty($followup_request_text) && (int)($c['consulted'] ?? 0) === 1) {
