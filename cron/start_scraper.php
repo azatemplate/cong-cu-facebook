@@ -92,7 +92,7 @@ if ($stmt && $stmt->execute()) {
 
             echo "  -> Tien hanh Scrape Page ID $page_id...
 ";
-            $fields = 'id,object_id,message,created_time,full_picture,attachments,shares,comments.summary(total_count),reactions.summary(total_count)';
+            $fields = 'id,object_id,message,created_time,full_picture,status_type,shares,comments.summary(total_count),reactions.summary(total_count)';
             $limit = $pageInfo['post_count'] > 0 ? $pageInfo['post_count'] : 10;
             $only_with_content = intval($pageInfo['only_with_content'] ?? 0);
 

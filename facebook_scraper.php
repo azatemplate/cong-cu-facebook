@@ -473,6 +473,20 @@ if (!function_exists('extract_post_media_urls')) {
         $videos = [];
         $is_video_post = false;
 
+        $fbid = $post['id'] ?? '';
+        $status_type = strtolower($post['status_type'] ?? '');
+        if (strpos($status_type, 'video') !== false) {
+            $is_video_post = true;
+        }
+
+        // Fetch attachments for single post node ID if not present in feed response (prevents Graph API #12 error)
+        if (empty($post['attachments']) && !empty($fbid) && !empty($token)) {
+            $resAtt = fb_api_request("{$fbid}", ['access_token' => $token, 'fields' => 'attachments']);
+            if (!empty($resAtt['data']['attachments'])) {
+                $post['attachments'] = $resAtt['data']['attachments'];
+            }
+        }
+
         $attachList = $post['attachments']['data'] ?? [];
         foreach ($attachList as $att) {
             $mtype = strtolower($att['media_type'] ?? '');
@@ -750,7 +764,7 @@ function executeScraperBot($pdo, $bot_id, $account_id) {
             if (!$source_id) continue;
             $sourcesChecked++;
 
-            $fields = 'id,object_id,message,created_time,full_picture,attachments,shares,comments.summary(total_count),reactions.summary(total_count)';
+            $fields = 'id,object_id,message,created_time,full_picture,status_type,shares,comments.summary(total_count),reactions.summary(total_count)';
             $res = fb_api_request("{$source_id}/posts", [
                 'access_token' => $user_token,
                 'fields' => $fields,
@@ -1180,7 +1194,7 @@ if (isset($_GET['ajax'])) {
                 }
             } catch (Exception $e_posts_cols) {}
 
-        $fields = 'id,object_id,message,created_time,full_picture,attachments,shares,comments.summary(total_count),reactions.summary(total_count)';
+        $fields = 'id,object_id,message,created_time,full_picture,status_type,shares,comments.summary(total_count),reactions.summary(total_count)';
         $result = [];
         $stmtPost = $pdo->prepare("
             INSERT INTO scraper_posts (page_id, fb_post_id, message, picture, shares, comments, likes, post_created_at)
