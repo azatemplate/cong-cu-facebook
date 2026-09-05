@@ -1,0 +1,72 @@
+[
+    {
+        "src": 0,
+        "time": 1783914062139,
+        "sent_time": "10:41:02 13\/07\/2026",
+        "from_id": "3750963573677649394",
+        "from_display_name": "CỐP PHA VIỆT official",
+        "from_avatar": "https:\/\/s240-ava-talk.zadn.vn\/9\/4\/2\/f\/2\/240\/527fe54ff48194723e19c3beaed4591a.jpg",
+        "to_id": "4633389556374927484",
+        "to_display_name": "Giàn Giáo Thanh Việt",
+        "to_avatar": "https:\/\/s240-ava-talk.zadn.vn\/c\/c\/6\/3\/3\/240\/cd520d4d49a844b5abe6410e9e3dd9aa.jpg",
+        "message_id": "0a43b1b0dbc87d9124de",
+        "type": "text",
+        "message": "Dạ Giàn Giáo Thanh Việt anh\/chị còn cần mình hỗ trợ sản phẩm nữa không ạ."
+    },
+    {
+        "src": 0,
+        "time": 1783903211801,
+        "sent_time": "07:40:11 13\/07\/2026",
+        "from_id": "3750963573677649394",
+        "from_display_name": "CỐP PHA VIỆT official",
+        "from_avatar": "https:\/\/s240-ava-talk.zadn.vn\/9\/4\/2\/f\/2\/240\/527fe54ff48194723e19c3beaed4591a.jpg",
+        "to_id": "4633389556374927484",
+        "to_display_name": "Giàn Giáo Thanh Việt",
+        "to_avatar": "https:\/\/s240-ava-talk.zadn.vn\/c\/c\/6\/3\/3\/240\/cd520d4d49a844b5abe6410e9e3dd9aa.jpg",
+        "message_id": "9ab97d1c5551f308aa47",
+        "type": "text",
+        "message": "Dạ, anh\/chị vui lòng cho em biết mình đang cần sản phẩm gì và số lượng bao nhiêu? Đồng thời cho em xin thông tin tỉnh thành và số điện thoại để nhân viên sales của chúng em có thể liên hệ lại tư vấn báo giá. Cảm ơn anh\/chị!"
+    },
+    {
+        "src": 1,
+        "time": 1783903198029,
+        "sent_time": "07:39:58 13\/07\/2026",
+        "from_id": "4633389556374927484",
+        "from_display_name": "Giàn Giáo Thanh Việt",
+        "from_avatar": "https:\/\/s240-ava-talk.zadn.vn\/c\/c\/6\/3\/3\/240\/cd520d4d49a844b5abe6410e9e3dd9aa.jpg",
+        "to_id": "3750963573677649394",
+        "to_display_name": "CỐP PHA VIỆT official",
+        "to_avatar": "https:\/\/s240-ava-talk.zadn.vn\/9\/4\/2\/f\/2\/240\/527fe54ff48194723e19c3beaed4591a.jpg",
+        "message_id": "654cb150911d37446e0b",
+        "type": "text",
+        "message": "Ben co cach tinh chong niem   ko b"
+    },
+    {
+        "src": 0,
+        "time": 1783903190962,
+        "sent_time": "07:39:50 13\/07\/2026",
+        "from_id": "3750963573677649394",
+        "from_display_name": "CỐP PHA VIỆT official",
+        "from_avatar": "https:\/\/s240-ava-talk.zadn.vn\/9\/4\/2\/f\/2\/240\/527fe54ff48194723e19c3beaed4591a.jpg",
+        "to_id": "4633389556374927484",
+        "to_display_name": "Giàn Giáo Thanh Việt",
+        "to_avatar": "https:\/\/s240-ava-talk.zadn.vn\/c\/c\/6\/3\/3\/240\/cd520d4d49a844b5abe6410e9e3dd9aa.jpg",
+        "message_id": "8b1c3ba918e4bebde7f2",
+        "type": "text",
+        "message": "Chào anh\/chị! Em là Mr Hồng từ Công ty Cốp Pha Việt. Anh\/chị vui lòng cho em biết mình đang cần sản phẩm gì và số lượng bao nhiêu? Đồng thời cho em xin thông tin tỉnh thành và số điện thoại để nhân viên sales của chúng em có thể liên hệ lại tư vấn báo giá. Cảm ơn anh\/chị!"
+    },
+    {
+        "src": 1,
+        "time": 1783903177838,
+        "sent_time": "07:39:37 13\/07\/2026",
+        "from_id": "4633389556374927484",
+        "from_display_name": "Giàn Giáo Thanh Việt",
+        "from_avatar": "https:\/\/s240-ava-talk.zadn.vn\/c\/c\/6\/3\/3\/240\/cd520d4d49a844b5abe6410e9e3dd9aa.jpg",
+        "to_id": "3750963573677649394",
+        "to_display_name": "CỐP PHA VIỆT official",
+        "to_avatar": "https:\/\/s240-ava-talk.zadn.vn\/9\/4\/2\/f\/2\/240\/527fe54ff48194723e19c3beaed4591a.jpg",
+        "message_id": "44b709ea33a795feccb1",
+        "type": "text",
+        "message": "Hi"
+    }
+]
