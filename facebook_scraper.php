@@ -395,9 +395,21 @@ if (!function_exists('get_video_source_from_post')) {
             }
         }
 
-        // Target ID Graph API lookup
+        // 2. Direct object_id Graph API lookup (Highest accuracy for FB Video Posts & Reels)
+        $object_id = $post['object_id'] ?? '';
+        if (!empty($object_id)) {
+            if (!empty($page_videos_map[$object_id])) {
+                return $page_videos_map[$object_id];
+            }
+            $resObj = fb_api_request("{$object_id}", ['access_token' => $token, 'fields' => 'source,playable_url,playable_url_quality_hd']);
+            if (!empty($resObj['data']['source'])) return $resObj['data']['source'];
+            if (!empty($resObj['data']['playable_url_quality_hd'])) return $resObj['data']['playable_url_quality_hd'];
+            if (!empty($resObj['data']['playable_url'])) return $resObj['data']['playable_url'];
+        }
+
+        // 3. Target ID Graph API lookup
         $target_id = $attachments['target']['id'] ?? '';
-        if (!empty($target_id)) {
+        if (!empty($target_id) && $target_id !== $object_id) {
             if (!empty($page_videos_map[$target_id])) {
                 return $page_videos_map[$target_id];
             }
@@ -407,7 +419,20 @@ if (!function_exists('get_video_source_from_post')) {
             if (!empty($res['data']['playable_url'])) return $res['data']['playable_url'];
         }
 
-        // Extract Video/Reel ID candidates from picture URL (e.g. 619308253_870340512553020_... -> 870340512553020)
+        // 4. Query Post ID directly with object_id lookup
+        if ($fbid) {
+            $resPost = fb_api_request("{$fbid}", ['access_token' => $token, 'fields' => 'source,object_id']);
+            if (!empty($resPost['data']['source'])) return $resPost['data']['source'];
+            if (!empty($resPost['data']['object_id'])) {
+                $objId = $resPost['data']['object_id'];
+                $resObj2 = fb_api_request("{$objId}", ['access_token' => $token, 'fields' => 'source,playable_url,playable_url_quality_hd']);
+                if (!empty($resObj2['data']['source'])) return $resObj2['data']['source'];
+                if (!empty($resObj2['data']['playable_url_quality_hd'])) return $resObj2['data']['playable_url_quality_hd'];
+                if (!empty($resObj2['data']['playable_url'])) return $resObj2['data']['playable_url'];
+            }
+        }
+
+        // 5. Extract Video/Reel ID candidates from picture URL
         $pic = $post['full_picture'] ?? ($post['picture'] ?? '');
         if ($pic) {
             if (preg_match_all('/(?:[\/_]|^)(\d{13,16})(?:[\/_]|\.|$)/', $pic, $m_all)) {
@@ -420,22 +445,11 @@ if (!function_exists('get_video_source_from_post')) {
                     if (!empty($res['data']['source'])) return $res['data']['source'];
                     if (!empty($res['data']['playable_url_quality_hd'])) return $res['data']['playable_url_quality_hd'];
                     if (!empty($res['data']['playable_url'])) return $res['data']['playable_url'];
-
-                    // HTML Scrape fallback for candidate video ID
-                    $test_urls = [
-                        "https://www.facebook.com/reel/{$vid_id}",
-                        "https://www.facebook.com/watch/?v={$vid_id}",
-                        "https://mbasic.facebook.com/video/mbasic.php?module=video_publisher&v={$vid_id}"
-                    ];
-                    foreach ($test_urls as $t_u) {
-                        $h_src = scrape_fb_video_mp4_url($t_u);
-                        if ($h_src) return $h_src;
-                    }
                 }
             }
         }
 
-        // Attachment URL HTML Scrape fallback
+        // 6. Attachment URL HTML Scrape fallback
         $url = $attachments['url'] ?? ($attachments['target']['url'] ?? ($post['permalink_url'] ?? ''));
         if ($url) {
             $h_src = scrape_fb_video_mp4_url($url);
@@ -736,7 +750,7 @@ function executeScraperBot($pdo, $bot_id, $account_id) {
             if (!$source_id) continue;
             $sourcesChecked++;
 
-            $fields = 'id,message,created_time,full_picture,attachments{media_type,media{source,image},target,type,url,subattachments{media_type,media{source,image},target,type,url}},shares,comments.summary(total_count),reactions.summary(total_count)';
+            $fields = 'id,object_id,message,created_time,full_picture,attachments{media_type,media{source,image},target,type,url,subattachments{media_type,media{source,image},target,type,url}},shares,comments.summary(total_count),reactions.summary(total_count)';
             $res = fb_api_request("{$source_id}/posts", [
                 'access_token' => $user_token,
                 'fields' => $fields,
@@ -1166,7 +1180,7 @@ if (isset($_GET['ajax'])) {
                 }
             } catch (Exception $e_posts_cols) {}
 
-        $fields = 'id,message,created_time,full_picture,attachments{media_type,media{source,image},target,type,url,subattachments{media_type,media{source,image},target,type,url}},shares,comments.summary(total_count),reactions.summary(total_count)';
+        $fields = 'id,object_id,message,created_time,full_picture,attachments{media_type,media{source,image},target,type,url,subattachments{media_type,media{source,image},target,type,url}},shares,comments.summary(total_count),reactions.summary(total_count)';
         $result = [];
         $stmtPost = $pdo->prepare("
             INSERT INTO scraper_posts (page_id, fb_post_id, message, picture, shares, comments, likes, post_created_at)
