@@ -750,7 +750,7 @@ function executeScraperBot($pdo, $bot_id, $account_id) {
             if (!$source_id) continue;
             $sourcesChecked++;
 
-            $fields = 'id,object_id,message,created_time,full_picture,attachments{media,media_type,subattachments,target,type,url},shares,comments.summary(total_count),reactions.summary(total_count)';
+            $fields = 'id,object_id,message,created_time,full_picture,attachments,shares,comments.summary(total_count),reactions.summary(total_count)';
             $res = fb_api_request("{$source_id}/posts", [
                 'access_token' => $user_token,
                 'fields' => $fields,
@@ -1180,7 +1180,7 @@ if (isset($_GET['ajax'])) {
                 }
             } catch (Exception $e_posts_cols) {}
 
-        $fields = 'id,object_id,message,created_time,full_picture,attachments{media,media_type,subattachments,target,type,url},shares,comments.summary(total_count),reactions.summary(total_count)';
+        $fields = 'id,object_id,message,created_time,full_picture,attachments,shares,comments.summary(total_count),reactions.summary(total_count)';
         $result = [];
         $stmtPost = $pdo->prepare("
             INSERT INTO scraper_posts (page_id, fb_post_id, message, picture, shares, comments, likes, post_created_at)

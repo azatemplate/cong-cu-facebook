@@ -73,7 +73,7 @@ echo "<p>🌐 <b>Page Quét:</b> " . htmlspecialchars($target_page) . " (Số l�
 echo "</div>";
 
 // 2. Gọi Graph API quét bài từ TatDiepBeautySalonQ3
-$fields = 'id,object_id,message,created_time,full_picture,attachments{media,media_type,subattachments,target,type,url},shares,comments.summary(total_count),reactions.summary(total_count)';
+$fields = 'id,object_id,message,created_time,full_picture,attachments,shares,comments.summary(total_count),reactions.summary(total_count)';
 
 $res = fb_api_request("{$target_page}/posts", [
     'access_token' => $user_token,
