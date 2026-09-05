@@ -1,6 +1,0 @@
-Facebook login : https://hongvippro.com/facebook/redirect_callback.php
-Google login : https://hongvippro.com/facebook/google_callback.php
-Youtube : https://hongvippro.com/facebook/youtube_callback.php
-cron : curl -s https://hongvippro.com/facebook/cron/publish_worker.php >/dev/null 2>&1
-
-https://app.hongvippro.com/redirect_callback.php

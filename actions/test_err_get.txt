@@ -1,1 +1,0 @@
-Error [8192]: Function curl_close() is deprecated since 8.5, as it has no effect since PHP 8.0 in /www/wwwroot/app.hongvippro.com/includes/fb_api.php on line 42
