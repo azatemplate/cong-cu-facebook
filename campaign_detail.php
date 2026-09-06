@@ -297,9 +297,26 @@ function status_label($s) {
             <?php foreach ($posts as $post):
                 $s = $post['status'];
                 $content_data = @json_decode($post['content'], true);
-                $desc = is_array($content_data) ? ($content_data['description'] ?? '') : $post['content'];
+                $desc = is_array($content_data) ? ($content_data['description'] ?? $content_data['text'] ?? '') : $post['content'];
                 $desc_short = mb_strimwidth($desc, 0, 80, '…');
                 $original_source = is_array($content_data) ? ($content_data['original_source'] ?? '') : '';
+                if (empty($original_source) && !empty($post['media_path'])) {
+                    $mp = $post['media_path'];
+                    if (strpos($mp, 'tiktok:') === 0) {
+                        $original_source = substr($mp, 7);
+                    } elseif (strpos($mp, 'folder:') === 0) {
+                        $original_source = 'Google Drive Folder: ' . substr($mp, 7);
+                    } elseif (strpos($mp, 'drive:') === 0) {
+                        $original_source = 'Google Drive File: ' . substr($mp, 6);
+                    } elseif (strpos($mp, 'uploads/') !== false) {
+                        $decoded_mp = @json_decode($mp, true);
+                        if (is_array($decoded_mp)) {
+                            $original_source = implode(', ', array_map('basename', $decoded_mp));
+                        } else {
+                            $original_source = basename($mp);
+                        }
+                    }
+                }
             ?>
             <tr style="border-bottom:1px solid var(--border-color);">
                 <td style="padding:10px 12px;text-align:center;">

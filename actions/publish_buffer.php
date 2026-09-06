@@ -284,8 +284,18 @@ try {
                 $media_item = !empty($media_pool) ? $media_pool[($schedule_index + $c_idx) % count($media_pool)] : null;
                 $media_path_str = resolve_buffer_media_path($media_item);
 
+                $orig_src = '';
+                if ($media_item) {
+                    if ($media_item['type'] === 'tiktok') $orig_src = $media_item['url'];
+                    elseif ($media_item['type'] === 'folder') $orig_src = 'Google Drive Folder: ' . $media_item['id'];
+                    elseif ($media_item['type'] === 'drive') $orig_src = 'Google Drive File: ' . $media_item['id'];
+                    elseif ($media_item['type'] === 'local') $orig_src = basename($media_item['path']);
+                }
+
                 $content_arr = [
                     'text' => $text_input,
+                    'description' => $text_input,
+                    'original_source' => $orig_src,
                     'auto_title' => $auto_title,
                     'use_ai' => $use_ai,
                     'delete_drive_file' => $delete_drive_file
@@ -313,8 +323,18 @@ try {
             $media_item = !empty($media_pool) ? $media_pool[$c_idx % count($media_pool)] : null;
             $media_path_str = resolve_buffer_media_path($media_item);
 
+            $orig_src = '';
+            if ($media_item) {
+                if ($media_item['type'] === 'tiktok') $orig_src = $media_item['url'];
+                elseif ($media_item['type'] === 'folder') $orig_src = 'Google Drive Folder: ' . $media_item['id'];
+                elseif ($media_item['type'] === 'drive') $orig_src = 'Google Drive File: ' . $media_item['id'];
+                elseif ($media_item['type'] === 'local') $orig_src = basename($media_item['path']);
+            }
+
             $content_arr = [
                 'text' => $text_input,
+                'description' => $text_input,
+                'original_source' => $orig_src,
                 'auto_title' => $auto_title,
                 'use_ai' => $use_ai,
                 'delete_drive_file' => $delete_drive_file
