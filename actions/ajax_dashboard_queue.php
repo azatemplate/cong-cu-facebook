@@ -21,11 +21,12 @@ $response = [
 try {
     // 1. Fetch 20 most recent posts (published or failed)
     $stmt_recent = $pdo->prepare("
-        SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time, sp.status, sp.error_msg, sp.fb_post_id,
+        SELECT sp.id, sp.page_id, sp.campaign_id, pc.name AS campaign_name, sp.post_type, sp.scheduled_time, sp.status, sp.error_msg, sp.fb_post_id,
                COALESCE(bc.channel_name, yt.channel_title, p.name, 'Kênh / Profile') as page_name,
                bc.service AS buffer_service,
                bc.channel_name AS buffer_channel_name
         FROM scheduled_posts sp
+        LEFT JOIN post_campaigns pc ON sp.campaign_id = pc.id
         LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube'
         LEFT JOIN youtube_channels yt ON (sp.page_id = yt.id OR sp.page_id = yt.channel_id) AND sp.post_type = 'YouTube'
         LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
@@ -44,6 +45,8 @@ try {
 
         $response['recent'][] = [
             'id' => $post['id'],
+            'campaign_id' => $post['campaign_id'] ?? null,
+            'campaign_name' => htmlspecialchars($post['campaign_name'] ?? ''),
             'page_id' => $post['page_id'],
             'page_name' => htmlspecialchars($post['page_name']),
             'post_type' => $post['post_type'],
@@ -58,12 +61,13 @@ try {
     
     // 2. Fetch 20 upcoming posts (pending or processing)
     $stmt_upcoming = $pdo->prepare("
-        SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time, sp.status,
+        SELECT sp.id, sp.page_id, sp.campaign_id, pc.name AS campaign_name, sp.post_type, sp.scheduled_time, sp.status,
                COALESCE(bc.channel_name, yt.channel_title, p.name, 'Kênh / Profile') as page_name,
                bc.service AS buffer_service,
                bc.channel_name AS buffer_channel_name,
                TIMESTAMPDIFF(SECOND, NOW(), sp.scheduled_time) as seconds_left
         FROM scheduled_posts sp
+        LEFT JOIN post_campaigns pc ON sp.campaign_id = pc.id
         LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube'
         LEFT JOIN youtube_channels yt ON (sp.page_id = yt.id OR sp.page_id = yt.channel_id) AND sp.post_type = 'YouTube'
         LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
@@ -77,6 +81,8 @@ try {
     foreach ($upcoming_posts as $post) {
         $response['upcoming'][] = [
             'id' => $post['id'],
+            'campaign_id' => $post['campaign_id'] ?? null,
+            'campaign_name' => htmlspecialchars($post['campaign_name'] ?? ''),
             'page_id' => $post['page_id'],
             'page_name' => htmlspecialchars($post['page_name']),
             'post_type' => $post['post_type'],

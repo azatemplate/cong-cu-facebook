@@ -89,12 +89,10 @@ $is_admin   = ($_SESSION['role'] === 'admin');
 
 
 // ── Fetch Campaigns (fault-tolerant) ─────────────────────────────────────
+$search  = trim($_GET['search'] ?? '');
 $page    = max(1, intval($_GET['page'] ?? 1));
 $limit   = 20;
 $offset  = ($page - 1) * $limit;
-
-$auth_where  = ' AND c.account_id = ?';
-$auth_params = [$account_id];
 
 $total_campaigns = 0;
 $total_pages_nav = 1;
@@ -105,15 +103,38 @@ $legacy_count    = 0;
 try { $pdo->exec("CREATE INDEX idx_camp_acc_created ON post_campaigns(account_id, created_at)"); } catch (Exception $e) {}
 try { $pdo->exec("CREATE INDEX idx_sp_camp_status ON scheduled_posts(campaign_id, status)"); } catch (Exception $e) {}
 
+$search_where  = "";
+$search_params = [];
+
+if ($search !== '') {
+    $search_like = '%' . $search . '%';
+    $search_where = " AND (
+        c.name LIKE ? 
+        OR c.id IN (
+            SELECT DISTINCT sp.campaign_id 
+            FROM scheduled_posts sp
+            LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok'
+            LEFT JOIN users u ON p.user_id = u.id
+            LEFT JOIN youtube_channels yt ON (sp.page_id = yt.id OR sp.page_id = yt.channel_id) AND sp.post_type = 'YouTube'
+            LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
+            LEFT JOIN tiktok_accounts tt ON sp.page_id = tt.id AND sp.post_type = 'TikTok'
+            WHERE sp.account_id = ? AND (
+                u.name LIKE ? OR p.name LIKE ? OR yt.channel_title LIKE ? OR bc.channel_name LIKE ? OR tt.display_name LIKE ?
+            )
+        )
+    )";
+    $search_params = [$search_like, $account_id, $search_like, $search_like, $search_like, $search_like, $search_like];
+}
+
 try {
-    $count_stmt = $pdo->prepare("SELECT COUNT(*) FROM post_campaigns WHERE account_id = ?");
-    $count_stmt->execute([$account_id]);
+    $count_stmt = $pdo->prepare("SELECT COUNT(*) FROM post_campaigns c WHERE c.account_id = ?" . $search_where);
+    $count_stmt->execute(array_merge([$account_id], $search_params));
     $total_campaigns = (int)$count_stmt->fetchColumn();
     $total_pages_nav = max(1, ceil($total_campaigns / $limit));
 
     // Giai đoạn 1: Chỉ lấy 20 chiến dịch của trang hiện tại (0.1ms)
-    $sub_stmt = $pdo->prepare("SELECT id, name, post_type, total_posts, scheduled_time, created_at FROM post_campaigns WHERE account_id = ? ORDER BY created_at DESC LIMIT $limit OFFSET $offset");
-    $sub_stmt->execute([$account_id]);
+    $sub_stmt = $pdo->prepare("SELECT c.id, c.name, c.post_type, c.total_posts, c.scheduled_time, c.created_at FROM post_campaigns c WHERE c.account_id = ?" . $search_where . " ORDER BY c.created_at DESC LIMIT $limit OFFSET $offset");
+    $sub_stmt->execute(array_merge([$account_id], $search_params));
     $page_camps = $sub_stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!empty($page_camps)) {
@@ -174,8 +195,20 @@ try {
 ?>
 
 <div class="card">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:10px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
         <h3 style="margin:0;">Danh sách chiến dịch đăng bài</h3>
+        
+        <form method="GET" action="manage_posts.php" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-left:auto;">
+            <div style="position:relative; min-width:260px;">
+                <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" placeholder="🔍 Tìm Kênh/Fanpage hoặc Chiến dịch..." style="width:100%; padding:8px 12px 8px 34px; border:1px solid var(--border-color); border-radius:6px; font-size:13px; background:var(--card-bg); color:var(--text-main); box-sizing:border-box;">
+                <svg style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--text-muted);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+            <button type="submit" style="padding:8px 14px; background:var(--primary-color); color:white; border:none; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">Tìm kiếm</button>
+            <?php if ($search !== ''): ?>
+            <a href="manage_posts.php" style="padding:8px 12px; background:#f3f4f6; color:#374151; border:1px solid #d1d5db; border-radius:6px; font-size:13px; text-decoration:none;">Xóa tìm</a>
+            <?php endif; ?>
+        </form>
+
         <div style="display:flex; gap:10px; align-items:center;">
             <?php if ($is_admin): ?>
             <button id="cronBtn" onclick="runCronJob()" style="background:var(--primary-color);color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:bold;display:flex;align-items:center;gap:6px;">
@@ -190,6 +223,12 @@ try {
             <?php endif; ?>
         </div>
     </div>
+
+    <?php if ($search !== ''): ?>
+    <div style="margin-bottom:16px; padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; font-size:13px; color:#0369a1;">
+        🔎 Kết quả tìm kiếm cho từ khóa: <strong>"<?php echo htmlspecialchars($search); ?>"</strong> (Tìm thấy <?php echo $total_campaigns; ?> chiến dịch)
+    </div>
+    <?php endif; ?>
 
     <?php if (count($campaigns) === 0): ?>
     <div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
@@ -302,8 +341,11 @@ try {
     <!-- Pagination -->
     <?php if ($total_pages_nav > 1): ?>
     <div style="display:flex;justify-content:center;gap:8px;margin-top:24px;">
-        <?php for ($i = 1; $i <= $total_pages_nav; $i++): ?>
-            <a href="?page=<?php echo $i; ?>" style="padding:6px 12px;border:1px solid <?php echo $i==$page?'var(--primary-color)':'var(--border-color)'; ?>;border-radius:4px;text-decoration:none;color:<?php echo $i==$page?'var(--primary-color)':'var(--text-main)'; ?>;font-weight:<?php echo $i==$page?'bold':'normal'; ?>;"><?php echo $i; ?></a>
+        <?php 
+            $search_param = !empty($search) ? '&search=' . urlencode($search) : '';
+            for ($i = 1; $i <= $total_pages_nav; $i++): 
+        ?>
+            <a href="?page=<?php echo $i . $search_param; ?>" style="padding:6px 12px;border:1px solid <?php echo $i==$page?'var(--primary-color)':'var(--border-color)'; ?>;border-radius:4px;text-decoration:none;color:<?php echo $i==$page?'var(--primary-color)':'var(--text-main)'; ?>;font-weight:<?php echo $i==$page?'bold':'normal'; ?>;"><?php echo $i; ?></a>
         <?php endfor; ?>
     </div>
     <?php endif; ?>

@@ -577,8 +577,19 @@ document.addEventListener('DOMContentLoaded', function() {
                         linkEnd = ` <span style="font-size:10px; color:var(--text-muted);">↗</span></a>`;
                     }
                     
+                    let campLinkHtml = '';
+                    if (p.campaign_name) {
+                        let campUrl = p.campaign_id ? `campaign_detail.php?id=${p.campaign_id}` : `manage_posts.php?search=${encodeURIComponent(p.page_name)}`;
+                        campLinkHtml = `<div style="font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: normal;">📁 Chiến dịch: <a href="${campUrl}" style="color:var(--primary-color); text-decoration:underline;">${p.campaign_name}</a></div>`;
+                    } else if (p.page_name) {
+                        campLinkHtml = `<div style="font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: normal;">📁 <a href="manage_posts.php?search=${encodeURIComponent(p.page_name)}" style="color:var(--text-muted); text-decoration:underline;">Tìm chiến dịch của kênh này</a></div>`;
+                    }
+
                     recentHtml += `<tr>
-                        <td style="font-weight: 500; color: var(--primary-color);">${linkStart}${p.page_name}${linkEnd}</td>
+                        <td style="font-weight: 500; color: var(--primary-color);">
+                            ${linkStart}${p.page_name}${linkEnd}
+                            ${campLinkHtml}
+                        </td>
                         <td><span style="font-size: 13px; font-weight:500;">${formatPostType(p.post_type)}</span></td>
                         <td style="font-size: 13px; color: var(--text-muted);">${p.scheduled_time}</td>
                         <td><span class="badge ${badgeClass}" ${titleAttr}>${statusText}</span></td>
@@ -596,8 +607,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     let badgeClass = p.status === 'processing' ? 'badge-processing' : 'badge-pending';
                     let statusText = p.status === 'processing' ? 'Đang gửi...' : 'Đang chờ';
                     
+                    let upCampLinkHtml = '';
+                    if (p.campaign_name) {
+                        let campUrl = p.campaign_id ? `campaign_detail.php?id=${p.campaign_id}` : `manage_posts.php?search=${encodeURIComponent(p.page_name)}`;
+                        upCampLinkHtml = `<div style="font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: normal;">📁 Chiến dịch: <a href="${campUrl}" style="color:var(--primary-color); text-decoration:underline;">${p.campaign_name}</a></div>`;
+                    }
+
                     upcomingHtml += `<tr>
-                        <td style="font-weight: 500; color: var(--primary-color);">${p.page_name}</td>
+                        <td style="font-weight: 500; color: var(--primary-color);">
+                            ${p.page_name}
+                            ${upCampLinkHtml}
+                        </td>
                         <td><span style="font-size: 13px; font-weight:500;">${formatPostType(p.post_type)}</span></td>
                         <td style="font-size: 13px; color: var(--text-muted);">${p.scheduled_time}</td>
                         <td>
