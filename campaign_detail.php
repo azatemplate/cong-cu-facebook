@@ -305,9 +305,9 @@ function status_label($s) {
                     if (strpos($mp, 'tiktok:') === 0) {
                         $original_source = substr($mp, 7);
                     } elseif (strpos($mp, 'folder:') === 0) {
-                        $original_source = 'Google Drive Folder: ' . substr($mp, 7);
+                        $original_source = 'Google Drive Folder';
                     } elseif (strpos($mp, 'drive:') === 0) {
-                        $original_source = 'Google Drive File: ' . substr($mp, 6);
+                        $original_source = 'Google Drive File';
                     } elseif (strpos($mp, 'uploads/') !== false) {
                         $decoded_mp = @json_decode($mp, true);
                         if (is_array($decoded_mp)) {
@@ -316,6 +316,11 @@ function status_label($s) {
                             $original_source = basename($mp);
                         }
                     }
+                }
+                if (strpos($original_source, 'Google Drive Folder') === 0) {
+                    $original_source = 'Google Drive Folder';
+                } elseif (strpos($original_source, 'Google Drive File') === 0) {
+                    $original_source = 'Google Drive File';
                 }
             ?>
             <tr style="border-bottom:1px solid var(--border-color);">

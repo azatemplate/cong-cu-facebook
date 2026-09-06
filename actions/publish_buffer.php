@@ -287,8 +287,8 @@ try {
                 $orig_src = '';
                 if ($media_item) {
                     if ($media_item['type'] === 'tiktok') $orig_src = $media_item['url'];
-                    elseif ($media_item['type'] === 'folder') $orig_src = 'Google Drive Folder: ' . $media_item['id'];
-                    elseif ($media_item['type'] === 'drive') $orig_src = 'Google Drive File: ' . $media_item['id'];
+                    elseif ($media_item['type'] === 'folder') $orig_src = 'Google Drive Folder';
+                    elseif ($media_item['type'] === 'drive') $orig_src = 'Google Drive File';
                     elseif ($media_item['type'] === 'local') $orig_src = basename($media_item['path']);
                 }
 
@@ -326,8 +326,8 @@ try {
             $orig_src = '';
             if ($media_item) {
                 if ($media_item['type'] === 'tiktok') $orig_src = $media_item['url'];
-                elseif ($media_item['type'] === 'folder') $orig_src = 'Google Drive Folder: ' . $media_item['id'];
-                elseif ($media_item['type'] === 'drive') $orig_src = 'Google Drive File: ' . $media_item['id'];
+                elseif ($media_item['type'] === 'folder') $orig_src = 'Google Drive Folder';
+                elseif ($media_item['type'] === 'drive') $orig_src = 'Google Drive File';
                 elseif ($media_item['type'] === 'local') $orig_src = basename($media_item['path']);
             }
 
