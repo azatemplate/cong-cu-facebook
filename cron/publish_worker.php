@@ -553,8 +553,16 @@ $post_type_filter = "";
 $account_filter = "";
 
 if (!empty($user_id_lock)) {
-    if (strpos($user_id_lock, 'yt_') === 0) {
-        // Luồng YouTube: Chỉ lấy post_type = YouTube và account_id cụ thể
+    if (strpos($user_id_lock, 'yt_chan_') === 0) {
+        // Luồng YouTube theo từng Kênh YouTube (Mỗi Kênh YouTube = 1 Slot độc lập)
+        $post_type_filter = "AND sp.post_type = 'YouTube' ";
+        $yt_chan_id = substr($user_id_lock, 8);
+        if (!empty($yt_chan_id)) {
+            $account_filter = "AND sp.page_id = ? ";
+            array_unshift($params, $yt_chan_id);
+        }
+    } elseif (strpos($user_id_lock, 'yt_') === 0) {
+        // Luồng YouTube tương thích ngược (theo account_id)
         $post_type_filter = "AND sp.post_type = 'YouTube' ";
         $actual_account_id = substr($user_id_lock, 3);
         if (is_numeric($actual_account_id)) {

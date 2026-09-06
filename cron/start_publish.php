@@ -155,7 +155,7 @@ if ($available_slots <= 0) {
     exit;
 }
 
-// Tìm các bài cần đăng và nhóm theo user_id (Token User) với FB, account_id với YouTube/TikTok, và buffer_account_id với Buffer (mỗi Token Buffer = 1 Slot độc lập)
+// Tìm các bài cần đăng và nhóm theo user_id (Token User) với FB, page_id với YouTube (mỗi kênh YouTube = 1 Slot), account_id với TikTok, và buffer_account_id với Buffer (mỗi Token Buffer = 1 Slot độc lập)
 $sql = "
     SELECT DISTINCT sp.page_id, sp.account_id, sp.post_type, p.user_id, bc.buffer_account_id
     FROM scheduled_posts sp
@@ -183,13 +183,14 @@ if (empty($raw_pages)) {
     exit;
 }
 
-// ── Nhóm page theo user_id của FB, account_id của YT/TT, hoặc buffer_account_id của Buffer (mỗi Token Buffer = 1 Slot) ──
+// ── Nhóm page theo user_id của FB, page_id của YouTube (mỗi Kênh YouTube = 1 Slot), account_id của TT, hoặc buffer_account_id của Buffer (mỗi Token Buffer = 1 Slot) ──
 // Mỗi khóa gom nhóm sẽ chỉ có 1 worker duy nhất
 $pages_by_user = [];
 foreach ($raw_pages as $row) {
     if ($row['post_type'] === 'YouTube') {
-        // YouTube gom nhóm theo account_id dưới dạng yt_account_id để tuần tự hóa theo từng tài khoản
-        $uid = 'yt_' . $row['account_id'];
+        // YouTube gom nhóm theo từng Kênh YouTube (page_id) để mỗi Kênh YouTube có 1 Slot độc lập
+        $yt_chan_id = !empty($row['page_id']) ? $row['page_id'] : $row['account_id'];
+        $uid = 'yt_chan_' . $yt_chan_id;
     } elseif (strpos($row['post_type'], 'Buffer') !== false) {
         // Buffer gom nhóm theo từng kết nối/Token Buffer (buffer_account_id) để mỗi Token Buffer có 1 Slot độc lập
         $buf_acc_id = !empty($row['buffer_account_id']) ? $row['buffer_account_id'] : $row['account_id'];
