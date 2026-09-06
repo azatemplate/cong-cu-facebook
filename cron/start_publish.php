@@ -155,12 +155,13 @@ if ($available_slots <= 0) {
     exit;
 }
 
-// Tìm các bài cần đăng và nhóm theo user_id (Token User) với FB hoặc account_id với YouTube để đảm bảo tuần tự hóa
+// Tìm các bài cần đăng và nhóm theo user_id (Token User) với FB, account_id với YouTube/TikTok, và buffer_account_id với Buffer (mỗi Token Buffer = 1 Slot độc lập)
 $sql = "
-    SELECT DISTINCT sp.page_id, sp.account_id, sp.post_type, p.user_id
+    SELECT DISTINCT sp.page_id, sp.account_id, sp.post_type, p.user_id, bc.buffer_account_id
     FROM scheduled_posts sp
     LEFT JOIN system_accounts sa ON sp.account_id = sa.id
     LEFT JOIN pages p ON sp.page_id = p.page_id
+    LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id
     WHERE sp.scheduled_time <= NOW()
       AND sp.page_id IS NOT NULL
       AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
@@ -182,7 +183,7 @@ if (empty($raw_pages)) {
     exit;
 }
 
-// ── Nhóm page theo user_id (Token User) của FB hoặc account_id của YouTube ──────────────────────────────────
+// ── Nhóm page theo user_id của FB, account_id của YT/TT, hoặc buffer_account_id của Buffer (mỗi Token Buffer = 1 Slot) ──
 // Mỗi khóa gom nhóm sẽ chỉ có 1 worker duy nhất
 $pages_by_user = [];
 foreach ($raw_pages as $row) {
@@ -190,8 +191,9 @@ foreach ($raw_pages as $row) {
         // YouTube gom nhóm theo account_id dưới dạng yt_account_id để tuần tự hóa theo từng tài khoản
         $uid = 'yt_' . $row['account_id'];
     } elseif (strpos($row['post_type'], 'Buffer') !== false) {
-        // Buffer gom nhóm theo account_id dưới dạng buf_account_id
-        $uid = 'buf_' . $row['account_id'];
+        // Buffer gom nhóm theo từng kết nối/Token Buffer (buffer_account_id) để mỗi Token Buffer có 1 Slot độc lập
+        $buf_acc_id = !empty($row['buffer_account_id']) ? $row['buffer_account_id'] : $row['account_id'];
+        $uid = 'buf_acc_' . $buf_acc_id;
     } elseif ($row['post_type'] === 'TikTok') {
         // TikTok gom nhóm theo account_id dưới dạng tt_account_id
         $uid = 'tt_' . $row['account_id'];

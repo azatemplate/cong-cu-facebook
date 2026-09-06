@@ -561,8 +561,16 @@ if (!empty($user_id_lock)) {
             $account_filter = "AND sp.account_id = ? ";
             array_unshift($params, (int)$actual_account_id);
         }
+    } elseif (strpos($user_id_lock, 'buf_acc_') === 0) {
+        // Luồng Buffer theo Buffer Token Account ID cụ thể (Mỗi Token Buffer = 1 Slot độc lập)
+        $post_type_filter = "AND sp.post_type LIKE 'Buffer%' ";
+        $buf_acc_id = substr($user_id_lock, 8);
+        if (is_numeric($buf_acc_id)) {
+            $account_filter = "AND bc.buffer_account_id = ? ";
+            array_unshift($params, (int)$buf_acc_id);
+        }
     } elseif (strpos($user_id_lock, 'buf_') === 0) {
-        // Luồng Buffer: Chỉ lấy post_type LIKE 'Buffer%' và account_id cụ thể
+        // Luồng Buffer tương thích ngược
         $post_type_filter = "AND sp.post_type LIKE 'Buffer%' ";
         $actual_account_id = substr($user_id_lock, 4);
         if (is_numeric($actual_account_id)) {
@@ -587,6 +595,7 @@ $sql = "
     SELECT sp.*, sa.max_retries AS sa_max_retries, sa.retry_interval_minutes AS sa_retry_interval, sa.post_delay_seconds AS sa_delay
     FROM scheduled_posts sp 
     LEFT JOIN system_accounts sa ON sp.account_id = sa.id 
+    LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id
     WHERE (sp.status = 'pending' $retry_clause) 
       AND sp.scheduled_time <= NOW() 
       AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
