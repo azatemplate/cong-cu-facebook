@@ -89,7 +89,7 @@ $is_admin   = ($_SESSION['role'] === 'admin');
 
 
 // ── Fetch Campaigns (fault-tolerant) ─────────────────────────────────────
-$search  = trim($_GET['search'] ?? '');
+$search  = trim(html_entity_decode($_GET['search'] ?? '', ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 $page    = max(1, intval($_GET['page'] ?? 1));
 $limit   = 20;
 $offset  = ($page - 1) * $limit;

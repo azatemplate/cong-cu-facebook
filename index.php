@@ -406,6 +406,16 @@ function renderTrendBadge(htmlStr, targetId) {
     }
 }
 
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 function formatPostType(type) {
     switch(type) {
         case 'Reel': return '📹 Reel';
@@ -577,17 +587,20 @@ document.addEventListener('DOMContentLoaded', function() {
                         linkEnd = ` <span style="font-size:10px; color:var(--text-muted);">↗</span></a>`;
                     }
                     
+                    let safePageName = escapeHtml(p.page_name);
+                    let safeCampName = escapeHtml(p.campaign_name);
+                    
                     let campLinkHtml = '';
                     if (p.campaign_name) {
                         let campUrl = p.campaign_id ? `campaign_detail.php?id=${p.campaign_id}` : `manage_posts.php?search=${encodeURIComponent(p.page_name)}`;
-                        campLinkHtml = `<div style="font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: normal;">📁 Chiến dịch: <a href="${campUrl}" style="color:var(--primary-color); text-decoration:underline;">${p.campaign_name}</a></div>`;
+                        campLinkHtml = `<div style="font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: normal;">📁 Chiến dịch: <a href="${campUrl}" style="color:var(--primary-color); text-decoration:underline;">${safeCampName}</a></div>`;
                     } else if (p.page_name) {
                         campLinkHtml = `<div style="font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: normal;">📁 <a href="manage_posts.php?search=${encodeURIComponent(p.page_name)}" style="color:var(--text-muted); text-decoration:underline;">Tìm chiến dịch của kênh này</a></div>`;
                     }
 
                     recentHtml += `<tr>
                         <td style="font-weight: 500; color: var(--primary-color);">
-                            ${linkStart}${p.page_name}${linkEnd}
+                            ${linkStart}${safePageName}${linkEnd}
                             ${campLinkHtml}
                         </td>
                         <td><span style="font-size: 13px; font-weight:500;">${formatPostType(p.post_type)}</span></td>
@@ -607,15 +620,18 @@ document.addEventListener('DOMContentLoaded', function() {
                     let badgeClass = p.status === 'processing' ? 'badge-processing' : 'badge-pending';
                     let statusText = p.status === 'processing' ? 'Đang gửi...' : 'Đang chờ';
                     
+                    let safeUpPageName = escapeHtml(p.page_name);
+                    let safeUpCampName = escapeHtml(p.campaign_name);
+
                     let upCampLinkHtml = '';
                     if (p.campaign_name) {
                         let campUrl = p.campaign_id ? `campaign_detail.php?id=${p.campaign_id}` : `manage_posts.php?search=${encodeURIComponent(p.page_name)}`;
-                        upCampLinkHtml = `<div style="font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: normal;">📁 Chiến dịch: <a href="${campUrl}" style="color:var(--primary-color); text-decoration:underline;">${p.campaign_name}</a></div>`;
+                        upCampLinkHtml = `<div style="font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: normal;">📁 Chiến dịch: <a href="${campUrl}" style="color:var(--primary-color); text-decoration:underline;">${safeUpCampName}</a></div>`;
                     }
 
                     upcomingHtml += `<tr>
                         <td style="font-weight: 500; color: var(--primary-color);">
-                            ${p.page_name}
+                            ${safeUpPageName}
                             ${upCampLinkHtml}
                         </td>
                         <td><span style="font-size: 13px; font-weight:500;">${formatPostType(p.post_type)}</span></td>
