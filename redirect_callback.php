@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             document.getElementById('error-view').style.display = 'block';
         }
-    }, 1500);
+    }, 200);
 });
 </script>
 

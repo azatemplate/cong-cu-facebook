@@ -106,6 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $has_next = false;
             }
         }
+        $pre_fetched_pages[$token] = $all_fb_pages;
 
         $conflict_pages = [];
         if (!empty($all_fb_pages)) {
@@ -288,22 +289,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $total_users_count++;
 
-        $all_fb_pages = [];
-        $after_cursor = null;
-        $has_next = true;
+        if (isset($pre_fetched_pages[$token])) {
+            $all_fb_pages = $pre_fetched_pages[$token];
+        } else {
+            $all_fb_pages = [];
+            $after_cursor = null;
+            $has_next = true;
 
-        while ($has_next) {
-            $pages_response = get_fb_user_pages($token, $after_cursor);
-            if ($pages_response['status_code'] === 200 && isset($pages_response['data']['data'])) {
-                $pages = $pages_response['data']['data'];
-                foreach ($pages as $p) $all_fb_pages[] = $p;
-                if (isset($pages_response['data']['paging']['cursors']['after']) && count($pages) > 0) {
-                    $after_cursor = $pages_response['data']['paging']['cursors']['after'];
+            while ($has_next) {
+                $pages_response = get_fb_user_pages($token, $after_cursor);
+                if ($pages_response['status_code'] === 200 && isset($pages_response['data']['data'])) {
+                    $pages = $pages_response['data']['data'];
+                    foreach ($pages as $p) $all_fb_pages[] = $p;
+                    if (isset($pages_response['data']['paging']['cursors']['after']) && count($pages) > 0) {
+                        $after_cursor = $pages_response['data']['paging']['cursors']['after'];
+                    } else {
+                        $has_next = false;
+                    }
                 } else {
                     $has_next = false;
                 }
-            } else {
-                $has_next = false;
             }
         }
 
@@ -335,24 +340,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Trigger conversation sync async
+        // Trigger conversation sync in parallel multi-curl (non-blocking)
         try {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
-            $host = $_SERVER['HTTP_HOST'];
-            $base_url_path = $protocol . $host . dirname($_SERVER['REQUEST_URI']);
+            if (!empty($all_fb_pages)) {
+                $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
+                $host = $_SERVER['HTTP_HOST'];
+                $base_url_path = $protocol . $host . dirname($_SERVER['REQUEST_URI']);
 
-            foreach ($all_fb_pages as $page) {
-                $page_id = $page['id'];
-                $sync_url = $base_url_path . "/sync_fb_conversations.php?page_id=" . urlencode($page_id) . "&user_id=" . intval($user_db_id);
-                $ch = curl_init();
-                curl_setopt($ch, CURLOPT_URL, $sync_url);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 1);
-                curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                curl_exec($ch);
-                curl_close($ch);
+                $mh = curl_multi_init();
+                $handles = [];
+                // Limit to max 20 pages per batch to prevent server overload
+                $page_chunks = array_chunk($all_fb_pages, 20);
+                foreach ($page_chunks[0] as $page) {
+                    $page_id = $page['id'];
+                    $sync_url = $base_url_path . "/sync_fb_conversations.php?page_id=" . urlencode($page_id) . "&user_id=" . intval($user_db_id);
+                    $ch = curl_init();
+                    curl_setopt($ch, CURLOPT_URL, $sync_url);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_TIMEOUT_MS, 300);
+                    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, 200);
+                    curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                    curl_multi_add_handle($mh, $ch);
+                    $handles[] = $ch;
+                }
+
+                $running = null;
+                do {
+                    curl_multi_exec($mh, $running);
+                    usleep(5000);
+                } while ($running > 0);
+
+                foreach ($handles as $ch) {
+                    curl_multi_remove_handle($mh, $ch);
+                    curl_close($ch);
+                }
+                curl_multi_close($mh);
             }
         } catch (Exception $e) {}
     }
