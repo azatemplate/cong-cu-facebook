@@ -96,20 +96,7 @@ if ($stmt && $stmt->execute()) {
             $limit = $pageInfo['post_count'] > 0 ? $pageInfo['post_count'] : 10;
             $only_with_content = intval($pageInfo['only_with_content'] ?? 0);
 
-            try {
-                $pdo->exec("ALTER TABLE scraper_posts MODIFY COLUMN picture TEXT");
-            } catch (Exception $e) {}
 
-            try {
-                $col = $pdo->query("SHOW COLUMNS FROM scraper_posts LIKE 'video_url'");
-                if ($col && $col->rowCount() === 0) {
-                    $pdo->exec("ALTER TABLE scraper_posts ADD COLUMN video_url TEXT");
-                }
-                $col = $pdo->query("SHOW COLUMNS FROM scraper_posts LIKE 'post_type'");
-                if ($col && $col->rowCount() === 0) {
-                    $pdo->exec("ALTER TABLE scraper_posts ADD COLUMN post_type VARCHAR(20) DEFAULT 'photo'");
-                }
-            } catch (Exception $e_pcols) {}
 
             $stmtPost = $pdo->prepare("
                 INSERT INTO scraper_posts (page_id, fb_post_id, message, picture, video_url, post_type, shares, comments, likes, post_created_at)
