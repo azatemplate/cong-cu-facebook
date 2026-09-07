@@ -245,15 +245,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($col->rowCount() === 0) {
             $pdo->exec("ALTER TABLE pages ADD COLUMN avatar TEXT DEFAULT NULL");
         }
-        $col_ig = $pdo->query("SHOW COLUMNS FROM pages LIKE 'ig_account_id'");
-        if ($col_ig->rowCount() === 0) {
-            $pdo->exec("ALTER TABLE pages ADD COLUMN ig_account_id VARCHAR(100) DEFAULT NULL, ADD COLUMN ig_username VARCHAR(191) DEFAULT NULL, ADD COLUMN ig_avatar TEXT DEFAULT NULL, ADD COLUMN ig_followers_count INT DEFAULT 0");
-        }
     } catch (Exception $e) {}
 
     $p_check_stmt = $pdo->prepare("SELECT p.id, u.account_id FROM pages p LEFT JOIN users u ON p.user_id = u.id WHERE p.page_id = ?");
-    $p_update_stmt = $pdo->prepare("UPDATE pages SET name = ?, access_token = ?, category = ?, followers_count = ?, avatar = ?, user_id = ?, ig_account_id = ?, ig_username = ?, ig_avatar = ?, ig_followers_count = ? WHERE page_id = ?");
-    $p_insert_stmt = $pdo->prepare("INSERT INTO pages (page_id, name, access_token, category, followers_count, avatar, user_id, ig_account_id, ig_username, ig_avatar, ig_followers_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $p_update_stmt = $pdo->prepare("UPDATE pages SET name = ?, access_token = ?, category = ?, followers_count = ?, avatar = ?, user_id = ? WHERE page_id = ?");
+    $p_insert_stmt = $pdo->prepare("INSERT INTO pages (page_id, name, access_token, category, followers_count, avatar, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
 
     $total_users_count = 0;
     $total_pages_count = 0;
@@ -321,11 +317,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $followers = isset($page['followers_count']) ? $page['followers_count'] : 0;
             $avatar = "avatar.php?id=" . $page_id;
 
-            $ig_account_id = isset($page['instagram_business_account']['id']) ? $page['instagram_business_account']['id'] : null;
-            $ig_username = isset($page['instagram_business_account']['username']) ? $page['instagram_business_account']['username'] : null;
-            $ig_avatar = isset($page['instagram_business_account']['profile_picture_url']) ? $page['instagram_business_account']['profile_picture_url'] : null;
-            $ig_followers = isset($page['instagram_business_account']['followers_count']) ? (int)$page['instagram_business_account']['followers_count'] : 0;
-
             $p_check_stmt->execute([$page_id]);
             $existing_page = $p_check_stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -333,10 +324,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($conflict_action === 'skip' && $existing_page['account_id'] != $account_id) {
                     continue;
                 }
-                $p_update_stmt->execute([$page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id, $ig_account_id, $ig_username, $ig_avatar, $ig_followers, $page_id]);
+                $p_update_stmt->execute([$page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id, $page_id]);
                 $total_pages_count++;
             } else {
-                $p_insert_stmt->execute([$page_id, $page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id, $ig_account_id, $ig_username, $ig_avatar, $ig_followers]);
+                $p_insert_stmt->execute([$page_id, $page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id]);
                 $total_pages_count++;
             }
         }
