@@ -153,37 +153,61 @@ if ($fb_app_id) {
     </div>
 <?php endif; ?>
 
-<div class="card">
-    <h3 style="margin-bottom: 15px;">Thêm Mới / Cập nhật Token</h3>
+<div class="card" style="margin-bottom: 24px;">
+    <h3 style="margin-bottom: 15px;">Thêm Mới / Cập Nhật Token Facebook</h3>
 
-    <?php if ($login_url): ?>
-        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-            <p style="margin-top: 0; color: #166534; font-weight: 500;">Bấm Đăng Nhập Facebook Để Đăng Nhập</p>
-            <p style="font-size: 13px; color: #15803d; margin-bottom: 10px;">
-                Nhấn nút bên dưới để cấp quyền thông qua Facebook App của bạn.
-            </p>
-            <a href="<?php echo htmlspecialchars($login_url); ?>" target="_blank" class="btn btn-primary"
-                style="background: #1877f2; display: inline-flex; align-items: center; gap: 8px;">
-                <span style="font-weight: bold; font-size: 16px;">f</span> Đăng Nhập Facebook
-            </a>
-            <p style="font-size: 12px; color: var(--text-muted); margin-top: 10px; margin-bottom: 0;">
-                <em>Quyền yêu cầu: pages_manage_posts, read_insights, pages_read_engagement, pages_show_list,
-                    pages_messaging, public_profile.</em><br>
-                Hệ thống sẽ tự nhận diện Token, bạn chỉ việc trải nghiệm!
-            </p>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+        <!-- Phương thức 1: Đăng nhập Facebook App -->
+        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 18px; border-radius: 8px; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+                <div style="font-weight: 700; color: #166534; font-size: 15px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                    <span>🔵</span> Phương Thức 1: Đăng Nhập Facebook App
+                </div>
+                <p style="font-size: 13px; color: #15803d; margin-bottom: 12px; line-height: 1.5;">
+                    Cấp quyền tự động thông qua Facebook App. Hệ thống sẽ tự lấy Token và đồng bộ tất cả Fanpage.
+                </p>
+            </div>
+            <?php if ($login_url): ?>
+                <div>
+                    <a href="<?php echo htmlspecialchars($login_url); ?>" target="_blank" class="btn btn-primary"
+                        style="background: #1877f2; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: bold; width: 100%; box-sizing: border-box;">
+                        <span style="font-weight: bold; font-size: 16px;">f</span> Đăng Nhập Facebook
+                    </a>
+                    <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px; margin-bottom: 0; text-align: center;">
+                        Quyền: pages_manage_posts, read_insights, pages_show_list,...
+                    </p>
+                </div>
+            <?php else: ?>
+                <div style="font-size: 12px; color: #b45309; background: #fffbeb; padding: 8px 10px; border-radius: 6px; border: 1px solid #fde68a;">
+                    ⚠️ Chưa cấu hình Facebook App ID trong phần Cài Đặt Hệ Thống.
+                </div>
+            <?php endif; ?>
         </div>
-    <?php else: ?>
-        <div style="background: #fffbeb; border: 1px solid #fde68a; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-            <p style="margin-top: 0; color: #92400e; font-weight: 500;">Thông báo: Tính năng Lấy Token Tự Động chưa sẵn sàng</p>
-            <p style="font-size: 13px; color: #b45309; margin-bottom: 0;">
-                Bạn chưa cấu hình Facebook App ID trong phần <a href="settings.php"
-                    style="color: #ea580c; font-weight: bold;">Cài Đặt Hệ Thống</a>, và Admin cũng chưa cung cấp cấu hình
-                dùng chung nên hệ thống chưa thể tạo URL Đăng Nhập.
-            </p>
-        </div>
-    <?php endif; ?>
 
-    <hr style="border-top: 1px solid var(--border-color); margin-bottom: 20px;">
+        <!-- Phương thức 2: Nhập Token Thủ Công (Nhiều Token) -->
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 18px; border-radius: 8px;">
+            <div style="font-weight: 700; color: #1e293b; font-size: 15px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                <span>🔑</span> Phương Thức 2: Nhập Token Thủ Công (Nhiều Token)
+            </div>
+            <p style="font-size: 13px; color: #64748b; margin-bottom: 10px; line-height: 1.4;">
+                Tự dán danh sách Access Token (EAAG...). Nhập nhiều Token cùng lúc, mỗi Token 1 dòng.
+            </p>
+            <form method="POST" action="actions/save_token.php">
+                <?php echo csrf_field(); ?>
+                <textarea name="access_tokens" rows="3" placeholder="EAAG...&#10;EAAG... (Nhập mỗi Token 1 dòng)" 
+                    style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; font-family: monospace; font-size: 12px; background: var(--card-bg); color: var(--text-main); box-sizing: border-box; margin-bottom: 10px; resize: vertical;" required></textarea>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                    <label style="font-size: 12px; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                        <input type="checkbox" name="overwrite_conflict" value="1"> Ghi đè nếu trùng Fanpage
+                    </label>
+                    <button type="submit" class="btn btn-primary" style="padding: 8px 16px; font-weight: bold; font-size: 13px;">
+                        ➕ Thêm & Đồng Bộ Token
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <div class="card">
