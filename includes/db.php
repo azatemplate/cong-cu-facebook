@@ -17,7 +17,7 @@ function ensure_db_schema_ready($pdo) {
     static $already_checked = false;
     if ($already_checked) return;
 
-    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v3.done';
+    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v4.done';
     if (file_exists($flag_file)) {
         $already_checked = true;
         return;
@@ -606,6 +606,24 @@ function ensure_db_schema_ready($pdo) {
                 organization VARCHAR(255) DEFAULT 'My Organization',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE KEY uq_buf_chan (account_id, channel_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS tiktok_accounts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                account_id INT NOT NULL,
+                open_id VARCHAR(255) NOT NULL,
+                union_id VARCHAR(255) DEFAULT NULL,
+                display_name VARCHAR(255) NOT NULL,
+                avatar TEXT DEFAULT NULL,
+                access_token TEXT NOT NULL,
+                refresh_token TEXT DEFAULT NULL,
+                expires_at INT NOT NULL,
+                refresh_expires_at INT DEFAULT NULL,
+                is_active TINYINT(1) DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY idx_open_id (account_id, open_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         ");
 

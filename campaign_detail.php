@@ -126,7 +126,7 @@ try {
         FROM scheduled_posts sp
         LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok'
         LEFT JOIN youtube_channels yt1 ON sp.page_id = yt1.channel_id AND sp.post_type = 'YouTube'
-        LEFT JOIN youtube_channels yt2 ON sp.page_id = CAST(yt2.id AS CHAR) AND sp.post_type = 'YouTube'
+        LEFT JOIN youtube_channels yt2 ON sp.page_id = yt2.id AND sp.post_type = 'YouTube'
         LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
         LEFT JOIN tiktok_accounts tt ON sp.page_id = tt.id AND sp.post_type = 'TikTok'
         WHERE sp.campaign_id = ? $filter_sql
@@ -135,7 +135,20 @@ try {
     ");
     $posts_stmt->execute([$campaign_id]);
     $posts = $posts_stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {}
+} catch (PDOException $e) {
+    try {
+        $posts_stmt = $pdo->prepare("
+            SELECT sp.*, p.name AS page_name, p.avatar AS page_avatar
+            FROM scheduled_posts sp
+            LEFT JOIN pages p ON sp.page_id = p.page_id
+            WHERE sp.campaign_id = ? $filter_sql
+            ORDER BY sp.scheduled_time ASC, sp.id ASC
+            LIMIT $per_page OFFSET $offset
+        ");
+        $posts_stmt->execute([$campaign_id]);
+        $posts = $posts_stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $ex) {}
+}
 
 // Detect if comment_status column exists (fault-tolerant, using fast query cache)
 $has_comment_status_col = false;

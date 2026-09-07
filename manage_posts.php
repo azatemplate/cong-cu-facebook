@@ -116,7 +116,7 @@ if ($search !== '') {
             LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok'
             LEFT JOIN users u ON p.user_id = u.id
             LEFT JOIN youtube_channels yt1 ON sp.page_id = yt1.channel_id AND sp.post_type = 'YouTube'
-            LEFT JOIN youtube_channels yt2 ON sp.page_id = CAST(yt2.id AS CHAR) AND sp.post_type = 'YouTube'
+            LEFT JOIN youtube_channels yt2 ON sp.page_id = yt2.id AND sp.post_type = 'YouTube'
             LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
             LEFT JOIN tiktok_accounts tt ON sp.page_id = tt.id AND sp.post_type = 'TikTok'
             WHERE sp.account_id = ? AND (
@@ -133,7 +133,7 @@ try {
     $total_campaigns = (int)$count_stmt->fetchColumn();
     $total_pages_nav = max(1, ceil($total_campaigns / $limit));
 
-    // Giai đoạn 1: Chỉ lấy 20 chiến dịch của trang hiện tại (0.1ms)
+    // Giai đoạn 1: Lấy danh sách 20 chiến dịch
     $sub_stmt = $pdo->prepare("SELECT c.id, c.name, c.post_type, c.total_posts, c.scheduled_time, c.created_at FROM post_campaigns c WHERE c.account_id = ?" . $search_where . " ORDER BY c.created_at DESC LIMIT $limit OFFSET $offset");
     $sub_stmt->execute(array_merge([$account_id], $search_params));
     $page_camps = $sub_stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -142,47 +142,55 @@ try {
         $c_ids = array_column($page_camps, 'id');
         $in_ids = implode(',', array_map('intval', $c_ids));
 
-        // Giai đoạn 2: Thống kê trạng thái bài viết cực nhanh qua index (chỉ với 20 chiến dịch này)
+        // Giai đoạn 2: Thống kê số lượng bài đăng
         $stats_map = [];
-        $stats_stmt = $pdo->query("
-            SELECT
-                campaign_id,
-                SUM(CASE WHEN status='published'  THEN 1 ELSE 0 END) AS cnt_published,
-                SUM(CASE WHEN status='pending'    THEN 1 ELSE 0 END) AS cnt_pending,
-                SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS cnt_processing,
-                SUM(CASE WHEN status='failed'     THEN 1 ELSE 0 END) AS cnt_failed,
-                SUM(CASE WHEN status='checkpoint' THEN 1 ELSE 0 END) AS cnt_checkpoint,
-                COUNT(id) AS cnt_total
-            FROM scheduled_posts
-            WHERE campaign_id IN ($in_ids)
-            GROUP BY campaign_id
-        ");
-        while ($row = $stats_stmt->fetch(PDO::FETCH_ASSOC)) {
-            $stats_map[$row['campaign_id']] = $row;
-        }
-
-        // Lấy tên kênh/trang bằng subquery rút gọn (chỉ join trên danh sách kênh duy nhất)
-        $users_map = [];
-        $users_stmt = $pdo->query("
-            SELECT 
-                sub.campaign_id,
-                GROUP_CONCAT(DISTINCT COALESCE(tt.display_name, u.name, bc.channel_name, yt1.channel_title, yt2.channel_title) SEPARATOR ', ') as fb_users
-            FROM (
-                SELECT DISTINCT campaign_id, post_type, page_id 
-                FROM scheduled_posts 
+        try {
+            $stats_stmt = $pdo->query("
+                SELECT
+                    campaign_id,
+                    SUM(CASE WHEN status='published'  THEN 1 ELSE 0 END) AS cnt_published,
+                    SUM(CASE WHEN status='pending'    THEN 1 ELSE 0 END) AS cnt_pending,
+                    SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS cnt_processing,
+                    SUM(CASE WHEN status='failed'     THEN 1 ELSE 0 END) AS cnt_failed,
+                    SUM(CASE WHEN status='checkpoint' THEN 1 ELSE 0 END) AS cnt_checkpoint,
+                    COUNT(id) AS cnt_total
+                FROM scheduled_posts
                 WHERE campaign_id IN ($in_ids)
-            ) sub
-            LEFT JOIN pages p ON sub.page_id = p.page_id AND sub.post_type NOT LIKE 'Buffer%' AND sub.post_type != 'YouTube' AND sub.post_type != 'TikTok'
-            LEFT JOIN users u ON p.user_id = u.id
-            LEFT JOIN youtube_channels yt1 ON sub.page_id = yt1.channel_id AND sub.post_type = 'YouTube'
-            LEFT JOIN youtube_channels yt2 ON sub.page_id = CAST(yt2.id AS CHAR) AND sub.post_type = 'YouTube'
-            LEFT JOIN buffer_channels bc ON sub.page_id = bc.channel_id AND sub.post_type LIKE 'Buffer%'
-            LEFT JOIN tiktok_accounts tt ON sub.page_id = tt.id AND sub.post_type = 'TikTok'
-            GROUP BY sub.campaign_id
-        ");
-        while ($row = $users_stmt->fetch(PDO::FETCH_ASSOC)) {
-            $users_map[$row['campaign_id']] = $row['fb_users'];
-        }
+                GROUP BY campaign_id
+            ");
+            if ($stats_stmt) {
+                while ($row = $stats_stmt->fetch(PDO::FETCH_ASSOC)) {
+                    $stats_map[$row['campaign_id']] = $row;
+                }
+            }
+        } catch (Exception $e) {}
+
+        // Giai đoạn 3: Lấy tên kênh/trang
+        $users_map = [];
+        try {
+            $users_stmt = $pdo->query("
+                SELECT 
+                    sub.campaign_id,
+                    GROUP_CONCAT(DISTINCT COALESCE(tt.display_name, u.name, bc.channel_name, yt1.channel_title, yt2.channel_title) SEPARATOR ', ') as fb_users
+                FROM (
+                    SELECT DISTINCT campaign_id, post_type, page_id 
+                    FROM scheduled_posts 
+                    WHERE campaign_id IN ($in_ids)
+                ) sub
+                LEFT JOIN pages p ON sub.page_id = p.page_id AND sub.post_type NOT LIKE 'Buffer%' AND sub.post_type != 'YouTube' AND sub.post_type != 'TikTok'
+                LEFT JOIN users u ON p.user_id = u.id
+                LEFT JOIN youtube_channels yt1 ON sub.page_id = yt1.channel_id AND sub.post_type = 'YouTube'
+                LEFT JOIN youtube_channels yt2 ON sub.page_id = yt2.id AND sub.post_type = 'YouTube'
+                LEFT JOIN buffer_channels bc ON sub.page_id = bc.channel_id AND sub.post_type LIKE 'Buffer%'
+                LEFT JOIN tiktok_accounts tt ON sub.page_id = tt.id AND sub.post_type = 'TikTok'
+                GROUP BY sub.campaign_id
+            ");
+            if ($users_stmt) {
+                while ($row = $users_stmt->fetch(PDO::FETCH_ASSOC)) {
+                    $users_map[$row['campaign_id']] = $row['fb_users'];
+                }
+            }
+        } catch (Exception $e) {}
 
         foreach ($page_camps as $c) {
             $cid = $c['id'];
