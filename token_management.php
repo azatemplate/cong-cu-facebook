@@ -186,8 +186,14 @@ if ($fb_app_id) {
 
         <!-- Phương thức 2: Nhập Token Thủ Công (Nhiều Token) -->
         <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 18px; border-radius: 8px;">
-            <div style="font-weight: 700; color: #1e293b; font-size: 15px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-                <span>🔑</span> Phương Thức 2: Nhập Token Thủ Công (Nhiều Token)
+            <div style="font-weight: 700; color: #1e293b; font-size: 15px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span>🔑</span> Phương Thức 2: Nhập Token Thủ Công (Nhiều Token)
+                </div>
+                <a href="https://www.youtube.com/watch?v=xG6BdQ8GlH4" target="_blank" onclick="openTokenGuideVideo(event)"
+                   style="display: inline-flex; align-items: center; gap: 5px; color: #dc2626; font-weight: 600; font-size: 12px; text-decoration: none; background: #fef2f2; padding: 4px 10px; border-radius: 6px; border: 1px solid #fca5a5; white-space: nowrap;">
+                   ▶️ Video Hướng Dẫn Lấy Token ↗
+                </a>
             </div>
             <p style="font-size: 13px; color: #64748b; margin-bottom: 10px; line-height: 1.4;">
                 Tự dán danh sách Access Token (EAAG...). Nhập nhiều Token cùng lúc, mỗi Token 1 dòng.
@@ -206,6 +212,23 @@ if ($fb_app_id) {
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Video Hướng Dẫn Lấy Token -->
+<div id="tokenGuideVideoModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; padding:20px; max-width:760px; width:92%; box-shadow:0 20px 60px rgba(0,0,0,0.3); position:relative;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+            <h4 style="margin:0; font-size:16px; color:#111; display:flex; align-items:center; gap:6px;">🎬 Hướng Dẫn Lấy Token Facebook</h4>
+            <button onclick="closeTokenGuideVideo()" style="border:none; background:none; font-size:22px; cursor:pointer; color:#666; padding:0 4px;">✕</button>
+        </div>
+        <div style="position:relative; padding-bottom:56.25%; height:0; overflow:hidden; border-radius:8px; background:#000;">
+            <iframe id="tokenGuideIframe" src="" style="position:absolute; top:0; left:0; width:100%; height:100%; border:0;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; font-size:13px;">
+            <span style="color:var(--text-muted);">Video hướng dẫn cách lấy Token Facebook cá nhân</span>
+            <a href="https://www.youtube.com/watch?v=xG6BdQ8GlH4" target="_blank" style="color:#dc2626; font-weight:600; text-decoration:none;">Xem trên YouTube ↗</a>
         </div>
     </div>
 </div>
@@ -482,6 +505,41 @@ if ($fb_app_id) {
     function closeEditApiModal() {
         document.getElementById('editApiModal').style.display = 'none';
     }
+
+    function openTokenGuideVideo(e) {
+        if (e) e.preventDefault();
+        var modal = document.getElementById('tokenGuideVideoModal');
+        var iframe = document.getElementById('tokenGuideIframe');
+        if (iframe) {
+            iframe.src = 'https://www.youtube.com/embed/xG6BdQ8GlH4?autoplay=1';
+        }
+        if (modal) {
+            modal.style.display = 'flex';
+        }
+    }
+
+    function closeTokenGuideVideo() {
+        var modal = document.getElementById('tokenGuideVideoModal');
+        var iframe = document.getElementById('tokenGuideIframe');
+        if (iframe) {
+            iframe.src = '';
+        }
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    document.getElementById('tokenGuideVideoModal')?.addEventListener('click', function (e) {
+        if (e.target === this) closeTokenGuideVideo();
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            closeDeleteModal();
+            closeEditApiModal();
+            closeTokenGuideVideo();
+        }
+    });
 </script>
 
 <?php include 'includes/footer.php'; ?>
