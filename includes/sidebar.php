@@ -46,6 +46,9 @@
         <li class="<?php echo ($current_page == 'youtube') ? 'active' : ''; ?>">
             <a href="youtube.php" data-tooltip="YouTube Post"><span class="icon">🚀</span><span class="menu-label"> YouTube Post</span></a>
         </li>
+        <li class="<?php echo ($current_page == 'instagram') ? 'active' : ''; ?>">
+            <a href="instagram.php" data-tooltip="Instagram Post"><span class="icon">📷</span><span class="menu-label"> Instagram Post</span></a>
+        </li>
         <li class="<?php echo ($current_page == 'buffer' || $current_page == 'buffer_posts' || $current_page == 'buffer_channels') ? 'active' : ''; ?>">
             <a href="buffer.php" data-tooltip="Buffer Post"><span class="icon">📡</span><span class="menu-label"> Buffer Post</span></a>
         </li>

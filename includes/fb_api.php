@@ -100,7 +100,7 @@ function get_fb_user_profile($access_token) {
 
 function get_fb_user_pages($access_token, $after = null) {
     $params = [
-        'fields'       => 'id,name,access_token,category,followers_count,picture{url}',
+        'fields'       => 'id,name,access_token,category,followers_count,picture{url},instagram_business_account{id,username,name,profile_picture_url,followers_count,media_count}',
         'limit'        => 500,
         'access_token' => $access_token
     ];
