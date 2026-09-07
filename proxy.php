@@ -396,8 +396,19 @@ foreach ($proxies as $px) {
 
     <!-- PHP Flash Notification Banner -->
     <?php if (!empty($flash_msg)): ?>
-        <div class="alert alert-<?php echo $flash_type === 'danger' ? 'danger' : 'success'; ?>" style="margin-bottom: 20px; padding: 14px 18px; border-radius: 10px; font-weight: 500; display: flex; align-items: center; justify-content: space-between; <?php echo $flash_type === 'danger' ? 'background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;' : 'background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;'; ?>">
-            <span><?php echo $flash_type === 'danger' ? '❌' : '✅'; ?> <?php echo htmlspecialchars($flash_msg); ?></span>
+        <?php
+        $bg_style = 'background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;';
+        $icon = '✅';
+        if ($flash_type === 'danger') {
+            $bg_style = 'background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;';
+            $icon = '❌';
+        } else if ($flash_type === 'warning') {
+            $bg_style = 'background: #fffbeb; border: 1px solid #fef08a; color: #854d0e;';
+            $icon = '⚠️';
+        }
+        ?>
+        <div class="alert" style="margin-bottom: 20px; padding: 14px 18px; border-radius: 10px; font-weight: 500; display: flex; align-items: center; justify-content: space-between; <?php echo $bg_style; ?>">
+            <span><?php echo $icon; ?> <?php echo htmlspecialchars($flash_msg); ?></span>
             <button type="button" onclick="this.parentElement.remove()" style="background: none; border: none; font-size: 16px; cursor: pointer; color: inherit;">&times;</button>
         </div>
     <?php endif; ?>

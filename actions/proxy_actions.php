@@ -169,24 +169,38 @@ if ($action === 'add_proxies') {
     $lines = explode("\n", $raw_input);
     
     $added = 0;
-    $skipped = 0;
+    $duplicates = 0;
+    $invalid = 0;
 
-    $stmt_chk = $pdo->prepare("SELECT id FROM proxies WHERE account_id = ? AND proxy_string = ?");
+    $stmt_chk = $pdo->prepare("
+        SELECT id FROM proxies 
+        WHERE account_id = ? AND (proxy_string = ? OR (ip = ? AND port = ?))
+    ");
+
     $stmt_ins = $pdo->prepare("
         INSERT INTO proxies (account_id, proxy_string, ip, port, username, password, protocol, ip_type, status, latency, country)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'untested', 0, 'VN')
     ");
 
     foreach ($lines as $line) {
+        $line = trim($line);
+        if (empty($line)) continue;
+
         $parsed = parse_proxy_line($line);
         if (!$parsed) {
-            $skipped++;
+            $invalid++;
             continue;
         }
 
-        $stmt_chk->execute([$account_id, $parsed['proxy_string']]);
+        $stmt_chk->execute([
+            $account_id,
+            $parsed['proxy_string'],
+            $parsed['ip'],
+            $parsed['port']
+        ]);
+
         if ($stmt_chk->fetch()) {
-            $skipped++;
+            $duplicates++;
             continue;
         }
 
@@ -195,8 +209,8 @@ if ($action === 'add_proxies') {
             $parsed['proxy_string'],
             $parsed['ip'],
             $parsed['port'],
-            $parsed['username'],
-            $parsed['password'],
+            $parsed['username'] ?: null,
+            $parsed['password'] ?: null,
             $parsed['protocol'],
             $parsed['ip_type']
         ]);
@@ -204,10 +218,20 @@ if ($action === 'add_proxies') {
     }
 
     if ($added > 0) {
-        $_SESSION['flash_msg'] = "Đã thêm thành công $added Proxy mới" . ($skipped > 0 ? " ($skipped proxy trùng hoặc không hợp lệ đã bị bỏ qua)." : ".");
+        $msg = "Đã thêm thành công $added Proxy mới vào hệ thống.";
+        if ($duplicates > 0) {
+            $msg .= " ⚠️ Có $duplicates Proxy đã tồn tại từ trước (hệ thống không thêm trùng).";
+        }
+        if ($invalid > 0) {
+            $msg .= " ($invalid dòng sai cú pháp bị bỏ qua).";
+        }
+        $_SESSION['flash_msg'] = $msg;
         $_SESSION['flash_type'] = "success";
+    } else if ($duplicates > 0) {
+        $_SESSION['flash_msg'] = "⚠️ Tất cả $duplicates Proxy bạn nhập đều đã có trong hệ thống trước đó (không thêm trùng).";
+        $_SESSION['flash_type'] = "warning";
     } else {
-        $_SESSION['flash_msg'] = "Không có Proxy hợp lệ nào được thêm ($skipped proxy bị trùng hoặc không đúng định dạng).";
+        $_SESSION['flash_msg'] = "Không có Proxy hợp lệ nào được thêm (dữ liệu rỗng hoặc sai cú pháp).";
         $_SESSION['flash_type'] = "danger";
     }
 
