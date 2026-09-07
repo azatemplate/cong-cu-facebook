@@ -22,6 +22,47 @@ function fb_curl_setssl($ch) {
     }
 }
 
+function apply_proxy_to_curl($ch, $access_token = null) {
+    if (empty($access_token)) return;
+    
+    static $proxy_cache = [];
+    $token_hash = md5($access_token);
+
+    if (!array_key_exists($token_hash, $proxy_cache)) {
+        $proxy_cache[$token_hash] = null;
+        try {
+            global $pdo;
+            if (isset($pdo)) {
+                $enc_token = function_exists('encryptData') ? encryptData($access_token) : $access_token;
+                $stmt = $pdo->prepare("
+                    SELECT px.* 
+                    FROM users u
+                    JOIN proxies px ON u.proxy_id = px.id
+                    WHERE (u.access_token = ? OR u.access_token = ?) AND px.status != 'dead'
+                    LIMIT 1
+                ");
+                $stmt->execute([$access_token, $enc_token]);
+                $px = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($px) {
+                    $proxy_cache[$token_hash] = $px;
+                }
+            }
+        } catch (Exception $e) {}
+    }
+
+    $px = $proxy_cache[$token_hash];
+    if ($px) {
+        $ip_str = (($px['ip_type'] ?? '') === 'IPv6' && strpos($px['ip'], ':') !== false) ? '[' . $px['ip'] . ']' : $px['ip'];
+        curl_setopt($ch, CURLOPT_PROXY, $ip_str . ':' . $px['port']);
+        if (!empty($px['username']) && !empty($px['password'])) {
+            curl_setopt($ch, CURLOPT_PROXYUSERPWD, $px['username'] . ':' . $px['password']);
+        }
+        if (strtolower($px['protocol'] ?? '') === 'socks5') {
+            curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
+        }
+    }
+}
+
 function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [], $timeout = 20) {
     $url = FB_API_BASE . $endpoint;
 
@@ -34,6 +75,10 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
     fb_curl_setssl($ch);
+
+    if (!empty($params['access_token'])) {
+        apply_proxy_to_curl($ch, $params['access_token']);
+    }
 
     if (strtoupper($method) === 'POST') {
         curl_setopt($ch, CURLOPT_POST, true);

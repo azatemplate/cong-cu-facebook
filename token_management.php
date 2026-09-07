@@ -95,6 +95,7 @@ if (isset($_GET['status'])) {
 // Fetch existing tokens with checkpoint detection
 $stmt = $pdo->prepare("
     SELECT u.*, 
+        px.proxy_string, px.status as proxy_status, px.ip as proxy_ip, px.port as proxy_port,
         (SELECT COUNT(id) FROM pages WHERE user_id = u.id) as page_count,
         (SELECT COUNT(sp.id) 
          FROM scheduled_posts sp 
@@ -103,6 +104,7 @@ $stmt = $pdo->prepare("
            AND (sp.status = 'checkpoint' OR sp.error_msg LIKE '%checkpoint%' OR sp.error_msg LIKE '%log in%')
         ) as checkpoint_count
     FROM users u 
+    LEFT JOIN proxies px ON u.proxy_id = px.id
     WHERE u.account_id = ? 
     ORDER BY u.created_at DESC
 ");
@@ -283,6 +285,13 @@ if ($fb_app_id) {
                         <td><?php echo $u['id']; ?></td>
                         <td style="font-weight: 600; color: var(--text-main);">
                             <?php echo htmlspecialchars($u['name']); ?>
+                            <?php if (!empty($u['proxy_ip'])): ?>
+                                <div style="margin-top: 4px;">
+                                    <a href="proxy.php" style="background: #e0f2fe; color: #0369a1; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 3px;" title="<?php echo htmlspecialchars($u['proxy_string']); ?>">
+                                        🌐 <?php echo htmlspecialchars($u['proxy_ip']); ?> (<?php echo $u['proxy_status'] === 'live' ? 'Sống ✓' : ($u['proxy_status'] === 'dead' ? 'Chết ✗' : 'Chưa thử'); ?>)
+                                    </a>
+                                </div>
+                            <?php endif; ?>
                         </td>
                         <td>
                             <?php if ($status === 'checkpoint'): ?>

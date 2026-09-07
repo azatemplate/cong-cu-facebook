@@ -81,6 +81,9 @@
         <li class="<?php echo ($current_page == 'terms') ? 'active' : ''; ?>">
             <a href="terms_of_service.php" data-tooltip="Terms of Service"><span class="icon">⚖️</span><span class="menu-label"> Terms of Service</span></a>
         </li>
+        <li class="<?php echo ($current_page == 'proxy') ? 'active' : ''; ?>">
+            <a href="proxy.php" data-tooltip="Kho Proxy"><span class="icon">🌐</span><span class="menu-label"> Kho Proxy</span></a>
+        </li>
         <li class="<?php echo ($current_page == 'settings') ? 'active' : ''; ?>">
             <a href="settings.php" data-tooltip="Settings"><span class="icon">⚙️</span><span class="menu-label"> Settings</span></a>
         </li>
