@@ -14,35 +14,7 @@ if (!isset($_SESSION['account_id'])) {
 
 $account_id = $_SESSION['account_id'];
 
-// Auto create table proxies and column proxy_id in users if missing
-try {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS proxies (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            account_id INT NOT NULL,
-            proxy_string VARCHAR(255) NOT NULL,
-            ip VARCHAR(100) DEFAULT NULL,
-            port VARCHAR(10) DEFAULT NULL,
-            username VARCHAR(100) DEFAULT NULL,
-            password VARCHAR(100) DEFAULT NULL,
-            protocol VARCHAR(10) DEFAULT 'http',
-            ip_type VARCHAR(10) DEFAULT 'IPv4',
-            status VARCHAR(20) DEFAULT 'untested',
-            latency INT DEFAULT 0,
-            country VARCHAR(10) DEFAULT 'VN',
-            assigned_user_id INT DEFAULT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX (account_id),
-            INDEX (assigned_user_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    ");
 
-    $col_p = $pdo->query("SHOW COLUMNS FROM users LIKE 'proxy_id'");
-    if ($col_p->rowCount() === 0) {
-        $pdo->exec("ALTER TABLE users ADD COLUMN proxy_id INT DEFAULT NULL");
-    }
-} catch (Exception $e) {}
 
 function parse_proxy_line($line) {
     $line = trim($line);

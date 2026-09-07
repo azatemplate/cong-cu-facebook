@@ -14,11 +14,6 @@ $offset      = max(0, intval($_GET['offset'] ?? 0));
 $limit       = 20; // số thông báo mỗi lần tải
 session_write_close(); // Giải phóng session lock sớm để các request khác không bị block
 
-// 1. Auto add is_read column to scheduled_posts if missing
-try {
-    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN is_read TINYINT(1) DEFAULT 0");
-} catch (Exception $e) {}
-
 // 2. Fetch Post Errors — chỉ lần đầu (offset = 0)
 $failed_posts = [];
 if ($offset === 0) {
@@ -37,36 +32,10 @@ if ($offset === 0) {
     } catch (Exception $e) {}
 }
 
-// 2. Fetch Live Notifications với phân trang
+// 3. Fetch Live Notifications với phân trang
 $live_notifs = [];
 $has_more    = false;
 try {
-    // Tự động tạo bảng nếu chưa có
-    try {
-        $pdo->exec("CREATE TABLE IF NOT EXISTS page_notifications (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            page_id VARCHAR(50) NOT NULL,
-            type VARCHAR(20) NOT NULL,
-            sender_id VARCHAR(50) NULL,
-            sender_name VARCHAR(100) NULL,
-            snippet TEXT NULL,
-            post_id VARCHAR(50) NULL,
-            comment_id VARCHAR(50) NULL,
-            conversation_id VARCHAR(50) NULL,
-            is_read TINYINT(1) DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_page (page_id),
-            INDEX idx_read (is_read)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;");
-        // Lưu ý: ALTER TABLE đã bị xóa khỏi đây để tránh metadata lock
-        // làm block các query khác trên bảng page_notifications
-    } catch (Exception $e) {}
-
-    // Tự động dọn dẹp các dòng rác type = 'auto_replied' để không hiển thị trên chuông thông báo
-    try {
-        $pdo->exec("DELETE FROM page_notifications WHERE type = 'auto_replied'");
-    } catch (Exception $e) {}
-
     // Determine filter
     $tab = $_GET['tab'] ?? 'unread'; // default unread for badge consistency, but frontend will control this
     $read_condition = "";
@@ -84,9 +53,9 @@ try {
                COALESCE(p.name, zo.name, 'Thông báo Hệ thống') as page_name,
                CASE WHEN zo.oa_id IS NOT NULL THEN 'zalo' ELSE 'facebook' END as platform
         FROM page_notifications n
-        LEFT JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
+        LEFT JOIN pages p ON n.page_id = p.page_id
         LEFT JOIN users u ON p.user_id = u.id
-        LEFT JOIN zalo_oas zo ON n.page_id COLLATE utf8mb4_0900_ai_ci = zo.oa_id
+        LEFT JOIN zalo_oas zo ON n.page_id = zo.oa_id
         WHERE (
             u.account_id = ?
             OR EXISTS (
@@ -95,7 +64,7 @@ try {
             )
             OR zo.account_id = ?
             OR n.page_id = ?
-        ) {$read_condition}
+        ) {$read_condition} AND n.type != 'auto_replied'
         ORDER BY n.created_at DESC
         LIMIT {$fetch_limit} OFFSET {$offset}
     ");

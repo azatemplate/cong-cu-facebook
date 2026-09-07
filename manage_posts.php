@@ -107,9 +107,7 @@ $total_pages_nav = 1;
 $campaigns       = [];
 $legacy_count    = 0;
 
-// Tự động tạo Index tối ưu hóa truy vấn siêu tốc (nếu chưa có)
-try { $pdo->exec("CREATE INDEX idx_camp_acc_created ON post_campaigns(account_id, created_at)"); } catch (Exception $e) {}
-try { $pdo->exec("CREATE INDEX idx_sp_camp_status ON scheduled_posts(campaign_id, status)"); } catch (Exception $e) {}
+
 
 $search_where  = "";
 $search_params = [];
