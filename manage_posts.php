@@ -218,9 +218,6 @@ try {
         </form>
 
         <div style="display:flex; gap:10px; align-items:center;">
-            <button onclick="showConfirmModal('clean_empty', 0, 'Bạn có chắc chắn muốn dọn dẹp TẤT CẢ các chiến dịch trống không?')" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px;" title="Xóa toàn bộ chiến dịch không còn bài viết">
-                🧹 Xóa chiến dịch trống
-            </button>
             <?php if ($is_admin): ?>
             <button id="cronBtn" onclick="runCronJob()" style="background:var(--primary-color);color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:bold;display:flex;align-items:center;gap:6px;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>

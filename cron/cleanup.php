@@ -7,11 +7,18 @@
 ignore_user_abort(true);
 set_time_limit(120);
 
-// Chi chay 1 lan moi ngay
+$is_force = isset($_GET['force']) || (php_sapi_name() === 'cli' && isset($argv) && in_array('--force', $argv));
+
+// Chi chay 1 lan moi ngay (tru khi truyen ?force=1)
 $flag_file = sys_get_temp_dir() . '/fb_cleanup_' . date('Y-m-d') . '.done';
-if (file_exists($flag_file)) {
-    echo "[" . date('H:i:s') . "] Cleanup da chay hom nay (" . trim(file_get_contents($flag_file)) . "). Bo qua.\n";
+if (!$is_force && file_exists($flag_file)) {
+    if (php_sapi_name() !== 'cli') header('Content-Type: text/plain; charset=utf-8');
+    echo "[" . date('H:i:s') . "] Cleanup đã chạy hôm nay (" . trim(file_get_contents($flag_file)) . "). Truy cập cron/cleanup.php?force=1 để ép chạy lại.\n";
     return;
+}
+
+if (php_sapi_name() !== 'cli') {
+    header('Content-Type: text/plain; charset=utf-8');
 }
 
 require_once __DIR__ . '/../includes/db.php';
