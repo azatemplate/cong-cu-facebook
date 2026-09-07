@@ -109,10 +109,36 @@
 .sidebar-submenu li a {
     padding: 8px 12px !important;
     font-size: 13px !important;
-    color: var(--text-muted);
+    color: var(--text-muted) !important;
+    background: transparent !important;
+    border-right: none !important;
+    font-weight: 400 !important;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+.sidebar-submenu li a:hover {
+    background: #f3f4f6 !important;
+    color: var(--primary-color) !important;
+}
+.sidebar-submenu li.active a {
+    color: var(--primary-color) !important;
+    background: #eef2ff !important;
+    font-weight: 600 !important;
+    border-right: 3px solid var(--primary-color) !important;
 }
 body.dark-mode .sidebar-submenu {
     background: rgba(255, 255, 255, 0.03);
+}
+body.dark-mode .sidebar-submenu li a {
+    color: var(--text-muted) !important;
+}
+body.dark-mode .sidebar-submenu li a:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #818cf8 !important;
+}
+body.dark-mode .sidebar-submenu li.active a {
+    background: rgba(91, 70, 229, 0.25) !important;
+    color: #818cf8 !important;
 }
 .has-submenu.open .submenu-arrow {
     transform: rotate(180deg);
