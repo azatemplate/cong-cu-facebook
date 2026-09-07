@@ -92,9 +92,9 @@ function cleanup_old_files($upload_dir, $temp_dir, $upload_max_age = 300, $tmp_m
     return $log;
 }
 
-// Kích hoạt dọn dẹp an toàn: CHẠY TỰ ĐỘNG, MỐC XÓA LÀ 5 PHÚT (300s)
+// Kích hoạt dọn dẹp an toàn: CHẠY TỰ ĐỘNG MỖI 5 PHÚT (300s) ĐỂ KHÔNG TỐN CPU DƯ THỪA
 $last_cleanup_file = $temp_dir . 'last_cleanup.txt';
-if ($action === 'cleanup' || !file_exists($last_cleanup_file) || (time() - @filemtime($last_cleanup_file)) > 10) {
+if ($action === 'cleanup' || !file_exists($last_cleanup_file) || (time() - @filemtime($last_cleanup_file)) > 300) {
     @touch($last_cleanup_file);
     $cleanup_log = cleanup_old_files($upload_dir, $temp_dir, 300, 300);
     if ($action === 'cleanup') {
@@ -162,7 +162,7 @@ if ($action === 'image') {
             'status'      => 'success',
             'url'         => $file_url,
             'stored_name' => $stored_name,
-            'size'        => filesize($target_path),
+            'size'        => @filesize($target_path),
             'mime'        => $mime_type
         ]);
     } else {
@@ -202,7 +202,7 @@ if ($action === 'init') {
     exit;
 }
 
-// 3. ACTION UPLOAD CHUNK (?action=chunk) - Tối ưu ghi trực tiếp (Direct Append Streaming)
+// 3. ACTION UPLOAD CHUNK (?action=chunk) - Siêu tốc với C-Native Stream & Tiết kiệm 50% Disk I/O
 if ($action === 'chunk') {
     $upload_id = trim($_POST['upload_id'] ?? $_GET['upload_id'] ?? '');
     $index     = intval($_POST['index'] ?? $_GET['index'] ?? -1);
@@ -223,30 +223,19 @@ if ($action === 'chunk') {
 
     $temp_stream_file = $temp_dir . $upload_id . '.tmp';
     
-    // Ghi trực tiếp nối đuôi (Append Stream với Khóa Độc Quyền LOCK_EX)
+    // Ghi trực tiếp nối đuôi (Direct C-Level Stream Copy với Khóa Độc Quyền LOCK_EX)
     $out = @fopen($temp_stream_file, 'ab');
     if ($out) {
         @flock($out, LOCK_EX);
         $in = @fopen($_FILES['chunk']['tmp_name'], 'rb');
         if ($in) {
-            while (!feof($in)) {
-                $buf = fread($in, 1048576);
-                if ($buf !== false && strlen($buf) > 0) {
-                    fwrite($out, $buf);
-                }
-            }
+            stream_copy_to_stream($in, $out);
             fclose($in);
         }
         @flock($out, LOCK_UN);
         fclose($out);
 
-        // Lưu giữ thêm phiên bản part rời làm fallback nếu cần
-        $session_dir = $temp_dir . $upload_id . '/';
-        if (!is_dir($session_dir)) @mkdir($session_dir, 0777, true);
-        $part_file = $session_dir . sprintf('part_%05d.part', $index);
-        @copy($_FILES['chunk']['tmp_name'], $part_file);
-
-        echo json_encode(['status' => 'success', 'ok' => true, 'index' => $index, 'current_size' => filesize($temp_stream_file)]);
+        echo json_encode(['status' => 'success', 'ok' => true, 'index' => $index, 'current_size' => @filesize($temp_stream_file)]);
         exit;
     }
 
@@ -292,9 +281,7 @@ if ($action === 'complete') {
                 foreach ($parts as $part_file) {
                     $in_fp = @fopen($part_file, 'rb');
                     if ($in_fp) {
-                        while (!feof($in_fp)) {
-                            fwrite($out_fp, fread($in_fp, 1048576));
-                        }
+                        stream_copy_to_stream($in_fp, $out_fp);
                         fclose($in_fp);
                     }
                 }
