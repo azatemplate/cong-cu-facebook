@@ -348,6 +348,55 @@ function log_ai_usage($account_id, $provider, $feature, $prompt_length, $respons
 }
 
 
+function get_ai_formula_and_style_instruction($formula_code, $style_code) {
+    $formulas_map = [
+        'aida' => "Áp dụng Công thức AIDA:\n- Attention: Giật tiêu đề gây tò mò, thu hút.\n- Interest: Nêu thông tin thú vị hoặc nỗi đau nhức nhối.\n- Desire: Đưa ra lợi ích vượt trội của giải pháp.\n- Action: Kêu gọi hành động (CTA) chốt đơn.",
+        'pas' => "Áp dụng Công thức PAS:\n- Problem: Nêu rõ vấn đề/nỗi đau khách hàng gặp phải.\n- Agitate: Xoáy sâu vào tác hại và cảm giác khó chịu.\n- Solve: Đưa ra giải pháp tối ưu xử lý triệt để.",
+        'bab' => "Áp dụng Công thức BAB:\n- Before: Thực trạng khó khăn hiện tại.\n- After: Bức tranh kết quả hoàn hảo sau khi giải quyết.\n- Bridge: Giới thiệu sản phẩm/dịch vụ là cây cầu nối.",
+        '4p' => "Áp dụng Công thức 4P:\n- Picture: Vẽ ra bức tranh trải nghiệm tuyệt vời.\n- Promise: Cam kết lợi ích thực tế.\n- Prove: Đưa ra bằng chứng, số liệu uy tín.\n- Push: Thúc đẩy chốt đơn bằng ưu đãi.",
+        '4c' => "Áp dụng Công thức 4C: Viết bài Clear (Rõ ràng) - Concise (Súc tích) - Compelling (Thuyết phục) - Credible (Đáng tin cậy).",
+        '4u' => "Áp dụng Công thức 4U: Nội dung Useful (Hữu ích) - Urgent (Cấp bách) - Unique (Độc đáo) - Ultra-specific (Cụ thể chi tiết).",
+        'quest' => "Áp dụng Công thức QUEST:\n- Qualify: Phân loại đối tượng.\n- Understand: Thấu hiểu nỗi niềm.\n- Educate: Giáo dục giá trị mới.\n- Stimulate: Kích thích khao khát.\n- Transition: Chuyển đổi mua hàng.",
+        'fab' => "Áp dụng Công thức FAB:\n- Features: Tính năng nổi bật.\n- Advantages: Ưu điểm vượt trội.\n- Benefits: Lợi ích thực tế người dùng nhận được.",
+        'acca' => "Áp dụng Công thức ACCA: Awareness (Nhận thức) -> Comprehension (Thấu hiểu) -> Conviction (Tin tưởng) -> Action (Hành động).",
+        'pastor' => "Áp dụng Công thức PASTOR: Problem -> Amplify -> Story -> Testimony -> Offer -> Response.",
+        'slap' => "Áp dụng Công thức SLAP: Stop (Dừng lướt) -> Look (Quan sát) -> Act (Hành động) -> Purchase (Mua hàng).",
+        'sss' => "Áp dụng Công thức SSS: Star (Nhân vật truyền cảm hứng) -> Story (Câu chuyện thử thách) -> Solution (Giải pháp đột phá).",
+        'app' => "Áp dụng Công thức APP: Agree (Tạo sự đồng ý) -> Promise (Hứa hẹn giá trị) -> Preview (Xem trước kết quả).",
+        'pppp' => "Áp dụng Công thức PPPP: Picture (Bức tranh tương lai) -> Promise (Lời hứa) -> Prove (Chứng minh) -> Push (Chốt đơn).",
+        'hero' => "Áp dụng Công thức HERO: Hook (Giật tiêu đề) -> Empathy (Thấu hiểu đồng cảm) -> Remedy (Giải pháp) -> Outcome (Kết quả mỹ mãn).",
+        'epic' => "Áp dụng Công thức EPIC: Engage (Lôi cuốn) -> Purpose (Mục tiêu) -> Inspire (Truyền cảm hứng) -> Convert (Chuyển đổi).",
+        '5w1h' => "Áp dụng Công thức 5W1H: Làm rõ Who (Ai) - What (Cái gì) - Where (Ở đâu) - When (Khi nào) - Why (Tại sao) - How (Làm như thế nào).",
+        '5a' => "Áp dụng Công thức 5A: Awareness (Nhận biết) -> Appeal (Thu hút) -> Ask (Tìm hiểu) -> Act (Hành động) -> Advocate (Lan tỏa).",
+        'storytelling' => "Áp dụng Công thức Storytelling: Dẫn dắt bằng câu chuyện chân thực, có bối cảnh, thử thách, bài học và thông điệp thương hiệu."
+    ];
+
+    $styles_map = [
+        'ban_hang' => "Viết theo phong cách BÁN HÀNG TRỰC TIẾP (Hard Sale): Giọng văn thuyết phục, tập trung vào ưu đãi, tính năng vượt trội và lời kêu gọi mua hàng (CTA) quyết liệt.",
+        'chia_se' => "Viết theo phong cách CHIA SẺ KIẾN THỨC (Educational): Giọng văn hữu ích, khách quan, cung cấp các mẹo hay, hướng dẫn thực tế trước khi nhắc nhẹ đến giải pháp.",
+        'ke_chuyen' => "Viết theo phong cách KỂ CHUYỆN (Storytelling): Dẫn dắt người đọc bằng câu chuyện chân thực, giàu cảm xúc và kết nối đồng cảm.",
+        'giat_gan' => "Viết theo phong cách GIẬT GÂN (Viral/Hook): Giật tiêu đề tò mò, kịch tính, tạo cảm giác bất ngờ khiến người đọc phải theo dõi hết bài.",
+        'hai_huoc' => "Viết theo phong cách HÀI HƯỚC (Humorous): Lồng ghép các câu từ bắt trend, ví von dí dỏm tạo tiếng cười tự nhiên và gần gũi.",
+        'chuyen_gia' => "Viết theo phong cách CHUYÊN GIA (Expert): Giọng văn chuẩn mực, lập luận sắc bén, trích dẫn số liệu hoặc căn cứ uy tín để tạo niềm tin tối đa.",
+        'tam_su' => "Viết theo phong cách TÂM SỰ (Empathetic): Giọng văn nhẹ nhàng, sâu lắng, chia sẻ khó khăn chung để chạm tới cảm xúc người đọc.",
+        'so_sanh' => "Viết theo phong cách SO SÁNH & ĐÁNH GIÁ (Review): Đặt lên bàn cân ưu - nhược điểm minh bạch giúp khách hàng tự tin đưa ra lựa chọn.",
+        'toi_gian' => "Viết theo phong cách TỐI GIẢN (Minimalist): Đi thẳng vào trọng tâm, trình bày gạch đầu dòng rõ ràng, súc tích và dễ hiểu."
+    ];
+
+    $instructions = [];
+    $formula_code = strtolower(trim($formula_code ?? ''));
+    $style_code = strtolower(trim($style_code ?? ''));
+
+    if (!empty($formula_code) && isset($formulas_map[$formula_code])) {
+        $instructions[] = $formulas_map[$formula_code];
+    }
+    if (!empty($style_code) && isset($styles_map[$style_code])) {
+        $instructions[] = $styles_map[$style_code];
+    }
+
+    return implode("\n\n", $instructions);
+}
+
 function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanpage_name = '') {
     global $pdo;
     
@@ -355,7 +404,7 @@ function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanp
 
     $selected_ai = 'Unknown';
     try {
-        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, cookie, model, prompt_content, prompt_title, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
+        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, cookie, model, prompt_content, prompt_title, formula, style, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
         $stmt->execute([$account_id]);
         $config = $stmt->fetch(PDO::FETCH_ASSOC);
         
@@ -376,6 +425,14 @@ function rewrite_content_with_ai($content, $account_id, $is_title = false, $fanp
         
         if (!empty($fanpage_name)) {
             $prompt_vaitro = str_replace('{fanpage_name}', $fanpage_name, $prompt_vaitro);
+        }
+
+        // Tự động chèn ngầm Công thức & Phong cách nếu có
+        $formula_val = isset($config['formula']) && !empty($config['formula']) ? $config['formula'] : 'aida';
+        $style_val = isset($config['style']) && !empty($config['style']) ? $config['style'] : 'ban_hang';
+        $extra_rules = get_ai_formula_and_style_instruction($formula_val, $style_val);
+        if (!empty($extra_rules)) {
+            $prompt_vaitro .= "\n\nYÊU CẦU NÂNG CAO VỀ CÔNG THỨC VÀ PHONG CÁCH:\n" . $extra_rules;
         }
         
         if (empty($prompt_vaitro)) {
@@ -545,13 +602,21 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
 
     $selected_ai = 'Unknown';
     try {
-        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, cookie, model, prompt_youtube_title, prompt_youtube_desc, prompt_youtube_tags, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
+        $stmt = $pdo->prepare("SELECT provider, endpoint, api_keys, cookie, model, prompt_youtube_title, prompt_youtube_desc, prompt_youtube_tags, formula, style, max_retries, timeout_seconds FROM ai_configs WHERE account_id = ? AND is_active = 1 LIMIT 1");
         $stmt->execute([$account_id]);
         $config = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$config) {
             ai_log("AI Config not active for Youtube on account $account_id");
             return null;
+        }
+
+        // Tự động bổ sung Công thức & Phong cách ngầm vào prompt_youtube_desc
+        $formula_val = isset($config['formula']) && !empty($config['formula']) ? $config['formula'] : 'aida';
+        $style_val = isset($config['style']) && !empty($config['style']) ? $config['style'] : 'ban_hang';
+        $extra_rules = get_ai_formula_and_style_instruction($formula_val, $style_val);
+        if (!empty($extra_rules) && !empty($config['prompt_youtube_desc'])) {
+            $config['prompt_youtube_desc'] .= "\n\nYÊU CẦU NÂNG CAO VỀ CÔNG THỨC VÀ PHONG CÁCH:\n" . $extra_rules;
         }
         
         $selected_ai = $config['provider'];

@@ -1,20 +1,20 @@
 <?php
 /**
- * API Công Thức Content & Phong Cách Nội Dung (20 Công Thức & 9 Phong Cách)
+ * API Công Thức Content & Phong Cách Nội Dung (19 Công Thức & 9 Phong Cách)
  * 
  * Ví dụ gọi API:
  *   GET /api/content.php?prompt=aida           -> Trả về công thức AIDA
- *   GET /api/content.php?prompt=all            -> Trả về toàn bộ 20 công thức
+ *   GET /api/content.php?prompt=all            -> Trả về toàn bộ 19 công thức
  *   GET /api/content.php?phongcach=ban_hang    -> Trả về phong cách bán hàng
  *   GET /api/content.php?phongcach=all         -> Trả về toàn bộ 9 phong cách
- *   GET /api/content.php                       -> Trả về toàn bộ dữ liệu (20 công thức & 9 phong cách)
+ *   GET /api/content.php                       -> Trả về toàn bộ dữ liệu (19 công thức & 9 phong cách)
  */
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 
-// 1. Danh sách 20 Công thức Content chuẩn Marketing
+// 1. Danh sách 19 Công thức Content chuẩn Marketing
 $formulas = [
     [
         "id" => 1,
@@ -167,14 +167,6 @@ $formulas = [
         "sort_order" => 19,
         "description" => "Dẫn dắt bằng câu chuyện chân thực, giàu cảm xúc giúp kết nối thương hiệu với trái tim khách hàng.",
         "template" => "- Mở đầu: Bối cảnh và nhân vật trải nghiệm.\n- Thử thách: Những khó khăn, nút thắt bất ngờ gặp phải.\n- Khám phá: Tìm ra chân lý/giải pháp vượt qua khó khăn.\n- Đúc kết: Bài học và thông điệp ý nghĩa gửi tới độc giả."
-    ],
-    [
-        "id" => 20,
-        "code" => "spin",
-        "name" => "Spin Content (Đa phiên bản chống trùng lặp)",
-        "sort_order" => 20,
-        "description" => "Tạo các đoạn văn bản linh hoạt phân cách bằng dấu | để hệ thống tự động xoay tua bài viết.",
-        "template" => "Mẫu 1 | Mẫu 2 | Mẫu 3\nHệ thống sẽ tự động lấy ngẫu nhiên 1 trong các mẫu trên khi đăng bài."
     ]
 ];
 
@@ -329,7 +321,7 @@ if (!empty($styleQuery)) {
     exit;
 }
 
-// 3.3 Mặc định không truyền tham số -> Trả về toàn bộ 20 công thức và 9 phong cách
+// 3.3 Mặc định không truyền tham số -> Trả về toàn bộ 19 công thức và 9 phong cách
 echo json_encode([
     "success" => true,
     "total_formulas" => count($formulas),

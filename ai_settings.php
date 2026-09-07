@@ -22,13 +22,19 @@ if (isset($_SESSION['alert_message'])) {
     unset($_SESSION['alert_message']);
 }
 
-// Check DB schema for new youtube prompt columns
+// Check DB schema for new columns
 try {
     $col_chk = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='ai_configs' AND COLUMN_NAME='prompt_youtube_title'");
     if ($col_chk && $col_chk->fetchColumn() == 0) {
         $pdo->exec("ALTER TABLE ai_configs ADD COLUMN prompt_youtube_title TEXT DEFAULT NULL");
         $pdo->exec("ALTER TABLE ai_configs ADD COLUMN prompt_youtube_desc TEXT DEFAULT NULL");
         $pdo->exec("ALTER TABLE ai_configs ADD COLUMN prompt_youtube_tags TEXT DEFAULT NULL");
+    }
+
+    $col_f_chk = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='ai_configs' AND COLUMN_NAME='formula'");
+    if ($col_f_chk && $col_f_chk->fetchColumn() == 0) {
+        $pdo->exec("ALTER TABLE ai_configs ADD COLUMN formula VARCHAR(50) DEFAULT 'aida'");
+        $pdo->exec("ALTER TABLE ai_configs ADD COLUMN style VARCHAR(50) DEFAULT 'ban_hang'");
     }
 } catch (Exception $e) {}
 
@@ -50,6 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $prompt_youtube_title = trim($_POST['prompt_youtube_title']);
         $prompt_youtube_desc = trim($_POST['prompt_youtube_desc']);
         $prompt_youtube_tags = trim($_POST['prompt_youtube_tags']);
+        $formula = isset($_POST['formula']) && !empty($_POST['formula']) ? trim($_POST['formula']) : 'aida';
+        $style = isset($_POST['style']) && !empty($_POST['style']) ? trim($_POST['style']) : 'ban_hang';
         $is_active = isset($_POST['is_active']) ? 1 : 0;
         $max_retries = isset($_POST['max_retries']) ? intval($_POST['max_retries']) : 2;
         $timeout_seconds = isset($_POST['timeout_seconds']) ? intval($_POST['timeout_seconds']) : 120;
@@ -60,11 +68,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $existing = $check_stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($existing) {
-            $u_stmt = $pdo->prepare("UPDATE ai_configs SET endpoint=?, api_keys=?, cookie=?, model=?, prompt_content=?, prompt_title=?, prompt_youtube_title=?, prompt_youtube_desc=?, prompt_youtube_tags=?, max_retries=?, timeout_seconds=? WHERE id=?");
-            $u_stmt->execute([$endpoint, encryptData($api_keys), encryptData($cookie), $model, $prompt_content, $prompt_title, $prompt_youtube_title, $prompt_youtube_desc, $prompt_youtube_tags, $max_retries, $timeout_seconds, $existing['id']]);
+            $u_stmt = $pdo->prepare("UPDATE ai_configs SET endpoint=?, api_keys=?, cookie=?, model=?, prompt_content=?, prompt_title=?, prompt_youtube_title=?, prompt_youtube_desc=?, prompt_youtube_tags=?, formula=?, style=?, max_retries=?, timeout_seconds=? WHERE id=?");
+            $u_stmt->execute([$endpoint, encryptData($api_keys), encryptData($cookie), $model, $prompt_content, $prompt_title, $prompt_youtube_title, $prompt_youtube_desc, $prompt_youtube_tags, $formula, $style, $max_retries, $timeout_seconds, $existing['id']]);
         } else {
-            $i_stmt = $pdo->prepare("INSERT INTO ai_configs (account_id, provider, endpoint, api_keys, cookie, model, prompt_content, prompt_title, prompt_youtube_title, prompt_youtube_desc, prompt_youtube_tags, max_retries, timeout_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $i_stmt->execute([$account_id, $provider, $endpoint, encryptData($api_keys), encryptData($cookie), $model, $prompt_content, $prompt_title, $prompt_youtube_title, $prompt_youtube_desc, $prompt_youtube_tags, $max_retries, $timeout_seconds]);
+            $i_stmt = $pdo->prepare("INSERT INTO ai_configs (account_id, provider, endpoint, api_keys, cookie, model, prompt_content, prompt_title, prompt_youtube_title, prompt_youtube_desc, prompt_youtube_tags, formula, style, max_retries, timeout_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $i_stmt->execute([$account_id, $provider, $endpoint, encryptData($api_keys), encryptData($cookie), $model, $prompt_content, $prompt_title, $prompt_youtube_title, $prompt_youtube_desc, $prompt_youtube_tags, $formula, $style, $max_retries, $timeout_seconds]);
         }
         
         // If this one is set as active, deactivate the other
@@ -97,6 +105,8 @@ $gemini_conf = [
     'prompt_youtube_title' => '- Dài từ 60-90 ký tự, chứa từ khóa chính ngay từ đầu.\n- Ngắn gọn, hấp dẫn, gây tò mò, không quá chung chung.',
     'prompt_youtube_desc' => 'Bố cục description bắt buộc gồm Mô tả, Hashtags và Keywords...\n{prompt}',
     'prompt_youtube_tags' => 'Tối thiểu 20 thẻ tags...',
+    'formula' => 'aida',
+    'style' => 'ban_hang',
     'is_active' => 0,
     'max_retries' => 2,
     'timeout_seconds' => 120
@@ -108,6 +118,8 @@ $openai_conf = [
     'prompt_youtube_title' => '- Dài từ 60-90 ký tự, chứa từ khóa chính ngay từ đầu.\n- Ngắn gọn, hấp dẫn, gây tò mò, không quá chung chung.',
     'prompt_youtube_desc' => 'Bố cục description bắt buộc gồm Mô tả, Hashtags và Keywords...\n{prompt}',
     'prompt_youtube_tags' => 'Tối thiểu 20 thẻ tags...',
+    'formula' => 'aida',
+    'style' => 'ban_hang',
     'is_active' => 0,
     'max_retries' => 2,
     'timeout_seconds' => 120
@@ -119,6 +131,8 @@ $claude_conf = [
     'prompt_youtube_title' => '- Dài từ 60-90 ký tự, chứa từ khóa chính ngay từ đầu.\n- Ngắn gọn, hấp dẫn, gây tò mò, không quá chung chung.',
     'prompt_youtube_desc' => 'Bố cục description bắt buộc gồm Mô tả, Hashtags và Keywords...\n{prompt}',
     'prompt_youtube_tags' => 'Tối thiểu 20 thẻ tags...',
+    'formula' => 'aida',
+    'style' => 'ban_hang',
     'is_active' => 0,
     'max_retries' => 2,
     'timeout_seconds' => 120
@@ -173,8 +187,7 @@ $ai_formulas = [
     ['code' => 'epic', 'name' => '16. EPIC (Engage - Purpose - Inspire - Convert)'],
     ['code' => '5w1h', 'name' => '17. 5W1H (Who - What - Where - When - Why - How)'],
     ['code' => '5a', 'name' => '18. 5A (Awareness - Appeal - Ask - Act - Advocate)'],
-    ['code' => 'storytelling', 'name' => '19. Storytelling (Dẫn dắt bằng câu chuyện chân thực)'],
-    ['code' => 'spin', 'name' => '20. Spin Content (Đa phiên bản chống trùng lặp)']
+    ['code' => 'storytelling', 'name' => '19. Storytelling (Dẫn dắt bằng câu chuyện chân thực)']
 ];
 
 $ai_styles = [
@@ -189,60 +202,48 @@ $ai_styles = [
     ['code' => 'toi_gian', 'name' => '9. Tối giản / Súc tích (Gạch đầu dòng, súc tích)']
 ];
 
-function renderPromptHelper($provider) {
+function renderPromptHelper($provider, $conf) {
     global $ai_formulas, $ai_styles;
+    $current_formula = $conf['formula'] ?? 'aida';
+    $current_style = $conf['style'] ?? 'ban_hang';
     ?>
     <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px 16px; margin-bottom: 15px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
-            <div style="font-weight: 700; font-size: 13.5px; color: var(--primary-color); display: flex; align-items: center; gap: 6px;">
-                💡 <span>Bộ Hỗ Trợ Nâng Cao Prompt (20 Công Thức Viết Bài & 9 Phong Cách)</span>
-            </div>
-            <small style="color: var(--text-muted); font-size: 12px;">Chọn từ 2 menu bên dưới rồi nhấn <b>Chèn vào Prompt</b></small>
+        <div style="font-weight: 700; font-size: 13.5px; color: var(--primary-color); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+            💡 <span>Chọn Công Thức Viết Bài & Phong Cách Nội Dung (Tự động áp dụng ngầm khi gửi prompt AI)</span>
         </div>
 
-        <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
-            <!-- Menu 1: 20 Công thức -->
+        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+            <!-- Menu 1: 19 Công thức -->
             <div style="flex: 1; min-width: 220px;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-main); margin-bottom: 4px; display: block;">
-                    🎯 Chọn Công Thức Viết Bài (20 Công Thức)
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-main); margin-bottom: 5px; display: block;">
+                    🎯 Chọn Công Thức Viết Bài (19 Công Thức)
                 </label>
-                <select id="select_formula_<?= $provider ?>" onchange="previewPromptHelper('<?= $provider ?>')" class="form-control" style="width:100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 12.5px; background: var(--card-bg); color: var(--text-main);">
-                    <option value="">-- Chọn 1 trong 20 Công thức Viết Bài --</option>
+                <select name="formula" class="form-control" style="width:100%; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 13px; background: var(--card-bg); color: var(--text-main);">
                     <?php foreach ($ai_formulas as $f): ?>
-                        <option value="<?= htmlspecialchars($f['code']) ?>"><?= htmlspecialchars($f['name']) ?></option>
+                        <option value="<?= htmlspecialchars($f['code']) ?>" <?= $current_formula === $f['code'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($f['name']) ?>
+                        </option>
                     <?php endforeach; ?>
                 </select>
             </div>
 
             <!-- Menu 2: 9 Phong cách -->
             <div style="flex: 1; min-width: 220px;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-main); margin-bottom: 4px; display: block;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-main); margin-bottom: 5px; display: block;">
                     🎭 Chọn Phong Cách Nội Dung (9 Phong Cách)
                 </label>
-                <select id="select_style_<?= $provider ?>" onchange="previewPromptHelper('<?= $provider ?>')" class="form-control" style="width:100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 12.5px; background: var(--card-bg); color: var(--text-main);">
-                    <option value="">-- Chọn 1 trong 9 Phong cách Nội dung --</option>
+                <select name="style" class="form-control" style="width:100%; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 13px; background: var(--card-bg); color: var(--text-main);">
                     <?php foreach ($ai_styles as $s): ?>
-                        <option value="<?= htmlspecialchars($s['code']) ?>"><?= htmlspecialchars($s['name']) ?></option>
+                        <option value="<?= htmlspecialchars($s['code']) ?>" <?= $current_style === $s['code'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($s['name']) ?>
+                        </option>
                     <?php endforeach; ?>
                 </select>
             </div>
-
-            <!-- Nút chèn -->
-            <div style="display: flex; gap: 6px;">
-                <button type="button" onclick="insertPromptHelper('<?= $provider ?>', 'content')" class="btn btn-primary" style="padding: 8px 12px; font-size: 12px; font-weight: 600; white-space: nowrap;">
-                    ⚡ Chèn vào Prompt Nội Dung
-                </button>
-                <button type="button" onclick="insertPromptHelper('<?= $provider ?>', 'title')" class="btn btn-secondary" style="padding: 8px 12px; font-size: 12px; font-weight: 600; white-space: nowrap;">
-                    🏷️ Chèn vào Tiêu Đề
-                </button>
-            </div>
         </div>
-
-        <!-- Preview Box -->
-        <div id="helper_preview_box_<?= $provider ?>" style="display: none; margin-top: 10px; padding: 10px 12px; background: rgba(59, 130, 246, 0.05); border: 1px dashed #93c5fd; border-radius: 6px; font-size: 12px; color: var(--text-main);">
-            <div style="font-weight: 600; margin-bottom: 4px; color: var(--primary-color);">📌 Nội dung xem trước sẽ chèn vào Prompt:</div>
-            <div id="helper_preview_text_<?= $provider ?>" style="white-space: pre-wrap; font-family: monospace; font-size: 11.5px; color: var(--text-main);"></div>
-        </div>
+        <small style="color: var(--text-muted); display: block; margin-top: 8px; font-size: 12px;">
+            ℹ️ Hệ thống sẽ tự động ghép quy tắc công thức & phong cách được chọn khi gửi Prompt cho AI mà không cần thao tác chèn thủ công.
+        </small>
     </div>
     <?php
 }
@@ -306,7 +307,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
             
-            <?php renderPromptHelper('gemini'); ?>
+            <?php renderPromptHelper('gemini', $gemini_conf); ?>
             
             <div style="display: flex; gap: 15px; margin-bottom: 15px;">
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
@@ -384,7 +385,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
             
-            <?php renderPromptHelper('openai'); ?>
+            <?php renderPromptHelper('openai', $openai_conf); ?>
             
             <div style="display: flex; gap: 15px; margin-bottom: 15px;">
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
@@ -462,7 +463,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
             
-            <?php renderPromptHelper('claude'); ?>
+            <?php renderPromptHelper('claude', $claude_conf); ?>
             
             <div style="display: flex; gap: 15px; margin-bottom: 15px;">
                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
@@ -511,88 +512,6 @@ function switchTab(tab) {
     
     // Update the browser URL dynamically without page reload
     history.replaceState(null, '', 'ai_settings.php?tab=' + tab);
-}
-
-const AI_FORMULAS_MAP = {
-    'aida': { name: 'AIDA', prompt: "Áp dụng Công thức AIDA:\n- Attention: Giật tiêu đề gây tò mò, giật gân.\n- Interest: Nêu thông tin thú vị hoặc nỗi đau nhức nhối.\n- Desire: Đưa ra lợi ích vượt trội của giải pháp.\n- Action: Kêu gọi hành động (CTA) chốt đơn." },
-    'pas': { name: 'PAS', prompt: "Áp dụng Công thức PAS:\n- Problem: Nêu rõ vấn đề/nỗi đau khách hàng gặp phải.\n- Agitate: Xoáy sâu vào tác hại và cảm giác khó chịu.\n- Solve: Đưa ra giải pháp tối ưu xử lý triệt để." },
-    'bab': { name: 'BAB', prompt: "Áp dụng Công thức BAB:\n- Before: Thực trạng khó khăn hiện tại.\n- After: Bức tranh kết quả hoàn hảo sau khi giải quyết.\n- Bridge: Giới thiệu sản phẩm/dịch vụ là cây cầu nối." },
-    '4p': { name: '4P', prompt: "Áp dụng Công thức 4P:\n- Picture: Vẽ ra bức tranh trải nghiệm tuyệt vời.\n- Promise: Cam kết lợi ích thực tế.\n- Prove: Đưa ra bằng chứng, số liệu uy tín.\n- Push: Thúc đẩy chốt đơn bằng ưu đãi." },
-    '4c': { name: '4C', prompt: "Áp dụng Công thức 4C: Viết bài Clear (Rõ ràng) - Concise (Súc tích) - Compelling (Thuyết phục) - Credible (Đáng tin cậy)." },
-    '4u': { name: '4U', prompt: "Áp dụng Công thức 4U: Nội dung Useful (Hữu ích) - Urgent (Cấp bách) - Unique (Độc đáo) - Ultra-specific (Cụ thể chi tiết)." },
-    'quest': { name: 'QUEST', prompt: "Áp dụng Công thức QUEST:\n- Qualify: Phân loại đối tượng.\n- Understand: Thấu hiểu nỗi niềm.\n- Educate: Giáo dục giá trị mới.\n- Stimulate: Kích thích khao khát.\n- Transition: Chuyển đổi mua hàng." },
-    'fab': { name: 'FAB', prompt: "Áp dụng Công thức FAB:\n- Features: Tính năng nổi bật.\n- Advantages: Ưu điểm vượt trội.\n- Benefits: Lợi ích thực tế người dùng nhận được." },
-    'acca': { name: 'ACCA', prompt: "Áp dụng Công thức ACCA: Awareness (Nhận thức) -> Comprehension (Thấu hiểu) -> Conviction (Tin tưởng) -> Action (Hành động)." },
-    'pastor': { name: 'PASTOR', prompt: "Áp dụng Công thức PASTOR: Problem -> Amplify -> Story -> Testimony -> Offer -> Response." },
-    'slap': { name: 'SLAP', prompt: "Áp dụng Công thức SLAP: Stop (Dừng lướt) -> Look (Quan sát) -> Act (Hành động) -> Purchase (Mua hàng)." },
-    'sss': { name: 'SSS', prompt: "Áp dụng Công thức SSS: Star (Nhân vật truyền cảm hứng) -> Story (Câu chuyện thử thách) -> Solution (Giải pháp đột phá)." },
-    'app': { name: 'APP', prompt: "Áp dụng Công thức APP: Agree (Tạo sự đồng ý) -> Promise (Hứa hẹn giá trị) -> Preview (Xem trước kết quả)." },
-    'pppp': { name: 'PPPP', prompt: "Áp dụng Công thức PPPP: Picture (Bức tranh tương lai) -> Promise (Lời hứa) -> Prove (Chứng minh) -> Push (Chốt đơn)." },
-    'hero': { name: 'HERO', prompt: "Áp dụng Công thức HERO: Hook (Giật tiêu đề) -> Empathy (Thấu hiểu đồng cảm) -> Remedy (Giải pháp) -> Outcome (Kết quả mỹ mãn)." },
-    'epic': { name: 'EPIC', prompt: "Áp dụng Công thức EPIC: Engage (Lôi cuốn) -> Purpose (Mục tiêu) -> Inspire (Truyền cảm hứng) -> Convert (Chuyển đổi)." },
-    '5w1h': { name: '5W1H', prompt: "Áp dụng Công thức 5W1H: Làm rõ Who (Ai) - What (Cái gì) - Where (Ở đâu) - When (Khi nào) - Why (Tại sao) - How (Làm như thế nào)." },
-    '5a': { name: '5A', prompt: "Áp dụng Công thức 5A: Awareness (Nhận biết) -> Appeal (Thu hút) -> Ask (Tìm hiểu) -> Act (Hành động) -> Advocate (Lan tỏa)." },
-    'storytelling': { name: 'Storytelling', prompt: "Áp dụng Công thức Storytelling: Dẫn dắt bằng câu chuyện chân thực, có bối cảnh, thử thách, bài học và thông điệp thương hiệu." },
-    'spin': { name: 'Spin Content', prompt: "Áp dụng Spin Content: Viết bài thành nhiều biến thể phân cách bằng dấu | để hệ thống tự động xoay tua." }
-};
-
-const AI_STYLES_MAP = {
-    'ban_hang': { name: 'Bán hàng / Hard Sale', prompt: "Viết theo phong cách BÁN HÀNG TRỰC TIẾP (Hard Sale): Giọng văn thuyết phục, tập trung vào ưu đãi, tính năng vượt trội và lời kêu gọi mua hàng (CTA) quyết liệt." },
-    'chia_se': { name: 'Chia sẻ kiến thức', prompt: "Viết theo phong cách CHIA SẺ KIẾN THỨC (Educational): Giọng văn hữu ích, khách quan, cung cấp các mẹo hay, hướng dẫn thực tế trước khi nhắc nhẹ đến giải pháp." },
-    'ke_chuyen': { name: 'Kể chuyện / Storytelling', prompt: "Viết theo phong cách KỂ CHUYỆN (Storytelling): Dẫn dắt người đọc bằng câu chuyện chân thực, giàu cảm xúc và kết nối đồng cảm." },
-    'giat_gan': { name: 'Giật gân / Bắt mắt', prompt: "Viết theo phong cách GIẬT GÂN (Viral/Hook): Giật tiêu đề tò mò, kịch tính, tạo cảm giác bất ngờ khiến người đọc phải theo dõi hết bài." },
-    'hai_huoc': { name: 'Hài hước / Trendy', prompt: "Viết theo phong cách HÀI HƯỚC (Humorous): Lồng ghép các câu từ bắt trend, ví von dí dỏm tạo tiếng cười tự nhiên và gần gũi." },
-    'chuyen_gia': { name: 'Chuyên gia / Uy tín', prompt: "Viết theo phong cách CHUYÊN GIA (Expert): Giọng văn chuẩn mực, lập luận sắc bén, trích dẫn số liệu hoặc căn cứ uy tín để tạo niềm tin tối đa." },
-    'tam_su': { name: 'Tâm sự / Đồng cảm', prompt: "Viết theo phong cách TÂM SỰ (Empathetic): Giọng văn nhẹ nhàng, sâu lắng, chia sẻ khó khăn chung để chạm tới cảm xúc người đọc." },
-    'so_sanh': { name: 'So sánh / Đánh giá', prompt: "Viết theo phong cách SO SÁNH & ĐÁNH GIÁ (Review): Đặt lên bàn cân ưu - nhược điểm minh bạch giúp khách hàng tự tin đưa ra lựa chọn." },
-    'toi_gian': { name: 'Tối giản / Súc tích', prompt: "Viết theo phong cách TỐI GIẢN (Minimalist): Đi thẳng vào trọng tâm, trình bày gạch đầu dòng rõ ràng, súc tích và dễ hiểu." }
-};
-
-function getPromptText(provider) {
-    const formulaVal = document.getElementById('select_formula_' + provider)?.value || '';
-    const styleVal = document.getElementById('select_style_' + provider)?.value || '';
-    let parts = [];
-    if (formulaVal && AI_FORMULAS_MAP[formulaVal]) {
-        parts.push(AI_FORMULAS_MAP[formulaVal].prompt);
-    }
-    if (styleVal && AI_STYLES_MAP[styleVal]) {
-        parts.push(AI_STYLES_MAP[styleVal].prompt);
-    }
-    return parts.join("\n\n");
-}
-
-function previewPromptHelper(provider) {
-    const text = getPromptText(provider);
-    const box = document.getElementById('helper_preview_box_' + provider);
-    const textElem = document.getElementById('helper_preview_text_' + provider);
-    if (text) {
-        textElem.textContent = text;
-        box.style.display = 'block';
-    } else {
-        box.style.display = 'none';
-    }
-}
-
-function insertPromptHelper(provider, targetField) {
-    const text = getPromptText(provider);
-    if (!text) {
-        alert('Vui lòng chọn ít nhất 1 Công thức hoặc 1 Phong cách từ menu xổ xuống!');
-        return;
-    }
-    const formElem = document.getElementById('form_' + provider);
-    if (!formElem) return;
-    
-    const fieldName = (targetField === 'title') ? 'prompt_title' : 'prompt_content';
-    const textarea = formElem.querySelector('textarea[name="' + fieldName + '"]');
-    
-    if (textarea) {
-        if (textarea.value.trim() === '') {
-            textarea.value = text + "\n\n{prompt}";
-        } else {
-            textarea.value = textarea.value.trim() + "\n\n" + text;
-        }
-        alert('✅ Đã chèn thành công vào ' + (targetField === 'title' ? 'Prompt Tiêu Đề' : 'Prompt Nội Dung') + '!');
-    }
 }
 </script>
 
