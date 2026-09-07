@@ -7,10 +7,8 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-header('Content-Type: application/json; charset=utf-8');
-
 if (!isset($_SESSION['account_id'])) {
-    echo json_encode(['success' => false, 'message' => 'Chưa đăng nhập hệ thống.']);
+    header("Location: ../login.php");
     exit;
 }
 
@@ -205,10 +203,15 @@ if ($action === 'add_proxies') {
         $added++;
     }
 
-    echo json_encode([
-        'success' => true,
-        'message' => "Đã thêm thành công $added Proxy mới" . ($skipped > 0 ? " ($skipped proxy trùng hoặc không hợp lệ đã bị bỏ qua)" : ".")
-    ]);
+    if ($added > 0) {
+        $_SESSION['flash_msg'] = "Đã thêm thành công $added Proxy mới" . ($skipped > 0 ? " ($skipped proxy trùng hoặc không hợp lệ đã bị bỏ qua)." : ".");
+        $_SESSION['flash_type'] = "success";
+    } else {
+        $_SESSION['flash_msg'] = "Không có Proxy hợp lệ nào được thêm ($skipped proxy bị trùng hoặc không đúng định dạng).";
+        $_SESSION['flash_type'] = "danger";
+    }
+
+    header("Location: ../proxy.php");
     exit;
 }
 
@@ -218,23 +221,17 @@ if ($action === 'check_proxy') {
     $stmt->execute([$proxy_id, $account_id]);
     $proxy = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$proxy) {
-        echo json_encode(['success' => false, 'message' => 'Proxy không tồn tại.']);
-        exit;
+    if ($proxy) {
+        $res = check_single_proxy($proxy);
+        $upd = $pdo->prepare("UPDATE proxies SET status = ?, latency = ? WHERE id = ?");
+        $upd->execute([$res['status'], $res['latency'], $proxy_id]);
+
+        $st_str = ($res['status'] === 'live') ? "Sống ✓ ({$res['latency']}ms)" : "Chết ✗";
+        $_SESSION['flash_msg'] = "Đã kiểm tra Proxy {$proxy['ip']}:{$proxy['port']} -> Kết quả: $st_str";
+        $_SESSION['flash_type'] = ($res['status'] === 'live') ? "success" : "danger";
     }
 
-    $res = check_single_proxy($proxy);
-    $status = $res['status'];
-    $latency = $res['latency'];
-
-    $upd = $pdo->prepare("UPDATE proxies SET status = ?, latency = ? WHERE id = ?");
-    $upd->execute([$status, $latency, $proxy_id]);
-
-    echo json_encode([
-        'success' => true,
-        'status'  => $status,
-        'latency' => $latency
-    ]);
+    header("Location: ../proxy.php");
     exit;
 }
 
@@ -244,52 +241,56 @@ if ($action === 'check_all_proxies') {
     $proxies = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $upd = $pdo->prepare("UPDATE proxies SET status = ?, latency = ? WHERE id = ?");
-    $checked = 0;
+    $live = 0;
+    $dead = 0;
 
     foreach ($proxies as $px) {
         $res = check_single_proxy($px);
         $upd->execute([$res['status'], $res['latency'], $px['id']]);
-        $checked++;
+        if ($res['status'] === 'live') $live++;
+        else $dead++;
     }
 
-    echo json_encode([
-        'success' => true,
-        'message' => "Đã kiểm tra xong $checked Proxy."
-    ]);
+    $_SESSION['flash_msg'] = "Đã kiểm tra hoàn tất " . count($proxies) . " Proxy ($live Sống ✓, $dead Chết ✗).";
+    $_SESSION['flash_type'] = "success";
+    header("Location: ../proxy.php");
     exit;
 }
 
 if ($action === 'assign_proxy') {
     $proxy_id = (int)($_POST['proxy_id'] ?? 0);
-    $user_id  = (int)($_POST['user_id'] ?? 0); // System user account id in users table
+    $user_id  = (int)($_POST['user_id'] ?? 0);
 
     if ($proxy_id <= 0 || $user_id <= 0) {
-        echo json_encode(['success' => false, 'message' => 'Thông tin không hợp lệ.']);
+        $_SESSION['flash_msg'] = "Vui lòng chọn đầy đủ thông tin Proxy và Người dùng Token.";
+        $_SESSION['flash_type'] = "danger";
+        header("Location: ../proxy.php");
         exit;
     }
 
-    // Verify ownership
     $stmt_px = $pdo->prepare("SELECT id FROM proxies WHERE id = ? AND account_id = ?");
     $stmt_px->execute([$proxy_id, $account_id]);
     if (!$stmt_px->fetch()) {
-        echo json_encode(['success' => false, 'message' => 'Proxy không thuộc tài khoản của bạn.']);
+        $_SESSION['flash_msg'] = "Proxy không tồn tại hoặc không thuộc tài khoản của bạn.";
+        $_SESSION['flash_type'] = "danger";
+        header("Location: ../proxy.php");
         exit;
     }
 
-    // Unassign previous user tied to this proxy
     $pdo->prepare("UPDATE users SET proxy_id = NULL WHERE proxy_id = ?")->execute([$proxy_id]);
     $pdo->prepare("UPDATE proxies SET assigned_user_id = NULL WHERE assigned_user_id = ?")->execute([$user_id]);
 
-    // Assign proxy to user
     $pdo->prepare("UPDATE proxies SET assigned_user_id = ? WHERE id = ?")->execute([$user_id, $proxy_id]);
     $pdo->prepare("UPDATE users SET proxy_id = ? WHERE id = ?")->execute([$proxy_id, $user_id]);
 
-    echo json_encode(['success' => true, 'message' => 'Đã gán Proxy cho Người dùng thành công.']);
+    $_SESSION['flash_msg'] = "Đã gán Proxy cho Người dùng Token thành công!";
+    $_SESSION['flash_type'] = "success";
+    header("Location: ../proxy.php");
     exit;
 }
 
 if ($action === 'unassign_proxy') {
-    $proxy_id = (int)($_POST['proxy_id'] ?? 0);
+    $proxy_id = (int)($_REQUEST['proxy_id'] ?? 0);
 
     $stmt_px = $pdo->prepare("SELECT assigned_user_id FROM proxies WHERE id = ? AND account_id = ?");
     $stmt_px->execute([$proxy_id, $account_id]);
@@ -302,12 +303,14 @@ if ($action === 'unassign_proxy') {
         $pdo->prepare("UPDATE proxies SET assigned_user_id = NULL WHERE id = ?")->execute([$proxy_id]);
     }
 
-    echo json_encode(['success' => true, 'message' => 'Đã hủy gán Proxy.']);
+    $_SESSION['flash_msg'] = "Đã hủy gán Proxy khỏi Người dùng.";
+    $_SESSION['flash_type'] = "success";
+    header("Location: ../proxy.php");
     exit;
 }
 
 if ($action === 'delete_proxy') {
-    $proxy_id = (int)($_POST['proxy_id'] ?? 0);
+    $proxy_id = (int)($_REQUEST['proxy_id'] ?? 0);
 
     $stmt_px = $pdo->prepare("SELECT assigned_user_id FROM proxies WHERE id = ? AND account_id = ?");
     $stmt_px->execute([$proxy_id, $account_id]);
@@ -320,8 +323,11 @@ if ($action === 'delete_proxy') {
         $pdo->prepare("DELETE FROM proxies WHERE id = ?")->execute([$proxy_id]);
     }
 
-    echo json_encode(['success' => true, 'message' => 'Đã xóa Proxy thành công.']);
+    $_SESSION['flash_msg'] = "Đã xóa Proxy khỏi hệ thống.";
+    $_SESSION['flash_type'] = "success";
+    header("Location: ../proxy.php");
     exit;
 }
 
-echo json_encode(['success' => false, 'message' => 'Hành động không hợp lệ.']);
+header("Location: ../proxy.php");
+exit;

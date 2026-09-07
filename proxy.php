@@ -7,6 +7,15 @@ require_once __DIR__ . '/includes/security.php';
 
 $account_id = $_SESSION['account_id'];
 
+// Flash messages from PHP session
+$flash_msg = '';
+$flash_type = 'success';
+if (!empty($_SESSION['flash_msg'])) {
+    $flash_msg = $_SESSION['flash_msg'];
+    $flash_type = $_SESSION['flash_type'] ?? 'success';
+    unset($_SESSION['flash_msg'], $_SESSION['flash_type']);
+}
+
 // Auto check and create table proxies & column proxy_id in users
 try {
     $pdo->exec("
@@ -81,7 +90,7 @@ foreach ($proxies as $px) {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 25px;
+    margin-bottom: 20px;
     flex-wrap: wrap;
     gap: 15px;
 }
@@ -110,11 +119,13 @@ foreach ($proxies as $px) {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    text-decoration: none;
     transition: all 0.2s ease;
 }
 .proxy-btn-secondary:hover {
     background: #f8fafc;
     border-color: #94a3b8;
+    color: var(--text-main, #334155);
 }
 .proxy-btn-primary {
     background: #0284c7;
@@ -259,16 +270,23 @@ foreach ($proxies as $px) {
     background: transparent;
     border: none;
     cursor: pointer;
-    font-size: 16px;
-    padding: 4px 8px;
-    border-radius: 4px;
+    font-size: 15px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     transition: background 0.15s;
+    color: #475569;
 }
 .btn-icon-action:hover {
     background: #f1f5f9;
+    color: #0f172a;
 }
 .btn-icon-danger:hover {
     background: #fee2e2;
+    color: #dc2626;
 }
 
 /* Modals */
@@ -298,9 +316,9 @@ foreach ($proxies as $px) {
             <span>🌐</span> Kho Proxy
         </div>
         <div class="proxy-header-actions">
-            <button class="proxy-btn-secondary" onclick="checkAllProxies()" id="btnCheckAll">
+            <a href="actions/proxy_actions.php?action=check_all_proxies" class="proxy-btn-secondary">
                 <span>🔄</span> Kiểm tra tất cả
-            </button>
+            </a>
             <button class="proxy-btn-secondary" onclick="openAssignModal()">
                 <span>👤</span> Gán vào Người Dùng
             </button>
@@ -309,6 +327,14 @@ foreach ($proxies as $px) {
             </button>
         </div>
     </div>
+
+    <!-- PHP Flash Notification Banner -->
+    <?php if (!empty($flash_msg)): ?>
+        <div class="alert alert-<?php echo $flash_type === 'danger' ? 'danger' : 'success'; ?>" style="margin-bottom: 20px; padding: 14px 18px; border-radius: 10px; font-weight: 500; display: flex; align-items: center; justify-content: space-between; <?php echo $flash_type === 'danger' ? 'background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;' : 'background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;'; ?>">
+            <span><?php echo $flash_type === 'danger' ? '❌' : '✅'; ?> <?php echo htmlspecialchars($flash_msg); ?></span>
+            <button type="button" onclick="this.parentElement.remove()" style="background: none; border: none; font-size: 16px; cursor: pointer; color: inherit;">&times;</button>
+        </div>
+    <?php endif; ?>
 
     <!-- Stat Cards -->
     <div class="proxy-stats-grid">
@@ -399,13 +425,15 @@ foreach ($proxies as $px) {
                                     <?php endif; ?>
                                 </td>
                                 <td style="text-align: right;">
-                                    <button type="button" class="btn-icon-action" onclick="checkSingleProxy(<?php echo $px['id']; ?>, this)" title="Kiểm tra trạng thái">🔍</button>
+                                    <a href="actions/proxy_actions.php?action=check_proxy&proxy_id=<?php echo $px['id']; ?>" class="btn-icon-action" title="Kiểm tra trạng thái">🔍</a>
+                                    
                                     <?php if (!empty($px['assigned_user_id'])): ?>
-                                        <button type="button" class="btn-icon-action" onclick="unassignProxy(<?php echo $px['id']; ?>)" title="Hủy gán cho người dùng">🔗</button>
+                                        <a href="actions/proxy_actions.php?action=unassign_proxy&proxy_id=<?php echo $px['id']; ?>" class="btn-icon-action" title="Hủy gán cho người dùng">🔗</a>
                                     <?php else: ?>
                                         <button type="button" class="btn-icon-action" onclick="openAssignSingleModal(<?php echo $px['id']; ?>)" title="Gán cho người dùng">➕</button>
                                     <?php endif; ?>
-                                    <button type="button" class="btn-icon-action btn-icon-danger" onclick="deleteProxy(<?php echo $px['id']; ?>)" title="Xóa Proxy">🗑️</button>
+                                    
+                                    <a href="actions/proxy_actions.php?action=delete_proxy&proxy_id=<?php echo $px['id']; ?>" class="btn-icon-action btn-icon-danger" title="Xóa Proxy">🗑️</a>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -424,7 +452,9 @@ foreach ($proxies as $px) {
             Nhập danh sách Proxy (mỗi Proxy nằm trên 1 dòng). Hệ thống hỗ trợ cả <strong>IPv4</strong> và <strong>IPv6</strong>.
         </p>
 
-        <form id="formAddProxy">
+        <form action="actions/proxy_actions.php" method="POST">
+            <input type="hidden" name="action" value="add_proxies">
+            
             <div class="form-group" style="margin-bottom: 15px;">
                 <label style="font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px;">Danh Sách Proxy (Định dạng: `ip:port:user:pass` hoặc `ip:port`):</label>
                 <textarea name="proxy_list" rows="8" class="form-control" placeholder="103.21.12.34:8080:username:password
@@ -435,7 +465,7 @@ http://user:pass@103.23.1.2:8080" style="width: 100%; padding: 10px; border-radi
 
             <div style="display: flex; justify-content: flex-end; gap: 10px;">
                 <button type="button" class="proxy-btn-secondary" onclick="closeAddModal()">Hủy bỏ</button>
-                <button type="submit" class="proxy-btn-primary" id="btnAddSubmit">Xác nhận Thêm</button>
+                <button type="submit" class="proxy-btn-primary">Xác nhận Thêm</button>
             </div>
         </form>
     </div>
@@ -449,7 +479,9 @@ http://user:pass@103.23.1.2:8080" style="width: 100%; padding: 10px; border-radi
             Chọn Proxy và Người dùng Token Facebook tương ứng để định tuyến các kết nối qua Proxy đó.
         </p>
 
-        <form id="formAssignProxy">
+        <form action="actions/proxy_actions.php" method="POST">
+            <input type="hidden" name="action" value="assign_proxy">
+
             <div class="form-group" style="margin-bottom: 15px;">
                 <label style="font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px;">1. Chọn Proxy:</label>
                 <select name="proxy_id" id="assign_proxy_id" class="form-control" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color);" required>
@@ -479,7 +511,7 @@ http://user:pass@103.23.1.2:8080" style="width: 100%; padding: 10px; border-radi
 
             <div style="display: flex; justify-content: flex-end; gap: 10px;">
                 <button type="button" class="proxy-btn-secondary" onclick="closeAssignModal()">Hủy bỏ</button>
-                <button type="submit" class="proxy-btn-primary" id="btnAssignSubmit">Xác nhận Gán</button>
+                <button type="submit" class="proxy-btn-primary">Xác nhận Gán</button>
             </div>
         </form>
     </div>
@@ -491,7 +523,6 @@ function openAddModal() {
 }
 function closeAddModal() {
     document.getElementById('addProxyModal').style.display = 'none';
-    document.getElementById('formAddProxy').reset();
 }
 
 function openAssignModal() {
@@ -503,164 +534,6 @@ function openAssignSingleModal(proxyId) {
 }
 function closeAssignModal() {
     document.getElementById('assignProxyModal').style.display = 'none';
-    document.getElementById('formAssignProxy').reset();
-}
-
-// Add Proxies Bulk
-document.getElementById('formAddProxy').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const btn = document.getElementById('btnAddSubmit');
-    btn.disabled = true;
-    btn.textContent = 'Đang xử lý...';
-
-    const formData = new FormData(this);
-    formData.append('action', 'add_proxies');
-
-    fetch('actions/proxy_actions.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            alert('✅ ' + data.message);
-            location.reload();
-        } else {
-            alert('❌ ' + data.message);
-            btn.disabled = false;
-            btn.textContent = 'Xác nhận Thêm';
-        }
-    })
-    .catch(err => {
-        alert('❌ Lỗi kết nối: ' + err.message);
-        btn.disabled = false;
-        btn.textContent = 'Xác nhận Thêm';
-    });
-});
-
-// Assign Proxy to User
-document.getElementById('formAssignProxy').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const btn = document.getElementById('btnAssignSubmit');
-    btn.disabled = true;
-    btn.textContent = 'Đang gán...';
-
-    const formData = new FormData(this);
-    formData.append('action', 'assign_proxy');
-
-    fetch('actions/proxy_actions.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            alert('✅ ' + data.message);
-            location.reload();
-        } else {
-            alert('❌ ' + data.message);
-            btn.disabled = false;
-            btn.textContent = 'Xác nhận Gán';
-        }
-    })
-    .catch(err => {
-        alert('❌ Lỗi kết nối: ' + err.message);
-        btn.disabled = false;
-        btn.textContent = 'Xác nhận Gán';
-    });
-});
-
-// Check Single Proxy Status
-function checkSingleProxy(proxyId, btn) {
-    const origIcon = btn.innerText;
-    btn.disabled = true;
-    btn.innerText = '⏳';
-
-    fetch(`actions/proxy_actions.php?action=check_proxy&proxy_id=${proxyId}`)
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            location.reload();
-        } else {
-            alert('❌ ' + data.message);
-            btn.disabled = false;
-            btn.innerText = origIcon;
-        }
-    })
-    .catch(err => {
-        alert('❌ Lỗi kiểm tra: ' + err.message);
-        btn.disabled = false;
-        btn.innerText = origIcon;
-    });
-}
-
-// Check All Proxies
-function checkAllProxies() {
-    const btn = document.getElementById('btnCheckAll');
-    btn.disabled = true;
-    btn.innerHTML = '<span>⏳</span> Đang kiểm tra...';
-
-    fetch('actions/proxy_actions.php?action=check_all_proxies')
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            alert('✅ ' + data.message);
-            location.reload();
-        } else {
-            alert('❌ ' + data.message);
-            btn.disabled = false;
-            btn.innerHTML = '<span>🔄</span> Kiểm tra tất cả';
-        }
-    })
-    .catch(err => {
-        alert('❌ Lỗi kiểm tra: ' + err.message);
-        btn.disabled = false;
-        btn.innerHTML = '<span>🔄</span> Kiểm tra tất cả';
-    });
-}
-
-// Unassign Proxy
-function unassignProxy(proxyId) {
-    if (!confirm('Bạn có chắc chắn muốn hủy gán Proxy này khỏi Người dùng?')) return;
-
-    const formData = new FormData();
-    formData.append('action', 'unassign_proxy');
-    formData.append('proxy_id', proxyId);
-
-    fetch('actions/proxy_actions.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            location.reload();
-        } else {
-            alert('❌ ' + data.message);
-        }
-    });
-}
-
-// Delete Proxy
-function deleteProxy(proxyId) {
-    if (!confirm('Bạn có chắc chắn muốn xóa Proxy này khỏi kho không?')) return;
-
-    const formData = new FormData();
-    formData.append('action', 'delete_proxy');
-    formData.append('proxy_id', proxyId);
-
-    fetch('actions/proxy_actions.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            location.reload();
-        } else {
-            alert('❌ ' + data.message);
-        }
-    });
 }
 </script>
 
