@@ -8,7 +8,7 @@
         <li class="<?php echo ($current_page == 'dashboard') ? 'active' : ''; ?>">
             <a href="index.php" data-tooltip="Dashboard"><span class="icon">⏱</span><span class="menu-label"> Dashboard</span></a>
         </li>
-        <li>
+        <li class="<?php echo ($current_page == 'fanpages') ? 'active' : ''; ?>">
             <a href="fanpages.php" data-tooltip="Fanpages"><span class="icon">📱</span><span class="menu-label"> Fanpages</span></a>
         </li>
         <li class="<?php echo ($current_page == 'manage_posts' || $current_page == 'campaign_detail') ? 'active' : ''; ?>">
@@ -68,7 +68,7 @@
             <a href="live_comments.php" data-tooltip="Live Comments"><span class="icon">📝</span><span class="menu-label"> Live Comments</span></a>
         </li>
         <?php if (($_SESSION['role'] ?? '') === 'admin'): ?>
-        <li>
+        <li class="<?php echo ($current_page == 'accounts') ? 'active' : ''; ?>">
             <a href="accounts.php" data-tooltip="User Management"><span class="icon">👥</span><span class="menu-label"> User Management</span></a>
         </li>
         <?php endif; ?>

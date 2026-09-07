@@ -1,5 +1,5 @@
 <?php
-$current_page = '';
+$current_page = 'fanpages';
 require_once __DIR__ . '/includes/header.php';
 
 $account_id = $_SESSION['account_id'];
