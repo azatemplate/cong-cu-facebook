@@ -46,6 +46,72 @@ try {
     }
 } catch (Exception $e) {}
 
+// Auto check untested proxies on page load via fast parallel multi-curl
+function auto_check_untested_proxies($pdo, $account_id) {
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM proxies WHERE account_id = ? AND status = 'untested' LIMIT 30");
+        $stmt->execute([$account_id]);
+        $list = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($list)) return;
+
+        $mh = curl_multi_init();
+        $handles = [];
+
+        foreach ($list as $px) {
+            $ch = curl_init('https://graph.facebook.com');
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+
+            $ip_str = (($px['ip_type'] ?? '') === 'IPv6' && strpos($px['ip'], ':') !== false) ? '[' . $px['ip'] . ']' : $px['ip'];
+            curl_setopt($ch, CURLOPT_PROXY, $ip_str . ':' . $px['port']);
+            if (!empty($px['username']) && !empty($px['password'])) {
+                curl_setopt($ch, CURLOPT_PROXYUSERPWD, $px['username'] . ':' . $px['password']);
+            }
+            if (strtolower($px['protocol'] ?? '') === 'socks5') {
+                curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
+            }
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+
+            curl_multi_add_handle($mh, $ch);
+            $handles[] = [
+                'ch' => $ch,
+                'px' => $px,
+                'start' => microtime(true)
+            ];
+        }
+
+        $running = null;
+        do {
+            curl_multi_exec($mh, $running);
+            usleep(5000);
+        } while ($running > 0);
+
+        $upd = $pdo->prepare("UPDATE proxies SET status = ?, latency = ? WHERE id = ?");
+
+        foreach ($handles as $item) {
+            $ch = $item['ch'];
+            $px = $item['px'];
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $duration = round((microtime(true) - $item['start']) * 1000);
+
+            if ($http_code > 0 && $http_code < 500) {
+                $upd->execute(['live', $duration, $px['id']]);
+            } else {
+                $upd->execute(['dead', 0, $px['id']]);
+            }
+
+            curl_multi_remove_handle($mh, $ch);
+            curl_close($ch);
+        }
+        curl_multi_close($mh);
+    } catch (Exception $e) {}
+}
+
+auto_check_untested_proxies($pdo, $account_id);
+
 // Fetch user's proxies with assigned user info
 $stmt = $pdo->prepare("
     SELECT p.*, u.name as user_name, u.fb_id
