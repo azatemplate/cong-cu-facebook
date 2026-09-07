@@ -4,6 +4,7 @@ if (!isset($_SESSION['account_id'])) {
     header("Location: login.php");
     exit;
 }
+session_write_close();
 $current_page = 'token';
 require_once __DIR__ . '/includes/header.php';
 ?>

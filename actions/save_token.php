@@ -13,6 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $raw_input = isset($_POST['access_tokens']) ? $_POST['access_tokens'] : (isset($_POST['access_token']) ? $_POST['access_token'] : '');
     $tokens = array_values(array_filter(array_map('trim', explode("\n", $raw_input))));
     $account_id = $_SESSION['account_id'];
+    session_write_close(); // Release session file lock so other requests/pages don't freeze
     
     if (empty($tokens)) {
         header('Location: ../token_management.php?status=error&msg=' . urlencode('Token không được để trống.'));
