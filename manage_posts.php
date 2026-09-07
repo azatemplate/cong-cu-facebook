@@ -43,13 +43,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'], $_POST
     exit;
 }
 
-// GET: delete_campaign / retry_campaign
-if (isset($_GET['action'], $_GET['id'])) {
+// GET: delete_campaign / retry_campaign / clean_empty
+if (isset($_GET['action'])) {
     $act  = $_GET['action'];
-    $id   = intval($_GET['id']);
+    $id   = intval($_GET['id'] ?? 0);
     $auth = ' AND account_id = ?';
     try {
-        if ($act === 'delete_campaign') {
+        if ($act === 'clean_empty') {
+            $pdo->prepare("
+                DELETE FROM post_campaigns 
+                WHERE account_id = ? 
+                  AND id NOT IN (
+                      SELECT DISTINCT campaign_id FROM scheduled_posts WHERE campaign_id IS NOT NULL
+                  )
+            ")->execute([$_s_account_id]);
+        } elseif ($act === 'delete_campaign' && $id > 0) {
             $p = [$id, $_s_account_id];
             
             // Free up local files for the campaign's pending posts before deleting
@@ -71,7 +79,7 @@ if (isset($_GET['action'], $_GET['id'])) {
             
             $pdo->prepare("DELETE FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed','checkpoint') $auth")->execute($p);
             $pdo->prepare("DELETE FROM post_campaigns WHERE id = ? AND account_id = ?")->execute([$id, $_s_account_id]);
-        } elseif ($act === 'retry_campaign') {
+        } elseif ($act === 'retry_campaign' && $id > 0) {
             $p = [$id, $_s_account_id];
             $pdo->prepare("UPDATE scheduled_posts SET status='pending', retry_count=0, error_msg=NULL WHERE campaign_id = ? AND status IN ('failed', 'checkpoint') $auth")->execute($p);
         }
@@ -210,6 +218,9 @@ try {
         </form>
 
         <div style="display:flex; gap:10px; align-items:center;">
+            <button onclick="showConfirmModal('clean_empty', 0, 'Bạn có chắc chắn muốn dọn dẹp TẤT CẢ các chiến dịch trống không?')" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px;" title="Xóa toàn bộ chiến dịch không còn bài viết">
+                🧹 Xóa chiến dịch trống
+            </button>
             <?php if ($is_admin): ?>
             <button id="cronBtn" onclick="runCronJob()" style="background:var(--primary-color);color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:bold;display:flex;align-items:center;gap:6px;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -384,9 +395,9 @@ let _confirmId = null;
 function showConfirmModal(action, id, message) {
     _confirmAction = action;
     _confirmId = id;
-    const isDelete = action === 'delete';
-    document.getElementById('modalIcon').textContent = isDelete ? '🗑️' : '🔄';
-    document.getElementById('modalTitle').textContent = isDelete ? 'Xác nhận xóa' : 'Xác nhận thử lại';
+    const isDelete = action === 'delete' || action === 'clean_empty';
+    document.getElementById('modalIcon').textContent = action === 'clean_empty' ? '🧹' : (isDelete ? '🗑️' : '🔄');
+    document.getElementById('modalTitle').textContent = action === 'clean_empty' ? 'Xóa chiến dịch trống' : (isDelete ? 'Xác nhận xóa' : 'Xác nhận thử lại');
     document.getElementById('modalMessage').textContent = message;
     document.getElementById('modalOkBtn').style.background = isDelete ? '#ef4444' : '#10b981';
     const modal = document.getElementById('confirmModal');
@@ -400,8 +411,12 @@ function hideConfirmModal() {
 }
 
 function doConfirmAction() {
-    if (!_confirmAction || !_confirmId) return;
-    window.location.href = 'manage_posts.php?action=' + _confirmAction + '_campaign&id=' + _confirmId;
+    if (!_confirmAction) return;
+    if (_confirmAction === 'clean_empty') {
+        window.location.href = 'manage_posts.php?action=clean_empty';
+    } else if (_confirmId) {
+        window.location.href = 'manage_posts.php?action=' + _confirmAction + '_campaign&id=' + _confirmId;
+    }
 }
 
 function runCronJob() {
