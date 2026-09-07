@@ -116,8 +116,8 @@ try {
         SELECT sp.*, 
                p.name AS page_name,
                p.avatar AS page_avatar,
-               yt.channel_title AS yt_channel_name,
-               yt.channel_avatar AS yt_channel_avatar,
+               COALESCE(yt1.channel_title, yt2.channel_title) AS yt_channel_name,
+               COALESCE(yt1.channel_avatar, yt2.channel_avatar) AS yt_channel_avatar,
                bc.channel_name AS buffer_channel_name,
                bc.avatar AS buffer_avatar,
                bc.service AS buffer_service,
@@ -125,7 +125,8 @@ try {
                tt.avatar AS tt_channel_avatar
         FROM scheduled_posts sp
         LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok'
-        LEFT JOIN youtube_channels yt ON (sp.page_id = yt.id OR sp.page_id = yt.channel_id) AND sp.post_type = 'YouTube'
+        LEFT JOIN youtube_channels yt1 ON sp.page_id = yt1.channel_id AND sp.post_type = 'YouTube'
+        LEFT JOIN youtube_channels yt2 ON sp.page_id = CAST(yt2.id AS CHAR) AND sp.post_type = 'YouTube'
         LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
         LEFT JOIN tiktok_accounts tt ON sp.page_id = tt.id AND sp.post_type = 'TikTok'
         WHERE sp.campaign_id = ? $filter_sql
@@ -136,11 +137,11 @@ try {
     $posts = $posts_stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {}
 
-// Detect if comment_status column exists (fault-tolerant)
+// Detect if comment_status column exists (fault-tolerant, using fast query cache)
 $has_comment_status_col = false;
 try {
-    $col_q = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME='comment_status'");
-    $has_comment_status_col = ($col_q && $col_q->fetchColumn() > 0);
+    $pdo->query("SELECT comment_status FROM scheduled_posts LIMIT 1");
+    $has_comment_status_col = true;
 } catch (Exception $e) {}
 
 

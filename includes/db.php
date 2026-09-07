@@ -17,7 +17,7 @@ function ensure_db_schema_ready($pdo) {
     static $already_checked = false;
     if ($already_checked) return;
 
-    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v2.done';
+    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v3.done';
     if (file_exists($flag_file)) {
         $already_checked = true;
         return;
@@ -386,6 +386,19 @@ function ensure_db_schema_ready($pdo) {
         try {
             $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
         } catch (Exception $e) {}
+
+        $add_idx = function($p, $tbl, $name, $cols) {
+            try {
+                $c = $p->query("SHOW INDEX FROM `$tbl` WHERE Key_name = '$name'");
+                if ($c && !$c->fetch()) {
+                    $p->exec("ALTER TABLE `$tbl` ADD INDEX `$name` ($cols)");
+                }
+            } catch (Exception $e) {}
+        };
+        $add_idx($pdo, 'scheduled_posts', 'idx_camp_status', 'campaign_id, status');
+        $add_idx($pdo, 'scheduled_posts', 'idx_acc_camp', 'account_id, campaign_id');
+        $add_idx($pdo, 'post_campaigns', 'idx_acc_created', 'account_id, created_at');
+        $add_idx($pdo, 'youtube_channels', 'idx_yt_channel_id', 'channel_id');
 
         try {
             $pdo->exec("ALTER TABLE scheduled_posts ADD INDEX IF NOT EXISTS idx_cron_dispatch (status, scheduled_time, page_id)");

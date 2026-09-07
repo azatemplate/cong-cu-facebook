@@ -5,10 +5,6 @@ if (session_status() === PHP_SESSION_NONE) @session_start();
 $_s_account_id = $_SESSION['account_id'] ?? 0;
 $_s_is_admin   = ($_SESSION['role'] ?? '') === 'admin';
 
-// Auto-migrate status column to support 'checkpoint'
-try {
-    $pdo->exec("ALTER TABLE scheduled_posts MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
-} catch (PDOException $e) {}
 
 // POST: bulk delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'], $_POST['post_ids'])) {
@@ -107,8 +103,6 @@ $total_pages_nav = 1;
 $campaigns       = [];
 $legacy_count    = 0;
 
-
-
 $search_where  = "";
 $search_params = [];
 
@@ -121,15 +115,16 @@ if ($search !== '') {
             FROM scheduled_posts sp
             LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok'
             LEFT JOIN users u ON p.user_id = u.id
-            LEFT JOIN youtube_channels yt ON (sp.page_id = yt.id OR sp.page_id = yt.channel_id) AND sp.post_type = 'YouTube'
+            LEFT JOIN youtube_channels yt1 ON sp.page_id = yt1.channel_id AND sp.post_type = 'YouTube'
+            LEFT JOIN youtube_channels yt2 ON sp.page_id = CAST(yt2.id AS CHAR) AND sp.post_type = 'YouTube'
             LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
             LEFT JOIN tiktok_accounts tt ON sp.page_id = tt.id AND sp.post_type = 'TikTok'
             WHERE sp.account_id = ? AND (
-                u.name LIKE ? OR p.name LIKE ? OR yt.channel_title LIKE ? OR bc.channel_name LIKE ? OR tt.display_name LIKE ?
+                u.name LIKE ? OR p.name LIKE ? OR yt1.channel_title LIKE ? OR yt2.channel_title LIKE ? OR bc.channel_name LIKE ? OR tt.display_name LIKE ?
             )
         )
     )";
-    $search_params = [$search_like, $account_id, $search_like, $search_like, $search_like, $search_like, $search_like];
+    $search_params = [$search_like, $account_id, $search_like, $search_like, $search_like, $search_like, $search_like, $search_like];
 }
 
 try {
@@ -147,29 +142,46 @@ try {
         $c_ids = array_column($page_camps, 'id');
         $in_ids = implode(',', array_map('intval', $c_ids));
 
-        // Giai đoạn 2: Chỉ thống kê bài viết cho duy nhất 20 chiến dịch này (1ms)
+        // Giai đoạn 2: Thống kê trạng thái bài viết cực nhanh qua index (chỉ với 20 chiến dịch này)
+        $stats_map = [];
         $stats_stmt = $pdo->query("
             SELECT
-                sp.campaign_id,
-                SUM(CASE WHEN sp.status='published'  THEN 1 ELSE 0 END) AS cnt_published,
-                SUM(CASE WHEN sp.status='pending'    THEN 1 ELSE 0 END) AS cnt_pending,
-                SUM(CASE WHEN sp.status='processing' THEN 1 ELSE 0 END) AS cnt_processing,
-                SUM(CASE WHEN sp.status='failed'     THEN 1 ELSE 0 END) AS cnt_failed,
-                SUM(CASE WHEN sp.status='checkpoint' THEN 1 ELSE 0 END) AS cnt_checkpoint,
-                COUNT(sp.id) AS cnt_total,
-                GROUP_CONCAT(DISTINCT COALESCE(tt.display_name, u.name, bc.channel_name, yt.channel_title) SEPARATOR ', ') as fb_users
-            FROM scheduled_posts sp
-            LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok'
-            LEFT JOIN users u ON p.user_id = u.id
-            LEFT JOIN youtube_channels yt ON (sp.page_id = yt.id OR sp.page_id = yt.channel_id) AND sp.post_type = 'YouTube'
-            LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
-            LEFT JOIN tiktok_accounts tt ON sp.page_id = tt.id AND sp.post_type = 'TikTok'
-            WHERE sp.campaign_id IN ($in_ids)
-            GROUP BY sp.campaign_id
+                campaign_id,
+                SUM(CASE WHEN status='published'  THEN 1 ELSE 0 END) AS cnt_published,
+                SUM(CASE WHEN status='pending'    THEN 1 ELSE 0 END) AS cnt_pending,
+                SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS cnt_processing,
+                SUM(CASE WHEN status='failed'     THEN 1 ELSE 0 END) AS cnt_failed,
+                SUM(CASE WHEN status='checkpoint' THEN 1 ELSE 0 END) AS cnt_checkpoint,
+                COUNT(id) AS cnt_total
+            FROM scheduled_posts
+            WHERE campaign_id IN ($in_ids)
+            GROUP BY campaign_id
         ");
-        $stats_map = [];
         while ($row = $stats_stmt->fetch(PDO::FETCH_ASSOC)) {
             $stats_map[$row['campaign_id']] = $row;
+        }
+
+        // Lấy tên kênh/trang bằng subquery rút gọn (chỉ join trên danh sách kênh duy nhất)
+        $users_map = [];
+        $users_stmt = $pdo->query("
+            SELECT 
+                sub.campaign_id,
+                GROUP_CONCAT(DISTINCT COALESCE(tt.display_name, u.name, bc.channel_name, yt1.channel_title, yt2.channel_title) SEPARATOR ', ') as fb_users
+            FROM (
+                SELECT DISTINCT campaign_id, post_type, page_id 
+                FROM scheduled_posts 
+                WHERE campaign_id IN ($in_ids)
+            ) sub
+            LEFT JOIN pages p ON sub.page_id = p.page_id AND sub.post_type NOT LIKE 'Buffer%' AND sub.post_type != 'YouTube' AND sub.post_type != 'TikTok'
+            LEFT JOIN users u ON p.user_id = u.id
+            LEFT JOIN youtube_channels yt1 ON sub.page_id = yt1.channel_id AND sub.post_type = 'YouTube'
+            LEFT JOIN youtube_channels yt2 ON sub.page_id = CAST(yt2.id AS CHAR) AND sub.post_type = 'YouTube'
+            LEFT JOIN buffer_channels bc ON sub.page_id = bc.channel_id AND sub.post_type LIKE 'Buffer%'
+            LEFT JOIN tiktok_accounts tt ON sub.page_id = tt.id AND sub.post_type = 'TikTok'
+            GROUP BY sub.campaign_id
+        ");
+        while ($row = $users_stmt->fetch(PDO::FETCH_ASSOC)) {
+            $users_map[$row['campaign_id']] = $row['fb_users'];
         }
 
         foreach ($page_camps as $c) {
@@ -181,7 +193,7 @@ try {
             $c['cnt_failed']     = $st['cnt_failed'] ?? 0;
             $c['cnt_checkpoint'] = $st['cnt_checkpoint'] ?? 0;
             $c['cnt_total']      = $st['cnt_total'] ?? 0;
-            $c['fb_users']       = $st['fb_users'] ?? '';
+            $c['fb_users']       = $users_map[$cid] ?? '';
             $campaigns[] = $c;
         }
     }
