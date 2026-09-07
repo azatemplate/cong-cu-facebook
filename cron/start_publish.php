@@ -61,21 +61,7 @@ try {
     }
 } catch (Exception $e) {}
 
-// Auto-migrate newly required columns in case the user missed accessing settings.php
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");
-} catch (Exception $e) {}
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN retry_interval_minutes INT DEFAULT 1");
-} catch (Exception $e) {}
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
-} catch (Exception $e) {}
 
-// Auto-migrate updated_at for scheduled_posts (stuck detection)
-try {
-    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
-} catch (Exception $e) {}
 
 try {
     $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending', retry_count=0 WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
