@@ -6,6 +6,10 @@ define('FB_API_VERSION', 'v25.0');
 define('FB_API_BASE', 'https://graph.facebook.com/' . FB_API_VERSION . '/');
 
 function fb_curl_setssl($ch) {
+    // Force IPv4 resolution to prevent IPv6 connection timeouts on VPS/servers
+    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+
     // Disable SSL verification only in development environment
     if (defined('APP_ENV') && APP_ENV === 'development') {
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
