@@ -412,11 +412,11 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
                 </label>
             </div>
 
-            <!-- Random photos & Delete Drive File options -->
+            <!-- Random photos option (Only for Photo Feed) -->
             <div id="randomPhotoOptions" class="form-group" style="background: #fff7ed; padding: 12px; border-radius: 6px; border: 1px dashed #fed7aa; margin-bottom: 20px;">
                 <label style="color: #c2410c; font-weight: 500; display: flex; align-items: center; gap: 8px; cursor: pointer;">
                     <input type="checkbox" id="enable_random_images" name="enable_random_images" value="1">
-                    🎲 Random lấy X ảnh từ danh sách đã chọn
+                    🎲 Random lấy X ảnh từ danh sách đã chọn (Chỉ áp dụng cho Bài Ảnh)
                 </label>
                 <div id="randomImagesBox" style="display: none; margin-top: 8px;">
                     <div style="display: flex; align-items: center; gap: 10px;">
@@ -424,6 +424,17 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
                         <input type="number" id="random_image_count" name="random_image_count" value="5" min="1" max="50" style="width: 70px; padding: 6px; border: 1px solid #fed7aa; border-radius: 4px; font-weight: bold; text-align: center;">
                     </div>
                 </div>
+            </div>
+
+            <!-- Anti-duplicate & Delete Drive File option (For both Photos and Videos/Reels) -->
+            <div id="deleteDriveBox" class="form-group" style="background: #f0fdfa; padding: 14px; border-radius: 6px; border: 1px dashed #99f6e4; margin-bottom: 20px;">
+                <label style="color: #0d9488; font-weight: 600; display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 0;">
+                    <input type="checkbox" id="delete_drive_file" name="delete_drive_file" value="1" style="width: 16px; height: 16px; accent-color: #0d9488;">
+                    🛡️ Chống trùng và xóa file đã đăng drive
+                </label>
+                <p style="font-size: 12px; color: #0f766e; margin-top: 5px; margin-bottom: 0;">
+                    Khi chọn, nội dung đăng sẽ không trùng lặp và tự động xóa khỏi Google Drive sau khi bài được phát hành thành công.
+                </p>
             </div>
 
             <!-- 4. Nội dung bài viết (Caption) -->
@@ -580,23 +591,27 @@ function switchIgPostType(type) {
     const autoTitle = document.getElementById('autoTitleBox');
     const photoInput = document.getElementById('photoInputWrap');
     const videoInput = document.getElementById('videoInputWrap');
+    const randomPhoto = document.getElementById('randomPhotoOptions');
 
     if (type === 'reels') {
         if (tiktokSec) tiktokSec.style.display = 'block';
         if (autoTitle) autoTitle.style.display = 'block';
         if (photoInput) photoInput.style.display = 'none';
         if (videoInput) videoInput.style.display = 'block';
+        if (randomPhoto) randomPhoto.style.display = 'none';
     } else if (type === 'story') {
         if (tiktokSec) tiktokSec.style.display = 'block';
         if (autoTitle) autoTitle.style.display = 'none';
         if (photoInput) photoInput.style.display = 'block';
         if (videoInput) videoInput.style.display = 'block';
+        if (randomPhoto) randomPhoto.style.display = 'none';
     } else {
         // photo feed
         if (tiktokSec) tiktokSec.style.display = 'none';
         if (autoTitle) autoTitle.style.display = 'none';
         if (photoInput) photoInput.style.display = 'block';
         if (videoInput) videoInput.style.display = 'none';
+        if (randomPhoto) randomPhoto.style.display = 'block';
     }
 }
 

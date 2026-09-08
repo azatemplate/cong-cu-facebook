@@ -153,13 +153,50 @@ $s_stmt_with    = $has_extra_cols
     : null;
 $s_stmt_without = $pdo->prepare("INSERT INTO scheduled_posts (account_id, page_id, post_type, content, media_path, scheduled_time, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')");
 
+$drive_pool = [];
+if ($delete_drive_file && !$is_drive_folder) {
+    foreach ($media_pool as $m) {
+        if ($m['type'] === 'drive') {
+            $drive_pool[] = $m;
+        }
+    }
+    shuffle($drive_pool);
+}
+
 $success_count = 0;
 try {
     $pdo->beginTransaction();
 
-    function resolve_ig_media_path($media_pool, $drive_file_ids_str, $is_drive_folder) {
+    function resolve_ig_media_path(&$drive_pool, $media_pool, $drive_file_ids_str, $is_drive_folder, $delete_drive_file, $post_sub_type, $enable_random_images, $random_image_count) {
         if ($is_drive_folder) return $drive_file_ids_str;
         if (empty($media_pool)) return null;
+
+        if ($delete_drive_file && !empty($drive_pool)) {
+            if ($post_sub_type === 'Instagram' && $enable_random_images) {
+                $picked = array_splice($drive_pool, 0, min(count($drive_pool), $random_image_count));
+                $paths = [];
+                foreach ($picked as $pm) { $paths[] = 'drive:' . $pm['id']; }
+                return (count($paths) === 1) ? $paths[0] : json_encode($paths);
+            } else {
+                $picked_item = array_shift($drive_pool);
+                if ($picked_item) return 'drive:' . $picked_item['id'];
+            }
+        }
+
+        // Standard random fallback
+        if ($post_sub_type === 'Instagram' && $enable_random_images && count($media_pool) > 1) {
+            $pool_copy = $media_pool;
+            shuffle($pool_copy);
+            $picked = array_slice($pool_copy, 0, min(count($pool_copy), $random_image_count));
+            $paths = [];
+            foreach ($picked as $pm) {
+                if ($pm['type'] === 'drive') $paths[] = 'drive:' . $pm['id'];
+                elseif ($pm['type'] === 'tiktok') $paths[] = 'tiktok:' . $pm['url'];
+                elseif ($pm['type'] === 'local') $paths[] = $pm['saved_path'];
+            }
+            return (count($paths) === 1) ? $paths[0] : json_encode($paths);
+        }
+
         $m = $media_pool[array_rand($media_pool)];
         if ($m['type'] === 'drive') return 'drive:' . $m['id'];
         if ($m['type'] === 'tiktok') return 'tiktok:' . $m['url'];
@@ -178,7 +215,7 @@ try {
     if (!empty($schedule_dates)) {
         foreach ($schedule_dates as $datetime) {
             foreach ($ig_user_ids as $ig_id) {
-                $media_path = resolve_ig_media_path($media_pool, $drive_file_ids_str, $is_drive_folder);
+                $media_path = resolve_ig_media_path($drive_pool, $media_pool, $drive_file_ids_str, $is_drive_folder, $delete_drive_file, $post_sub_type, $enable_random_images, $random_image_count);
                 if ($has_extra_cols && $s_stmt_with) {
                     $s_stmt_with->execute([$account_id, $ig_id, $post_sub_type, $content_data, $media_path, $datetime, $campaign_id, $comment_lines]);
                 } else {
@@ -190,7 +227,7 @@ try {
     } else {
         $now = date('Y-m-d H:i:s');
         foreach ($ig_user_ids as $ig_id) {
-            $media_path = resolve_ig_media_path($media_pool, $drive_file_ids_str, $is_drive_folder);
+            $media_path = resolve_ig_media_path($drive_pool, $media_pool, $drive_file_ids_str, $is_drive_folder, $delete_drive_file, $post_sub_type, $enable_random_images, $random_image_count);
             if ($has_extra_cols && $s_stmt_with) {
                 $s_stmt_with->execute([$account_id, $ig_id, $post_sub_type, $content_data, $media_path, $now, $campaign_id, $comment_lines]);
             } else {
