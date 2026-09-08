@@ -285,12 +285,6 @@ function status_label($s) {
         </div>
     </div>
     <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center;">
-        <a href="campaign_detail.php?id=<?php echo $campaign_id; ?>&action=run_now" class="btn" style="padding:8px 16px;background:#10b981;color:white;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
-            ⚡ Khởi Chạy Đăng Bài Ngay
-        </a>
-        <a href="check_campaigns.php?id=<?php echo $campaign_id; ?>&action=run_sync" target="_blank" class="btn" style="padding:8px 16px;background:#8b5cf6;color:white;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
-            ▶️ Chẩn Đoán & In Log Trực Tiếp
-        </a>
         <?php if ((int)$stats['fail'] > 0 || (int)($stats['chk'] ?? 0) > 0 || (int)$stats['proc'] > 0): ?>
         <button onclick="showCampaignModal('retry_all', <?php echo $campaign_id; ?>, 'Thử lại tất cả bài kẹt/lỗi trong chiến dịch này?', false)" style="padding:8px 16px;background:#3b82f6;color:white;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🔄 Reset/Thử Lại Tất Cả</button>
         <?php endif; ?>
