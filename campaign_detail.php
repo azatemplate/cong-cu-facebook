@@ -387,13 +387,10 @@ function status_label($s) {
                             </div>
                         </div>
                     </div>
-                    <?php if (!empty($post['error_msg'])): ?>
+                    <?php if ($s !== 'published' && !empty($post['error_msg'])): ?>
                     <div style="font-size:11px;color:#dc2626;margin-top:6px;background:#fee2e2;padding:6px 8px;border-radius:4px;word-break:break-all;line-height:1.4;">
                         <strong>Log lỗi:</strong> <?php echo htmlspecialchars($post['error_msg']); ?>
                     </div>
-                    <?php endif; ?>
-                    <?php if ($s === 'published' && !empty($post['error_msg'])): ?>
-                    <!-- Moved view link to action column -->
                     <?php endif; ?>
                 </td>
                 <td style="padding:10px 16px;"><span style="background:#f3f4f6;color:#374151;font-size:12px;padding:2px 8px;border-radius:4px;"><?php echo htmlspecialchars($post['post_type']); ?></span></td>

@@ -1020,10 +1020,10 @@ foreach ($pending_posts as $post) {
 
             // Đánh dấu thành công
             if ($has_fb_post_id) {
-                $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ? WHERE id = ?")
+                $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")
                     ->execute([$video_id, $post['id']]);
             } else {
-                $pdo->prepare("UPDATE scheduled_posts SET status = 'published' WHERE id = ?")
+                $pdo->prepare("UPDATE scheduled_posts SET status = 'published', error_msg = NULL WHERE id = ?")
                     ->execute([$post['id']]);
             }
 
@@ -1862,7 +1862,7 @@ foreach ($pending_posts as $post) {
 
         if ($res['status'] === 'success') {
             $pub_id = $res['publish_id'] ?? '';
-            $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ? WHERE id = ?")
+            $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")
                 ->execute([$pub_id, $post['id']]);
             echo " -> Đăng Video TikTok thành công! Publish ID: $pub_id\n";
         } else {
@@ -2277,10 +2277,10 @@ foreach ($pending_posts as $post) {
     if ($response['status_code'] === 200 && $post_id) {
         // Mark as published + save fb_post_id (if column exists)
         if ($has_fb_post_id) {
-            $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ? WHERE id = ?")
+            $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")
                 ->execute([$post_id, $post['id']]);
         } else {
-            $pdo->prepare("UPDATE scheduled_posts SET status = 'published' WHERE id = ?")
+            $pdo->prepare("UPDATE scheduled_posts SET status = 'published', error_msg = NULL WHERE id = ?")
                 ->execute([$post['id']]);
         }
 
