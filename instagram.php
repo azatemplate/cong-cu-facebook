@@ -57,19 +57,40 @@ $ig_accounts = get_instagram_accounts($account_id);
 $selected_ig_id = $_GET['ig_id'] ?? ($ig_accounts[0]['ig_user_id'] ?? '');
 $active_tab = $_GET['tab'] ?? 'channels';
 
-// ── Calculate Dashboard Insights Metrics ──────────────────────────────────
-$total_ig_accounts = count($ig_accounts);
-$total_followers   = 0;
-foreach ($ig_accounts as $acc) {
-    $total_followers += (int)($acc['followers_count'] ?? 0);
-}
+// ── Calculate Dashboard Insights Metrics (8 Metrics) ────────────────────
+$total_ig_accounts   = count($ig_accounts);
+$total_ig_posts      = 0;
+$total_ig_published  = 0;
+$total_ig_pending    = 0;
+$total_ig_processing = 0;
+$total_ig_failed     = 0;
+$total_ig_reels      = 0;
+$total_ig_stories    = 0;
 
-// Total Posts Count from scheduled_posts
-$total_ig_posts = 0;
 try {
-    $stmt_posts = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE account_id = ? AND post_type LIKE 'Instagram%'");
-    $stmt_posts->execute([$account_id]);
-    $total_ig_posts = intval($stmt_posts->fetchColumn());
+    $stmt_m = $pdo->prepare("
+        SELECT 
+            COUNT(*) as total_posts,
+            SUM(IF(status = 'published', 1, 0)) as published_count,
+            SUM(IF(status = 'pending', 1, 0)) as pending_count,
+            SUM(IF(status = 'processing', 1, 0)) as processing_count,
+            SUM(IF(status = 'failed', 1, 0)) as failed_count,
+            SUM(IF(post_type LIKE '%Reel%', 1, 0)) as reels_count,
+            SUM(IF(post_type LIKE '%Story%', 1, 0)) as stories_count
+        FROM scheduled_posts 
+        WHERE account_id = ? AND post_type LIKE 'Instagram%'
+    ");
+    $stmt_m->execute([$account_id]);
+    $row_m = $stmt_m->fetch(PDO::FETCH_ASSOC);
+    if ($row_m) {
+        $total_ig_posts      = intval($row_m['total_posts'] ?? 0);
+        $total_ig_published  = intval($row_m['published_count'] ?? 0);
+        $total_ig_pending    = intval($row_m['pending_count'] ?? 0);
+        $total_ig_processing = intval($row_m['processing_count'] ?? 0);
+        $total_ig_failed     = intval($row_m['failed_count'] ?? 0);
+        $total_ig_reels      = intval($row_m['reels_count'] ?? 0);
+        $total_ig_stories    = intval($row_m['stories_count'] ?? 0);
+    }
 } catch (Exception $e) {}
 
 // Published Media List for 'media' tab
@@ -86,46 +107,85 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
 ?>
 
 <style>
-/* Dashboard Stat Cards Style (giống index.php) */
+/* Dashboard Stat Cards Style (8 Metrics Grid) */
 .ig-stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: 16px;
     margin-bottom: 24px;
 }
+@media (max-width: 1200px) {
+    .ig-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+@media (max-width: 576px) {
+    .ig-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+}
 .ig-stat-card {
-    background: var(--card-bg);
-    border-radius: 14px;
-    padding: 18px 20px;
+    background: var(--card-bg, #ffffff);
+    border-radius: 16px;
+    padding: 16px 20px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.03);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border-color, #e2e8f0);
     display: flex;
-    align-items: center;
-    gap: 16px;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 12px;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .ig-stat-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(0,0,0,0.06);
 }
+.ig-stat-card .card-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
 .ig-stat-card .icon-box {
-    width: 52px;
-    height: 52px;
+    width: 44px;
+    height: 44px;
     border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
+    font-size: 20px;
     color: white;
     flex-shrink: 0;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
 }
-.grad-ig-purple { background: linear-gradient(135deg, #833ab4, #fd1d1d); }
-.grad-ig-orange { background: linear-gradient(135deg, #f56040, #ffc837); }
-.grad-ig-blue   { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
-.grad-ig-green  { background: linear-gradient(135deg, #10b981, #059669); }
+.grad-ig-pink   { background: linear-gradient(135deg, #f43f5e, #e11d48); }
+.grad-ig-purple { background: linear-gradient(135deg, #a855f7, #7e22ce); }
+.grad-ig-orange { background: linear-gradient(135deg, #f97316, #ea580c); }
+.grad-ig-indigo { background: linear-gradient(135deg, #6366f1, #4338ca); }
+.grad-ig-amber  { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.grad-ig-red    { background: linear-gradient(135deg, #ef4444, #b91c1c); }
+.grad-ig-rose   { background: linear-gradient(135deg, #ec4899, #be185d); }
+.grad-ig-violet { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
 
-.ig-stat-card .val { font-size: 24px; font-weight: 700; color: var(--text-main); line-height: 1.2; }
-.ig-stat-card .lbl { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.ig-stat-card .lbl {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-main, #1e293b);
+}
+.ig-stat-card .val {
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.text-pink   { color: #f43f5e; }
+.text-purple { color: #a855f7; }
+.text-orange { color: #f97316; }
+.text-indigo { color: #6366f1; }
+.text-amber  { color: #f59e0b; }
+.text-red    { color: #ef4444; }
+.text-rose   { color: #ec4899; }
+.text-violet { color: #8b5cf6; }
 
 /* Custom Tab Design */
 .ig-nav-tabs {
@@ -186,35 +246,74 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
     <div class="alert alert-success">✅ Đã xóa hủy liên kết tài khoản Instagram thành công!</div>
 <?php endif; ?>
 
-<!-- ── TOP INSIGHTS SUMMARY CARDS (Tương tự index.php) ────────────────────── -->
+<!-- ── TOP INSIGHTS SUMMARY CARDS (8 Metric Cards) ────────────────────── -->
 <div class="ig-stats-grid">
+    <!-- Row 1: Tài khoản & Tổng bài -->
     <div class="ig-stat-card">
-        <div class="icon-box grad-ig-purple">📸</div>
-        <div>
-            <div class="val"><?php echo number_format($total_ig_accounts); ?></div>
-            <div class="lbl">Kênh Instagram</div>
+        <div class="card-top">
+            <div class="icon-box grad-ig-pink">📷</div>
+            <div class="lbl">Tài khoản</div>
         </div>
+        <div class="val text-pink"><?php echo number_format($total_ig_accounts); ?></div>
     </div>
+
     <div class="ig-stat-card">
-        <div class="icon-box grad-ig-orange">👥</div>
-        <div>
-            <div class="val"><?php echo number_format($total_followers); ?></div>
-            <div class="lbl">Tổng Followers</div>
+        <div class="card-top">
+            <div class="icon-box grad-ig-purple">📄</div>
+            <div class="lbl">Tổng bài</div>
         </div>
+        <div class="val text-purple"><?php echo number_format($total_ig_posts); ?></div>
     </div>
+
+    <!-- Row 2: Đã đăng & Đang chờ -->
     <div class="ig-stat-card">
-        <div class="icon-box grad-ig-blue">📝</div>
-        <div>
-            <div class="val"><?php echo number_format($total_ig_posts); ?></div>
-            <div class="lbl">Bài Viết & Hẹn Giờ</div>
+        <div class="card-top">
+            <div class="icon-box grad-ig-orange">🎯</div>
+            <div class="lbl">Đã đăng</div>
         </div>
+        <div class="val text-orange"><?php echo number_format($total_ig_published); ?></div>
     </div>
+
     <div class="ig-stat-card">
-        <div class="icon-box grad-ig-green">⚡</div>
-        <div>
-            <div class="val"><?php echo number_format(count($media_list)); ?></div>
-            <div class="lbl">Bài Trên Kênh Đang Chọn</div>
+        <div class="card-top">
+            <div class="icon-box grad-ig-indigo">🕒</div>
+            <div class="lbl">Đang chờ</div>
         </div>
+        <div class="val text-indigo"><?php echo number_format($total_ig_pending); ?></div>
+    </div>
+
+    <!-- Row 3: Đang đăng & Hỏng -->
+    <div class="ig-stat-card">
+        <div class="card-top">
+            <div class="icon-box grad-ig-amber">🔄</div>
+            <div class="lbl">Đang đăng</div>
+        </div>
+        <div class="val text-amber"><?php echo number_format($total_ig_processing); ?></div>
+    </div>
+
+    <div class="ig-stat-card">
+        <div class="card-top">
+            <div class="icon-box grad-ig-red">❌</div>
+            <div class="lbl">Hỏng</div>
+        </div>
+        <div class="val text-red"><?php echo number_format($total_ig_failed); ?></div>
+    </div>
+
+    <!-- Row 4: Reel & Story -->
+    <div class="ig-stat-card">
+        <div class="card-top">
+            <div class="icon-box grad-ig-rose">🎬</div>
+            <div class="lbl">Reel</div>
+        </div>
+        <div class="val text-rose"><?php echo number_format($total_ig_reels); ?></div>
+    </div>
+
+    <div class="ig-stat-card">
+        <div class="card-top">
+            <div class="icon-box grad-ig-violet">🔖</div>
+            <div class="lbl">Story</div>
+        </div>
+        <div class="val text-violet"><?php echo number_format($total_ig_stories); ?></div>
     </div>
 </div>
 
