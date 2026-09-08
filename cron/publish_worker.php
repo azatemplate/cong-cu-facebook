@@ -2168,7 +2168,7 @@ foreach ($pending_posts as $post) {
 
         if ($res['status'] === 'success') {
             $pub_id = $res['id'] ?? '';
-            $permalink = $res['permalink'] ?? '';
+            $permalink = get_instagram_media_permalink($pub_id, $ig_acc['access_token']);
             $save_fb_post_id = !empty($permalink) ? ($permalink . '#' . $pub_id) : $pub_id;
 
             $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")

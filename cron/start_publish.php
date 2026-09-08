@@ -64,7 +64,7 @@ try {
 
 
 try {
-    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending', retry_count=0 WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending', retry_count=0 WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE)");
     if ($stuck_count > 0) {
         echo "  [RESET] Da reset $stuck_count bai bi stuck 'processing' => 'pending'.\n";
     }

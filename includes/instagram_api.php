@@ -176,7 +176,7 @@ function poll_instagram_container_status($container_id, $access_token, $max_wait
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 15
+            CURLOPT_TIMEOUT => 10
         ]);
         apply_proxy_to_curl($ch, $access_token);
         fb_curl_setssl($ch);
@@ -188,8 +188,8 @@ function poll_instagram_container_status($container_id, $access_token, $max_wait
             return ['status' => 'error', 'msg' => $data['error']['message'] ?? 'Lỗi kiểm tra Container Meta'];
         }
 
-        $status = $data['status_code'] ?? '';
-        if ($status === 'FINISHED' || $status === 'PUBLISHED') {
+        $status = strtoupper($data['status_code'] ?? '');
+        if ($status === 'FINISHED' || $status === 'PUBLISHED' || empty($status)) {
             return ['status' => 'success'];
         } elseif ($status === 'ERROR' || $status === 'EXPIRED') {
             $msg = $data['status'] ?? 'Lỗi xử lý Container Media Instagram (Meta Status: ' . $status . ')';
@@ -197,7 +197,7 @@ function poll_instagram_container_status($container_id, $access_token, $max_wait
         }
         sleep(2);
     }
-    return ['status' => 'error', 'msg' => 'Hết thời gian chờ xử lý Video Instagram Container (Timeout)'];
+    return ['status' => 'error', 'msg' => 'Hết thời gian chờ xử lý Container Media Instagram (Timeout)'];
 }
 
 /**
@@ -205,23 +205,26 @@ function poll_instagram_container_status($container_id, $access_token, $max_wait
  */
 function get_instagram_media_permalink($ig_media_id, $access_token) {
     if (empty($ig_media_id) || empty($access_token)) return '';
-    $url = FB_API_BASE . $ig_media_id . "?fields=permalink,id&access_token=" . urlencode($access_token);
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 15
-    ]);
-    apply_proxy_to_curl($ch, $access_token);
-    fb_curl_setssl($ch);
-    $res = curl_exec($ch);
-    curl_close($ch);
+    try {
+        $url = FB_API_BASE . $ig_media_id . "?fields=permalink,id&access_token=" . urlencode($access_token);
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 5,
+            CURLOPT_CONNECTTIMEOUT => 3
+        ]);
+        apply_proxy_to_curl($ch, $access_token);
+        fb_curl_setssl($ch);
+        $res = curl_exec($ch);
+        curl_close($ch);
 
-    if ($res) {
-        $data = json_decode($res, true);
-        if (!empty($data['permalink'])) {
-            return $data['permalink'];
+        if ($res) {
+            $data = json_decode($res, true);
+            if (!empty($data['permalink'])) {
+                return $data['permalink'];
+            }
         }
-    }
+    } catch (Exception $e) {}
     return '';
 }
 
@@ -249,9 +252,7 @@ function publish_instagram_container($ig_user_id, $container_id, $access_token) 
     if ($err) return ['status' => 'error', 'msg' => 'Lỗi cURL: ' . $err];
     $data = json_decode($res, true);
     if (!empty($data['id'])) {
-        $media_id = $data['id'];
-        $permalink = get_instagram_media_permalink($media_id, $access_token);
-        return ['status' => 'success', 'id' => $media_id, 'permalink' => $permalink];
+        return ['status' => 'success', 'id' => $data['id']];
     }
     $msg = $data['error']['message'] ?? 'Lỗi không xác định khi xuất bản bài Instagram';
     return ['status' => 'error', 'msg' => $msg];
