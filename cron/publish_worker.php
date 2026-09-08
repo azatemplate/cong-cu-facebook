@@ -2041,6 +2041,7 @@ foreach ($pending_posts as $post) {
         $base_domain = get_system_site_url($pdo);
         $public_media_urls = [];
         $temp_local_files = [];
+        $created_upload_files = [];
         $resolved_drive_file_ids = [];
         $resolved_title_override = '';
 
@@ -2077,7 +2078,9 @@ foreach ($pending_posts as $post) {
                 $temp_local_files[] = $file_info['path'];
                 $ext = pathinfo($file_info['name'], PATHINFO_EXTENSION) ?: 'jpg';
                 $dest_name = 'uploads/ig_' . uniqid() . '.' . $ext;
-                copy($file_info['path'], __DIR__ . '/../' . $dest_name);
+                $dest_full = __DIR__ . '/../' . $dest_name;
+                copy($file_info['path'], $dest_full);
+                $created_upload_files[] = $dest_full;
                 $public_media_urls[] = $base_domain . '/' . $dest_name;
             } elseif ($is_drive) {
                 $drive_file_id = substr($item_media, 6);
@@ -2098,7 +2101,9 @@ foreach ($pending_posts as $post) {
                 $temp_local_files[] = $file_info['path'];
                 $ext = pathinfo($file_info['name'], PATHINFO_EXTENSION) ?: 'jpg';
                 $dest_name = 'uploads/ig_' . uniqid() . '.' . $ext;
-                copy($file_info['path'], __DIR__ . '/../' . $dest_name);
+                $dest_full = __DIR__ . '/../' . $dest_name;
+                copy($file_info['path'], $dest_full);
+                $created_upload_files[] = $dest_full;
                 $public_media_urls[] = $base_domain . '/' . $dest_name;
             } elseif ($is_tiktok) {
                 $tt_url = substr($item_media, 7);
@@ -2115,7 +2120,9 @@ foreach ($pending_posts as $post) {
                 }
                 $temp_local_files[] = $res_tt['file_path'];
                 $dest_name = 'uploads/ig_' . uniqid() . '.mp4';
-                copy($res_tt['file_path'], __DIR__ . '/../' . $dest_name);
+                $dest_full = __DIR__ . '/../' . $dest_name;
+                copy($res_tt['file_path'], $dest_full);
+                $created_upload_files[] = $dest_full;
                 $public_media_urls[] = $base_domain . '/' . $dest_name;
             } else {
                 $local_rel = ltrim($item_media, '/');
@@ -2123,6 +2130,8 @@ foreach ($pending_posts as $post) {
                     $public_media_urls[] = $item_media;
                 } else {
                     $resolved_title_override = pathinfo(basename($local_rel), PATHINFO_FILENAME);
+                    $local_full = __DIR__ . '/../' . $local_rel;
+                    $created_upload_files[] = $local_full;
                     $public_media_urls[] = $base_domain . '/' . $local_rel;
                 }
             }
@@ -2162,6 +2171,21 @@ foreach ($pending_posts as $post) {
             $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")
                 ->execute([$pub_id, $post['id']]);
             echo " -> Đăng bài Instagram thành công! ID: $pub_id\n";
+
+            // Dọn dẹp tệp phương tiện uploads/ sau khi đăng thành công (giống reels.php & posts.php)
+            foreach ($created_upload_files as $uf) {
+                if (!empty($uf) && file_exists($uf) && strpos(str_replace('\\', '/', $uf), '/uploads/') !== false) {
+                    $bname = basename($uf);
+                    try {
+                        $usage_chk = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing') AND media_path LIKE ? AND id != ?");
+                        $usage_chk->execute(['%' . $bname . '%', $post['id']]);
+                        if ($usage_chk->fetchColumn() == 0) {
+                            @unlink($uf);
+                            echo " -> Đã dọn tệp uploads: $bname\n";
+                        }
+                    } catch (Exception $e) {}
+                }
+            }
 
             if (!empty($content_data['delete_drive_file']) && !empty($resolved_drive_file_ids)) {
                 $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
