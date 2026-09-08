@@ -56,16 +56,13 @@ if (!is_dir($lock_dir)) {
 }
 
 // Lock theo Token User ID (thay vì page_ids) để ngăn 2 worker cùng user chạy đồng thời
-// Khi cron chạy lại mà worker cũ chưa xong, page set có thể khác → md5(page_ids) khác → lock cũ không chặn
-// Dùng user_id đảm bảo chỉ 1 worker/user bất kể page set nào
 $lock_key = !empty($user_id_lock) ? md5('uid_' . $user_id_lock) : md5($raw_page_input);
 $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
 
-// Xoá lock file cũ nếu quá 15 phút (worker cũ crash không release)
-$lock_stale_seconds = 15 * 60;
+// Xoá lock file cũ nếu quá 60 giây (worker cũ crash hoặc ngắt kết nối không release)
+$lock_stale_seconds = 60;
 if (file_exists($lock_file) && (time() - filemtime($lock_file)) > $lock_stale_seconds) {
     @unlink($lock_file);
-    echo "  ⚠ Lock file cũ hơn 15 phút đã được dọn sạch.\n";
 }
 
 $lock_fp = @fopen($lock_file, 'c');
@@ -75,27 +72,31 @@ if (!$lock_fp) {
     $lock_fp = @fopen($lock_file, 'c');
 }
 
-if (!$lock_fp) {
-    echo " Không mở được lock file. Bỏ qua.\n";
-    exit;
-}
-
-// Thử lock trong 5 giây (blocking) thay vì exit ngay
-$lock_wait = 0;
 $lock_got = false;
-while ($lock_wait < 5) {
-    if (flock($lock_fp, LOCK_EX | LOCK_NB)) {
-        $lock_got = true;
-        break;
+if ($lock_fp) {
+    for ($lock_wait = 0; $lock_wait < 3; $lock_wait++) {
+        if (flock($lock_fp, LOCK_EX | LOCK_NB)) {
+            $lock_got = true;
+            break;
+        }
+        sleep(1);
     }
-    sleep(1);
-    $lock_wait++;
+    
+    // Nếu lock thất bại và file lock tồn tại > 30s => ép giải phóng lock cũ
+    if (!$lock_got && file_exists($lock_file) && (time() - filemtime($lock_file)) > 30) {
+        @fclose($lock_fp);
+        @unlink($lock_file);
+        $lock_fp = @fopen($lock_file, 'c');
+        if ($lock_fp && flock($lock_fp, LOCK_EX | LOCK_NB)) {
+            $lock_got = true;
+        }
+    }
 }
 
 if (!$lock_got) {
-    echo "Worker cho Token User này đang chạy (lock không giải phóng sau 5s), bỏ qua...\n";
-    fclose($lock_fp);
-    exit;
+    echo "Worker cho Token User này đang bận. Tự dọn lock để ưu tiên luồng mới...\n";
+    if ($lock_fp) @fclose($lock_fp);
+    @unlink($lock_file);
 }
 
 echo "Worker khởi động cho " . count($target_page_ids) . " Pages: " . implode(', ', $target_page_ids) . "\n";

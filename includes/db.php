@@ -13,6 +13,19 @@ try {
     // Timezone: wrapped separately — some MariaDB servers lack tz tables
     try { $pdo->exec("SET time_zone = '+07:00'"); } catch (Exception $e) {}
 
+    // Auto-save base_site_url when accessed via Web HTTP to ensure correct domain for API URLs
+    if (!empty($_SERVER['HTTP_HOST'])) {
+        $is_ssl = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+            || ($_SERVER['SERVER_PORT'] ?? 80) == 443;
+        $scheme = $is_ssl ? 'https' : 'http';
+        $current_domain = $scheme . '://' . $_SERVER['HTTP_HOST'];
+        try {
+            $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('base_site_url', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
+                ->execute([$current_domain, $current_domain]);
+        } catch (Exception $e) {}
+    }
+
 function ensure_db_schema_ready($pdo) {
     static $already_checked = false;
     if ($already_checked) return;
