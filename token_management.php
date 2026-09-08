@@ -137,7 +137,7 @@ if (empty($fb_app_id)) {
     $fb_app_id = $stmt_admin->fetchColumn();
 }
 
-$fb_permissions = "pages_manage_metadata,pages_manage_engagement,business_management,pages_show_list,pages_manage_posts,pages_read_engagement,read_insights,pages_messaging,public_profile";
+$fb_permissions = "pages_manage_metadata,pages_manage_engagement,business_management,pages_show_list,pages_manage_posts,pages_read_engagement,read_insights,pages_messaging,public_profile,instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,instagram_manage_messages";
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
 $redirect_uri = $protocol . $_SERVER['HTTP_HOST'] . get_base_url() . "redirect_callback.php";
 
@@ -166,7 +166,7 @@ if ($fb_app_id) {
                     <span>🔵</span> Phương Thức 1: Đăng Nhập Facebook App
                 </div>
                 <p style="font-size: 13px; color: #15803d; margin-bottom: 12px; line-height: 1.5;">
-                    Cấp quyền tự động thông qua Facebook App. Hệ thống sẽ tự lấy Token và đồng bộ tất cả Fanpage.
+                    Cấp quyền tự động thông qua Facebook App. Hệ thống sẽ tự lấy Token và đồng bộ tất cả Fanpage & Instagram.
                 </p>
             </div>
             <?php if ($login_url): ?>
@@ -176,7 +176,7 @@ if ($fb_app_id) {
                         <span style="font-weight: bold; font-size: 16px;">f</span> Đăng Nhập Facebook
                     </a>
                     <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px; margin-bottom: 0; text-align: center;">
-                        Quyền: pages_manage_posts, read_insights, pages_show_list,...
+                        Quyền: pages_manage_posts, instagram_content_publish, instagram_manage_comments,...
                     </p>
                 </div>
             <?php else: ?>
