@@ -649,11 +649,85 @@ function onDriveFilesSelected(files) {
     document.getElementById('driveSelectionInfo').style.display = 'block';
 }
 
+function onDriveFolderSelected(folderId, folderName) {
+    document.getElementById('drive_file_id').value = 'folder:' + folderId;
+    const imgEl = document.getElementById('images');
+    const vidEl = document.getElementById('video');
+    if (imgEl) imgEl.value = '';
+    if (vidEl) vidEl.value = '';
+    
+    document.getElementById('driveSelectedCount').innerText = 'Thư mục';
+    document.getElementById('driveSelectedName').innerText = folderName;
+    document.getElementById('driveSelectionInfo').style.display = 'block';
+}
+
 function clearDriveSelection() {
     document.getElementById('drive_file_id').value = '';
     document.getElementById('driveSelectedCount').innerText = '0';
     document.getElementById('driveSelectedName').innerText = '';
     document.getElementById('driveSelectionInfo').style.display = 'none';
+
+    const localStatus = document.getElementById('localUploadStatus');
+    if (localStatus) {
+        localStatus.style.display = 'none';
+        localStatus.innerText = '';
+    }
+}
+
+function uploadLocalFilesPromise(inputEl, progressCallback) {
+    return new Promise((resolve, reject) => {
+        if (!inputEl || !inputEl.files || inputEl.files.length === 0) {
+            resolve(null);
+            return;
+        }
+
+        const files = Array.from(inputEl.files);
+        const uploadedResults = [];
+        
+        function uploadNext(index) {
+            if (index >= files.length) {
+                resolve(uploadedResults);
+                return;
+            }
+
+            const file = files[index];
+            if (progressCallback) {
+                progressCallback(`⏳ Đang tải file ${index + 1}/${files.length} lên Google Drive: ${file.name}...`);
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('actions/drive_proxy.php?action=upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(async response => {
+                const text = await response.text();
+                if (!response.ok) {
+                    throw new Error(`Tải file ${file.name} lên Google Drive thất bại: ${text}`);
+                }
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    throw new Error(`Lỗi phản hồi từ server: ${text.substring(0, 300)}`);
+                }
+            })
+            .then(data => {
+                if (data.status === 'success' && data.files && data.files.length > 0) {
+                    uploadedResults.push(...data.files);
+                    uploadNext(index + 1);
+                } else {
+                    reject(data.msg || `Lỗi tải file ${file.name} lên Google Drive.`);
+                }
+            })
+            .catch(error => {
+                reject(error.message || error || `Lỗi kết nối khi tải file ${file.name}.`);
+            });
+        }
+
+        uploadNext(0);
+    });
 }
 
 // Submit IG Form via AJAX
@@ -661,16 +735,53 @@ document.getElementById('igPublishForm')?.addEventListener('submit', function(e)
     e.preventDefault();
     const btn = document.getElementById('btnSubmitIg');
     const res = document.getElementById('postResult');
+    const localStatus = document.getElementById('localUploadStatus');
 
     btn.disabled = true;
     btn.textContent = '⏳ Đang xử lý...';
     res.style.display = 'none';
 
-    const formData = new FormData(this);
+    if (localStatus) {
+        localStatus.style.display = 'none';
+        localStatus.innerText = '';
+    }
 
-    fetch('actions/publish_instagram.php', {
-        method: 'POST',
-        body: formData
+    const activeInput = (document.getElementById('videoInputWrap')?.style.display !== 'none') 
+        ? document.getElementById('video') 
+        : document.getElementById('images');
+
+    uploadLocalFilesPromise(activeInput, function(msg) {
+        if (localStatus) {
+            localStatus.style.display = 'block';
+            localStatus.className = 'alert alert-warning';
+            localStatus.style.background = '#fef3cd';
+            localStatus.style.color = '#856404';
+            localStatus.style.border = '1px solid #ffeeba';
+            localStatus.innerText = msg;
+        }
+        btn.textContent = '⏳ Đang tải file lên Google Drive...';
+    })
+    .then(uploadedFiles => {
+        if (uploadedFiles && uploadedFiles.length > 0) {
+            if (localStatus) {
+                localStatus.className = 'alert alert-success';
+                localStatus.style.background = '#d4edda';
+                localStatus.style.color = '#155724';
+                localStatus.style.border = '1px solid #c3e6cb';
+                localStatus.innerText = '✅ Tải tệp lên Google Drive thành công! Đang tiến hành tạo lịch đăng...';
+            }
+            const fileIds = uploadedFiles.map(f => f.id).join(',');
+            document.getElementById('drive_file_id').value = fileIds;
+            if (activeInput) activeInput.value = '';
+        }
+
+        btn.textContent = '🚀 Đang lưu thông tin bài đăng...';
+        const formData = new FormData(document.getElementById('igPublishForm'));
+
+        return fetch('actions/publish_instagram.php', {
+            method: 'POST',
+            body: formData
+        });
     })
     .then(r => r.json())
     .then(data => {

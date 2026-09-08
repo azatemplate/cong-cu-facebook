@@ -122,9 +122,13 @@ try {
                bc.avatar AS buffer_avatar,
                bc.service AS buffer_service,
                tt.display_name AS tt_channel_name,
-               tt.avatar AS tt_channel_avatar
+               tt.avatar AS tt_channel_avatar,
+               ig.username AS ig_username,
+               ig.name AS ig_name,
+               ig.avatar AS ig_avatar
         FROM scheduled_posts sp
-        LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok'
+        LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' AND sp.post_type NOT LIKE 'Instagram%'
+        LEFT JOIN instagram_accounts ig ON (sp.page_id = ig.ig_user_id OR sp.page_id = ig.id) AND sp.post_type LIKE 'Instagram%'
         LEFT JOIN youtube_channels yt1 ON sp.page_id = yt1.channel_id AND sp.post_type = 'YouTube'
         LEFT JOIN youtube_channels yt2 ON sp.page_id = yt2.id AND sp.post_type = 'YouTube'
         LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
@@ -345,9 +349,10 @@ function status_label($s) {
                 </td>
                 <td style="padding:10px 16px;width:300px;max-width:300px;">
                     <?php 
-                        $is_buffer = strpos($post['post_type'], 'Buffer') !== false;
-                        $is_youtube = strpos($post['post_type'], 'YouTube') !== false;
-                        $is_tiktok = strpos($post['post_type'], 'TikTok') !== false;
+                        $is_buffer    = strpos($post['post_type'], 'Buffer') !== false;
+                        $is_youtube   = strpos($post['post_type'], 'YouTube') !== false;
+                        $is_tiktok    = strpos($post['post_type'], 'TikTok') !== false;
+                        $is_instagram = strpos($post['post_type'], 'Instagram') !== false;
                         
                         if ($is_buffer) {
                             $disp_name = !empty($post['buffer_channel_name']) ? $post['buffer_channel_name'] : ($post['page_id'] ?? '—');
@@ -358,6 +363,9 @@ function status_label($s) {
                         } elseif ($is_tiktok) {
                             $disp_name = !empty($post['tt_channel_name']) ? $post['tt_channel_name'] : '—';
                             $disp_avatar = !empty($post['tt_channel_avatar']) ? $post['tt_channel_avatar'] : null;
+                        } elseif ($is_instagram) {
+                            $disp_name = !empty($post['ig_username']) ? ('@' . $post['ig_username']) : (!empty($post['page_name']) ? $post['page_name'] : '—');
+                            $disp_avatar = !empty($post['ig_avatar']) ? $post['ig_avatar'] : ($post['page_avatar'] ?? null);
                         } else {
                             $disp_name = !empty($post['page_name']) ? $post['page_name'] : '—';
                             $disp_avatar = $post['page_avatar'] ?? null;

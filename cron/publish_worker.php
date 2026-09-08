@@ -1807,22 +1807,118 @@ foreach ($pending_posts as $post) {
             continue;
         }
 
-        $media_url = $post['media_path'] ?? '';
+        $raw_media = $post['media_path'] ?? '';
         $content_data = @json_decode($post['content'], true);
         $caption = is_array($content_data) ? ($content_data['description'] ?? $content_data['text'] ?? '') : $post['content'];
 
-        if (empty($media_url)) {
+        if (empty($raw_media)) {
             marKAsFailed($pdo, $post['id'], "Không có URL media để đăng Instagram.", $sys_max_retries, $sys_retry_interval);
             continue;
         }
 
-        if ($post['post_type'] === 'Instagram_Reels') {
-            $res = post_instagram_reels($ig_acc['ig_user_id'], $ig_acc['access_token'], $media_url, $caption);
-        } elseif ($post['post_type'] === 'Instagram_Story') {
-            $is_vid = (strpos(strtolower($media_url), '.mp4') !== false || strpos(strtolower($media_url), '.mov') !== false);
-            $res = post_instagram_story($ig_acc['ig_user_id'], $ig_acc['access_token'], $media_url, $is_vid);
+        // 1. Resolve media to local path or public URL
+        $is_folder = strpos($raw_media, 'folder:') === 0;
+        $is_drive  = strpos($raw_media, 'drive:') === 0;
+        $is_tiktok = strpos($raw_media, 'tiktok:') === 0;
+        $resolved_file_id = null;
+        $temp_local_file = null;
+        $local_rel_path = '';
+        $public_media_url = '';
+
+        if ($is_folder) {
+            $folder_id = substr($raw_media, 7);
+            $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
+            if (!$drive_token) {
+                marKAsFailed($pdo, $post['id'], "Lỗi tải Google Drive: Thiếu Token", $sys_max_retries, $sys_retry_interval);
+                continue;
+            }
+            $is_anti_dup = !empty($content_data['delete_drive_file']);
+            $mime_filter = ($post['post_type'] === 'Instagram_Reels') ? 'video/*' : null;
+            $resolved_file_info = resolve_drive_folder_file($pdo, $drive_token, $folder_id, $mime_filter, $is_anti_dup);
+            if (isset($resolved_file_info['error'])) {
+                marKAsFailed($pdo, $post['id'], "Lỗi quét thư mục Drive: " . $resolved_file_info['error'], $sys_max_retries, $sys_retry_interval);
+                continue;
+            }
+            $drive_file_id = $resolved_file_info['id'];
+            $resolved_file_id = $drive_file_id;
+            
+            $new_media_path = 'drive:' . $drive_file_id;
+            $post['media_path'] = $new_media_path;
+            $raw_media = $new_media_path;
+            $is_folder = false;
+            $is_drive = true;
+            
+            $pdo->prepare("UPDATE scheduled_posts SET media_path = ? WHERE id = ?")
+                ->execute([$new_media_path, $post['id']]);
+
+            $file_info = download_drive_file_temp($drive_token, $drive_file_id);
+            if (isset($file_info['error'])) {
+                marKAsFailed($pdo, $post['id'], "Lỗi tải tệp từ Drive: " . $file_info['error'], $sys_max_retries, $sys_retry_interval);
+                continue;
+            }
+            $temp_local_file = $file_info['path'];
+            $ext = pathinfo($file_info['name'], PATHINFO_EXTENSION) ?: 'jpg';
+            $dest_name = 'uploads/ig_' . uniqid() . '.' . $ext;
+            copy($temp_local_file, __DIR__ . '/../' . $dest_name);
+            $local_rel_path = $dest_name;
+        } elseif ($is_drive) {
+            $drive_file_id = substr($raw_media, 6);
+            $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
+            if (!$drive_token) {
+                marKAsFailed($pdo, $post['id'], "Lỗi tải Google Drive: Thiếu Token", $sys_max_retries, $sys_retry_interval);
+                continue;
+            }
+            $resolved_file_id = $drive_file_id;
+            $file_info = download_drive_file_temp($drive_token, $drive_file_id);
+            if (isset($file_info['error'])) {
+                marKAsFailed($pdo, $post['id'], "Lỗi tải tệp từ Drive: " . $file_info['error'], $sys_max_retries, $sys_retry_interval);
+                continue;
+            }
+            $temp_local_file = $file_info['path'];
+            $ext = pathinfo($file_info['name'], PATHINFO_EXTENSION) ?: 'jpg';
+            $dest_name = 'uploads/ig_' . uniqid() . '.' . $ext;
+            copy($temp_local_file, __DIR__ . '/../' . $dest_name);
+            $local_rel_path = $dest_name;
+        } elseif ($is_tiktok) {
+            $tt_url = substr($raw_media, 7);
+            if (!function_exists('download_tiktok_video')) {
+                require_once __DIR__ . '/../includes/tiktok_downloader.php';
+            }
+            $res_tt = download_tiktok_video($tt_url);
+            if (empty($res_tt['file_path']) || !file_exists($res_tt['file_path'])) {
+                marKAsFailed($pdo, $post['id'], "Lỗi tải video TikTok: " . ($res_tt['msg'] ?? 'Không tải được file'), $sys_max_retries, $sys_retry_interval);
+                continue;
+            }
+            $temp_local_file = $res_tt['file_path'];
+            $dest_name = 'uploads/ig_' . uniqid() . '.mp4';
+            copy($temp_local_file, __DIR__ . '/../' . $dest_name);
+            $local_rel_path = $dest_name;
         } else {
-            $res = post_instagram_photo($ig_acc['ig_user_id'], $ig_acc['access_token'], $media_url, $caption);
+            if (strpos($raw_media, 'http://') === 0 || strpos($raw_media, 'https://') === 0) {
+                $public_media_url = $raw_media;
+            } else {
+                $local_rel_path = ltrim($raw_media, '/');
+            }
+        }
+
+        if (empty($public_media_url) && !empty($local_rel_path)) {
+            $base_domain = get_system_site_url($pdo);
+            $public_media_url = $base_domain . '/' . $local_rel_path;
+        }
+
+        if (empty($public_media_url)) {
+            marKAsFailed($pdo, $post['id'], "Không thể tạo URL công khai cho tệp phương tiện.", $sys_max_retries, $sys_retry_interval);
+            continue;
+        }
+
+        // 2. Post to Instagram Graph API
+        if ($post['post_type'] === 'Instagram_Reels') {
+            $res = post_instagram_reels($ig_acc['ig_user_id'], $ig_acc['access_token'], $public_media_url, $caption);
+        } elseif ($post['post_type'] === 'Instagram_Story') {
+            $is_vid = (strpos(strtolower($public_media_url), '.mp4') !== false || strpos(strtolower($public_media_url), '.mov') !== false || strpos(strtolower($public_media_url), '.webm') !== false);
+            $res = post_instagram_story($ig_acc['ig_user_id'], $ig_acc['access_token'], $public_media_url, $is_vid);
+        } else {
+            $res = post_instagram_photo($ig_acc['ig_user_id'], $ig_acc['access_token'], $public_media_url, $caption);
         }
 
         if ($res['status'] === 'success') {
@@ -1830,9 +1926,22 @@ foreach ($pending_posts as $post) {
             $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")
                 ->execute([$pub_id, $post['id']]);
             echo " -> Đăng bài Instagram thành công! ID: $pub_id\n";
+
+            if (!empty($content_data['delete_drive_file']) && !empty($resolved_file_id)) {
+                $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
+                if ($drive_token) {
+                    delete_drive_file($drive_token, $resolved_file_id);
+                    echo " -> Đã xóa file Google Drive: $resolved_file_id\n";
+                }
+            }
         } else {
             marKAsFailed($pdo, $post['id'], "Lỗi đăng Instagram: " . ($res['msg'] ?? 'Lỗi không xác định'), $sys_max_retries, $sys_retry_interval);
         }
+
+        if (!empty($temp_local_file) && file_exists($temp_local_file)) {
+            @unlink($temp_local_file);
+        }
+
         continue;
     }
 
