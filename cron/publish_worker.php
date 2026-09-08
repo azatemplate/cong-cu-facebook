@@ -593,9 +593,17 @@ if (!empty($user_id_lock)) {
             $account_filter = "AND sp.account_id = ? ";
             array_unshift($params, (int)$actual_account_id);
         }
+    } elseif (strpos($user_id_lock, 'ig_') === 0) {
+        // Luồng Instagram: Chỉ lấy post_type LIKE 'Instagram%' và page_id cụ thể
+        $post_type_filter = "AND sp.post_type LIKE 'Instagram%' ";
+        $actual_ig_user_id = substr($user_id_lock, 3);
+        if (!empty($actual_ig_user_id)) {
+            $account_filter = "AND sp.page_id = ? ";
+            array_unshift($params, $actual_ig_user_id);
+        }
     } else {
-        // Luồng Facebook: Chỉ lấy post_type KHÔNG PHẢI YouTube, Buffer, TikTok
-        $post_type_filter = "AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' ";
+        // Luồng Facebook: Chỉ lấy post_type KHÔNG PHẢI YouTube, Buffer, TikTok, Instagram
+        $post_type_filter = "AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' AND sp.post_type NOT LIKE 'Instagram%' ";
     }
 }
 

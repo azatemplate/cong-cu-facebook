@@ -239,18 +239,57 @@ try {
 
     $pdo->commit();
 
-    // Auto-trigger background publisher immediately (same as posts.php, reels.php, and publish_tiktok.php)
+    // Auto-trigger background publisher immediately (CLI + HTTP cURL fallback)
     try {
-        if (!function_exists('get_php_cli_bin')) {
-            @include_once __DIR__ . '/../includes/php_cli.php';
+        if (!empty($ig_user_ids)) {
+            $in_ig = implode(',', array_fill(0, count($ig_user_ids), '?'));
+            $pdo->prepare("UPDATE scheduled_posts SET status = 'pending' WHERE page_id IN ($in_ig) AND status = 'processing'")
+                ->execute($ig_user_ids);
         }
-        if (function_exists('get_php_cli_bin')) {
-            $php_bin = get_php_cli_bin();
-            $script = dirname(__DIR__) . '/cron/start_publish.php';
-            if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-                @pclose(@popen("start /B \"\" \"$php_bin\" \"$script\"", "r"));
-            } else {
-                @exec("nohup \"$php_bin\" \"$script\" > /dev/null 2>&1 &");
+
+        $disabled_funcs = array_map('trim', explode(',', strtolower(ini_get('disable_functions'))));
+        $exec_enabled = function_exists('exec') && !in_array('exec', $disabled_funcs);
+        
+        if ($exec_enabled) {
+            if (!function_exists('get_php_cli_bin')) {
+                @include_once __DIR__ . '/../includes/php_cli.php';
+            }
+            if (function_exists('get_php_cli_bin')) {
+                $php_bin = get_php_cli_bin();
+                $script = dirname(__DIR__) . '/cron/start_publish.php';
+                if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+                    @pclose(@popen("start /B \"\" \"$php_bin\" \"$script\"", "r"));
+                } else {
+                    @exec("nohup \"$php_bin\" \"$script\" > /dev/null 2>&1 &");
+                }
+            }
+        }
+
+        // Local HTTP cURL fallback launcher
+        $base_url = '';
+        if (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
+            $doc_root = $_SERVER['DOCUMENT_ROOT'] ?? '';
+            $root_web_path = rtrim(str_replace('\\', '/', str_replace($doc_root, '', dirname(__DIR__))), '/');
+            $base_url = $protocol . "://" . $_SERVER['HTTP_HOST'] . $root_web_path;
+        } else {
+            try {
+                $stmt_u = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'base_site_url'");
+                $base_url = $stmt_u ? trim($stmt_u->fetchColumn() ?: '') : '';
+            } catch (Exception $e) {}
+        }
+
+        if (!empty($base_url)) {
+            foreach ($ig_user_ids as $ig_id) {
+                $url = rtrim($base_url, '/') . "/run_worker.php?type=publish&page_id=" . urlencode($ig_id) . "&user_id=" . urlencode('ig_' . $ig_id);
+                $ch = curl_init($url);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500);
+                curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                @curl_exec($ch);
+                @curl_close($ch);
             }
         }
     } catch (Exception $e) {}
