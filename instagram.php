@@ -1,13 +1,14 @@
 <?php
 // instagram.php
-$current_page = 'instagram';
-require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/db.php';
+require_once __DIR__ . '/includes/security.php';
 require_once __DIR__ . '/includes/instagram_api.php';
 
-$account_id = $_SESSION['account_id'];
-$is_admin   = ($_SESSION['role'] === 'admin');
+if (session_status() === PHP_SESSION_NONE) @session_start();
+$account_id = $_SESSION['account_id'] ?? 0;
+$is_admin   = ($_SESSION['role'] ?? '') === 'admin';
 
-// Sync Instagram accounts action
+// Sync Instagram accounts action (MUST be before header.php output)
 if (isset($_GET['action']) && $_GET['action'] === 'sync') {
     $count = sync_instagram_accounts($account_id);
     header('Location: instagram.php?synced=' . $count);
@@ -102,6 +103,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
     }
 }
+
+// ── Now output HTML header ────────────────────────────────────────────────
+$current_page = 'instagram';
+require_once __DIR__ . '/includes/header.php';
 
 // Fetch Instagram Accounts
 $ig_accounts = get_instagram_accounts($account_id);
