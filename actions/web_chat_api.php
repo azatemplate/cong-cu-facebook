@@ -350,33 +350,33 @@ try {
 
             $reply_to_send = '';
             if (!empty($ai_response_raw)) {
-                $clean_json = clean_json_response($ai_response_raw);
-                $parsed_json = json_decode($clean_json, true);
-                if (is_array($parsed_json) && isset($parsed_json['reply'])) {
-                    $reply_to_send = $parsed_json['reply'];
+                $ai_parsed = parse_ai_json_reply($ai_response_raw);
+                $reply_to_send = $ai_parsed['reply'];
+                $parsed_extracted = $ai_parsed['extracted'];
 
+                if (!empty($reply_to_send)) {
                     $ai_upd_fields = [];
                     $ai_upd_params = [];
-                    if (!empty($parsed_json['extracted']['name'])) {
-                        $extracted_name = trim($parsed_json['extracted']['name']);
+                    if (!empty($parsed_extracted['name'])) {
+                        $extracted_name = trim($parsed_extracted['name']);
                         if ($extracted_name !== $cust_name && mb_strpos($extracted_name, 'Khách vãng lai') === false) {
                             $ai_upd_fields[] = "name = ?";
                             $ai_upd_params[] = $extracted_name;
                         }
                     }
-                    if (!empty($parsed_json['extracted']['phone'])) {
+                    if (!empty($parsed_extracted['phone'])) {
                         $ai_upd_fields[] = "phone = ?";
-                        $ai_upd_params[] = trim($parsed_json['extracted']['phone']);
+                        $ai_upd_params[] = trim($parsed_extracted['phone']);
                     }
-                    if (!empty($parsed_json['extracted']['province'])) {
+                    if (!empty($parsed_extracted['province'])) {
                         $ai_upd_fields[] = "province = ?";
-                        $ai_upd_params[] = trim($parsed_json['extracted']['province']);
+                        $ai_upd_params[] = trim($parsed_extracted['province']);
                     }
-                    if (!empty($parsed_json['extracted']['requirements'])) {
+                    if (!empty($parsed_extracted['requirements'])) {
                         $ai_upd_fields[] = "notes = ?";
-                        $ai_upd_params[] = trim($parsed_json['extracted']['requirements']);
+                        $ai_upd_params[] = trim($parsed_extracted['requirements']);
                     }
-                    if (isset($parsed_json['extracted']['stop_consulting']) && $parsed_json['extracted']['stop_consulting'] === true) {
+                    if (isset($parsed_extracted['stop_consulting']) && $parsed_extracted['stop_consulting'] === true) {
                         $ai_upd_fields[] = "consulted = 3";
                     }
 
@@ -394,8 +394,6 @@ try {
                             if ($cur_v) push_customer_lead_to_api($pdo, $account_id, $cur_v);
                         } catch (Exception $e) {}
                     }
-                } else {
-                    $reply_to_send = $ai_response_raw;
                 }
             }
 

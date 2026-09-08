@@ -748,36 +748,36 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                     $reply_to_send = '';
                                     if (!empty($ai_reply_text)) {
                                                                                      // Do not retry on 4xx client errors
-                                        $parsed_json = json_decode(clean_json_response($ai_reply_text), true);
-                                        if (is_array($parsed_json) && isset($parsed_json['reply'])) {
-                                            $reply_to_send = $parsed_json['reply'];
-                                            
-                                                                                         // Do not retry on 4xx client errors
+                                        $ai_parsed = parse_ai_json_reply($ai_reply_text);
+                                        $reply_to_send = $ai_parsed['reply'];
+                                        $parsed_extracted = $ai_parsed['extracted'];
+
+                                        if (!empty($reply_to_send)) {
                                             $ai_upd_fields = [];
                                             $ai_upd_params = [];
                                             
-                                            if (!empty($parsed_json['extracted']['phone'])) {
-                                                $new_phone = trim($parsed_json['extracted']['phone']);
+                                            if (!empty($parsed_extracted['phone'])) {
+                                                $new_phone = trim($parsed_extracted['phone']);
                                                 if ($new_phone !== $cust_phone) {
                                                     $ai_upd_fields[] = "phone = ?";
                                                     $ai_upd_params[] = $new_phone;
                                                 }
                                             }
-                                            if (!empty($parsed_json['extracted']['province'])) {
-                                                $new_prov = trim($parsed_json['extracted']['province']);
+                                            if (!empty($parsed_extracted['province'])) {
+                                                $new_prov = trim($parsed_extracted['province']);
                                                 if ($new_prov !== $cust_province) {
                                                     $ai_upd_fields[] = "province = ?";
                                                     $ai_upd_params[] = $new_prov;
                                                 }
                                             }
-                                            if (!empty($parsed_json['extracted']['requirements'])) {
-                                                $new_req = trim($parsed_json['extracted']['requirements']);
+                                            if (!empty($parsed_extracted['requirements'])) {
+                                                $new_req = trim($parsed_extracted['requirements']);
                                                 if ($new_req !== $cust_notes) {
                                                     $ai_upd_fields[] = "notes = ?";
                                                     $ai_upd_params[] = $new_req;
                                                 }
                                             }
-                                            if (isset($parsed_json['extracted']['stop_consulting']) && $parsed_json['extracted']['stop_consulting'] === true) {
+                                            if (isset($parsed_extracted['stop_consulting']) && $parsed_extracted['stop_consulting'] === true) {
                                                 $ai_upd_fields[] = "consulted = 3";
                                             }
                                             
@@ -787,9 +787,8 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                                     $ai_upd_params[] = $sender_id;
                                                     $stmt_ai_upd = $pdo->prepare("UPDATE fb_customers SET " . implode(", ", $ai_upd_fields) . " WHERE page_id = ? AND sender_id = ?");
                                                     $stmt_ai_upd->execute($ai_upd_params);
-                                                    webhook_log("AI EXTRACTED INFO SAVED for sender $sender_id: " . json_encode($parsed_json['extracted']));
+                                                    webhook_log("AI EXTRACTED INFO SAVED for sender $sender_id: " . json_encode($parsed_extracted));
                                                     
-                                                                                                 // Do not retry on 4xx client errors
                                                     $stmt_chk_ph = $pdo->prepare("SELECT phone FROM fb_customers WHERE page_id = ? AND sender_id = ?");
                                                     $stmt_chk_ph->execute([$page_id, $sender_id]);
                                                     $has_phone = $stmt_chk_ph->fetchColumn();
@@ -842,9 +841,6 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                                     webhook_log("AI EXTRACTED SAVE ERR: " . $e->getMessage());
                                                 }
                                             }
-                                        } else {
-                                            $reply_to_send = $ai_reply_text;
-                                            webhook_log("AI reply was not valid JSON, sending raw text: " . substr($ai_reply_text, 0, 50) . "...");
                                         }
                                     }
 

@@ -156,18 +156,18 @@ if (empty($ai_reply_text)) {
     exit;
 }
 
-$parsed_json = json_decode(clean_json_response($ai_reply_text), true);
-$reply_to_send = '';
+$ai_parsed = parse_ai_json_reply($ai_reply_text);
+$reply_to_send = $ai_parsed['reply'];
+$parsed_extracted = $ai_parsed['extracted'];
 
-if (is_array($parsed_json) && isset($parsed_json['reply'])) {
-    $reply_to_send = $parsed_json['reply'];
+if (!empty($reply_to_send)) {
     echo "Parsed Reply message: \"$reply_to_send\"\n";
     
     // Extracted fields
-    $ext_phone = $parsed_json['extracted']['phone'] ?? null;
-    $ext_prov = $parsed_json['extracted']['province'] ?? null;
-    $ext_notes = $parsed_json['extracted']['requirements'] ?? null;
-    $ext_stop = $parsed_json['extracted']['stop_consulting'] ?? null;
+    $ext_phone = $parsed_extracted['phone'] ?? null;
+    $ext_prov = $parsed_extracted['province'] ?? null;
+    $ext_notes = $parsed_extracted['requirements'] ?? null;
+    $ext_stop = $parsed_extracted['stop_consulting'] ?? null;
     echo "Extracted Phone: " . ($ext_phone ?: "None") . "\n";
     echo "Extracted Province: " . ($ext_prov ?: "None") . "\n";
     echo "Extracted Requirements: " . ($ext_notes ?: "None") . "\n";
@@ -198,9 +198,6 @@ if (is_array($parsed_json) && isset($parsed_json['reply'])) {
         $st_upd->execute($ai_upd_params);
         echo "Database updated with new extracted info.\n";
     }
-} else {
-    $reply_to_send = $ai_reply_text;
-    echo "AI did not return valid JSON. Sending fallback raw text.\n";
 }
 
 if (empty($reply_to_send)) {

@@ -595,6 +595,112 @@ function clean_json_response($text) {
     return $text;
 }
 
+function parse_ai_json_reply($raw_text) {
+    $result = [
+        'reply' => '',
+        'extracted' => [
+            'name' => null,
+            'phone' => null,
+            'province' => null,
+            'requirements' => null,
+            'stop_consulting' => false
+        ],
+        'parsed' => false
+    ];
+
+    if (empty($raw_text)) {
+        return $result;
+    }
+
+    $clean_text = trim($raw_text);
+
+    // Strip markdown code blocks if wrapped in ```json ... ``` or ``` ... ```
+    $clean_text = preg_replace('/^```(?:json)?\s*/i', '', $clean_text);
+    $clean_text = preg_replace('/\s*```$/', '', $clean_text);
+    $clean_text = trim($clean_text);
+
+    // Extract content between first { and last }
+    $json_candidate = '';
+    if (preg_match('/\{.*\}/s', $clean_text, $matches)) {
+        $json_candidate = $matches[0];
+    } else {
+        $json_candidate = $clean_text;
+    }
+
+    // TIER 1: Standard json_decode
+    $decoded = json_decode($json_candidate, true);
+    if (is_array($decoded) && isset($decoded['reply'])) {
+        $result['reply'] = trim($decoded['reply']);
+        if (isset($decoded['extracted']) && is_array($decoded['extracted'])) {
+            $result['extracted'] = array_merge($result['extracted'], $decoded['extracted']);
+        }
+        $result['parsed'] = true;
+        return $result;
+    }
+
+    // TIER 2: Fix unescaped control characters/newlines inside string literals and retry json_decode
+    $sanitized_json = preg_replace_callback('/"((?:[^"\\\\]|\\\\.)*)"/s', function($m) {
+        $str = $m[1];
+        $str = str_replace(["\r\n", "\r", "\n"], ["\\n", "\\n", "\\n"], $str);
+        $str = preg_replace('/[\x00-\x09\x0B\x0C\x0E-\x1F]/', '', $str);
+        return '"' . $str . '"';
+    }, $json_candidate);
+
+    $decoded2 = json_decode($sanitized_json, true);
+    if (is_array($decoded2) && isset($decoded2['reply'])) {
+        $result['reply'] = trim($decoded2['reply']);
+        if (isset($decoded2['extracted']) && is_array($decoded2['extracted'])) {
+            $result['extracted'] = array_merge($result['extracted'], $decoded2['extracted']);
+        }
+        $result['parsed'] = true;
+        return $result;
+    }
+
+    // TIER 3: Regex extraction for "reply" and "extracted" fields
+    if (preg_match('/"reply"\s*:\s*"(.*?)"\s*,\s*"extracted"/s', $json_candidate, $m_reply)) {
+        $reply_text = $m_reply[1];
+        $reply_text = str_replace(["\\n", "\\r", "\\\""], ["\n", "\r", '"'], $reply_text);
+        $result['reply'] = trim($reply_text);
+        $result['parsed'] = true;
+    } elseif (preg_match('/"reply"\s*:\s*"([^"]+)"/s', $json_candidate, $m_reply)) {
+        $result['reply'] = trim(str_replace(["\\n", "\\r", "\\\""], ["\n", "\r", '"'], $m_reply[1]));
+        $result['parsed'] = true;
+    }
+
+    if (preg_match('/"phone"\s*:\s*"([^"]+)"/i', $json_candidate, $m_phone) && $m_phone[1] !== 'null') {
+        $result['extracted']['phone'] = trim($m_phone[1]);
+    }
+    if (preg_match('/"province"\s*:\s*"([^"]+)"/i', $json_candidate, $m_prov) && $m_prov[1] !== 'null') {
+        $result['extracted']['province'] = trim($m_prov[1]);
+    }
+    if (preg_match('/"requirements"\s*:\s*"([^"]+)"/i', $json_candidate, $m_req) && $m_req[1] !== 'null') {
+        $result['extracted']['requirements'] = trim($m_req[1]);
+    }
+    if (preg_match('/"name"\s*:\s*"([^"]+)"/i', $json_candidate, $m_name) && $m_name[1] !== 'null') {
+        $result['extracted']['name'] = trim($m_name[1]);
+    }
+    if (preg_match('/"stop_consulting"\s*:\s*(true|false)/i', $json_candidate, $m_stop)) {
+        $result['extracted']['stop_consulting'] = (strtolower($m_stop[1]) === 'true');
+    }
+
+    if ($result['parsed'] && !empty($result['reply'])) {
+        return $result;
+    }
+
+    // TIER 4: Ultimate Safety Net - Ensure raw JSON structure is NEVER sent as a message
+    if (strpos($clean_text, '{') !== false || strpos($clean_text, '"reply"') !== false) {
+        $cleaned_fallback = preg_replace('/\{\s*"reply"\s*:\s*"/i', '', $clean_text);
+        $cleaned_fallback = preg_replace('/"\s*,\s*"extracted"\s*:.*$/s', '', $cleaned_fallback);
+        $cleaned_fallback = preg_replace('/^\s*\{|\}\s*$/', '', $cleaned_fallback);
+        $cleaned_fallback = trim($cleaned_fallback);
+        $result['reply'] = $cleaned_fallback;
+    } else {
+        $result['reply'] = $clean_text;
+    }
+
+    return $result;
+}
+
 function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
     global $pdo;
     

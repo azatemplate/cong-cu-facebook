@@ -540,41 +540,41 @@ try {
             // Run AI
             $ai_reply_text = generate_chat_reply_with_ai($user_merged_text, $custom_system_prompt, $acc_id, $oa_name, $history_text);
             
-            $reply_to_send = '';
             if (!empty($ai_reply_text)) {
-                $parsed_json = json_decode(clean_json_response($ai_reply_text), true);
-                if (is_array($parsed_json) && isset($parsed_json['reply'])) {
-                    $reply_to_send = $parsed_json['reply'];
-                    
+                $ai_parsed = parse_ai_json_reply($ai_reply_text);
+                $reply_to_send = $ai_parsed['reply'];
+                $parsed_extracted = $ai_parsed['extracted'];
+                
+                if (!empty($reply_to_send)) {
                     // Update customer DB fields if extracted
                     $ai_upd_fields = [];
                     $ai_upd_params = [];
                     
-                    if (!empty($parsed_json['extracted']['phone'])) {
-                        $new_phone = trim($parsed_json['extracted']['phone']);
+                    if (!empty($parsed_extracted['phone'])) {
+                        $new_phone = trim($parsed_extracted['phone']);
                         if ($new_phone !== $cust_phone) {
                             $ai_upd_fields[] = "phone = ?";
                             $ai_upd_params[] = $new_phone;
                             $cust_phone = $new_phone;
                         }
                     }
-                    if (!empty($parsed_json['extracted']['province'])) {
-                        $new_province = trim($parsed_json['extracted']['province']);
+                    if (!empty($parsed_extracted['province'])) {
+                        $new_province = trim($parsed_extracted['province']);
                         if ($new_province !== $cust_province) {
                             $ai_upd_fields[] = "province = ?";
                             $ai_upd_params[] = $new_province;
                             $cust_province = $new_province;
                         }
                     }
-                    if (!empty($parsed_json['extracted']['requirements'])) {
-                        $new_notes = trim($parsed_json['extracted']['requirements']);
+                    if (!empty($parsed_extracted['requirements'])) {
+                        $new_notes = trim($parsed_extracted['requirements']);
                         if ($new_notes !== $cust_notes) {
                             $ai_upd_fields[] = "notes = ?";
                             $ai_upd_params[] = $new_notes;
                             $cust_notes = $new_notes;
                         }
                     }
-                    if (isset($parsed_json['extracted']['stop_consulting']) && $parsed_json['extracted']['stop_consulting'] === true) {
+                    if (isset($parsed_extracted['stop_consulting']) && $parsed_extracted['stop_consulting'] === true) {
                         $ai_upd_fields[] = "consulted = 3";
                     }
                     
@@ -584,8 +584,6 @@ try {
                         $st_ai_upd = $pdo->prepare("UPDATE zalo_customers SET " . implode(", ", $ai_upd_fields) . " WHERE oa_id = ? AND sender_id = ?");
                         $st_ai_upd->execute($ai_upd_params);
                     }
-                } else {
-                    $reply_to_send = $ai_reply_text;
                 }
                 
                 // Regular PHP checks
