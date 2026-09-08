@@ -410,8 +410,11 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
                         <span id="ig_ps_count">0 đã chọn</span>
                     </div>
                     <div class="ig-ps-list" id="ig_ps_list">
-                        <div class="ig-ps-empty" id="ig_ps_empty">Không tìm thấy kênh Instagram nào</div>
-                        <?php foreach ($ig_accounts as $idx => $acc): ?>
+                        <div class="ig-ps-empty" id="ig_ps_empty">Không tìm thấy fanpage nào</div>
+                        <?php 
+                        $preset_ig_id = $_GET['ig_id'] ?? '';
+                        foreach ($ig_accounts as $idx => $acc): 
+                        ?>
                             <?php 
                             $cb_id = 'ig_cb_' . htmlspecialchars($acc['ig_user_id']); 
                             $avatar_url = $acc['avatar'] ?? '';
@@ -419,9 +422,10 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
                             if (!empty($acc['followers_count'])) {
                                 $display_title .= ' (' . number_format($acc['followers_count']) . ' followers)';
                             }
+                            $is_checked = empty($preset_ig_id) || ($preset_ig_id === $acc['ig_user_id']);
                             ?>
-                            <div class="ig-ps-item ig-ps-checked" data-name="<?php echo htmlspecialchars(mb_strtolower($acc['username'] . ' ' . $acc['name'])); ?>">
-                                <input type="checkbox" id="<?php echo $cb_id; ?>" name="ig_user_ids[]" value="<?php echo htmlspecialchars($acc['ig_user_id']); ?>" checked class="ig-ch-cb">
+                            <div class="ig-ps-item <?php echo $is_checked ? 'ig-ps-checked' : ''; ?>" data-name="<?php echo htmlspecialchars(mb_strtolower($acc['username'] . ' ' . $acc['name'])); ?>">
+                                <input type="checkbox" id="<?php echo $cb_id; ?>" name="ig_user_ids[]" value="<?php echo htmlspecialchars($acc['ig_user_id']); ?>" <?php echo $is_checked ? 'checked' : ''; ?> class="ig-ch-cb">
                                 <?php if (!empty($avatar_url)): ?>
                                     <img src="<?php echo htmlspecialchars($avatar_url); ?>" style="width:24px; height:24px; border-radius:50%; object-fit:cover; flex-shrink:0;" onerror="this.style.display='none'">
                                 <?php else: ?>
