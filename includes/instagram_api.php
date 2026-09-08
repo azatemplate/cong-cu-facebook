@@ -172,7 +172,7 @@ function get_instagram_accounts($account_id) {
 function poll_instagram_container_status($container_id, $access_token, $max_wait_seconds = 60) {
     $start = time();
     while (time() - $start < $max_wait_seconds) {
-        $url = FB_API_BASE . $container_id . "?fields=status_code,status,status_code_description&access_token=" . urlencode($access_token);
+        $url = FB_API_BASE . $container_id . "?fields=status_code,status&access_token=" . urlencode($access_token);
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
@@ -189,10 +189,10 @@ function poll_instagram_container_status($container_id, $access_token, $max_wait
         }
 
         $status = $data['status_code'] ?? '';
-        if ($status === 'FINISHED') {
+        if ($status === 'FINISHED' || $status === 'PUBLISHED') {
             return ['status' => 'success'];
         } elseif ($status === 'ERROR' || $status === 'EXPIRED') {
-            $msg = $data['status_code_description'] ?? $data['status'] ?? 'Lỗi xử lý Container Media Instagram';
+            $msg = $data['status'] ?? 'Lỗi xử lý Container Media Instagram (Meta Status: ' . $status . ')';
             return ['status' => 'error', 'msg' => $msg];
         }
         sleep(2);
