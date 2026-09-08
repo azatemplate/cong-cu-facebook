@@ -505,6 +505,13 @@ function status_label($s) {
                                 }
                             } elseif ($post['post_type'] === 'YouTube') {
                                 $view_url = "https://youtube.com/watch?v=" . htmlspecialchars($view_id);
+                            } elseif ($is_instagram) {
+                                $ig_uname = !empty($post['ig_username']) ? ltrim(trim($post['ig_username']), '@') : '';
+                                if (!empty($ig_uname)) {
+                                    $view_url = "https://www.instagram.com/" . htmlspecialchars($ig_uname) . "/";
+                                } else {
+                                    $view_url = "https://www.instagram.com/";
+                                }
                             } else {
                                 $view_url = "https://facebook.com/" . htmlspecialchars($view_id);
                             }

@@ -2042,6 +2042,7 @@ foreach ($pending_posts as $post) {
         $public_media_urls = [];
         $temp_local_files = [];
         $resolved_drive_file_ids = [];
+        $resolved_title_override = '';
 
         foreach ($media_items as $item_media) {
             $is_folder = strpos($item_media, 'folder:') === 0;
@@ -2064,6 +2065,9 @@ foreach ($pending_posts as $post) {
                 }
                 $drive_file_id = $resolved_file_info['id'];
                 $resolved_drive_file_ids[] = $drive_file_id;
+                if (!empty($resolved_file_info['name'])) {
+                    $resolved_title_override = pathinfo($resolved_file_info['name'], PATHINFO_FILENAME);
+                }
 
                 $file_info = download_drive_file_temp($drive_token, $drive_file_id);
                 if (isset($file_info['error'])) {
@@ -2088,6 +2092,9 @@ foreach ($pending_posts as $post) {
                     marKAsFailed($pdo, $post['id'], "Lỗi tải tệp từ Drive: " . $file_info['error'], $sys_max_retries, $sys_retry_interval);
                     continue 2;
                 }
+                if (!empty($file_info['name'])) {
+                    $resolved_title_override = pathinfo($file_info['name'], PATHINFO_FILENAME);
+                }
                 $temp_local_files[] = $file_info['path'];
                 $ext = pathinfo($file_info['name'], PATHINFO_EXTENSION) ?: 'jpg';
                 $dest_name = 'uploads/ig_' . uniqid() . '.' . $ext;
@@ -2103,15 +2110,19 @@ foreach ($pending_posts as $post) {
                     marKAsFailed($pdo, $post['id'], "Lỗi tải video TikTok: " . ($res_tt['msg'] ?? 'Không tải được file'), $sys_max_retries, $sys_retry_interval);
                     continue 2;
                 }
+                if (!empty($res_tt['title'])) {
+                    $resolved_title_override = $res_tt['title'];
+                }
                 $temp_local_files[] = $res_tt['file_path'];
                 $dest_name = 'uploads/ig_' . uniqid() . '.mp4';
                 copy($res_tt['file_path'], __DIR__ . '/../' . $dest_name);
                 $public_media_urls[] = $base_domain . '/' . $dest_name;
             } else {
+                $local_rel = ltrim($item_media, '/');
                 if (strpos($item_media, 'http://') === 0 || strpos($item_media, 'https://') === 0) {
                     $public_media_urls[] = $item_media;
                 } else {
-                    $local_rel = ltrim($item_media, '/');
+                    $resolved_title_override = pathinfo(basename($local_rel), PATHINFO_FILENAME);
                     $public_media_urls[] = $base_domain . '/' . $local_rel;
                 }
             }
@@ -2121,6 +2132,18 @@ foreach ($pending_posts as $post) {
             marKAsFailed($pdo, $post['id'], "Không thể tạo URL công khai cho tệp phương tiện Instagram.", $sys_max_retries, $sys_retry_interval);
             continue;
         }
+
+        // Tự động gán Tên file / Tiêu đề TikTok làm Caption nếu có cấu hình auto_title hoặc caption rỗng
+        $is_auto_title = !empty($content_data['auto_title']);
+        if (($is_auto_title || empty(trim($caption))) && !empty($resolved_title_override)) {
+            $user_cap = trim($caption);
+            if (!empty($user_cap) && $is_auto_title) {
+                $caption = $resolved_title_override . "\n\n" . $user_cap;
+            } else {
+                $caption = $resolved_title_override;
+            }
+        }
+        $caption = spin_text($caption);
 
         // 2. Post to Instagram Graph API (Single vs Carousel)
         if (count($public_media_urls) > 1) {
