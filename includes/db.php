@@ -17,7 +17,7 @@ function ensure_db_schema_ready($pdo) {
     static $already_checked = false;
     if ($already_checked) return;
 
-    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v4.done';
+    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v5.done';
     if (file_exists($flag_file)) {
         $already_checked = true;
         return;
@@ -624,6 +624,22 @@ function ensure_db_schema_ready($pdo) {
                 is_active TINYINT(1) DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE KEY idx_open_id (account_id, open_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS instagram_accounts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                account_id INT NOT NULL,
+                ig_user_id VARCHAR(255) NOT NULL,
+                fb_page_id VARCHAR(255) NOT NULL,
+                username VARCHAR(255) NOT NULL,
+                name VARCHAR(255) DEFAULT '',
+                avatar TEXT DEFAULT NULL,
+                followers_count INT DEFAULT 0,
+                access_token TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_ig_acc (account_id, ig_user_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         ");
 

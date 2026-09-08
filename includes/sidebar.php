@@ -40,6 +40,9 @@
             </ul>
         </li>
 
+        <li class="<?php echo ($current_page == 'instagram') ? 'active' : ''; ?>">
+            <a href="instagram.php" data-tooltip="Instagram Post"><span class="icon">📸</span><span class="menu-label"> Instagram Post</span></a>
+        </li>
         <li class="<?php echo ($current_page == 'tiktok') ? 'active' : ''; ?>">
             <a href="tiktok.php" data-tooltip="TikTok"><span class="icon">🎵</span><span class="menu-label"> TikTok Post</span></a>
         </li>

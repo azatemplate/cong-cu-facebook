@@ -1794,7 +1794,47 @@ foreach ($pending_posts as $post) {
         // Xong luồng Buffer, bỏ qua phần Facebook bên dưới
         continue;
     }
-    // ──────────────────────────────────────────────────────────────────────────
+    // ── XỬ LÝ RIÊNG DÀNH CHO INSTAGRAM POST / REELS / STORY ──────────────────
+    if (strpos($post['post_type'], 'Instagram') !== false) {
+        require_once __DIR__ . '/../includes/instagram_api.php';
+
+        $ig_stmt = $pdo->prepare("SELECT * FROM instagram_accounts WHERE (ig_user_id = ? OR id = ?) AND account_id = ?");
+        $ig_stmt->execute([$post['page_id'], $post['page_id'], $post['account_id']]);
+        $ig_acc = $ig_stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$ig_acc || empty($ig_acc['access_token'])) {
+            marKAsFailed($pdo, $post['id'], "Không tìm thấy tài khoản Instagram ủy quyền hợp lệ.", $sys_max_retries, $sys_retry_interval);
+            continue;
+        }
+
+        $media_url = $post['media_path'] ?? '';
+        $content_data = @json_decode($post['content'], true);
+        $caption = is_array($content_data) ? ($content_data['description'] ?? $content_data['text'] ?? '') : $post['content'];
+
+        if (empty($media_url)) {
+            marKAsFailed($pdo, $post['id'], "Không có URL media để đăng Instagram.", $sys_max_retries, $sys_retry_interval);
+            continue;
+        }
+
+        if ($post['post_type'] === 'Instagram_Reels') {
+            $res = post_instagram_reels($ig_acc['ig_user_id'], $ig_acc['access_token'], $media_url, $caption);
+        } elseif ($post['post_type'] === 'Instagram_Story') {
+            $is_vid = (strpos(strtolower($media_url), '.mp4') !== false || strpos(strtolower($media_url), '.mov') !== false);
+            $res = post_instagram_story($ig_acc['ig_user_id'], $ig_acc['access_token'], $media_url, $is_vid);
+        } else {
+            $res = post_instagram_photo($ig_acc['ig_user_id'], $ig_acc['access_token'], $media_url, $caption);
+        }
+
+        if ($res['status'] === 'success') {
+            $pub_id = $res['id'] ?? '';
+            $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")
+                ->execute([$pub_id, $post['id']]);
+            echo " -> Đăng bài Instagram thành công! ID: $pub_id\n";
+        } else {
+            marKAsFailed($pdo, $post['id'], "Lỗi đăng Instagram: " . ($res['msg'] ?? 'Lỗi không xác định'), $sys_max_retries, $sys_retry_interval);
+        }
+        continue;
+    }
 
     // ── XỬ LÝ RIÊNG DÀNH CHO TIKTOK DIRECT POST ─────────────────────────────
     if ($post['post_type'] === 'TikTok') {
