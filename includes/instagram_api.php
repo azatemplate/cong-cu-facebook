@@ -254,7 +254,104 @@ function post_instagram_photo($ig_user_id, $access_token, $image_url, $caption =
         return ['status' => 'error', 'msg' => $data['error']['message'] ?? 'Không tạo được Photo Container'];
     }
 
-    return publish_instagram_container($ig_user_id, $data['id'], $access_token);
+    $container_id = $data['id'];
+    $poll = poll_instagram_container_status($container_id, $access_token, 30);
+    if ($poll['status'] !== 'success') {
+        return $poll;
+    }
+
+    return publish_instagram_container($ig_user_id, $container_id, $access_token);
+}
+
+/**
+ * Post Carousel (Multiple Photos/Videos) to Instagram
+ */
+function post_instagram_carousel($ig_user_id, $access_token, $media_items, $caption = '') {
+    if (empty($media_items) || !is_array($media_items)) {
+        return ['status' => 'error', 'msg' => 'Không có danh sách media hợp lệ cho Carousel Instagram.'];
+    }
+
+    $media_items = array_values(array_slice($media_items, 0, 10));
+    $item_container_ids = [];
+
+    foreach ($media_items as $media_url) {
+        $is_video = (strpos(strtolower($media_url), '.mp4') !== false || 
+                     strpos(strtolower($media_url), '.mov') !== false || 
+                     strpos(strtolower($media_url), '.webm') !== false);
+
+        $url = FB_API_BASE . $ig_user_id . "/media";
+        $params = [
+            'is_carousel_item' => 'true',
+            'access_token' => $access_token
+        ];
+
+        if ($is_video) {
+            $params['media_type'] = 'VIDEO';
+            $params['video_url'] = $media_url;
+        } else {
+            $params['image_url'] = $media_url;
+        }
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => http_build_query($params)
+        ]);
+        apply_proxy_to_curl($ch, $access_token);
+        fb_curl_setssl($ch);
+        $res = curl_exec($ch);
+        $err = curl_error($ch);
+        curl_close($ch);
+
+        if ($err) return ['status' => 'error', 'msg' => 'Lỗi cURL Carousel Item: ' . $err];
+        $data = json_decode($res, true);
+        if (empty($data['id'])) {
+            return ['status' => 'error', 'msg' => $data['error']['message'] ?? 'Không tạo được Item Container Carousel'];
+        }
+
+        $c_id = $data['id'];
+        $poll = poll_instagram_container_status($c_id, $access_token, 60);
+        if ($poll['status'] !== 'success') return $poll;
+
+        $item_container_ids[] = $c_id;
+    }
+
+    if (empty($item_container_ids)) {
+        return ['status' => 'error', 'msg' => 'Không tạo được item nào cho Carousel'];
+    }
+
+    $url = FB_API_BASE . $ig_user_id . "/media";
+    $params = [
+        'media_type' => 'CAROUSEL',
+        'caption' => $caption,
+        'children' => implode(',', $item_container_ids),
+        'access_token' => $access_token
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($params)
+    ]);
+    apply_proxy_to_curl($ch, $access_token);
+    fb_curl_setssl($ch);
+    $res = curl_exec($ch);
+    $err = curl_error($ch);
+    curl_close($ch);
+
+    if ($err) return ['status' => 'error', 'msg' => 'Lỗi cURL Carousel Container: ' . $err];
+    $data = json_decode($res, true);
+    if (empty($data['id'])) {
+        return ['status' => 'error', 'msg' => $data['error']['message'] ?? 'Không tạo được Carousel Container'];
+    }
+
+    $parent_container_id = $data['id'];
+    $poll = poll_instagram_container_status($parent_container_id, $access_token, 60);
+    if ($poll['status'] !== 'success') return $poll;
+
+    return publish_instagram_container($ig_user_id, $parent_container_id, $access_token);
 }
 
 /**
