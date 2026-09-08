@@ -4,6 +4,56 @@ require_once __DIR__ . '/includes/db.php';
 
 $campaign_id = intval($_GET['id'] ?? 0);
 
+function trigger_campaign_publisher_worker($pdo, $campaign_id) {
+    try {
+        $disabled_funcs = array_map('trim', explode(',', strtolower(ini_get('disable_functions'))));
+        $exec_enabled = function_exists('exec') && !in_array('exec', $disabled_funcs);
+        
+        if ($exec_enabled) {
+            if (!function_exists('get_php_cli_bin')) @include_once __DIR__ . '/includes/php_cli.php';
+            if (function_exists('get_php_cli_bin')) {
+                $php_bin = get_php_cli_bin();
+                $script = __DIR__ . '/cron/start_publish.php';
+                if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') @pclose(@popen("start /B \"\" \"$php_bin\" \"$script\"", "r"));
+                else @exec("nohup \"$php_bin\" \"$script\" > /dev/null 2>&1 &");
+            }
+        }
+
+        // Local HTTP cURL fallback launcher
+        $base_url = '';
+        if (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
+            $doc_root = $_SERVER['DOCUMENT_ROOT'] ?? '';
+            $root_web_path = rtrim(str_replace('\\', '/', str_replace($doc_root, '', dirname(__DIR__))), '/');
+            $base_url = $protocol . "://" . $_SERVER['HTTP_HOST'] . $root_web_path;
+        } else {
+            try {
+                $stmt_u = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'base_site_url'");
+                $base_url = $stmt_u ? trim($stmt_u->fetchColumn() ?: '') : '';
+            } catch (Exception $e) {}
+        }
+
+        if (!empty($base_url) && $campaign_id) {
+            $stmt_c = $pdo->prepare("SELECT DISTINCT page_id, post_type FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending', 'failed', 'processing')");
+            $stmt_c->execute([$campaign_id]);
+            $chans = $stmt_c->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($chans as $ch_row) {
+                $p_id = $ch_row['page_id'];
+                $uid = (strpos($ch_row['post_type'], 'Instagram') !== false) ? 'ig_' . $p_id : $p_id;
+                $url = rtrim($base_url, '/') . "/run_worker.php?type=publish&page_id=" . urlencode($p_id) . "&user_id=" . urlencode($uid);
+                $ch = curl_init($url);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500);
+                curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                @curl_exec($ch);
+                @curl_close($ch);
+            }
+        }
+    } catch (Exception $e) {}
+}
+
 if ($campaign_id) {
     // Single row actions (GET)
     if (isset($_GET['action'], $_GET['post_id'])) {
@@ -13,34 +63,25 @@ if ($campaign_id) {
             if ($act === 'delete') {
                 $pdo->prepare("DELETE FROM scheduled_posts WHERE id = ? AND campaign_id = ? AND status IN ('pending','failed','checkpoint')")->execute([$post_id, $campaign_id]);
             } elseif ($act === 'retry') {
-                $pdo->prepare("UPDATE scheduled_posts SET status='pending', retry_count=0, error_msg=NULL WHERE id = ? AND campaign_id = ? AND status IN ('failed','checkpoint')")->execute([$post_id, $campaign_id]);
-                if (!function_exists('get_php_cli_bin')) @include_once __DIR__ . '/includes/php_cli.php';
-                if (function_exists('get_php_cli_bin')) {
-                    $php_bin = get_php_cli_bin();
-                    $script = __DIR__ . '/cron/start_publish.php';
-                    if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') @pclose(@popen("start /B \"\" \"$php_bin\" \"$script\"", "r"));
-                    else @exec("nohup \"$php_bin\" \"$script\" > /dev/null 2>&1 &");
-                }
+                $pdo->prepare("UPDATE scheduled_posts SET status='pending', retry_count=0, error_msg=NULL WHERE id = ? AND campaign_id = ? AND status IN ('failed','checkpoint','processing')")->execute([$post_id, $campaign_id]);
+                trigger_campaign_publisher_worker($pdo, $campaign_id);
             }
         } catch (PDOException $e) { /* ignore */ }
         header("Location: campaign_detail.php?id=$campaign_id" . (isset($_GET['filter']) ? '&filter='.$_GET['filter'] : ''));
         exit;
     }
 
-    // Retry all (GET)
-    if (isset($_GET['action']) && $_GET['action'] === 'retry_all') {
-        try {
-            $pdo->prepare("UPDATE scheduled_posts SET status='pending', retry_count=0, error_msg=NULL WHERE campaign_id = ? AND status IN ('failed','checkpoint')")->execute([$campaign_id]);
-            if (!function_exists('get_php_cli_bin')) @include_once __DIR__ . '/includes/php_cli.php';
-            if (function_exists('get_php_cli_bin')) {
-                $php_bin = get_php_cli_bin();
-                $script = __DIR__ . '/cron/start_publish.php';
-                if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') @pclose(@popen("start /B \"\" \"$php_bin\" \"$script\"", "r"));
-                else @exec("nohup \"$php_bin\" \"$script\" > /dev/null 2>&1 &");
-            }
-        } catch (PDOException $e) { /* ignore */ }
-        header("Location: campaign_detail.php?id=$campaign_id");
-        exit;
+    // Retry all or Force Run (GET)
+    if (isset($_GET['action'])) {
+        $act = $_GET['action'];
+        if ($act === 'retry_all' || $act === 'run_now') {
+            try {
+                $pdo->prepare("UPDATE scheduled_posts SET status='pending', retry_count=0, error_msg=NULL WHERE campaign_id = ? AND status IN ('failed','checkpoint','processing','pending')")->execute([$campaign_id]);
+                trigger_campaign_publisher_worker($pdo, $campaign_id);
+            } catch (PDOException $e) { /* ignore */ }
+            header("Location: campaign_detail.php?id=$campaign_id");
+            exit;
+        }
     }
 
     // Bulk delete (POST)
@@ -50,7 +91,7 @@ if ($campaign_id) {
             $in = implode(',', array_fill(0, count($ids), '?'));
             try {
                 $params = array_merge($ids, [$campaign_id]);
-                $pdo->prepare("DELETE FROM scheduled_posts WHERE id IN ($in) AND campaign_id = ? AND status IN ('pending','failed','checkpoint')")->execute($params);
+                $pdo->prepare("DELETE FROM scheduled_posts WHERE id IN ($in) AND campaign_id = ? AND status IN ('pending','failed','checkpoint','processing')")->execute($params);
             } catch (PDOException $e) { /* ignore */ }
         }
         header("Location: campaign_detail.php?id=$campaign_id");
@@ -243,11 +284,17 @@ function status_label($s) {
             <?php endforeach; ?>
         </div>
     </div>
-    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
-        <?php if ((int)$stats['fail'] > 0 || (int)($stats['chk'] ?? 0) > 0): ?>
-        <button onclick="showCampaignModal('retry_all', <?php echo $campaign_id; ?>, 'Thử lại tất cả bài lỗi trong chiến dịch này?', false)" style="padding:8px 16px;background:#10b981;color:white;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🔄 Retry tất cả lỗi (<?php echo (int)$stats['fail'] + (int)($stats['chk'] ?? 0); ?>)</button>
+    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center;">
+        <a href="campaign_detail.php?id=<?php echo $campaign_id; ?>&action=run_now" class="btn" style="padding:8px 16px;background:#10b981;color:white;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
+            ⚡ Khởi Chạy Đăng Bài Ngay
+        </a>
+        <a href="check_campaigns.php?id=<?php echo $campaign_id; ?>&action=run_sync" target="_blank" class="btn" style="padding:8px 16px;background:#8b5cf6;color:white;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
+            ▶️ Chẩn Đoán & In Log Trực Tiếp
+        </a>
+        <?php if ((int)$stats['fail'] > 0 || (int)($stats['chk'] ?? 0) > 0 || (int)$stats['proc'] > 0): ?>
+        <button onclick="showCampaignModal('retry_all', <?php echo $campaign_id; ?>, 'Thử lại tất cả bài kẹt/lỗi trong chiến dịch này?', false)" style="padding:8px 16px;background:#3b82f6;color:white;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🔄 Reset/Thử Lại Tất Cả</button>
         <?php endif; ?>
-        <?php if ((int)$stats['pend'] > 0 || (int)$stats['fail'] > 0 || (int)($stats['chk'] ?? 0) > 0): ?>
+        <?php if ((int)$stats['pend'] > 0 || (int)$stats['proc'] > 0 || (int)$stats['fail'] > 0 || (int)($stats['chk'] ?? 0) > 0): ?>
         <button onclick="showCampaignModal('delete_pending', <?php echo $campaign_id; ?>, 'Xóa toàn bộ bài chưa hoàn tất trong chiến dịch này?', true)" style="padding:8px 16px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🗑 Xóa bài chưa/lỗi</button>
         <?php endif; ?>
         <?php if ((int)$stats['total'] === 0): ?>
