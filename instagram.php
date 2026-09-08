@@ -327,20 +327,113 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
     <?php else: ?>
         <form id="igPublishForm" enctype="multipart/form-data">
             
-            <!-- 1. Menu sổ xuống Chọn Kênh Instagram -->
+            <!-- 1. Chọn Kênh Instagram (Checkbox + Search UI) -->
             <div class="form-group" style="margin-bottom:20px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <label style="font-weight:600; margin:0;">1. Chọn kênh Instagram muốn đăng bài (Menu sổ xuống):</label>
-                    <button type="button" onclick="selectAllIgChannels(true)" style="background:none; border:none; color:var(--primary-color); font-size:13px; cursor:pointer; text-decoration:underline;">Tích Chọn Tất Cả Kênh</button>
+                <label style="font-weight:600; display:block; margin-bottom:8px;">1. Chọn kênh Instagram muốn đăng bài:</label>
+                
+                <style>
+                .ig-ps-wrapper {
+                    border: 1px solid var(--border-color, #e2e8f0);
+                    border-radius: 8px;
+                    overflow: hidden;
+                    background: var(--card-bg, #fff);
+                }
+                .ig-ps-search-bar {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 8px 12px;
+                    border-bottom: 1px solid var(--border-color, #e2e8f0);
+                    background: #f8fafc;
+                }
+                .ig-ps-search-bar svg { flex-shrink: 0; color: #94a3b8; }
+                .ig-ps-search-bar input {
+                    flex: 1;
+                    border: none;
+                    background: transparent;
+                    outline: none;
+                    font-size: 13px;
+                    color: var(--text-main, #1e293b);
+                }
+                .ig-ps-search-bar input::placeholder { color: #94a3b8; }
+                .ig-ps-toolbar {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 8px 12px;
+                    border-bottom: 1px solid var(--border-color, #e2e8f0);
+                    background: #f1f5f9;
+                    font-size: 13px;
+                    color: var(--text-muted, #64748b);
+                }
+                .ig-ps-toolbar label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; margin: 0; }
+                .ig-ps-toolbar input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary-color, #2563eb); }
+                #ig_ps_count { font-size: 13px; color: var(--text-muted, #64748b); }
+                .ig-ps-list {
+                    max-height: 220px;
+                    overflow-y: auto;
+                    padding: 4px 0;
+                }
+                .ig-ps-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    transition: background 0.12s;
+                    font-size: 13px;
+                    color: var(--text-main, #1e293b);
+                }
+                .ig-ps-item:hover { background: #f0f7ff; }
+                .ig-ps-item.ig-ps-checked { background: #eff6ff; }
+                .ig-ps-item input[type=checkbox] { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--primary-color, #2563eb); cursor: pointer; }
+                .ig-ps-item label { cursor: pointer; flex: 1; line-height: 1.35; margin: 0; }
+                .ig-ps-empty {
+                    text-align: center;
+                    padding: 24px;
+                    color: #94a3b8;
+                    font-size: 13px;
+                    display: none;
+                }
+                </style>
+
+                <div class="ig-ps-wrapper">
+                    <div class="ig-ps-search-bar">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input type="text" id="ig_ps_search" placeholder="Tìm kiếm fanpage..." autocomplete="off">
+                        <button type="button" id="ig_ps_clear_search" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:16px;line-height:1;padding:0;display:none;">✕</button>
+                    </div>
+                    <div class="ig-ps-toolbar">
+                        <label>
+                            <input type="checkbox" id="ig_ps_select_all" checked> Chọn tất cả
+                        </label>
+                        <span id="ig_ps_count">0 đã chọn</span>
+                    </div>
+                    <div class="ig-ps-list" id="ig_ps_list">
+                        <div class="ig-ps-empty" id="ig_ps_empty">Không tìm thấy kênh Instagram nào</div>
+                        <?php foreach ($ig_accounts as $idx => $acc): ?>
+                            <?php 
+                            $cb_id = 'ig_cb_' . htmlspecialchars($acc['ig_user_id']); 
+                            $avatar_url = $acc['avatar'] ?? '';
+                            $display_title = '@' . htmlspecialchars($acc['username']) . ' — ' . htmlspecialchars($acc['name']);
+                            if (!empty($acc['followers_count'])) {
+                                $display_title .= ' (' . number_format($acc['followers_count']) . ' followers)';
+                            }
+                            ?>
+                            <div class="ig-ps-item ig-ps-checked" data-name="<?php echo htmlspecialchars(mb_strtolower($acc['username'] . ' ' . $acc['name'])); ?>">
+                                <input type="checkbox" id="<?php echo $cb_id; ?>" name="ig_user_ids[]" value="<?php echo htmlspecialchars($acc['ig_user_id']); ?>" checked class="ig-ch-cb">
+                                <?php if (!empty($avatar_url)): ?>
+                                    <img src="<?php echo htmlspecialchars($avatar_url); ?>" style="width:24px; height:24px; border-radius:50%; object-fit:cover; flex-shrink:0;" onerror="this.style.display='none'">
+                                <?php else: ?>
+                                    <div style="width:24px; height:24px; border-radius:50%; background:#e2e8f0; display:flex; align-items:center; justify-content:center; font-size:11px; color:#64748b; font-weight:bold; flex-shrink:0;">
+                                        <?php echo strtoupper(substr($acc['username'], 0, 1)); ?>
+                                    </div>
+                                <?php endif; ?>
+                                <label for="<?php echo $cb_id; ?>"><?php echo $display_title; ?></label>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
-                <select id="ig_user_ids" name="ig_user_ids[]" multiple style="width:100%; height:110px; padding:8px 12px; border:1px solid var(--border-color); border-radius:8px; font-size:14px; box-sizing:border-box;" required>
-                    <?php foreach ($ig_accounts as $acc): ?>
-                        <option value="<?php echo htmlspecialchars($acc['ig_user_id']); ?>" selected>
-                            @<?php echo htmlspecialchars($acc['username']); ?> — <?php echo htmlspecialchars($acc['name']); ?> (<?php echo number_format($acc['followers_count']); ?> followers)
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-                <small style="color:#64748b; margin-top:4px; display:block;">💡 Giữ phím <code>Ctrl</code> (hoặc <code>Cmd</code> trên Mac) để chọn nhiều kênh cùng lúc.</small>
             </div>
 
             <!-- 2. Chọn Định Dạng -->
@@ -582,13 +675,103 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
 
 <!-- ── JAVASCRIPT FOR FORM HANDLING ──────────────────────────────────────── -->
 <script>
-function selectAllIgChannels(selectState) {
-    const sel = document.getElementById('ig_user_ids');
-    if (!sel) return;
-    for (let i = 0; i < sel.options.length; i++) {
-        sel.options[i].selected = selectState;
+(function() {
+    const searchEl = document.getElementById('ig_ps_search');
+    const clearBtn = document.getElementById('ig_ps_clear_search');
+    const selectAllEl = document.getElementById('ig_ps_select_all');
+    const countEl = document.getElementById('ig_ps_count');
+    const listEl = document.getElementById('ig_ps_list');
+    const emptyEl = document.getElementById('ig_ps_empty');
+    if (!listEl) return;
+
+    function updateIgCount() {
+        const checkboxes = listEl.querySelectorAll('.ig-ch-cb');
+        const checked = listEl.querySelectorAll('.ig-ch-cb:checked');
+        const count = checked.length;
+        
+        if (countEl) {
+            countEl.textContent = count + ' đã chọn';
+            countEl.style.color = count > 0 ? 'var(--primary-color, #2563eb)' : '';
+            countEl.style.fontWeight = count > 0 ? '600' : '';
+        }
+        if (selectAllEl) {
+            selectAllEl.checked = checkboxes.length > 0 && count === checkboxes.length;
+            selectAllEl.indeterminate = count > 0 && count < checkboxes.length;
+        }
     }
-}
+
+    window.selectAllIgChannels = function(selectState) {
+        listEl.querySelectorAll('.ig-ps-item').forEach(item => {
+            const cb = item.querySelector('.ig-ch-cb');
+            if (cb) {
+                cb.checked = selectState;
+                if (selectState) item.classList.add('ig-ps-checked');
+                else item.classList.remove('ig-ps-checked');
+            }
+        });
+        updateIgCount();
+    };
+
+    listEl.querySelectorAll('.ig-ps-item').forEach(item => {
+        const cb = item.querySelector('.ig-ch-cb');
+        cb?.addEventListener('change', function() {
+            if (this.checked) item.classList.add('ig-ps-checked');
+            else item.classList.remove('ig-ps-checked');
+            updateIgCount();
+        });
+
+        item.addEventListener('click', function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+            if (cb) {
+                cb.checked = !cb.checked;
+                cb.dispatchEvent(new Event('change'));
+            }
+        });
+    });
+
+    selectAllEl?.addEventListener('change', function() {
+        const isChecked = this.checked;
+        listEl.querySelectorAll('.ig-ps-item').forEach(item => {
+            if (item.style.display !== 'none') {
+                const cb = item.querySelector('.ig-ch-cb');
+                if (cb) {
+                    cb.checked = isChecked;
+                    if (isChecked) item.classList.add('ig-ps-checked');
+                    else item.classList.remove('ig-ps-checked');
+                }
+            }
+        });
+        updateIgCount();
+    });
+
+    searchEl?.addEventListener('input', function() {
+        const q = this.value.trim().toLowerCase();
+        if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+        
+        let visibleCount = 0;
+        listEl.querySelectorAll('.ig-ps-item').forEach(item => {
+            const name = item.getAttribute('data-name') || item.textContent.toLowerCase();
+            if (!q || name.includes(q)) {
+                item.style.display = 'flex';
+                visibleCount++;
+            } else {
+                item.style.display = 'none';
+            }
+        });
+
+        if (emptyEl) emptyEl.style.display = visibleCount === 0 ? 'block' : 'none';
+        updateIgCount();
+    });
+
+    clearBtn?.addEventListener('click', function() {
+        if (searchEl) searchEl.value = '';
+        this.style.display = 'none';
+        searchEl?.dispatchEvent(new Event('input'));
+        searchEl?.focus();
+    });
+
+    updateIgCount();
+})();
 
 function switchIgPostType(type) {
     const tiktokSec  = document.getElementById('tiktokSection');
@@ -736,6 +919,12 @@ document.getElementById('igPublishForm')?.addEventListener('submit', function(e)
     const btn = document.getElementById('btnSubmitIg');
     const res = document.getElementById('postResult');
     const localStatus = document.getElementById('localUploadStatus');
+
+    const checkedChannels = document.querySelectorAll('.ig-ch-cb:checked');
+    if (checkedChannels.length === 0) {
+        alert('Vui lòng chọn ít nhất 1 kênh Instagram để đăng bài.');
+        return;
+    }
 
     btn.disabled = true;
     btn.textContent = '⏳ Đang xử lý...';
