@@ -20,6 +20,18 @@ function get_drive_access_token($pdo, $account_id, $page_id = null) {
         $stmt_user->execute([$page_id, $account_id]);
         $user_drive = $stmt_user->fetch(PDO::FETCH_ASSOC);
 
+        if (!$user_drive) {
+            $stmt_ig = $pdo->prepare("
+                SELECT u.gg_client_id, u.gg_client_secret, u.gg_refresh_token
+                FROM instagram_accounts ig
+                JOIN users u ON ig.account_id = u.account_id
+                WHERE (ig.ig_user_id = ? OR ig.id = ?) AND u.account_id = ? AND u.gg_refresh_token IS NOT NULL AND u.gg_refresh_token != ''
+                LIMIT 1
+            ");
+            $stmt_ig->execute([$page_id, $page_id, $account_id]);
+            $user_drive = $stmt_ig->fetch(PDO::FETCH_ASSOC);
+        }
+
         if ($user_drive && !empty($user_drive['gg_refresh_token'])) {
             $refresh_token = $user_drive['gg_refresh_token'];
             $client_id = $user_drive['gg_client_id'];
