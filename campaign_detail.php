@@ -477,7 +477,9 @@ function status_label($s) {
                         $view_id = !empty($post['fb_post_id']) ? $post['fb_post_id'] : (!empty($post['error_msg']) ? $post['error_msg'] : '');
                         if ($s === 'published' && $view_id): 
                             if (strpos($view_id, 'http://') === 0 || strpos($view_id, 'https://') === 0) {
-                                $view_url = htmlspecialchars($view_id);
+                                $clean_u = explode('#', $view_id)[0];
+                                $clean_u = explode('|', $clean_u)[0];
+                                $view_url = htmlspecialchars($clean_u);
                             } elseif (strpos($post['post_type'], 'Buffer') !== false) {
                                 $svc = strtolower($post['buffer_service'] ?? '');
                                 $cname = ltrim(trim($post['buffer_channel_name'] ?? ''), '@');

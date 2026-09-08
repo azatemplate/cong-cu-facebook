@@ -2168,9 +2168,34 @@ foreach ($pending_posts as $post) {
 
         if ($res['status'] === 'success') {
             $pub_id = $res['id'] ?? '';
+            $permalink = $res['permalink'] ?? '';
+            $save_fb_post_id = !empty($permalink) ? ($permalink . '#' . $pub_id) : $pub_id;
+
             $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")
-                ->execute([$pub_id, $post['id']]);
-            echo " -> Đăng bài Instagram thành công! ID: $pub_id\n";
+                ->execute([$save_fb_post_id, $post['id']]);
+            echo " -> Đăng bài Instagram thành công! Link: " . (!empty($permalink) ? $permalink : $pub_id) . "\n";
+
+            // Hẹn giờ Comment tự động nếu có cấu hình
+            if ($has_comment_lines && $has_comment_at && !empty($post['comment_lines'])) {
+                $post_comment_mode = ($has_comment_mode && !empty($post['comment_mode'])) ? $post['comment_mode'] : 'timer';
+                if ($post_comment_mode === 'insights') {
+                    if ($has_comment_status) {
+                        $pdo->prepare("UPDATE scheduled_posts SET comment_status = 'waiting_insights' WHERE id = ?")
+                            ->execute([$post['id']]);
+                    }
+                    echo "   → Comment mode: insights (chờ cron kiểm tra metrics)\n";
+                } else {
+                    $comment_at = date('Y-m-d H:i:s', time() + 120);
+                    if ($has_comment_status) {
+                        $pdo->prepare("UPDATE scheduled_posts SET comment_at = ?, comment_status = 'pending' WHERE id = ?")
+                            ->execute([$comment_at, $post['id']]);
+                    } else {
+                        $pdo->prepare("UPDATE scheduled_posts SET comment_at = ? WHERE id = ?")
+                            ->execute([$comment_at, $post['id']]);
+                    }
+                    echo "   → Đã hẹn giờ bình luận Instagram sau 2 phút.\n";
+                }
+            }
 
             // Dọn dẹp tệp phương tiện uploads/ sau khi đăng thành công (giống reels.php & posts.php)
             foreach ($created_upload_files as $uf) {

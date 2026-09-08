@@ -196,6 +196,91 @@ foreach ($rows as $row) {
             echo " -> ID {$row['id']}: Lỗi bình luận YouTube ($yt_code) - $yt_res\n";
         }
 
+    } elseif (strpos($row['post_type'], 'Instagram') !== false) {
+        // --- INSTAGRAM COMMENT ---
+        if ($row['post_type'] === 'Instagram_Story') {
+            if ($has_comment_status) {
+                $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'error' WHERE id = ?")
+                    ->execute([$row['id']]);
+            } else {
+                $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1 WHERE id = ?")
+                    ->execute([$row['id']]);
+            }
+            echo " -> Bỏ qua ID {$row['id']}: Instagram Story không hỗ trợ bình luận.\n";
+            continue;
+        }
+
+        try {
+            $ig_stmt = $pdo->prepare("SELECT access_token FROM instagram_accounts WHERE (ig_user_id = ? OR id = ?) AND account_id = ?");
+            $ig_stmt->execute([$row['page_id'], $row['page_id'], $target_account_id]);
+            $ig_acc = $ig_stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            $ig_acc = null;
+        }
+
+        if (!$ig_acc || empty($ig_acc['access_token'])) {
+            if ($has_comment_status) {
+                $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'error' WHERE id = ?")
+                    ->execute([$row['id']]);
+            } else {
+                $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1 WHERE id = ?")
+                    ->execute([$row['id']]);
+            }
+            echo " -> Bỏ qua ID {$row['id']}: Không tìm thấy tài khoản Instagram hoặc access token.\n";
+            continue;
+        }
+
+        $ig_access_token = $ig_acc['access_token'];
+
+        // Parse numeric ig_media_id from fb_post_id (e.g. "https://www.instagram.com/reel/xxx/#18011910947756121" or "18011910947756121")
+        $ig_media_id = $fb_post_id;
+        if (strpos($ig_media_id, '#') !== false) {
+            $parts = explode('#', $ig_media_id);
+            $ig_media_id = end($parts);
+        }
+        $ig_media_id = trim($ig_media_id);
+
+        $comment_text_spun = function_exists('spin_text') ? spin_text($comment_text) : $comment_text;
+
+        $url = FB_API_BASE . $ig_media_id . "/comments";
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => http_build_query([
+                'message' => $comment_text_spun,
+                'access_token' => $ig_access_token
+            ])
+        ]);
+        apply_proxy_to_curl($ch, $ig_access_token);
+        fb_curl_setssl($ch);
+        $res = curl_exec($ch);
+        $err = curl_error($ch);
+        curl_close($ch);
+
+        $res_json = json_decode($res, true);
+
+        if (!empty($res_json['id'])) {
+            if ($has_comment_status) {
+                $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'done' WHERE id = ?")
+                    ->execute([$row['id']]);
+            } else {
+                $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1 WHERE id = ?")
+                    ->execute([$row['id']]);
+            }
+            echo " -> ID {$row['id']}: Bình luận Instagram thành công! ID: {$res_json['id']}\n";
+        } else {
+            $errMsg = $res_json['error']['message'] ?? ($err ?: $res);
+            if ($has_comment_status) {
+                $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'error' WHERE id = ?")
+                    ->execute([$row['id']]);
+            } else {
+                $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1 WHERE id = ?")
+                    ->execute([$row['id']]);
+            }
+            echo " -> ID {$row['id']}: Lỗi bình luận Instagram: $errMsg\n";
+        }
+
     } else {
         // --- FACEBOOK COMMENT ---
         // Get page token

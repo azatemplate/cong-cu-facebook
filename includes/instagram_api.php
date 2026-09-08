@@ -201,6 +201,31 @@ function poll_instagram_container_status($container_id, $access_token, $max_wait
 }
 
 /**
+ * Internal Helper: Get Instagram Media Permalink
+ */
+function get_instagram_media_permalink($ig_media_id, $access_token) {
+    if (empty($ig_media_id) || empty($access_token)) return '';
+    $url = FB_API_BASE . $ig_media_id . "?fields=permalink,id&access_token=" . urlencode($access_token);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 15
+    ]);
+    apply_proxy_to_curl($ch, $access_token);
+    fb_curl_setssl($ch);
+    $res = curl_exec($ch);
+    curl_close($ch);
+
+    if ($res) {
+        $data = json_decode($res, true);
+        if (!empty($data['permalink'])) {
+            return $data['permalink'];
+        }
+    }
+    return '';
+}
+
+/**
  * Internal Helper: Publish Media Container
  */
 function publish_instagram_container($ig_user_id, $container_id, $access_token) {
@@ -224,7 +249,9 @@ function publish_instagram_container($ig_user_id, $container_id, $access_token) 
     if ($err) return ['status' => 'error', 'msg' => 'Lỗi cURL: ' . $err];
     $data = json_decode($res, true);
     if (!empty($data['id'])) {
-        return ['status' => 'success', 'id' => $data['id']];
+        $media_id = $data['id'];
+        $permalink = get_instagram_media_permalink($media_id, $access_token);
+        return ['status' => 'success', 'id' => $media_id, 'permalink' => $permalink];
     }
     $msg = $data['error']['message'] ?? 'Lỗi không xác định khi xuất bản bài Instagram';
     return ['status' => 'error', 'msg' => $msg];
