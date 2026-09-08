@@ -12,70 +12,21 @@ if (session_status() === PHP_SESSION_NONE) {
  */
 function sync_instagram_accounts($account_id) {
     global $pdo;
-    $synced = 0;
+    $synced_map = [];
+
     try {
-        // 1. Fetch pages for this system account
-        $stmt = $pdo->prepare("
-            SELECT p.page_id, p.access_token, p.name as page_name
-            FROM pages p
-            JOIN users u ON p.user_id = u.id
-            WHERE u.account_id = ?
+        $up_stmt = $pdo->prepare("
+            INSERT INTO instagram_accounts (account_id, ig_user_id, fb_page_id, username, name, avatar, followers_count, access_token)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+                username = VALUES(username),
+                name = VALUES(name),
+                avatar = VALUES(avatar),
+                followers_count = VALUES(followers_count),
+                access_token = VALUES(access_token)
         ");
-        $stmt->execute([$account_id]);
-        $pages = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        foreach ($pages as $pg) {
-            $page_id = $pg['page_id'];
-            $token = decryptData($pg['access_token']);
-            if (empty($token)) continue;
-
-            // Query page for instagram_business_account
-            $url = FB_API_BASE . $page_id . "?fields=instagram_business_account&access_token=" . urlencode($token);
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            apply_proxy_to_curl($ch, $token);
-            fb_curl_setssl($ch);
-            $res = curl_exec($ch);
-            curl_close($ch);
-
-            $data = json_decode($res, true);
-            if (!empty($data['instagram_business_account']['id'])) {
-                $ig_id = $data['instagram_business_account']['id'];
-
-                // Query Instagram profile details
-                $ig_url = FB_API_BASE . $ig_id . "?fields=id,username,name,profile_picture_url,followers_count&access_token=" . urlencode($token);
-                $ch2 = curl_init($ig_url);
-                curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
-                apply_proxy_to_curl($ch2, $token);
-                fb_curl_setssl($ch2);
-                $res2 = curl_exec($ch2);
-                curl_close($ch2);
-
-                $ig_data = json_decode($res2, true);
-                if (!empty($ig_data['username'])) {
-                    $username = $ig_data['username'];
-                    $name = $ig_data['name'] ?? $username;
-                    $avatar = $ig_data['profile_picture_url'] ?? '';
-                    $followers = (int)($ig_data['followers_count'] ?? 0);
-
-                    // Upsert into instagram_accounts
-                    $up_stmt = $pdo->prepare("
-                        INSERT INTO instagram_accounts (account_id, ig_user_id, fb_page_id, username, name, avatar, followers_count, access_token)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ON DUPLICATE KEY UPDATE 
-                            username = VALUES(username),
-                            name = VALUES(name),
-                            avatar = VALUES(avatar),
-                            followers_count = VALUES(followers_count),
-                            access_token = VALUES(access_token)
-                    ");
-                    $up_stmt->execute([$account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $token]);
-                    $synced++;
-                }
-            }
-        }
-
-        // 2. Scan User Tokens from users table for connected Instagram accounts
+        // 1. Scan User Tokens from users table with Nested Fields (Gets ALL connected IG accounts in 1 HTTP call!)
         $u_stmt = $pdo->prepare("SELECT access_token FROM users WHERE account_id = ? AND access_token IS NOT NULL AND access_token != ''");
         $u_stmt->execute([$account_id]);
         $users = $u_stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -84,7 +35,7 @@ function sync_instagram_accounts($account_id) {
             $u_token = decryptData($usr['access_token']);
             if (empty($u_token)) continue;
 
-            $me_url = FB_API_BASE . "me/accounts?fields=id,name,access_token,instagram_business_account&limit=100&access_token=" . urlencode($u_token);
+            $me_url = FB_API_BASE . "me/accounts?fields=id,name,access_token,instagram_business_account{id,username,name,profile_picture_url,followers_count}&limit=500&access_token=" . urlencode($u_token);
             $ch = curl_init($me_url);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             apply_proxy_to_curl($ch, $u_token);
@@ -95,47 +46,110 @@ function sync_instagram_accounts($account_id) {
             $me_data = json_decode($res, true);
             if (!empty($me_data['data'])) {
                 foreach ($me_data['data'] as $p_item) {
-                    if (!empty($p_item['instagram_business_account']['id'])) {
-                        $ig_id = $p_item['instagram_business_account']['id'];
+                    if (!empty($p_item['instagram_business_account'])) {
+                        $ig_info = $p_item['instagram_business_account'];
+                        $ig_id = $ig_info['id'] ?? '';
+                        if (empty($ig_id)) continue;
+
                         $page_id = $p_item['id'];
                         $p_token = $p_item['access_token'] ?? $u_token;
+                        $username = $ig_info['username'] ?? '';
+                        $name = $ig_info['name'] ?? $username;
+                        $avatar = $ig_info['profile_picture_url'] ?? '';
+                        $followers = (int)($ig_info['followers_count'] ?? 0);
 
-                        $ig_url = FB_API_BASE . $ig_id . "?fields=id,username,name,profile_picture_url,followers_count&access_token=" . urlencode($p_token);
-                        $ch2 = curl_init($ig_url);
-                        curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
-                        apply_proxy_to_curl($ch2, $p_token);
-                        fb_curl_setssl($ch2);
-                        $res2 = curl_exec($ch2);
-                        curl_close($ch2);
-
-                        $ig_data = json_decode($res2, true);
-                        if (!empty($ig_data['username'])) {
-                            $username = $ig_data['username'];
-                            $name = $ig_data['name'] ?? $username;
-                            $avatar = $ig_data['profile_picture_url'] ?? '';
-                            $followers = (int)($ig_data['followers_count'] ?? 0);
-
-                            $up_stmt = $pdo->prepare("
-                                INSERT INTO instagram_accounts (account_id, ig_user_id, fb_page_id, username, name, avatar, followers_count, access_token)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                                ON DUPLICATE KEY UPDATE 
-                                    username = VALUES(username),
-                                    name = VALUES(name),
-                                    avatar = VALUES(avatar),
-                                    followers_count = VALUES(followers_count),
-                                    access_token = VALUES(access_token)
-                            ");
+                        if (!empty($username)) {
                             $up_stmt->execute([$account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $p_token]);
-                            $synced++;
+                            $synced_map[$ig_id] = true;
                         }
                     }
                 }
             }
         }
+
+        // 2. Parallel scan for pages in `pages` table using curl_multi in batches of 40
+        $stmt = $pdo->prepare("
+            SELECT p.page_id, p.access_token
+            FROM pages p
+            JOIN users u ON p.user_id = u.id
+            WHERE u.account_id = ?
+        ");
+        $stmt->execute([$account_id]);
+        $pages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $valid_pages = [];
+        foreach ($pages as $pg) {
+            $t = decryptData($pg['access_token']);
+            if (!empty($t)) {
+                $valid_pages[] = [
+                    'page_id' => $pg['page_id'],
+                    'token' => $t
+                ];
+            }
+        }
+
+        if (!empty($valid_pages)) {
+            $chunks = array_chunk($valid_pages, 40);
+            foreach ($chunks as $chunk) {
+                $mh = curl_multi_init();
+                $curl_handles = [];
+
+                foreach ($chunk as $idx => $p_item) {
+                    $page_id = $p_item['page_id'];
+                    $token = $p_item['token'];
+                    // Nested query gets IG info in 1 single HTTP request
+                    $url = FB_API_BASE . $page_id . "?fields=instagram_business_account{id,username,name,profile_picture_url,followers_count}&access_token=" . urlencode($token);
+                    
+                    $ch = curl_init($url);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    apply_proxy_to_curl($ch, $token);
+                    fb_curl_setssl($ch);
+
+                    curl_multi_add_handle($mh, $ch);
+                    $curl_handles[$idx] = [
+                        'ch' => $ch,
+                        'page_id' => $page_id,
+                        'token' => $token
+                    ];
+                }
+
+                $running = null;
+                do {
+                    curl_multi_exec($mh, $running);
+                    curl_multi_select($mh);
+                } while ($running > 0);
+
+                foreach ($curl_handles as $item) {
+                    $ch = $item['ch'];
+                    $res = curl_multi_getcontent($ch);
+                    curl_multi_remove_handle($mh, $ch);
+                    curl_close($ch);
+
+                    if (empty($res)) continue;
+                    $data = json_decode($res, true);
+                    if (!empty($data['instagram_business_account'])) {
+                        $ig_info = $data['instagram_business_account'];
+                        $ig_id = $ig_info['id'] ?? '';
+                        if (empty($ig_id)) continue;
+
+                        $username = $ig_info['username'] ?? '';
+                        $name = $ig_info['name'] ?? $username;
+                        $avatar = $ig_info['profile_picture_url'] ?? '';
+                        $followers = (int)($ig_info['followers_count'] ?? 0);
+
+                        if (!empty($username)) {
+                            $up_stmt->execute([$account_id, $ig_id, $item['page_id'], $username, $name, $avatar, $followers, $item['token']]);
+                            $synced_map[$ig_id] = true;
+                        }
+                    }
+                }
+                curl_multi_close($mh);
+            }
+        }
     } catch (Exception $e) {
         error_log("sync_instagram_accounts error: " . $e->getMessage());
     }
-    return $synced;
+    return count($synced_map);
 }
 
 /**
