@@ -587,11 +587,12 @@ function selectAllIgChannels(selectState) {
 }
 
 function switchIgPostType(type) {
-    const tiktokSec = document.getElementById('tiktokSection');
-    const autoTitle = document.getElementById('autoTitleBox');
+    const tiktokSec  = document.getElementById('tiktokSection');
+    const autoTitle  = document.getElementById('autoTitleBox');
     const photoInput = document.getElementById('photoInputWrap');
     const videoInput = document.getElementById('videoInputWrap');
-    const randomPhoto = document.getElementById('randomPhotoOptions');
+    const randomPhoto= document.getElementById('randomPhotoOptions');
+    const imagesEl   = document.getElementById('images');
 
     if (type === 'reels') {
         if (tiktokSec) tiktokSec.style.display = 'block';
@@ -602,13 +603,15 @@ function switchIgPostType(type) {
     } else if (type === 'story') {
         if (tiktokSec) tiktokSec.style.display = 'block';
         if (autoTitle) autoTitle.style.display = 'none';
+        if (imagesEl) imagesEl.setAttribute('accept', 'image/*,video/*,video/mp4,video/x-m4v');
         if (photoInput) photoInput.style.display = 'block';
-        if (videoInput) videoInput.style.display = 'block';
+        if (videoInput) videoInput.style.display = 'none';
         if (randomPhoto) randomPhoto.style.display = 'none';
     } else {
         // photo feed
         if (tiktokSec) tiktokSec.style.display = 'none';
         if (autoTitle) autoTitle.style.display = 'none';
+        if (imagesEl) imagesEl.setAttribute('accept', 'image/*');
         if (photoInput) photoInput.style.display = 'block';
         if (videoInput) videoInput.style.display = 'none';
         if (randomPhoto) randomPhoto.style.display = 'block';
