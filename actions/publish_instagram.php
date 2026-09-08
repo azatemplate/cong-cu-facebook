@@ -238,6 +238,23 @@ try {
     }
 
     $pdo->commit();
+
+    // Auto-trigger background publisher immediately (same as posts.php, reels.php, and publish_tiktok.php)
+    try {
+        if (!function_exists('get_php_cli_bin')) {
+            @include_once __DIR__ . '/../includes/php_cli.php';
+        }
+        if (function_exists('get_php_cli_bin')) {
+            $php_bin = get_php_cli_bin();
+            $script = dirname(__DIR__) . '/cron/start_publish.php';
+            if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+                @pclose(@popen("start /B \"\" \"$php_bin\" \"$script\"", "r"));
+            } else {
+                @exec("nohup \"$php_bin\" \"$script\" > /dev/null 2>&1 &");
+            }
+        }
+    } catch (Exception $e) {}
+
     echo json_encode([
         'status'   => 'success',
         'msg'      => "🎉 Đã đưa {$success_count} bài viết Instagram vào hàng đợi thành công!",
