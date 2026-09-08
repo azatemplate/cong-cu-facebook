@@ -14,7 +14,7 @@ function sync_instagram_accounts($account_id) {
     global $pdo;
     $synced = 0;
     try {
-        // Fetch pages for this system account
+        // 1. Fetch pages for this system account
         $stmt = $pdo->prepare("
             SELECT p.page_id, p.access_token, p.name as page_name
             FROM pages p
@@ -26,7 +26,8 @@ function sync_instagram_accounts($account_id) {
 
         foreach ($pages as $pg) {
             $page_id = $pg['page_id'];
-            $token = $pg['access_token'];
+            $token = decryptData($pg['access_token']);
+            if (empty($token)) continue;
 
             // Query page for instagram_business_account
             $url = FB_API_BASE . $page_id . "?fields=instagram_business_account&access_token=" . urlencode($token);
@@ -70,6 +71,64 @@ function sync_instagram_accounts($account_id) {
                     ");
                     $up_stmt->execute([$account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $token]);
                     $synced++;
+                }
+            }
+        }
+
+        // 2. Scan User Tokens from users table for connected Instagram accounts
+        $u_stmt = $pdo->prepare("SELECT access_token FROM users WHERE account_id = ? AND access_token IS NOT NULL AND access_token != ''");
+        $u_stmt->execute([$account_id]);
+        $users = $u_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($users as $usr) {
+            $u_token = decryptData($usr['access_token']);
+            if (empty($u_token)) continue;
+
+            $me_url = FB_API_BASE . "me/accounts?fields=id,name,access_token,instagram_business_account&limit=100&access_token=" . urlencode($u_token);
+            $ch = curl_init($me_url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            apply_proxy_to_curl($ch, $u_token);
+            fb_curl_setssl($ch);
+            $res = curl_exec($ch);
+            curl_close($ch);
+
+            $me_data = json_decode($res, true);
+            if (!empty($me_data['data'])) {
+                foreach ($me_data['data'] as $p_item) {
+                    if (!empty($p_item['instagram_business_account']['id'])) {
+                        $ig_id = $p_item['instagram_business_account']['id'];
+                        $page_id = $p_item['id'];
+                        $p_token = $p_item['access_token'] ?? $u_token;
+
+                        $ig_url = FB_API_BASE . $ig_id . "?fields=id,username,name,profile_picture_url,followers_count&access_token=" . urlencode($p_token);
+                        $ch2 = curl_init($ig_url);
+                        curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+                        apply_proxy_to_curl($ch2, $p_token);
+                        fb_curl_setssl($ch2);
+                        $res2 = curl_exec($ch2);
+                        curl_close($ch2);
+
+                        $ig_data = json_decode($res2, true);
+                        if (!empty($ig_data['username'])) {
+                            $username = $ig_data['username'];
+                            $name = $ig_data['name'] ?? $username;
+                            $avatar = $ig_data['profile_picture_url'] ?? '';
+                            $followers = (int)($ig_data['followers_count'] ?? 0);
+
+                            $up_stmt = $pdo->prepare("
+                                INSERT INTO instagram_accounts (account_id, ig_user_id, fb_page_id, username, name, avatar, followers_count, access_token)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                ON DUPLICATE KEY UPDATE 
+                                    username = VALUES(username),
+                                    name = VALUES(name),
+                                    avatar = VALUES(avatar),
+                                    followers_count = VALUES(followers_count),
+                                    access_token = VALUES(access_token)
+                            ");
+                            $up_stmt->execute([$account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $p_token]);
+                            $synced++;
+                        }
+                    }
                 }
             }
         }
