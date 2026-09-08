@@ -69,6 +69,24 @@ if (isset($_GET['action'])) {
         } catch (Exception $e) {
             $action_msg = "❌ Lỗi thực thi trực tiếp: " . $e->getMessage();
         }
+    } elseif ($act === 'clean_all_ig_stuck') {
+        try {
+            $stmt = $pdo->prepare("UPDATE scheduled_posts SET status = 'pending', retry_count = 0, error_msg = NULL WHERE post_type LIKE 'Instagram%' AND status = 'processing'");
+            $stmt->execute();
+            $cnt = $stmt->rowCount();
+            $action_msg = "✅ Đã reset {$cnt} bài Instagram bị kẹt 'processing' về 'pending' thành công trên toàn hệ thống.";
+        } catch (Exception $e) {
+            $action_msg = "❌ Lỗi dọn bài kẹt: " . $e->getMessage();
+        }
+    } elseif ($act === 'delete_all_ig_stuck') {
+        try {
+            $stmt = $pdo->prepare("DELETE FROM scheduled_posts WHERE post_type LIKE 'Instagram%' AND status IN ('processing', 'failed')");
+            $stmt->execute();
+            $cnt = $stmt->rowCount();
+            $action_msg = "🗑️ Đã xóa hẳn {$cnt} bài Instagram bị kẹt 'processing'/'failed' khỏi cơ sở dữ liệu.";
+        } catch (Exception $e) {
+            $action_msg = "❌ Lỗi xóa bài kẹt: " . $e->getMessage();
+        }
     }
 }
 
@@ -92,6 +110,12 @@ require_once __DIR__ . '/includes/header.php';
                 ▶️ Đăng Trực Tiếp & Xem Log Chi Tiết
             </a>
         <?php endif; ?>
+        <a href="check_campaigns.php?id=<?php echo urlencode(implode(',', $campaign_ids)); ?>&action=clean_all_ig_stuck" class="btn" style="background:#f59e0b; color:white; font-weight:600; text-decoration:none;">
+            🧹 Reset Tất Cả Bài Instagram Kẹt
+        </a>
+        <a href="check_campaigns.php?id=<?php echo urlencode(implode(',', $campaign_ids)); ?>&action=delete_all_ig_stuck" onclick="return confirm('Bạn có chắc muốn XÓA HẲN tất cả bài Instagram bị kẹt processing/failed trong CSDL?');" class="btn" style="background:#ef4444; color:white; font-weight:600; text-decoration:none;">
+            🗑️ Xóa Hẳn Bài Instagram Kẹt
+        </a>
     </form>
 </div>
 
