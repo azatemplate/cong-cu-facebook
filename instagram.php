@@ -356,8 +356,12 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
                         <span>🎞️ Instagram Reels Video</span>
                     </label>
                     <label style="padding:10px 18px; border:1px solid var(--border-color); border-radius:8px; cursor:pointer; display:flex; align-items:center; gap:8px; background:#fafafa;">
-                        <input type="radio" name="post_sub_type" value="Instagram_Story" onclick="switchIgPostType('story')">
-                        <span>⭕ Instagram Story (24h)</span>
+                        <input type="radio" name="post_sub_type" value="Instagram_Story" onclick="switchIgPostType('story_photo')">
+                        <span>⭕ Instagram Story Ảnh</span>
+                    </label>
+                    <label style="padding:10px 18px; border:1px solid var(--border-color); border-radius:8px; cursor:pointer; display:flex; align-items:center; gap:8px; background:#fafafa;">
+                        <input type="radio" name="post_sub_type" value="Instagram_Story" onclick="switchIgPostType('story_video')">
+                        <span>🎬 Instagram Story Video</span>
                     </label>
                 </div>
             </div>
@@ -600,12 +604,18 @@ function switchIgPostType(type) {
         if (photoInput) photoInput.style.display = 'none';
         if (videoInput) videoInput.style.display = 'block';
         if (randomPhoto) randomPhoto.style.display = 'none';
-    } else if (type === 'story') {
-        if (tiktokSec) tiktokSec.style.display = 'block';
+    } else if (type === 'story_photo') {
+        if (tiktokSec) tiktokSec.style.display = 'none';
         if (autoTitle) autoTitle.style.display = 'none';
-        if (imagesEl) imagesEl.setAttribute('accept', 'image/*,video/*,video/mp4,video/x-m4v');
+        if (imagesEl) imagesEl.setAttribute('accept', 'image/*');
         if (photoInput) photoInput.style.display = 'block';
         if (videoInput) videoInput.style.display = 'none';
+        if (randomPhoto) randomPhoto.style.display = 'none';
+    } else if (type === 'story_video') {
+        if (tiktokSec) tiktokSec.style.display = 'block';
+        if (autoTitle) autoTitle.style.display = 'none';
+        if (photoInput) photoInput.style.display = 'none';
+        if (videoInput) videoInput.style.display = 'block';
         if (randomPhoto) randomPhoto.style.display = 'none';
     } else {
         // photo feed
