@@ -174,7 +174,10 @@ function poll_instagram_container_status($container_id, $access_token, $max_wait
     while (time() - $start < $max_wait_seconds) {
         $url = FB_API_BASE . $container_id . "?fields=status_code,status,status_code_description&access_token=" . urlencode($access_token);
         $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 15
+        ]);
         apply_proxy_to_curl($ch, $access_token);
         fb_curl_setssl($ch);
         $res = curl_exec($ch);
@@ -206,6 +209,7 @@ function publish_instagram_container($ig_user_id, $container_id, $access_token) 
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
+        CURLOPT_TIMEOUT => 30,
         CURLOPT_POSTFIELDS => http_build_query([
             'creation_id' => $container_id,
             'access_token' => $access_token

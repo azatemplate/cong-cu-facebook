@@ -217,6 +217,203 @@ function spin_text($text) {
     return $text;
 }
 
+if (!function_exists('ensure_https_url')) {
+    function ensure_https_url($urlStr) {
+        $url = trim((string)$urlStr);
+        if (empty($url)) return '';
+        if (strpos($url, 'http://') === 0) {
+            return 'https://' . substr($url, 7);
+        }
+        return $url;
+    }
+}
+
+if (!function_exists('get_system_site_url')) {
+    function get_system_site_url($pdo) {
+        if (!empty($_SERVER['HTTP_HOST'])) {
+            $is_ssl = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+                || ($_SERVER['SERVER_PORT'] ?? 80) == 443;
+            $scheme = $is_ssl ? 'https' : 'http';
+            $url = $scheme . '://' . $_SERVER['HTTP_HOST'];
+            try {
+                $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('base_site_url', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
+                    ->execute([$url, $url]);
+            } catch (Exception $e) {}
+            return $url;
+        }
+        try {
+            $stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'base_site_url'");
+            $saved = $stmt ? trim($stmt->fetchColumn() ?: '') : '';
+            if (!empty($saved)) {
+                if (strpos($saved, 'http://') === 0) {
+                    $saved = 'https://' . substr($saved, 7);
+                }
+                return rtrim($saved, '/');
+            }
+        } catch (Exception $e) {}
+        return 'https://fbweb.hongdolab.com';
+    }
+}
+
+if (!function_exists('upload_file_to_hongdolab_cdn')) {
+    function upload_file_to_hongdolab_cdn($file_path) {
+        if (!file_exists($file_path) || filesize($file_path) < 10) return false;
+        @set_time_limit(0);
+        
+        $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
+        $is_image = in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+        $upload_tmp_dir = dirname($file_path) . '/';
+        if (!is_dir($upload_tmp_dir)) $upload_tmp_dir = __DIR__ . '/../uploads/';
+        
+        if ($is_image) {
+            $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=image');
+            $mime = function_exists('mime_content_type') ? mime_content_type($file_path) : 'image/jpeg';
+            $cfile = new CURLFile($file_path, $mime, basename($file_path));
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => ['image' => $cfile],
+                CURLOPT_TIMEOUT => 60,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0
+            ]);
+            $res = curl_exec($ch);
+            curl_close($ch);
+            if ($res) {
+                $json = json_decode($res, true);
+                if (!empty($json['url'])) {
+                    return ensure_https_url($json['url']);
+                }
+            }
+        } else {
+            $filename = basename($file_path);
+            $filesize = filesize($file_path);
+            $mime = function_exists('mime_content_type') ? mime_content_type($file_path) : 'video/mp4';
+            
+            $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=init');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                CURLOPT_POSTFIELDS => json_encode(['filename' => $filename, 'filesize' => $filesize, 'mime' => $mime]),
+                CURLOPT_TIMEOUT => 60,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0
+            ]);
+            $res = curl_exec($ch);
+            curl_close($ch);
+            $init_json = $res ? json_decode($res, true) : null;
+            
+            if (!empty($init_json['upload_id'])) {
+                $upload_id = $init_json['upload_id'];
+                $chunk_size = !empty($init_json['chunk_size']) ? (int)$init_json['chunk_size'] : (4 * 1024 * 1024);
+                
+                $fp = @fopen($file_path, 'rb');
+                if ($fp) {
+                    $index = 0;
+                    $ok = true;
+                    while (!feof($fp)) {
+                        $chunk_data = fread($fp, $chunk_size);
+                        if ($chunk_data === false || strlen($chunk_data) === 0) break;
+                        
+                        $tmp_chunk = tempnam($upload_tmp_dir, 'buf_chk_' . getmypid() . '_');
+                        file_put_contents($tmp_chunk, $chunk_data);
+                        
+                        $chunk_success = false;
+                        for ($retry = 0; $retry < 5 && !$chunk_success; $retry++) {
+                            $cfile = new CURLFile($tmp_chunk, 'application/octet-stream', $filename . '.part' . $index);
+                            $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=chunk');
+                            curl_setopt_array($ch, [
+                                CURLOPT_RETURNTRANSFER => true,
+                                CURLOPT_POST => true,
+                                CURLOPT_POSTFIELDS => [
+                                    'upload_id' => $upload_id,
+                                    'index' => (string)$index,
+                                    'chunk' => $cfile
+                                ],
+                                CURLOPT_TIMEOUT => 300,
+                                CURLOPT_SSL_VERIFYPEER => false,
+                                CURLOPT_SSL_VERIFYHOST => 0
+                            ]);
+                            $c_res = curl_exec($ch);
+                            curl_close($ch);
+                            $c_json = $c_res ? json_decode($c_res, true) : null;
+                            if ($c_res && isset($c_json['ok']) && $c_json['ok']) {
+                                $chunk_success = true;
+                            } else {
+                                sleep(1 + $retry);
+                            }
+                        }
+                        @unlink($tmp_chunk);
+                        
+                        if (!$chunk_success) {
+                            $ok = false;
+                            break;
+                        }
+                        $index++;
+                    }
+                    fclose($fp);
+                    
+                    if ($ok) {
+                        $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=complete');
+                        curl_setopt_array($ch, [
+                            CURLOPT_RETURNTRANSFER => true,
+                            CURLOPT_POST => true,
+                            CURLOPT_POSTFIELDS => ['upload_id' => $upload_id],
+                            CURLOPT_TIMEOUT => 300,
+                            CURLOPT_SSL_VERIFYPEER => false,
+                            CURLOPT_SSL_VERIFYHOST => 0
+                        ]);
+                        $comp_res = curl_exec($ch);
+                        curl_close($ch);
+                        $comp_json = $comp_res ? json_decode($comp_res, true) : null;
+                        if (!empty($comp_json['url'])) {
+                            return ensure_https_url($comp_json['url']);
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+}
+
+if (!function_exists('is_valid_buffer_media_url')) {
+    function is_valid_buffer_media_url($url) {
+        $url = trim((string)$url);
+        if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) return false;
+        $path = parse_url($url, PHP_URL_PATH);
+        if (empty($path) || $path === '/' || $path === '') return false;
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        return in_array($ext, ['mp4', 'mov', 'webm', 'avi', 'mkv', 'flv', 'wmv', 'm4v', '3gp', 'jpg', 'jpeg', 'png', 'webp', 'gif']);
+    }
+}
+
+if (!function_exists('call_buffer_worker_graphql')) {
+    function call_buffer_worker_graphql($token, $query, $variables = []) {
+        $payload = ['query' => $query];
+        if (!empty($variables)) $payload['variables'] = $variables;
+
+        $ch = curl_init('https://api.buffer.com/graphql');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . trim($token),
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            ],
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_SSL_VERIFYPEER => false
+        ]);
+        $res = curl_exec($ch);
+        curl_close($ch);
+        return $res ? json_decode($res, true) : null;
+    }
+}
+
 
 
 // Auto-migrate newly required columns
