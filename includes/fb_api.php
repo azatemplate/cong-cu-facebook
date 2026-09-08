@@ -34,6 +34,8 @@ function apply_proxy_to_curl($ch, $access_token = null) {
             global $pdo;
             if (isset($pdo)) {
                 $enc_token = function_exists('encryptData') ? encryptData($access_token) : $access_token;
+                
+                // 1. Direct match on users.access_token
                 $stmt = $pdo->prepare("
                     SELECT px.* 
                     FROM users u
@@ -43,6 +45,51 @@ function apply_proxy_to_curl($ch, $access_token = null) {
                 ");
                 $stmt->execute([$access_token, $enc_token]);
                 $px = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                // 2. Match via pages.access_token (Page access token -> user -> proxy)
+                if (!$px) {
+                    $stmt = $pdo->prepare("
+                        SELECT px.* 
+                        FROM pages p
+                        JOIN users u ON p.user_id = u.id
+                        JOIN proxies px ON u.proxy_id = px.id
+                        WHERE (p.access_token = ? OR p.access_token = ?) AND px.status != 'dead'
+                        LIMIT 1
+                    ");
+                    $stmt->execute([$access_token, $enc_token]);
+                    $px = $stmt->fetch(PDO::FETCH_ASSOC);
+                }
+
+                // 3. Match via instagram_accounts.access_token (Instagram access token -> page -> user -> proxy)
+                if (!$px) {
+                    $stmt = $pdo->prepare("
+                        SELECT px.* 
+                        FROM instagram_accounts ig
+                        JOIN pages p ON ig.fb_page_id = p.page_id
+                        JOIN users u ON p.user_id = u.id
+                        JOIN proxies px ON u.proxy_id = px.id
+                        WHERE (ig.access_token = ? OR ig.access_token = ?) AND px.status != 'dead'
+                        LIMIT 1
+                    ");
+                    $stmt->execute([$access_token, $enc_token]);
+                    $px = $stmt->fetch(PDO::FETCH_ASSOC);
+                }
+
+                // 4. Match via instagram_accounts.account_id (Instagram access token -> account_id -> users with proxy)
+                if (!$px) {
+                    $stmt = $pdo->prepare("
+                        SELECT px.* 
+                        FROM instagram_accounts ig
+                        JOIN users u ON ig.account_id = u.account_id
+                        JOIN proxies px ON u.proxy_id = px.id
+                        WHERE (ig.access_token = ? OR ig.access_token = ?) AND px.status != 'dead'
+                        ORDER BY u.id ASC
+                        LIMIT 1
+                    ");
+                    $stmt->execute([$access_token, $enc_token]);
+                    $px = $stmt->fetch(PDO::FETCH_ASSOC);
+                }
+
                 if ($px) {
                     $proxy_cache[$token_hash] = $px;
                 }
