@@ -344,14 +344,20 @@ function updatePageSelectText() {
     const allChk = document.getElementById('chk_page_all');
     const summary = document.getElementById('txt_page_selected_summary');
 
-    if (checked.length === cbs.length) {
-        allChk.checked = true;
+    if (!summary) return;
+
+    if (cbs.length > 0 && checked.length === cbs.length) {
+        if (allChk) allChk.checked = true;
         summary.innerText = `Tất cả Fanpage (${cbs.length} trang)`;
     } else if (checked.length === 0) {
-        allChk.checked = false;
+        if (allChk) allChk.checked = false;
         summary.innerText = `-- Chọn Fanpage --`;
+    } else if (checked.length === 1) {
+        if (allChk) allChk.checked = false;
+        const pageName = checked[0].closest('label').querySelector('span').innerText;
+        summary.innerText = pageName;
     } else {
-        allChk.checked = false;
+        if (allChk) allChk.checked = false;
         summary.innerText = `Đã chọn ${checked.length} Fanpage`;
     }
 }
