@@ -83,6 +83,14 @@ try {
         exit;
     }
 
+    // Clear old fetched posts for selected target pages to keep DB light, clean and prevent disk bloat
+    $target_page_id_list = array_column($pages, 'page_id');
+    if (!empty($target_page_id_list)) {
+        $in_del = implode(',', array_fill(0, count($target_page_id_list), '?'));
+        $stmt_del = $pdo->prepare("DELETE FROM fetched_fanpage_posts WHERE account_id = ? AND page_id IN ($in_del)");
+        $stmt_del->execute(array_merge([$account_id], $target_page_id_list));
+    }
+
     $total_synced = 0;
     $pages_synced = 0;
     $api_errors = [];

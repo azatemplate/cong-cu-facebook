@@ -317,6 +317,22 @@ Em muốn tư vấn mẫu này với ạ!
     </div>
 </div>
 
+<!-- Modal Loading Quét Bài Viết -->
+<div id="syncLoadingModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.65); backdrop-filter:blur(4px); z-index:99999; align-items:center; justify-content:center;">
+    <div style="background:#fff; padding:30px 40px; border-radius:16px; text-align:center; max-width:440px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); border:1px solid #e2e8f0;">
+        <div style="display:inline-block; width:48px; height:48px; border:4px solid #e2e8f0; border-top-color:#0284c7; border-radius:50%; animation:spin_loader 0.8s linear infinite; margin-bottom:16px;"></div>
+        <h4 style="margin:0 0 8px 0; font-size:18px; font-weight:700; color:#0f172a;">Đang quét bài viết từ Fanpage...</h4>
+        <p style="margin:0; font-size:13px; color:#64748b; line-height:1.5;">Hệ thống đang kết nối với Facebook Graph API để tải bài viết mới nhất. Vui lòng giữ màn hình và chờ trong giây lát...</p>
+    </div>
+</div>
+
+<style>
+@keyframes spin_loader {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+</style>
+
 <script>
 function togglePageDropdown(e) {
     if (e) e.stopPropagation();
@@ -396,6 +412,9 @@ function syncPosts() {
     btn.disabled = true;
     btn.innerHTML = '<span>⏳</span> <span>Đang quét bài viết...</span>';
 
+    const loadingModal = document.getElementById('syncLoadingModal');
+    if (loadingModal) loadingModal.style.display = 'flex';
+
     const fd = new FormData();
     fd.append('page_ids', JSON.stringify(targetPages));
     fd.append('limit', limit);
@@ -408,9 +427,11 @@ function syncPosts() {
     .then(res => {
         btn.disabled = false;
         btn.innerHTML = '<span>🔄</span> <span>Quét Bài Viết Fanpage</span>';
+        if (loadingModal) loadingModal.style.display = 'none';
+
         if (res.status === 'success') {
             showNotice(res.msg, 'success');
-            setTimeout(() => location.reload(), 1500);
+            setTimeout(() => location.reload(), 1200);
         } else {
             showNotice('Lỗi: ' + res.msg, 'error');
         }
@@ -418,6 +439,7 @@ function syncPosts() {
     .catch(err => {
         btn.disabled = false;
         btn.innerHTML = '<span>🔄</span> <span>Quét Bài Viết Fanpage</span>';
+        if (loadingModal) loadingModal.style.display = 'none';
         showNotice('Lỗi kết nối máy chủ: ' + err, 'error');
     });
 }
