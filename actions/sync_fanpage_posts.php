@@ -34,6 +34,8 @@ $limit = isset($_POST['limit']) ? intval($_POST['limit']) : 10;
 if ($limit < 1) $limit = 10;
 if ($limit > 100) $limit = 100;
 
+$only_has_text = isset($_POST['only_has_text']) ? intval($_POST['only_has_text']) : 1;
+
 session_write_close();
 
 try {
@@ -182,6 +184,9 @@ try {
                 $created_at = date('Y-m-d H:i:s', $created_ts);
                 
                 $msg = $post['message'] ?? '';
+                if ($only_has_text && trim($msg) === '') {
+                    continue;
+                }
                 
                 // Picture fallback logic
                 $picture = $post['full_picture'] ?? '';

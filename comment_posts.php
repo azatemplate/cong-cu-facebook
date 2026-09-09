@@ -119,10 +119,16 @@ $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <p style="margin:4px 0 0 0; font-size:13px; color:#6b7280;">Quét danh sách bài viết từ Fanpage, lọc tương tác và tự động kích hoạt chiến dịch bình luận qua Cron.</p>
     </div>
     <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-        <div style="display:flex; align-items:center; gap:6px; background:var(--card-bg, #fff); padding:4px 10px; border-radius:8px; border:1px solid var(--border-color, #cbd5e1); box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+        <div style="display:flex; align-items:center; gap:8px; background:var(--card-bg, #fff); padding:4px 10px; border-radius:8px; border:1px solid var(--border-color, #cbd5e1); box-shadow:0 1px 2px rgba(0,0,0,0.05);">
             <label style="font-size:12px; font-weight:600; color:#475569; white-space:nowrap;">Limit bài/page:</label>
             <input type="number" id="sync_limit" value="10" min="1" max="100" style="width:55px; padding:5px 6px; border-radius:6px; border:1px solid #cbd5e1; font-weight:700; font-size:13px; text-align:center;">
-            <button onclick="syncPosts()" id="btn_sync" class="btn" style="background:#0284c7; color:#fff; font-weight:600; display:flex; align-items:center; gap:6px; padding:6px 14px;">
+            
+            <label style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:600; color:#475569; cursor:pointer; border-left:1px solid #cbd5e1; padding-left:8px; margin-left:4px;">
+                <input type="checkbox" id="chk_only_has_text" checked style="width:15px; height:15px; cursor:pointer;">
+                <span>Chỉ quét bài có nội dung</span>
+            </label>
+
+            <button onclick="syncPosts()" id="btn_sync" class="btn" style="background:#0284c7; color:#fff; font-weight:600; display:flex; align-items:center; gap:6px; padding:6px 14px; margin-left:4px;">
                 <span>🔄</span> <span>Quét Bài Viết Fanpage</span>
             </button>
         </div>
@@ -408,6 +414,9 @@ function syncPosts() {
     const limitEl = document.getElementById('sync_limit');
     const limit   = limitEl ? limitEl.value : 10;
 
+    const onlyTextEl = document.getElementById('chk_only_has_text');
+    const onlyHasText = (onlyTextEl && onlyTextEl.checked) ? 1 : 0;
+
     const btn = document.getElementById('btn_sync');
     btn.disabled = true;
     btn.innerHTML = '<span>⏳</span> <span>Đang quét bài viết...</span>';
@@ -418,6 +427,7 @@ function syncPosts() {
     const fd = new FormData();
     fd.append('page_ids', JSON.stringify(targetPages));
     fd.append('limit', limit);
+    fd.append('only_has_text', onlyHasText);
 
     fetch('actions/sync_fanpage_posts.php', {
         method: 'POST',
