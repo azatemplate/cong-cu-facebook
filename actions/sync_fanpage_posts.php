@@ -132,11 +132,11 @@ try {
 
         foreach ($endpoints as $ep) {
             $res = fb_api_request($ep, $params, 'GET');
-            if (!empty($res['data']) && is_array($res['data'])) {
-                $res_data = $res['data'];
+            if (!empty($res['data']['data']) && is_array($res['data']['data'])) {
+                $res_data = $res['data']['data'];
                 break;
-            } elseif (!empty($res['error']['message'])) {
-                $last_err = $res['error']['message'];
+            } elseif (!empty($res['data']['error']['message'])) {
+                $last_err = $res['data']['error']['message'];
             }
         }
 
@@ -150,11 +150,11 @@ try {
 
             foreach ($endpoints as $ep) {
                 $res = fb_api_request($ep, $fallback_params, 'GET');
-                if (!empty($res['data']) && is_array($res['data'])) {
-                    $res_data = $res['data'];
+                if (!empty($res['data']['data']) && is_array($res['data']['data'])) {
+                    $res_data = $res['data']['data'];
                     break;
-                } elseif (!empty($res['error']['message'])) {
-                    $last_err = $res['error']['message'];
+                } elseif (!empty($res['data']['error']['message'])) {
+                    $last_err = $res['data']['error']['message'];
                 }
             }
         }
