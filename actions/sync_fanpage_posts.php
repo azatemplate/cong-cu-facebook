@@ -117,7 +117,7 @@ try {
             continue;
         }
 
-        // Build Graph API Request Parameters per Page
+        // Build Graph API Request Parameters per Page using Page Token
         $params = [
             'access_token' => $page_token,
             'fields'       => 'id,message,created_time,permalink_url,full_picture,attachments{media,type,url},reactions.summary(true),comments.summary(true)',
@@ -131,10 +131,10 @@ try {
             $params['until'] = strtotime($date_to . " 23:59:59");
         }
 
-        // Endpoints to query: {PAGE_ID}/posts is primary when using Page Token
+        // Endpoints to query: me/posts is #1 primary endpoint when using Page Access Token
         $endpoints = [
-            "{$p['page_id']}/posts",
             "me/posts",
+            "{$p['page_id']}/posts",
             "{$p['page_id']}/published_posts",
             "{$p['page_id']}/feed"
         ];
@@ -161,7 +161,7 @@ try {
             if (!empty($date_from)) $fallback_params['since'] = strtotime($date_from . " 00:00:00");
             if (!empty($date_to))   $fallback_params['until'] = strtotime($date_to . " 23:59:59");
 
-            $res = fb_api_request("{$p['page_id']}/posts", $fallback_params, 'GET');
+            $res = fb_api_request("me/posts", $fallback_params, 'GET');
             if (!empty($res['data']) && is_array($res['data'])) {
                 $res_data = $res['data'];
             } elseif (!empty($res['error']['message'])) {
@@ -181,12 +181,8 @@ try {
 
                 $created_raw = $post['created_time'] ?? '';
                 $created_ts = !empty($created_raw) ? strtotime($created_raw) : time();
-                
-                // Double check date filtering in PHP if user specified dates
-                if (!empty($date_from) && $created_ts < strtotime($date_from . " 00:00:00")) continue;
-                if (!empty($date_to) && $created_ts > strtotime($date_to . " 23:59:59")) continue;
-
                 $created_at = date('Y-m-d H:i:s', $created_ts);
+                
                 $msg = $post['message'] ?? '';
                 
                 // Picture fallback logic
@@ -216,7 +212,7 @@ try {
     }
 
     $msg = "Đã quét và cập nhật thành công {$total_synced} bài viết (giới hạn {$limit} bài/page) từ {$pages_synced} Fanpage.";
-    if (!empty($api_errors)) {
+    if (!empty($api_errors) && $total_synced === 0) {
         $msg .= " Phản hồi Facebook: " . implode(" | ", array_unique($api_errors));
     }
 
