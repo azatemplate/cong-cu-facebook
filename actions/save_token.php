@@ -97,7 +97,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pages_response = get_fb_user_pages($token, $after_cursor);
             if ($pages_response['status_code'] === 200 && isset($pages_response['data']['data'])) {
                 $pages = $pages_response['data']['data'];
-                foreach ($pages as $p) $all_fb_pages[] = $p;
+                foreach ($pages as $p) {
+                    if (!empty($fb_user_id) && (string)$p['id'] === (string)$fb_user_id) {
+                        continue;
+                    }
+                    $all_fb_pages[] = $p;
+                }
                 if (isset($pages_response['data']['paging']['cursors']['after']) && count($pages) > 0) {
                     $after_cursor = $pages_response['data']['paging']['cursors']['after'];
                 } else {
@@ -297,7 +302,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pages_response = get_fb_user_pages($token, $after_cursor);
                 if ($pages_response['status_code'] === 200 && isset($pages_response['data']['data'])) {
                     $pages = $pages_response['data']['data'];
-                    foreach ($pages as $p) $all_fb_pages[] = $p;
+                    foreach ($pages as $p) {
+                        if (!empty($fb_user_id) && (string)$p['id'] === (string)$fb_user_id) {
+                            continue;
+                        }
+                        $all_fb_pages[] = $p;
+                    }
                     if (isset($pages_response['data']['paging']['cursors']['after']) && count($pages) > 0) {
                         $after_cursor = $pages_response['data']['paging']['cursors']['after'];
                     } else {
@@ -317,6 +327,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $followers = isset($page['followers_count']) ? $page['followers_count'] : 0;
             $avatar = "avatar.php?id=" . $page_id;
 
+            // Bỏ qua nếu page_id trùng với fb_user_id (Nick cá nhân của người dùng)
+            if (!empty($fb_user_id) && (string)$page_id === (string)$fb_user_id) {
+                continue;
+            }
+
             $p_check_stmt->execute([$page_id]);
             $existing_page = $p_check_stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -331,6 +346,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $total_pages_count++;
             }
         }
+
+        // Tự động dọn dẹp bất kỳ nick cá nhân nào đã bị lưu nhầm vào bảng pages trước đây
+        try {
+            $pdo->exec("DELETE p FROM pages p JOIN users u ON p.page_id = u.fb_id");
+        } catch (Exception $e) {}
 
         // Trigger conversation sync in parallel multi-curl (non-blocking)
         try {

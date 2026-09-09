@@ -5,6 +5,11 @@ require_once __DIR__ . '/includes/header.php';
 $account_id = $_SESSION['account_id'];
 $is_admin = ($_SESSION['role'] === 'admin');
 
+// Tự động dọn dẹp nick cá nhân (nếu trước đây bị lưu nhầm vào bảng pages)
+try {
+    $pdo->exec("DELETE p FROM pages p JOIN users u ON p.page_id = u.fb_id");
+} catch (Exception $e) {}
+
 // Regular user (and Admin) sees their own pages AND pages shared with their system account
 // 1. Owned pages (indirectly via users table), plus who they shared them with
 // 2. Shared pages
