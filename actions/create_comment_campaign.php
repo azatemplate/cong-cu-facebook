@@ -78,9 +78,9 @@ try {
 
     $stmt_ins = $pdo->prepare("
         INSERT INTO scheduled_posts 
-        (account_id, campaign_id, page_id, fb_post_id, post_type, status, comment_lines, comment_at, comment_done, created_at)
+        (account_id, campaign_id, page_id, fb_post_id, post_type, status, comment_lines, comment_at, scheduled_time, comment_done, created_at)
         VALUES 
-        (?, ?, ?, ?, 'Seeding Comment', 'published', ?, ?, 0, NOW())
+        (?, ?, ?, ?, 'Seeding Comment', 'published', ?, ?, ?, 0, NOW())
     ");
 
     $created_count = 0;
@@ -96,6 +96,7 @@ try {
             $p['page_id'],
             $p['fb_post_id'],
             $comment_lines,
+            $comment_at,
             $comment_at
         ]);
         $created_count++;
