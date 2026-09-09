@@ -18,6 +18,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $account_id = (int)$_SESSION['account_id'];
 $target_page_id = trim($_POST['page_id'] ?? 'ALL');
+$date_from = trim($_POST['date_from'] ?? '');
+$date_to   = trim($_POST['date_to'] ?? '');
 session_write_close();
 
 try {
@@ -98,6 +100,13 @@ try {
             'limit'        => 100
         ];
 
+        if (!empty($date_from)) {
+            $params['since'] = strtotime($date_from . " 00:00:00");
+        }
+        if (!empty($date_to)) {
+            $params['until'] = strtotime($date_to . " 23:59:59");
+        }
+
         // Endpoints to query: me/posts is primary when using Page Token
         $endpoints = ["me/posts", "me/published_posts", "me/feed", "{$p['page_id']}/posts"];
         $res_data = [];
@@ -123,6 +132,14 @@ try {
                 $fb_post_id = $post['id'] ?? '';
                 if (empty($fb_post_id)) continue;
 
+                $created_raw = $post['created_time'] ?? '';
+                $created_ts = !empty($created_raw) ? strtotime($created_raw) : time();
+                
+                // Double check date filtering in PHP
+                if (!empty($date_from) && $created_ts < strtotime($date_from . " 00:00:00")) continue;
+                if (!empty($date_to) && $created_ts > strtotime($date_to . " 23:59:59")) continue;
+
+                $created_at = date('Y-m-d H:i:s', $created_ts);
                 $msg = $post['message'] ?? '';
                 $picture = $post['full_picture'] ?? '';
                 if (empty($picture) && !empty($post['attachments']['data'][0]['media']['image']['src'])) {

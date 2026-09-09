@@ -324,12 +324,19 @@ function showNotice(msg, type = 'success') {
 
 function syncPosts() {
     const pageId = '<?php echo $filter_page_id; ?>';
+    const dateFromEl = document.querySelector('input[name="date_from"]');
+    const dateToEl   = document.querySelector('input[name="date_to"]');
+    const dateFrom   = dateFromEl ? dateFromEl.value : '';
+    const dateTo     = dateToEl ? dateToEl.value : '';
+
     const btn = document.getElementById('btn_sync');
     btn.disabled = true;
     btn.innerHTML = '<span>⏳</span> <span>Đang quét bài viết...</span>';
 
     const fd = new FormData();
     fd.append('page_id', pageId);
+    fd.append('date_from', dateFrom);
+    fd.append('date_to', dateTo);
 
     fetch('actions/sync_fanpage_posts.php', {
         method: 'POST',
