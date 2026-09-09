@@ -123,19 +123,17 @@ try {
             continue;
         }
 
-        // Build Graph API Request Parameters per Page using Page Token
+        // Fast Graph API Request Parameters (Ultra-fast direct response without summary field timeouts)
         $params = [
             'access_token' => $page_token,
-            'fields'       => 'id,message,created_time,permalink_url,full_picture,attachments{media,type,url},likes.summary(true),comments.summary(true)',
+            'fields'       => 'id,message,created_time,permalink_url,full_picture,attachments{media,type,url}',
             'limit'        => $limit
         ];
 
-        // Endpoints to query: me/posts is #1 primary endpoint when using Page Access Token
+        // Primary endpoints for Page Access Token
         $endpoints = [
             "me/posts",
-            "{$p['page_id']}/posts",
-            "{$p['page_id']}/published_posts",
-            "{$p['page_id']}/feed"
+            "{$p['page_id']}/posts"
         ];
         $res_data = [];
         $last_err = '';
@@ -147,25 +145,6 @@ try {
                 break;
             } elseif (!empty($res['data']['error']['message'])) {
                 $last_err = $res['data']['error']['message'];
-            }
-        }
-
-        // Fallback with exact standard fields (proven working) if summary fields fail
-        if (empty($res_data)) {
-            $fallback_params = [
-                'access_token' => $page_token,
-                'fields'       => 'id,message,created_time,permalink_url,full_picture,attachments{media,type,url}',
-                'limit'        => $limit
-            ];
-
-            foreach ($endpoints as $ep) {
-                $res = fb_api_request($ep, $fallback_params, 'GET');
-                if (!empty($res['data']['data']) && is_array($res['data']['data'])) {
-                    $res_data = $res['data']['data'];
-                    break;
-                } elseif (!empty($res['data']['error']['message'])) {
-                    $last_err = $res['data']['error']['message'];
-                }
             }
         }
 
