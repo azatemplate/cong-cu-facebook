@@ -133,6 +133,9 @@ $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <button onclick="syncPosts()" id="btn_sync" class="btn" style="background:#0284c7; color:#fff; font-weight:600; display:flex; align-items:center; gap:6px; padding:6px 14px; margin-left:4px;">
                 <span>🔄</span> <span>Quét Bài Viết Fanpage</span>
             </button>
+            <button onclick="clearFetchedPosts()" class="btn" style="background:#ef4444; color:#fff; font-weight:600; display:flex; align-items:center; gap:4px; padding:6px 12px;" title="Xóa toàn bộ bài viết đã quét khỏi danh sách tạm">
+                <span>🗑️</span> <span>Xóa bài đã quét</span>
+            </button>
         </div>
         <button onclick="openCampaignModal()" id="btn_campaign" class="btn btn-primary" style="font-weight:600; display:flex; align-items:center; gap:6px; padding:9px 16px;" disabled>
             <span>🚀</span> <span>Tạo Chiến Dịch Bình Luận (<span id="sel_cnt">0</span>)</span>
@@ -452,6 +455,25 @@ function syncPosts() {
         btn.disabled = false;
         btn.innerHTML = '<span>🔄</span> <span>Quét Bài Viết Fanpage</span>';
         if (loadingModal) loadingModal.style.display = 'none';
+        showNotice('Lỗi kết nối máy chủ: ' + err, 'error');
+    });
+}
+
+function clearFetchedPosts() {
+    if (!confirm('Bạn có chắc chắn muốn xóa toàn bộ danh sách bài viết đã quét tạm thời không?')) {
+        return;
+    }
+    fetch('actions/clear_fetched_posts.php', { method: 'POST' })
+    .then(r => r.json())
+    .then(res => {
+        if (res.status === 'success') {
+            showNotice(res.msg, 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showNotice('Lỗi: ' + res.msg, 'error');
+        }
+    })
+    .catch(err => {
         showNotice('Lỗi kết nối máy chủ: ' + err, 'error');
     });
 }
