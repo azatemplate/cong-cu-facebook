@@ -119,11 +119,12 @@ try {
             continue;
         }
 
-        // Fast Graph API Request Parameters (Ultra-fast direct response without summary field timeouts)
+        // Request a larger batch size from Graph API so filtering empty posts still yields exact target $limit count
+        $fetch_batch_limit = min(100, max(25, $limit * 3));
         $params = [
             'access_token' => $page_token,
             'fields'       => 'id,message,created_time,permalink_url,full_picture,attachments{media,type,url}',
-            'limit'        => $limit
+            'limit'        => $fetch_batch_limit
         ];
 
         // Primary endpoints for Page Access Token
@@ -131,60 +132,88 @@ try {
             "me/posts",
             "{$p['page_id']}/posts"
         ];
-        $res_data = [];
+        $initial_res = null;
         $last_err = '';
 
         foreach ($endpoints as $ep) {
             $res = fb_api_request($ep, $params, 'GET');
             if (!empty($res['data']['data']) && is_array($res['data']['data'])) {
-                $res_data = $res['data']['data'];
+                $initial_res = $res['data'];
                 break;
             } elseif (!empty($res['data']['error']['message'])) {
                 $last_err = $res['data']['error']['message'];
             }
         }
 
-        if (empty($res_data) && !empty($last_err)) {
+        if (empty($initial_res) && !empty($last_err)) {
             $api_errors[] = "Trang {$p['name']}: {$last_err}";
         }
 
-        if (!empty($res_data)) {
+        if (!empty($initial_res['data']) && is_array($initial_res['data'])) {
             $pages_synced++;
-            foreach ($res_data as $post) {
-                $fb_post_id = $post['id'] ?? '';
-                if (empty($fb_post_id)) continue;
+            $page_collected_count = 0;
+            $current_res = $initial_res;
+            $max_pages_attempts = 5;
+            $attempts = 0;
 
-                $created_raw = $post['created_time'] ?? '';
-                $created_ts = !empty($created_raw) ? strtotime($created_raw) : time();
-                $created_at = date('Y-m-d H:i:s', $created_ts);
-                
-                $msg = $post['message'] ?? '';
-                if ($only_has_text && trim($msg) === '') {
-                    continue;
+            while (!empty($current_res['data']) && is_array($current_res['data']) && $page_collected_count < $limit && $attempts < $max_pages_attempts) {
+                $attempts++;
+                $raw_items = $current_res['data'];
+
+                foreach ($raw_items as $post) {
+                    if ($page_collected_count >= $limit) {
+                        break;
+                    }
+
+                    $fb_post_id = $post['id'] ?? '';
+                    if (empty($fb_post_id)) continue;
+
+                    $msg = $post['message'] ?? '';
+                    if ($only_has_text && trim($msg) === '') {
+                        continue;
+                    }
+                    
+                    // Picture fallback logic
+                    $picture = $post['full_picture'] ?? '';
+                    if (empty($picture) && !empty($post['attachments']['data'][0]['media']['image']['src'])) {
+                        $picture = $post['attachments']['data'][0]['media']['image']['src'];
+                    }
+
+                    $link = $post['permalink_url'] ?? "https://facebook.com/{$fb_post_id}";
+                    $likes = (int)($post['likes']['summary']['total_count'] ?? ($post['reactions']['summary']['total_count'] ?? 0));
+                    $comments = (int)($post['comments']['summary']['total_count'] ?? 0);
+
+                    $created_raw = $post['created_time'] ?? '';
+                    $created_ts = !empty($created_raw) ? strtotime($created_raw) : time();
+                    $created_at = date('Y-m-d H:i:s', $created_ts);
+
+                    $stmt_upsert->execute([
+                        $account_id,
+                        $p['page_id'],
+                        $fb_post_id,
+                        $msg,
+                        $picture,
+                        $link,
+                        $likes,
+                        $comments,
+                        $created_at
+                    ]);
+                    $page_collected_count++;
+                    $total_synced++;
                 }
-                
-                // Picture fallback logic
-                $picture = $post['full_picture'] ?? '';
-                if (empty($picture) && !empty($post['attachments']['data'][0]['media']['image']['src'])) {
-                    $picture = $post['attachments']['data'][0]['media']['image']['src'];
+
+                // If target limit not reached yet and next pagination page exists, fetch next page
+                if ($page_collected_count < $limit && !empty($current_res['paging']['next'])) {
+                    $next_url = $current_res['paging']['next'];
+                    $res_next = fb_api_request_url($next_url);
+                    if (!empty($res_next['data']['data']) && is_array($res_next['data']['data'])) {
+                        $current_res = $res_next['data'];
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
                 }
-
-                $link = $post['permalink_url'] ?? "https://facebook.com/{$fb_post_id}";
-                $likes = (int)($post['likes']['summary']['total_count'] ?? ($post['reactions']['summary']['total_count'] ?? 0));
-                $comments = (int)($post['comments']['summary']['total_count'] ?? 0);
-
-                $stmt_upsert->execute([
-                    $account_id,
-                    $p['page_id'],
-                    $fb_post_id,
-                    $msg,
-                    $picture,
-                    $link,
-                    $likes,
-                    $comments,
-                    $created_at
-                ]);
-                $total_synced++;
             }
         }
     }
