@@ -120,7 +120,7 @@ try {
         // Build Graph API Request Parameters per Page
         $params = [
             'access_token' => $page_token,
-            'fields'       => 'id,message,created_time,permalink_url,full_picture,attachments{media,type,url,subattachments},reactions.summary(true),comments.summary(true)',
+            'fields'       => 'id,message,created_time,permalink_url,full_picture,attachments{media,type,url},reactions.summary(true),comments.summary(true)',
             'limit'        => $limit
         ];
 
@@ -131,8 +131,13 @@ try {
             $params['until'] = strtotime($date_to . " 23:59:59");
         }
 
-        // Primary endpoint for Page posts: {PAGE_ID}/posts
-        $endpoints = ["{$p['page_id']}/posts", "me/posts", "{$p['page_id']}/published_posts", "{$p['page_id']}/feed"];
+        // Endpoints to query: {PAGE_ID}/posts is primary when using Page Token
+        $endpoints = [
+            "{$p['page_id']}/posts",
+            "me/posts",
+            "{$p['page_id']}/published_posts",
+            "{$p['page_id']}/feed"
+        ];
         $res_data = [];
         $last_err = '';
 
@@ -141,6 +146,24 @@ try {
             if (!empty($res['data']) && is_array($res['data'])) {
                 $res_data = $res['data'];
                 break;
+            } elseif (!empty($res['error']['message'])) {
+                $last_err = $res['error']['message'];
+            }
+        }
+
+        // Fallback with simpler fields if Graph API errored on complex fields
+        if (empty($res_data)) {
+            $fallback_params = [
+                'access_token' => $page_token,
+                'fields'       => 'id,message,created_time,permalink_url,full_picture',
+                'limit'        => $limit
+            ];
+            if (!empty($date_from)) $fallback_params['since'] = strtotime($date_from . " 00:00:00");
+            if (!empty($date_to))   $fallback_params['until'] = strtotime($date_to . " 23:59:59");
+
+            $res = fb_api_request("{$p['page_id']}/posts", $fallback_params, 'GET');
+            if (!empty($res['data']) && is_array($res['data'])) {
+                $res_data = $res['data'];
             } elseif (!empty($res['error']['message'])) {
                 $last_err = $res['error']['message'];
             }
@@ -159,7 +182,7 @@ try {
                 $created_raw = $post['created_time'] ?? '';
                 $created_ts = !empty($created_raw) ? strtotime($created_raw) : time();
                 
-                // Double check date filtering in PHP
+                // Double check date filtering in PHP if user specified dates
                 if (!empty($date_from) && $created_ts < strtotime($date_from . " 00:00:00")) continue;
                 if (!empty($date_to) && $created_ts > strtotime($date_to . " 23:59:59")) continue;
 
@@ -170,9 +193,6 @@ try {
                 $picture = $post['full_picture'] ?? '';
                 if (empty($picture) && !empty($post['attachments']['data'][0]['media']['image']['src'])) {
                     $picture = $post['attachments']['data'][0]['media']['image']['src'];
-                }
-                if (empty($picture) && !empty($post['attachments']['data'][0]['subattachments']['data'][0]['media']['image']['src'])) {
-                    $picture = $post['attachments']['data'][0]['subattachments']['data'][0]['media']['image']['src'];
                 }
 
                 $link = $post['permalink_url'] ?? "https://facebook.com/{$fb_post_id}";
@@ -196,8 +216,8 @@ try {
     }
 
     $msg = "Đã quét và cập nhật thành công {$total_synced} bài viết (giới hạn {$limit} bài/page) từ {$pages_synced} Fanpage.";
-    if (!empty($api_errors) && $total_synced === 0) {
-        $msg .= " Thông báo lỗi từ Facebook: " . implode(" | ", array_unique($api_errors));
+    if (!empty($api_errors)) {
+        $msg .= " Phản hồi Facebook: " . implode(" | ", array_unique($api_errors));
     }
 
     echo json_encode([
