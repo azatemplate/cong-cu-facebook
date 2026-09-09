@@ -31,6 +31,10 @@ try {
     $auto_inbox_text = isset($_POST['auto_inbox_text']) ? trim($_POST['auto_inbox_text']) : ($old_acc['auto_inbox_text'] ?? '');
     $auto_pages_scope = isset($_POST['auto_pages_scope']) ? $_POST['auto_pages_scope'] : ($old_acc['auto_pages_scope'] ?? 'ALL');
 
+    $auto_hide_phone_enabled = isset($_POST['auto_hide_phone_enabled']) ? intval($_POST['auto_hide_phone_enabled']) : (int)($old_acc['auto_hide_phone_enabled'] ?? 0);
+    $auto_hide_keywords_enabled = isset($_POST['auto_hide_keywords_enabled']) ? intval($_POST['auto_hide_keywords_enabled']) : (int)($old_acc['auto_hide_keywords_enabled'] ?? 0);
+    $auto_hide_keywords_text = isset($_POST['auto_hide_keywords_text']) ? trim($_POST['auto_hide_keywords_text']) : ($old_acc['auto_hide_keywords_text'] ?? '');
+
     $phone_request_enabled = isset($_POST['phone_request_enabled']) ? intval($_POST['phone_request_enabled']) : (int)($old_acc['phone_request_enabled'] ?? 0);
     $phone_request_hours = isset($_POST['phone_request_hours']) ? intval($_POST['phone_request_hours']) : (int)($old_acc['phone_request_hours'] ?? 1);
     $phone_request_text = isset($_POST['phone_request_text']) ? trim($_POST['phone_request_text']) : ($old_acc['phone_request_text'] ?? '');
@@ -51,11 +55,12 @@ try {
     if ($followup_request_hours < 1) $followup_request_hours = 1;
     if ($followup_request_hours > 720) $followup_request_hours = 720;
 
-    $stmt = $pdo->prepare("UPDATE system_accounts SET auto_reply_enabled = ?, auto_reply_text = ?, auto_inbox_enabled = ?, auto_inbox_text = ?, auto_pages_scope = ?, phone_request_enabled = ?, phone_request_hours = ?, phone_request_text = ?, province_request_text = ?, product_request_text = ?, followup_request_enabled = ?, followup_request_hours = ?, followup_request_text = ?, phone_request_limit = ? WHERE id = ?");
+    $stmt = $pdo->prepare("UPDATE system_accounts SET auto_reply_enabled = ?, auto_reply_text = ?, auto_inbox_enabled = ?, auto_inbox_text = ?, auto_pages_scope = ?, auto_hide_phone_enabled = ?, auto_hide_keywords_enabled = ?, auto_hide_keywords_text = ?, phone_request_enabled = ?, phone_request_hours = ?, phone_request_text = ?, province_request_text = ?, product_request_text = ?, followup_request_enabled = ?, followup_request_hours = ?, followup_request_text = ?, phone_request_limit = ? WHERE id = ?");
     $stmt->execute([
         $auto_reply_enabled, $auto_reply_text, 
         $auto_inbox_enabled, $auto_inbox_text, 
         $auto_pages_scope, 
+        $auto_hide_phone_enabled, $auto_hide_keywords_enabled, $auto_hide_keywords_text,
         $phone_request_enabled, $phone_request_hours, 
         $phone_request_text, $province_request_text, $product_request_text,
         $followup_request_enabled, $followup_request_hours, $followup_request_text,

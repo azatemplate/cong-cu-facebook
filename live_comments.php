@@ -39,9 +39,12 @@ try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_reply_text TEXT DE
 try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_inbox_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
 try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_inbox_text TEXT DEFAULT NULL"); } catch (Exception $e) {}
 try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_pages_scope TEXT"); } catch (Exception $e) {}
+try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_hide_phone_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
+try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_hide_keywords_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
+try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_hide_keywords_text TEXT DEFAULT NULL"); } catch (Exception $e) {}
 
 // Fetch account auto-reply config
-$stmt_acc = $pdo->prepare("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text, auto_pages_scope FROM system_accounts WHERE id = ?");
+$stmt_acc = $pdo->prepare("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text, auto_pages_scope, auto_hide_phone_enabled, auto_hide_keywords_enabled, auto_hide_keywords_text FROM system_accounts WHERE id = ?");
 $stmt_acc->execute([$account_id]);
 $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC);
 $auto_reply_enabled = (int)($acc_setup['auto_reply_enabled'] ?? 0);
@@ -49,6 +52,9 @@ $auto_reply_text = $acc_setup['auto_reply_text'] ?? '';
 $auto_inbox_enabled = (int)($acc_setup['auto_inbox_enabled'] ?? 0);
 $auto_inbox_text = $acc_setup['auto_inbox_text'] ?? '';
 $auto_pages_scope = $acc_setup['auto_pages_scope'] ?: 'ALL';
+$auto_hide_phone_enabled = (int)($acc_setup['auto_hide_phone_enabled'] ?? 0);
+$auto_hide_keywords_enabled = (int)($acc_setup['auto_hide_keywords_enabled'] ?? 0);
+$auto_hide_keywords_text = $acc_setup['auto_hide_keywords_text'] ?? '';
 ?>
 
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
@@ -91,6 +97,28 @@ Em đã nhắn tin cho {name} rồi ạ
 Chào {name}, shop đã gửi thông tin qua inbox...
 {name} ơi, mình check tin nhắn chờ giúp shop nhé!" style="width:100%; padding:10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;"><?php echo htmlspecialchars($auto_inbox_text ?? ''); ?></textarea>
                     <div style="font-size:11px; color:#6b7280; margin-top:4px;">Nhập **mỗi dòng một mẫu câu** để Bot chọn ngẫu nhiên.</div>
+                </div>
+            </div>
+
+            <!-- 3. Tự động ẩn bình luận -->
+            <div style="margin-bottom: 20px; padding:15px; background:#fff1f2; border:1px solid #fecdd3; border-radius:8px;">
+                <div style="font-weight:bold; font-size:14px; color:#e11d48; margin-bottom:12px; display:flex; align-items:center; gap:6px;">
+                    <span>🙈</span> <span>Tự động Ẩn Bình Luận trên Fanpage</span>
+                </div>
+                
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; color:#374151; margin-bottom:10px; font-weight:500;">
+                    <input type="checkbox" id="chk_auto_hide_phone" style="width:16px;height:16px;" <?php echo $auto_hide_phone_enabled ? 'checked' : ''; ?>>
+                    <span>Ẩn bình luận có số điện thoại</span>
+                </label>
+                
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; color:#374151; margin-bottom:8px; font-weight:500;">
+                    <input type="checkbox" id="chk_auto_hide_keywords" style="width:16px;height:16px;" onchange="document.getElementById('div_hide_keywords').style.display = this.checked ? 'block' : 'none';" <?php echo $auto_hide_keywords_enabled ? 'checked' : ''; ?>>
+                    <span>Ẩn bình luận có chứa từ khóa</span>
+                </label>
+                
+                <div id="div_hide_keywords" style="margin-top:10px; display: <?php echo $auto_hide_keywords_enabled ? 'block' : 'none'; ?>;">
+                    <textarea id="txt_auto_hide_keywords" rows="3" placeholder="từ khóa 1, từ khóa 2, từ khóa 3..." style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; resize:vertical; background:#fff;"><?php echo htmlspecialchars($auto_hide_keywords_text ?? ''); ?></textarea>
+                    <div style="font-size:11px; color:#64748b; margin-top:4px;">Nhập từ khóa có dạng: từ khóa 1, từ khóa 2, từ khóa 3... (phân cách bằng dấu phẩy hoặc xuống dòng).</div>
                 </div>
             </div>
             
@@ -170,6 +198,9 @@ function saveAutoSetup(e) {
     fd.append('auto_reply_text', document.getElementById('txt_auto_reply').value);
     fd.append('auto_inbox_enabled', document.getElementById('chk_auto_inbox').checked ? 1 : 0);
     fd.append('auto_inbox_text', document.getElementById('txt_auto_inbox').value);
+    fd.append('auto_hide_phone_enabled', document.getElementById('chk_auto_hide_phone').checked ? 1 : 0);
+    fd.append('auto_hide_keywords_enabled', document.getElementById('chk_auto_hide_keywords').checked ? 1 : 0);
+    fd.append('auto_hide_keywords_text', document.getElementById('txt_auto_hide_keywords').value);
     fd.append('auto_pages_scope', pagesScope);
 
     fetch('actions/save_auto_reply.php', {

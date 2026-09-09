@@ -586,13 +586,13 @@ function process_auto_comment_reply($pdo, $page_id, $comment_id, $sender_id = ''
         // 3. Lấy cấu hình tự động trả lời của tài khoản sở hữu
         $auto_cfg = null;
         if ($acc_id > 0) {
-            $stmt_auto = $pdo->prepare("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text, auto_pages_scope FROM system_accounts WHERE id = ?");
+            $stmt_auto = $pdo->prepare("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text, auto_pages_scope, auto_hide_phone_enabled, auto_hide_keywords_enabled, auto_hide_keywords_text FROM system_accounts WHERE id = ?");
             $stmt_auto->execute([$acc_id]);
             $auto_cfg = $stmt_auto->fetch(PDO::FETCH_ASSOC);
         }
 
         if (!$auto_cfg) {
-            $stmt_def = $pdo->query("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text, auto_pages_scope FROM system_accounts WHERE id = 1");
+            $stmt_def = $pdo->query("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text, auto_pages_scope, auto_hide_phone_enabled, auto_hide_keywords_enabled, auto_hide_keywords_text FROM system_accounts WHERE id = 1");
             $auto_cfg = $stmt_def->fetch(PDO::FETCH_ASSOC);
         }
 
@@ -600,9 +600,11 @@ function process_auto_comment_reply($pdo, $page_id, $comment_id, $sender_id = ''
 
         $reply_enabled = (int)($auto_cfg['auto_reply_enabled'] ?? 0) === 1;
         $inbox_enabled = (int)($auto_cfg['auto_inbox_enabled'] ?? 0) === 1;
+        $hide_phone_enabled = (int)($auto_cfg['auto_hide_phone_enabled'] ?? 0) === 1;
+        $hide_kw_enabled = (int)($auto_cfg['auto_hide_keywords_enabled'] ?? 0) === 1;
 
-        // NẾU CẢ 2 NÚT CHECKBOX ĐỀU TẮT -> NGHỈ NGAY LẬP TỨC KHÔNG CHẠY
-        if (!$reply_enabled && !$inbox_enabled) {
+        // NẾU TẤT CẢ CÁC TÍNH NĂNG BOT TỰ ĐỘNG ĐỀU TẮT -> NGHỈ NGAY LẬP TỨC KHÔNG CHẠY
+        if (!$reply_enabled && !$inbox_enabled && !$hide_phone_enabled && !$hide_kw_enabled) {
             return false;
         }
 
@@ -625,7 +627,36 @@ function process_auto_comment_reply($pdo, $page_id, $comment_id, $sender_id = ''
 
         if (empty($sender_name)) $sender_name = 'Khách hàng';
 
-        // A. Tự động Trả lời công khai trên Facebook (Public Reply)
+        // A. Tự động Ẩn Bình Luận (Hide Comment) theo SĐT hoặc Từ khóa
+        $should_hide = false;
+        if (!empty($message)) {
+            // 1. Kiểm tra số điện thoại (nếu bật)
+            if ($hide_phone_enabled) {
+                $digits = preg_replace('/[^\d]/', '', $message);
+                if (preg_match('/(03|05|07|08|09)\d{8}/', $digits) || preg_match('/84(3|5|7|8|9)\d{8}/', $digits)) {
+                    $should_hide = true;
+                }
+            }
+
+            // 2. Kiểm tra từ khóa (nếu bật)
+            if (!$should_hide && $hide_kw_enabled && !empty($auto_cfg['auto_hide_keywords_text'])) {
+                $kw_raw = str_replace(["\r", "\n"], ',', $auto_cfg['auto_hide_keywords_text']);
+                $keywords = array_filter(array_map('trim', explode(',', $kw_raw)));
+                foreach ($keywords as $kw) {
+                    if ($kw !== '' && mb_stripos($message, $kw) !== false) {
+                        $should_hide = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if ($should_hide) {
+            $res_hide = fb_api_request("{$comment_id}", ['access_token' => $page_token], 'POST', ['is_hidden' => 'true']);
+            @file_put_contents(__DIR__ . '/../webhook_db_errors.txt', date('Y-m-d H:i:s') . " AUTO HIDE CMT page=$page_id cmt=$comment_id res=" . json_encode($res_hide) . "\n", FILE_APPEND);
+        }
+
+        // B. Tự động Trả lời công khai trên Facebook (Public Reply)
         if ($reply_enabled && !empty($auto_cfg['auto_reply_text'])) {
             $reply_lines = array_filter(array_map('trim', explode("\n", str_replace("\r", "", $auto_cfg['auto_reply_text']))));
             if (!empty($reply_lines)) {
@@ -637,7 +668,7 @@ function process_auto_comment_reply($pdo, $page_id, $comment_id, $sender_id = ''
             }
         }
 
-        // B. Tự động Nhắn tin riêng cho người bình luận (Private Reply / Inbox qua Send API)
+        // C. Tự động Nhắn tin riêng cho người bình luận (Private Reply / Inbox qua Send API)
         if ($inbox_enabled && !empty($auto_cfg['auto_inbox_text'])) {
             $inbox_lines = array_filter(array_map('trim', explode("\n", str_replace("\r", "", $auto_cfg['auto_inbox_text']))));
             if (!empty($inbox_lines)) {
