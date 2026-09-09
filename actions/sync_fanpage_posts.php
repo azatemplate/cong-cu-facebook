@@ -34,8 +34,6 @@ $limit = isset($_POST['limit']) ? intval($_POST['limit']) : 10;
 if ($limit < 1) $limit = 10;
 if ($limit > 100) $limit = 100;
 
-$date_from = trim($_POST['date_from'] ?? '');
-$date_to   = trim($_POST['date_to'] ?? '');
 session_write_close();
 
 try {
@@ -57,33 +55,31 @@ try {
         INDEX idx_stats (likes_count, comments_count, post_created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
-    // Fetch pages matching user authority
-    if (in_array('ALL', $target_page_ids, true)) {
-        $stmt_pages = $pdo->prepare("
-            SELECT DISTINCT p.page_id, p.name, p.access_token 
-            FROM pages p 
-            LEFT JOIN users u ON p.user_id = u.id 
-            LEFT JOIN page_shares ps ON p.page_id = ps.page_id 
-            WHERE (u.account_id = :aid OR ps.shared_with_account_id = :aid2)
-        ");
-        $stmt_pages->execute([':aid' => $account_id, ':aid2' => $account_id]);
-    } else {
-        $in_clause = implode(',', array_fill(0, count($target_page_ids), '?'));
-        $stmt_pages = $pdo->prepare("
-            SELECT DISTINCT p.page_id, p.name, p.access_token 
-            FROM pages p 
-            LEFT JOIN users u ON p.user_id = u.id 
-            LEFT JOIN page_shares ps ON p.page_id = ps.page_id 
-            WHERE (u.account_id = ? OR ps.shared_with_account_id = ?)
-              AND p.page_id IN ($in_clause)
-        ");
-        $stmt_pages->execute(array_merge([$account_id, $account_id], $target_page_ids));
+    // Fetch all pages owned or shared with this account (UNION query for 100% reliability)
+    $stmt_pages = $pdo->prepare("
+        (SELECT p.page_id, p.name, p.access_token FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = :aid)
+        UNION
+        (SELECT p.page_id, p.name, p.access_token FROM pages p JOIN page_shares ps ON p.page_id = ps.page_id WHERE ps.shared_with_account_id = :aid2)
+    ");
+    $stmt_pages->execute([':aid' => $account_id, ':aid2' => $account_id]);
+    $all_pages = $stmt_pages->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($all_pages)) {
+        echo json_encode(['status' => 'error', 'msg' => 'Không tìm thấy Fanpage nào trong tài khoản của bạn.']);
+        exit;
     }
 
-    $pages = $stmt_pages->fetchAll(PDO::FETCH_ASSOC);
+    // Filter target pages
+    $pages = [];
+    $is_all = in_array('ALL', $target_page_ids, true) || empty($target_page_ids);
+    foreach ($all_pages as $p) {
+        if ($is_all || in_array((string)$p['page_id'], $target_page_ids, true)) {
+            $pages[] = $p;
+        }
+    }
 
     if (empty($pages)) {
-        echo json_encode(['status' => 'error', 'msg' => 'Không tìm thấy Fanpage hợp lệ hoặc bạn chưa được phân quyền sử dụng các Fanpage đã chọn']);
+        echo json_encode(['status' => 'error', 'msg' => 'Vui lòng chọn ít nhất 1 Fanpage để quét.']);
         exit;
     }
 
@@ -124,13 +120,6 @@ try {
             'limit'        => $limit
         ];
 
-        if (!empty($date_from)) {
-            $params['since'] = strtotime($date_from . " 00:00:00");
-        }
-        if (!empty($date_to)) {
-            $params['until'] = strtotime($date_to . " 23:59:59");
-        }
-
         // Endpoints to query: me/posts is #1 primary endpoint when using Page Access Token
         $endpoints = [
             "me/posts",
@@ -158,8 +147,6 @@ try {
                 'fields'       => 'id,message,created_time,permalink_url,full_picture',
                 'limit'        => $limit
             ];
-            if (!empty($date_from)) $fallback_params['since'] = strtotime($date_from . " 00:00:00");
-            if (!empty($date_to))   $fallback_params['until'] = strtotime($date_to . " 23:59:59");
 
             $res = fb_api_request("me/posts", $fallback_params, 'GET');
             if (!empty($res['data']) && is_array($res['data'])) {

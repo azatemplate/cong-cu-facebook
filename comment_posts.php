@@ -26,7 +26,7 @@ try {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 } catch (Exception $e) {}
 
-// Fetch pages for filter
+// Fetch pages for filter dropdown
 $stmt_p = $pdo->prepare("
     (SELECT p.page_id, p.name, p.avatar FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = :aid)
     UNION
@@ -37,34 +37,36 @@ $stmt_p->execute([':aid' => $account_id, ':aid2' => $account_id]);
 $pages = $stmt_p->fetchAll(PDO::FETCH_ASSOC);
 
 // Filters
-$filter_page_id = $_GET['page_id'] ?? 'ALL';
+$raw_selected_pages = $_GET['page_ids'] ?? ($_GET['page_id'] ?? 'ALL');
+if (is_array($raw_selected_pages)) {
+    $filter_page_ids = array_map('strval', $raw_selected_pages);
+} elseif (is_string($raw_selected_pages) && strpos($raw_selected_pages, '[') !== false) {
+    $decoded = @json_decode($raw_selected_pages, true);
+    $filter_page_ids = is_array($decoded) ? array_map('strval', $decoded) : [$raw_selected_pages];
+} elseif ($raw_selected_pages === 'ALL' || empty($raw_selected_pages)) {
+    $filter_page_ids = ['ALL'];
+} else {
+    $filter_page_ids = [(string)$raw_selected_pages];
+}
+
 $filter_sort    = $_GET['sort'] ?? 'newest';
 $filter_keyword = trim($_GET['keyword'] ?? '');
-$filter_date_from = $_GET['date_from'] ?? '';
-$filter_date_to   = $_GET['date_to'] ?? '';
 
 // Build Query
 $where_clauses = ["f.account_id = :aid"];
 $params = [':aid' => $account_id];
 
-if ($filter_page_id !== 'ALL' && !empty($filter_page_id)) {
-    $where_clauses[] = "f.page_id = :pid";
-    $params[':pid'] = $filter_page_id;
+if (!in_array('ALL', $filter_page_ids, true) && !empty($filter_page_ids)) {
+    $in_sql = implode(',', array_fill(0, count($filter_page_ids), '?'));
+    $where_clauses[] = "f.page_id IN ($in_sql)";
+    foreach ($filter_page_ids as $pid) {
+        $params[] = $pid;
+    }
 }
 
 if ($filter_keyword !== '') {
-    $where_clauses[] = "f.message LIKE :kw";
-    $params[':kw'] = "%{$filter_keyword}%";
-}
-
-if (!empty($filter_date_from)) {
-    $where_clauses[] = "f.post_created_at >= :date_from";
-    $params[':date_from'] = $filter_date_from . " 00:00:00";
-}
-
-if (!empty($filter_date_to)) {
-    $where_clauses[] = "f.post_created_at <= :date_to";
-    $params[':date_to'] = $filter_date_to . " 23:59:59";
+    $where_clauses[] = "f.message LIKE ?";
+    $params[] = "%{$filter_keyword}%";
 }
 
 $where_sql = implode(' AND ', $where_clauses);
@@ -117,10 +119,10 @@ $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <p style="margin:4px 0 0 0; font-size:13px; color:#6b7280;">Quét danh sách bài viết từ Fanpage, lọc tương tác và tự động kích hoạt chiến dịch bình luận qua Cron.</p>
     </div>
     <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-        <div style="display:flex; align-items:center; gap:6px; background:var(--card-bg, #fff); padding:3px 8px; border-radius:8px; border:1px solid var(--border-color, #cbd5e1);">
+        <div style="display:flex; align-items:center; gap:6px; background:var(--card-bg, #fff); padding:4px 10px; border-radius:8px; border:1px solid var(--border-color, #cbd5e1); box-shadow:0 1px 2px rgba(0,0,0,0.05);">
             <label style="font-size:12px; font-weight:600; color:#475569; white-space:nowrap;">Limit bài/page:</label>
             <input type="number" id="sync_limit" value="10" min="1" max="100" style="width:55px; padding:5px 6px; border-radius:6px; border:1px solid #cbd5e1; font-weight:700; font-size:13px; text-align:center;">
-            <button onclick="syncPosts()" id="btn_sync" class="btn" style="background:#0284c7; color:#fff; font-weight:600; display:flex; align-items:center; gap:6px; padding:6px 12px;">
+            <button onclick="syncPosts()" id="btn_sync" class="btn" style="background:#0284c7; color:#fff; font-weight:600; display:flex; align-items:center; gap:6px; padding:6px 14px;">
                 <span>🔄</span> <span>Quét Bài Viết Fanpage</span>
             </button>
         </div>
@@ -130,25 +132,42 @@ $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
-<!-- Thẻ thông báo trên giao diện PHP (Thay thế alert trình duyệt) -->
+<!-- Thẻ thông báo trên giao diện PHP -->
 <div id="notice_banner" style="display:none; margin-bottom:20px; padding:14px 18px; border-radius:8px; font-size:14px; font-weight:500; box-shadow:0 2px 4px rgba(0,0,0,0.05);"></div>
 
 <!-- Bộ lọc tìm kiếm -->
 <div style="background:var(--card-bg, #fff); padding:16px; border-radius:10px; border:1px solid var(--border-color, #e5e7eb); margin-bottom:20px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-    <form method="GET" action="comment_posts.php" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
-        <div style="flex:1; min-width:180px;">
-            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Fanpage</label>
-            <select name="page_id" onchange="this.form.submit()" style="width:100%; padding:8px 12px; border-radius:6px; border:1px solid #d1d5db; font-size:13px;">
-                <option value="ALL">-- Tất cả Fanpage --</option>
-                <?php foreach($pages as $p): ?>
-                    <option value="<?php echo htmlspecialchars($p['page_id']); ?>" <?php echo ($filter_page_id === $p['page_id']) ? 'selected' : ''; ?>>
-                        <?php echo htmlspecialchars($p['name']); ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
+    <form method="GET" action="comment_posts.php" id="frm_filter" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+        
+        <!-- Multi-select Fanpage Dropdown -->
+        <div style="position:relative; flex:1; min-width:240px;">
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Fanpage được chọn</label>
+            <button type="button" id="btn_page_dropdown" onclick="togglePageDropdown(event)" style="width:100%; padding:8px 12px; border-radius:6px; border:1px solid #d1d5db; font-size:13px; background:#fff; text-align:left; display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+                <span id="txt_page_selected_summary">-- Chọn Fanpage --</span>
+                <span style="font-size:10px; color:#6b7280;">▼</span>
+            </button>
+            
+            <!-- Menu xổ xuống chứa Checkbox danh sách Fanpage -->
+            <div id="menu_page_dropdown" style="display:none; position:absolute; top:100%; left:0; width:100%; min-width:280px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.15); z-index:999; padding:8px 0; margin-top:4px;">
+                <label style="display:flex; align-items:center; gap:8px; padding:8px 12px; font-weight:600; cursor:pointer; color:#0284c7; font-size:13px; border-bottom:1px solid #f1f5f9; background:#f8fafc;">
+                    <input type="checkbox" id="chk_page_all" onchange="toggleAllPageCbs(this)" <?php echo in_array('ALL', $filter_page_ids, true) ? 'checked' : ''; ?> style="width:16px; height:16px; margin:0;">
+                    <span>Tất cả Fanpage</span>
+                </label>
+                <div style="padding:4px 0;">
+                    <?php if(!empty($pages)): foreach($pages as $p): 
+                        $is_checked = in_array('ALL', $filter_page_ids, true) || in_array((string)$p['page_id'], $filter_page_ids, true);
+                    ?>
+                        <label style="display:flex; align-items:center; gap:8px; padding:6px 12px; cursor:pointer; font-size:13px; transition:background 0.15s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+                            <input type="checkbox" name="page_ids[]" class="filter_page_cb" value="<?php echo htmlspecialchars($p['page_id']); ?>" onchange="updatePageSelectText()" <?php echo $is_checked ? 'checked' : ''; ?> style="width:16px; height:16px; margin:0;">
+                            <img src="<?php echo htmlspecialchars($p['avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($p['name']).'&background=random'); ?>" style="width:20px; height:20px; border-radius:50%; object-fit:cover;">
+                            <span style="color:#334155; font-weight:500;"><?php echo htmlspecialchars($p['name']); ?></span>
+                        </label>
+                    <?php endforeach; endif; ?>
+                </div>
+            </div>
         </div>
 
-        <div style="flex:1; min-width:180px;">
+        <div style="flex:1; min-width:200px;">
             <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Sắp xếp & Tương tác</label>
             <select name="sort" onchange="this.form.submit()" style="width:100%; padding:8px 12px; border-radius:6px; border:1px solid #d1d5db; font-size:13px;">
                 <option value="newest" <?php echo ($filter_sort === 'newest') ? 'selected' : ''; ?>>📅 Mới nhất xếp trước</option>
@@ -161,24 +180,14 @@ $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </select>
         </div>
 
-        <div style="width:140px;">
-            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Từ ngày</label>
-            <input type="date" name="date_from" value="<?php echo htmlspecialchars($filter_date_from); ?>" onchange="this.form.submit()" style="width:100%; padding:7px 10px; border-radius:6px; border:1px solid #d1d5db; font-size:13px;">
-        </div>
-
-        <div style="width:140px;">
-            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Đến ngày</label>
-            <input type="date" name="date_to" value="<?php echo htmlspecialchars($filter_date_to); ?>" onchange="this.form.submit()" style="width:100%; padding:7px 10px; border-radius:6px; border:1px solid #d1d5db; font-size:13px;">
-        </div>
-
         <div style="flex:1.5; min-width:200px;">
             <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Tìm bài viết</label>
             <input type="text" name="keyword" value="<?php echo htmlspecialchars($filter_keyword); ?>" placeholder="Nhập từ khóa nội dung..." style="width:100%; padding:7px 12px; border-radius:6px; border:1px solid #d1d5db; font-size:13px;">
         </div>
 
         <div>
-            <button type="submit" class="btn btn-secondary" style="padding:8px 16px;">Lọc</button>
-            <?php if($filter_page_id !== 'ALL' || $filter_sort !== 'newest' || $filter_keyword !== '' || $filter_date_from !== '' || $filter_date_to !== ''): ?>
+            <button type="submit" class="btn btn-secondary" style="padding:8px 16px;">Lọc bài viết</button>
+            <?php if(!in_array('ALL', $filter_page_ids, true) || $filter_sort !== 'newest' || $filter_keyword !== ''): ?>
                 <a href="comment_posts.php" class="btn" style="background:#f3f4f6; color:#374151; padding:8px 12px; text-decoration:none;">Xóa lọc</a>
             <?php endif; ?>
         </div>
@@ -190,7 +199,7 @@ $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <div style="padding:12px 16px; background:#f9fafb; border-bottom:1px solid #e5e7eb; display:flex; justify-content:space-between; align-items:center;">
         <span style="font-size:13px; font-weight:600; color:#374151;">Danh sách bài viết (Hiển thị tối đa <?php echo count($posts); ?> bài)</span>
         <label style="font-size:13px; font-weight:600; color:#0284c7; cursor:pointer; display:flex; align-items:center; gap:6px;">
-            <input type="checkbox" id="chk_select_all" onchange="toggleSelectAll(this)" style="width:16px; height:16px;"> Chọn tất cả trang này
+            <input type="checkbox" id="chk_select_all" onchange="toggleSelectAll(this)" style="width:16px; height:16px;"> Chọn tất cả bài viết trên trang
         </label>
     </div>
 
@@ -198,7 +207,7 @@ $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <div style="text-align:center; padding:50px 20px; color:#9ca3af;">
             <span style="font-size:40px;">📭</span>
             <p style="margin-top:10px; font-size:14px;">Chưa có bài viết nào được quét hoặc không tìm thấy bài khớp bộ lọc.</p>
-            <button onclick="syncPosts()" class="btn" style="background:#0284c7; color:#fff; margin-top:10px;">Bấm vào đây để quét bài viết mới nhất từ Fanpage</button>
+            <button onclick="syncPosts()" class="btn" style="background:#0284c7; color:#fff; margin-top:10px;">Bấm vào đây để quét bài viết từ các Fanpage đã chọn</button>
         </div>
     <?php else: ?>
         <div style="overflow-x:auto;">
@@ -309,6 +318,45 @@ Em muốn tư vấn mẫu này với ạ!
 </div>
 
 <script>
+function togglePageDropdown(e) {
+    if (e) e.stopPropagation();
+    const menu = document.getElementById('menu_page_dropdown');
+    menu.style.display = (menu.style.display === 'none' || !menu.style.display) ? 'block' : 'none';
+}
+
+document.addEventListener('click', function(e) {
+    const btn = document.getElementById('btn_page_dropdown');
+    const menu = document.getElementById('menu_page_dropdown');
+    if (menu && btn && !btn.contains(e.target) && !menu.contains(e.target)) {
+        menu.style.display = 'none';
+    }
+});
+
+function toggleAllPageCbs(el) {
+    const cbs = document.querySelectorAll('.filter_page_cb');
+    cbs.forEach(cb => cb.checked = el.checked);
+    updatePageSelectText();
+}
+
+function updatePageSelectText() {
+    const cbs = document.querySelectorAll('.filter_page_cb');
+    const checked = document.querySelectorAll('.filter_page_cb:checked');
+    const allChk = document.getElementById('chk_page_all');
+    const summary = document.getElementById('txt_page_selected_summary');
+
+    if (checked.length === cbs.length) {
+        allChk.checked = true;
+        summary.innerText = `Tất cả Fanpage (${cbs.length} trang)`;
+    } else if (checked.length === 0) {
+        allChk.checked = false;
+        summary.innerText = `-- Chọn Fanpage --`;
+    } else {
+        allChk.checked = false;
+        summary.innerText = `Đã chọn ${checked.length} Fanpage`;
+    }
+}
+document.addEventListener('DOMContentLoaded', updatePageSelectText);
+
 function showNotice(msg, type = 'success') {
     const banner = document.getElementById('notice_banner');
     if (!banner) return;
@@ -327,23 +375,24 @@ function showNotice(msg, type = 'success') {
 }
 
 function syncPosts() {
-    const pageId = '<?php echo $filter_page_id; ?>';
+    const checkedPageCbs = Array.from(document.querySelectorAll('.filter_page_cb:checked')).map(el => el.value);
+    const allChk = document.getElementById('chk_page_all');
+    
+    let targetPages = checkedPageCbs;
+    if (allChk.checked || checkedPageCbs.length === 0) {
+        targetPages = ['ALL'];
+    }
+
     const limitEl = document.getElementById('sync_limit');
     const limit   = limitEl ? limitEl.value : 10;
-    const dateFromEl = document.querySelector('input[name="date_from"]');
-    const dateToEl   = document.querySelector('input[name="date_to"]');
-    const dateFrom   = dateFromEl ? dateFromEl.value : '';
-    const dateTo     = dateToEl ? dateToEl.value : '';
 
     const btn = document.getElementById('btn_sync');
     btn.disabled = true;
     btn.innerHTML = '<span>⏳</span> <span>Đang quét bài viết...</span>';
 
     const fd = new FormData();
-    fd.append('page_id', pageId);
+    fd.append('page_ids', JSON.stringify(targetPages));
     fd.append('limit', limit);
-    fd.append('date_from', dateFrom);
-    fd.append('date_to', dateTo);
 
     fetch('actions/sync_fanpage_posts.php', {
         method: 'POST',
