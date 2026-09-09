@@ -153,6 +153,9 @@ try {
                     SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS cnt_processing,
                     SUM(CASE WHEN status='failed'     THEN 1 ELSE 0 END) AS cnt_failed,
                     SUM(CASE WHEN status='checkpoint' THEN 1 ELSE 0 END) AS cnt_checkpoint,
+                    SUM(CASE WHEN comment_done=1      THEN 1 ELSE 0 END) AS cnt_cmt_done,
+                    SUM(CASE WHEN comment_done=0      THEN 1 ELSE 0 END) AS cnt_cmt_pending,
+                    SUM(CASE WHEN comment_done=2      THEN 1 ELSE 0 END) AS cnt_cmt_processing,
                     COUNT(id) AS cnt_total
                 FROM scheduled_posts
                 WHERE campaign_id IN ($in_ids)
@@ -195,13 +198,16 @@ try {
         foreach ($page_camps as $c) {
             $cid = $c['id'];
             $st = $stats_map[$cid] ?? [];
-            $c['cnt_published']  = $st['cnt_published'] ?? 0;
-            $c['cnt_pending']    = $st['cnt_pending'] ?? 0;
-            $c['cnt_processing'] = $st['cnt_processing'] ?? 0;
-            $c['cnt_failed']     = $st['cnt_failed'] ?? 0;
-            $c['cnt_checkpoint'] = $st['cnt_checkpoint'] ?? 0;
-            $c['cnt_total']      = $st['cnt_total'] ?? 0;
-            $c['fb_users']       = $users_map[$cid] ?? '';
+            $c['cnt_published']      = $st['cnt_published'] ?? 0;
+            $c['cnt_pending']        = $st['cnt_pending'] ?? 0;
+            $c['cnt_processing']     = $st['cnt_processing'] ?? 0;
+            $c['cnt_failed']         = $st['cnt_failed'] ?? 0;
+            $c['cnt_checkpoint']     = $st['cnt_checkpoint'] ?? 0;
+            $c['cnt_cmt_done']       = $st['cnt_cmt_done'] ?? 0;
+            $c['cnt_cmt_pending']    = $st['cnt_cmt_pending'] ?? 0;
+            $c['cnt_cmt_processing'] = $st['cnt_cmt_processing'] ?? 0;
+            $c['cnt_total']          = $st['cnt_total'] ?? 0;
+            $c['fb_users']           = $users_map[$cid] ?? '';
             $campaigns[] = $c;
         }
     }
@@ -268,20 +274,33 @@ try {
     <?php foreach ($campaigns as $c):
         $total_real = (int)$c['cnt_total'];            // actual count (may be 0)
         $total      = max(1, $total_real);             // clamped for division only
-        $pub        = (int)$c['cnt_published'];
-        $pend       = (int)$c['cnt_pending'];
-        $proc       = (int)$c['cnt_processing'];
-        $fail       = (int)$c['cnt_failed'];
-        $check      = isset($c['cnt_checkpoint']) ? (int)$c['cnt_checkpoint'] : 0;
+
+        $is_seeding_cmt = ($c['post_type'] === 'Seeding Comment');
+        if ($is_seeding_cmt) {
+            $pub   = (int)($c['cnt_cmt_done'] ?? 0);
+            $pend  = (int)($c['cnt_cmt_pending'] ?? 0);
+            $proc  = (int)($c['cnt_cmt_processing'] ?? 0);
+            $fail  = (int)$c['cnt_failed'];
+            $check = isset($c['cnt_checkpoint']) ? (int)$c['cnt_checkpoint'] : 0;
+            $unit_verb = 'cmt';
+        } else {
+            $pub   = (int)$c['cnt_published'];
+            $pend  = (int)$c['cnt_pending'];
+            $proc  = (int)$c['cnt_processing'];
+            $fail  = (int)$c['cnt_failed'];
+            $check = isset($c['cnt_checkpoint']) ? (int)$c['cnt_checkpoint'] : 0;
+            $unit_verb = 'đăng';
+        }
+
         $progress   = round($pub / $total * 100);
 
         // Badge — priority: checkpoint > processing > pending > failed > done > empty
         if ($check > 0) {
             $badge_color = '#fee2e2'; $badge_text_color = '#991b1b'; $badge_label = "🚫 Tài khoản bị checkpoint";
         } elseif ($proc > 0) {
-            $badge_color = '#e0f2fe'; $badge_text_color = '#0369a1'; $badge_label = "🔄 Đang đăng";
+            $badge_color = '#e0f2fe'; $badge_text_color = '#0369a1'; $badge_label = "🔄 Đang {$unit_verb}";
         } elseif ($pend > 0) {
-            $badge_color = '#fef3c7'; $badge_text_color = '#d97706'; $badge_label = "⏳ $pend chờ";
+            $badge_color = '#fef3c7'; $badge_text_color = '#d97706'; $badge_label = "⏳ $pend chờ {$unit_verb}";
         } elseif ($fail > 0) {
             $badge_color = '#fee2e2'; $badge_text_color = '#dc2626'; $badge_label = "⚠️ $fail lỗi";
         } elseif ($pub >= $total && $total_real > 0) {
@@ -327,15 +346,15 @@ try {
                     <div style="flex:1;height:8px;background:#f3f4f6;border-radius:99px;overflow:hidden;">
                         <div style="height:100%;width:<?php echo $progress; ?>%;background:<?php echo $pub===$total && $total>0 ? '#10b981' : 'var(--primary-color)'; ?>;border-radius:99px;transition:width 0.3s;"></div>
                     </div>
-                    <span style="font-size:12px;color:var(--text-muted);white-space:nowrap;"><?php echo $pub; ?>/<?php echo $total; ?> đã đăng</span>
+                    <span style="font-size:12px;color:var(--text-muted);white-space:nowrap;"><?php echo $pub; ?>/<?php echo $total; ?> đã <?php echo $unit_verb; ?></span>
                 </div>
                 <!-- Counters -->
                 <div style="display:flex;gap:14px;margin-top:8px;font-size:12px;">
-                    <?php if ($pend > 0): ?><span style="color:#d97706;">⏳ <?php echo $pend; ?> chờ</span><?php endif; ?>
-                    <?php if ($proc > 0): ?><span style="color:#0369a1;">🔄 <?php echo $proc; ?> đang đăng</span><?php endif; ?>
+                    <?php if ($pend > 0): ?><span style="color:#d97706;">⏳ <?php echo $pend; ?> chờ <?php echo $unit_verb; ?></span><?php endif; ?>
+                    <?php if ($proc > 0): ?><span style="color:#0369a1;">🔄 <?php echo $proc; ?> đang <?php echo $unit_verb; ?></span><?php endif; ?>
                     <?php if ($fail > 0): ?><span style="color:#dc2626;">❌ <?php echo $fail; ?> lỗi</span><?php endif; ?>
                     <?php if ($check > 0): ?><span style="color:#991b1b;">🚫 Bị checkpoint, dừng lại (còn <?php echo $check; ?> bài chưa chạy)</span><?php endif; ?>
-                    <?php if ($pub > 0): ?><span style="color:#10b981;">✅ <?php echo $pub; ?> đã đăng</span><?php endif; ?>
+                    <?php if ($pub > 0): ?><span style="color:#10b981;">✅ <?php echo $pub; ?> đã <?php echo $unit_verb; ?></span><?php endif; ?>
                 </div>
             </div>
             <!-- Actions -->

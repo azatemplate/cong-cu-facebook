@@ -62,11 +62,25 @@ try {
         exit;
     }
 
+    // Create a new campaign entry in post_campaigns table
+    $camp_name = "Seeding Bình luận (" . count($found_posts) . " bài) - " . date('d/m/Y H:i');
+    $stmt_camp = $pdo->prepare("
+        INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time, created_at)
+        VALUES (?, ?, 'Seeding Comment', ?, ?, NOW())
+    ");
+    $stmt_camp->execute([
+        $account_id,
+        $camp_name,
+        count($found_posts),
+        date('Y-m-d H:i:s', $base_time)
+    ]);
+    $campaign_id = (int)$pdo->lastInsertId();
+
     $stmt_ins = $pdo->prepare("
         INSERT INTO scheduled_posts 
-        (account_id, page_id, fb_post_id, post_type, status, comment_lines, comment_at, comment_done, created_at)
+        (account_id, campaign_id, page_id, fb_post_id, post_type, status, comment_lines, comment_at, comment_done, created_at)
         VALUES 
-        (?, ?, ?, 'text', 'published', ?, ?, 0, NOW())
+        (?, ?, ?, ?, 'Seeding Comment', 'published', ?, ?, 0, NOW())
     ");
 
     $created_count = 0;
@@ -78,6 +92,7 @@ try {
 
         $stmt_ins->execute([
             $account_id,
+            $campaign_id,
             $p['page_id'],
             $p['fb_post_id'],
             $comment_lines,
@@ -87,8 +102,9 @@ try {
     }
 
     echo json_encode([
-        'status' => 'success',
-        'msg'    => "Đã khởi tạo thành công chiến dịch seeding cho {$created_count} bài viết! Tiến trình Cron sẽ tự động kích hoạt và đăng bình luận."
+        'status'   => 'success',
+        'msg'      => "Đã tạo thành công chiến dịch seeding cho {$created_count} bài viết!",
+        'redirect' => 'manage_posts.php'
     ]);
 } catch (Exception $e) {
     echo json_encode(['status' => 'error', 'msg' => 'Lỗi tạo chiến dịch: ' . $e->getMessage()]);

@@ -394,7 +394,7 @@ function submitCampaign(e) {
         if (res.status === 'success') {
             alert(res.msg);
             document.getElementById('campaignModal').style.display = 'none';
-            location.reload();
+            window.location.href = res.redirect || 'manage_posts.php';
         } else {
             alert('Lỗi: ' + res.msg);
         }
