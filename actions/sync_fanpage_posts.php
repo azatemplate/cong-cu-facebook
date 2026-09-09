@@ -116,7 +116,7 @@ try {
         // Build Graph API Request Parameters per Page using Page Token
         $params = [
             'access_token' => $page_token,
-            'fields'       => 'id,message,created_time,permalink_url,full_picture,attachments{media,type,url},reactions.summary(true),comments.summary(true)',
+            'fields'       => 'id,message,created_time,permalink_url,full_picture,attachments{media,type,url},likes.summary(true),comments.summary(true)',
             'limit'        => $limit
         ];
 
@@ -140,19 +140,22 @@ try {
             }
         }
 
-        // Fallback with simpler fields if Graph API errored on complex fields
+        // Fallback with exact standard fields (proven working) if summary fields fail
         if (empty($res_data)) {
             $fallback_params = [
                 'access_token' => $page_token,
-                'fields'       => 'id,message,created_time,permalink_url,full_picture',
+                'fields'       => 'id,message,created_time,permalink_url,full_picture,attachments{media,type,url}',
                 'limit'        => $limit
             ];
 
-            $res = fb_api_request("me/posts", $fallback_params, 'GET');
-            if (!empty($res['data']) && is_array($res['data'])) {
-                $res_data = $res['data'];
-            } elseif (!empty($res['error']['message'])) {
-                $last_err = $res['error']['message'];
+            foreach ($endpoints as $ep) {
+                $res = fb_api_request($ep, $fallback_params, 'GET');
+                if (!empty($res['data']) && is_array($res['data'])) {
+                    $res_data = $res['data'];
+                    break;
+                } elseif (!empty($res['error']['message'])) {
+                    $last_err = $res['error']['message'];
+                }
             }
         }
 
@@ -179,7 +182,7 @@ try {
                 }
 
                 $link = $post['permalink_url'] ?? "https://facebook.com/{$fb_post_id}";
-                $likes = (int)($post['reactions']['summary']['total_count'] ?? 0);
+                $likes = (int)($post['likes']['summary']['total_count'] ?? ($post['reactions']['summary']['total_count'] ?? 0));
                 $comments = (int)($post['comments']['summary']['total_count'] ?? 0);
 
                 $stmt_upsert->execute([
