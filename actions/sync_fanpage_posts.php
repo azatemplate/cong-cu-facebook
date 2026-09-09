@@ -17,7 +17,23 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $account_id = (int)$_SESSION['account_id'];
-$target_page_id = trim($_POST['page_id'] ?? 'ALL');
+
+// Target pages selection (single, array, or 'ALL')
+$raw_pages = $_POST['page_ids'] ?? ($_POST['page_id'] ?? 'ALL');
+$target_page_ids = [];
+if (is_array($raw_pages)) {
+    $target_page_ids = array_map('strval', $raw_pages);
+} elseif (is_string($raw_pages) && strpos($raw_pages, '[') !== false) {
+    $decoded = @json_decode($raw_pages, true);
+    $target_page_ids = is_array($decoded) ? array_map('strval', $decoded) : [$raw_pages];
+} else {
+    $target_page_ids = [(string)$raw_pages];
+}
+
+$limit = isset($_POST['limit']) ? intval($_POST['limit']) : 10;
+if ($limit < 1) $limit = 10;
+if ($limit > 100) $limit = 100;
+
 $date_from = trim($_POST['date_from'] ?? '');
 $date_to   = trim($_POST['date_to'] ?? '');
 session_write_close();
@@ -41,25 +57,33 @@ try {
         INDEX idx_stats (likes_count, comments_count, post_created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
-    // Fetch page using strict page token belonging to the target page
-    $stmt_pages = $pdo->prepare("
-        SELECT DISTINCT p.page_id, p.name, p.access_token 
-        FROM pages p 
-        LEFT JOIN users u ON p.user_id = u.id 
-        LEFT JOIN page_shares ps ON p.page_id = ps.page_id 
-        WHERE (u.account_id = :aid OR ps.shared_with_account_id = :aid2)
-          AND (:pid = 'ALL' OR p.page_id = :pid2)
-    ");
-    $stmt_pages->execute([
-        ':aid'  => $account_id,
-        ':aid2' => $account_id,
-        ':pid'  => $target_page_id,
-        ':pid2' => $target_page_id
-    ]);
+    // Fetch pages matching user authority
+    if (in_array('ALL', $target_page_ids, true)) {
+        $stmt_pages = $pdo->prepare("
+            SELECT DISTINCT p.page_id, p.name, p.access_token 
+            FROM pages p 
+            LEFT JOIN users u ON p.user_id = u.id 
+            LEFT JOIN page_shares ps ON p.page_id = ps.page_id 
+            WHERE (u.account_id = :aid OR ps.shared_with_account_id = :aid2)
+        ");
+        $stmt_pages->execute([':aid' => $account_id, ':aid2' => $account_id]);
+    } else {
+        $in_clause = implode(',', array_fill(0, count($target_page_ids), '?'));
+        $stmt_pages = $pdo->prepare("
+            SELECT DISTINCT p.page_id, p.name, p.access_token 
+            FROM pages p 
+            LEFT JOIN users u ON p.user_id = u.id 
+            LEFT JOIN page_shares ps ON p.page_id = ps.page_id 
+            WHERE (u.account_id = ? OR ps.shared_with_account_id = ?)
+              AND p.page_id IN ($in_clause)
+        ");
+        $stmt_pages->execute(array_merge([$account_id, $account_id], $target_page_ids));
+    }
+
     $pages = $stmt_pages->fetchAll(PDO::FETCH_ASSOC);
 
     if (empty($pages)) {
-        echo json_encode(['status' => 'error', 'msg' => 'Không tìm thấy Fanpage hợp lệ hoặc bạn chưa được phân quyền sử dụng Fanpage này']);
+        echo json_encode(['status' => 'error', 'msg' => 'Không tìm thấy Fanpage hợp lệ hoặc bạn chưa được phân quyền sử dụng các Fanpage đã chọn']);
         exit;
     }
 
@@ -93,11 +117,11 @@ try {
             continue;
         }
 
-        // Fetch published posts using Page Access Token (me/posts endpoint)
+        // Build Graph API Request Parameters per Page
         $params = [
             'access_token' => $page_token,
-            'fields'       => 'id,message,created_time,full_picture,permalink_url,attachments{media,type,url},reactions.summary(true),comments.summary(true)',
-            'limit'        => 100
+            'fields'       => 'id,message,created_time,permalink_url,full_picture,attachments{media,type,url,subattachments},reactions.summary(true),comments.summary(true)',
+            'limit'        => $limit
         ];
 
         if (!empty($date_from)) {
@@ -107,8 +131,8 @@ try {
             $params['until'] = strtotime($date_to . " 23:59:59");
         }
 
-        // Endpoints to query: me/posts is primary when using Page Token
-        $endpoints = ["me/posts", "me/published_posts", "me/feed", "{$p['page_id']}/posts"];
+        // Primary endpoint for Page posts: {PAGE_ID}/posts
+        $endpoints = ["{$p['page_id']}/posts", "me/posts", "{$p['page_id']}/published_posts", "{$p['page_id']}/feed"];
         $res_data = [];
         $last_err = '';
 
@@ -141,14 +165,17 @@ try {
 
                 $created_at = date('Y-m-d H:i:s', $created_ts);
                 $msg = $post['message'] ?? '';
+                
+                // Picture fallback logic
                 $picture = $post['full_picture'] ?? '';
                 if (empty($picture) && !empty($post['attachments']['data'][0]['media']['image']['src'])) {
                     $picture = $post['attachments']['data'][0]['media']['image']['src'];
                 }
-                $link = $post['permalink_url'] ?? "https://facebook.com/{$fb_post_id}";
-                $created_raw = $post['created_time'] ?? '';
-                $created_at = !empty($created_raw) ? date('Y-m-d H:i:s', strtotime($created_raw)) : date('Y-m-d H:i:s');
+                if (empty($picture) && !empty($post['attachments']['data'][0]['subattachments']['data'][0]['media']['image']['src'])) {
+                    $picture = $post['attachments']['data'][0]['subattachments']['data'][0]['media']['image']['src'];
+                }
 
+                $link = $post['permalink_url'] ?? "https://facebook.com/{$fb_post_id}";
                 $likes = (int)($post['reactions']['summary']['total_count'] ?? 0);
                 $comments = (int)($post['comments']['summary']['total_count'] ?? 0);
 
@@ -168,9 +195,9 @@ try {
         }
     }
 
-    $msg = "Đã quét và cập nhật thành công {$total_synced} bài viết từ {$pages_synced} Fanpage bằng Token chính chủ.";
+    $msg = "Đã quét và cập nhật thành công {$total_synced} bài viết (giới hạn {$limit} bài/page) từ {$pages_synced} Fanpage.";
     if (!empty($api_errors) && $total_synced === 0) {
-        $msg .= " Thông báo từ Facebook: " . implode(" | ", array_unique($api_errors));
+        $msg .= " Thông báo lỗi từ Facebook: " . implode(" | ", array_unique($api_errors));
     }
 
     echo json_encode([

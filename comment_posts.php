@@ -116,11 +116,15 @@ $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <h2 style="margin:0; font-size:22px; font-weight:700; color:var(--text-main);">💬 Comment Post (Quản lý Bài viết & Seeding Bình luận)</h2>
         <p style="margin:4px 0 0 0; font-size:13px; color:#6b7280;">Quét danh sách bài viết từ Fanpage, lọc tương tác và tự động kích hoạt chiến dịch bình luận qua Cron.</p>
     </div>
-    <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <button onclick="syncPosts()" id="btn_sync" class="btn" style="background:#0284c7; color:#fff; font-weight:600; display:flex; align-items:center; gap:6px;">
-            <span>🔄</span> <span>Quét Bài Viết Fanpage</span>
-        </button>
-        <button onclick="openCampaignModal()" id="btn_campaign" class="btn btn-primary" style="font-weight:600; display:flex; align-items:center; gap:6px;" disabled>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+        <div style="display:flex; align-items:center; gap:6px; background:var(--card-bg, #fff); padding:3px 8px; border-radius:8px; border:1px solid var(--border-color, #cbd5e1);">
+            <label style="font-size:12px; font-weight:600; color:#475569; white-space:nowrap;">Limit bài/page:</label>
+            <input type="number" id="sync_limit" value="10" min="1" max="100" style="width:55px; padding:5px 6px; border-radius:6px; border:1px solid #cbd5e1; font-weight:700; font-size:13px; text-align:center;">
+            <button onclick="syncPosts()" id="btn_sync" class="btn" style="background:#0284c7; color:#fff; font-weight:600; display:flex; align-items:center; gap:6px; padding:6px 12px;">
+                <span>🔄</span> <span>Quét Bài Viết Fanpage</span>
+            </button>
+        </div>
+        <button onclick="openCampaignModal()" id="btn_campaign" class="btn btn-primary" style="font-weight:600; display:flex; align-items:center; gap:6px; padding:9px 16px;" disabled>
             <span>🚀</span> <span>Tạo Chiến Dịch Bình Luận (<span id="sel_cnt">0</span>)</span>
         </button>
     </div>
@@ -324,6 +328,8 @@ function showNotice(msg, type = 'success') {
 
 function syncPosts() {
     const pageId = '<?php echo $filter_page_id; ?>';
+    const limitEl = document.getElementById('sync_limit');
+    const limit   = limitEl ? limitEl.value : 10;
     const dateFromEl = document.querySelector('input[name="date_from"]');
     const dateToEl   = document.querySelector('input[name="date_to"]');
     const dateFrom   = dateFromEl ? dateFromEl.value : '';
@@ -335,6 +341,7 @@ function syncPosts() {
 
     const fd = new FormData();
     fd.append('page_id', pageId);
+    fd.append('limit', limit);
     fd.append('date_from', dateFrom);
     fd.append('date_to', dateTo);
 
