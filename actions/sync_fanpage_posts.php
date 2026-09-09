@@ -91,15 +91,15 @@ try {
             continue;
         }
 
-        // Fetch published posts using page token
+        // Fetch published posts using Page Access Token (me/posts endpoint)
         $params = [
             'access_token' => $page_token,
-            'fields'       => 'id,message,created_time,full_picture,permalink_url,reactions.summary(true),comments.summary(true)',
-            'limit'        => 50
+            'fields'       => 'id,message,created_time,full_picture,permalink_url,attachments{media,type,url},reactions.summary(true),comments.summary(true)',
+            'limit'        => 100
         ];
 
-        // Primary endpoint: published_posts, Fallback endpoints: posts, feed
-        $endpoints = ["{$p['page_id']}/published_posts", "{$p['page_id']}/posts", "{$p['page_id']}/feed"];
+        // Endpoints to query: me/posts is primary when using Page Token
+        $endpoints = ["me/posts", "me/published_posts", "me/feed", "{$p['page_id']}/posts"];
         $res_data = [];
         $last_err = '';
 
@@ -125,6 +125,9 @@ try {
 
                 $msg = $post['message'] ?? '';
                 $picture = $post['full_picture'] ?? '';
+                if (empty($picture) && !empty($post['attachments']['data'][0]['media']['image']['src'])) {
+                    $picture = $post['attachments']['data'][0]['media']['image']['src'];
+                }
                 $link = $post['permalink_url'] ?? "https://facebook.com/{$fb_post_id}";
                 $created_raw = $post['created_time'] ?? '';
                 $created_at = !empty($created_raw) ? date('Y-m-d H:i:s', strtotime($created_raw)) : date('Y-m-d H:i:s');
