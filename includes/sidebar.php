@@ -16,12 +16,12 @@
         </li>
 
         <!-- Menu Facebook Post (Parent Collapsible Submenu) -->
-        <li class="has-submenu <?php echo (in_array($current_page, ['posts', 'videos', 'reels', 'story', 'facebook_scraper'])) ? 'active open' : ''; ?>">
+        <li class="has-submenu <?php echo (in_array($current_page, ['posts', 'videos', 'reels', 'story', 'facebook_scraper', 'comment_posts'])) ? 'active open' : ''; ?>">
             <a href="javascript:void(0);" onclick="toggleSidebarSubmenu(this)" data-tooltip="Facebook Post" style="display:flex; justify-content:space-between; align-items:center;">
                 <span style="display:flex; align-items:center;"><span class="icon">📘</span><span class="menu-label"> Facebook Post</span></span>
                 <span class="submenu-arrow menu-label" style="font-size:10px; transition:transform 0.2s;">▼</span>
             </a>
-            <ul class="sidebar-submenu" style="<?php echo (in_array($current_page, ['posts', 'videos', 'reels', 'story', 'facebook_scraper'])) ? 'display:block;' : 'display:none;'; ?>">
+            <ul class="sidebar-submenu" style="<?php echo (in_array($current_page, ['posts', 'videos', 'reels', 'story', 'facebook_scraper', 'comment_posts'])) ? 'display:block;' : 'display:none;'; ?>">
                 <li class="<?php echo ($current_page == 'posts') ? 'active' : ''; ?>">
                     <a href="posts.php" data-tooltip="Post Ảnh"><span class="icon">🖼️</span><span class="menu-label"> Post Ảnh</span></a>
                 </li>
@@ -36,6 +36,9 @@
                 </li>
                 <li class="<?php echo ($current_page == 'facebook_scraper') ? 'active' : ''; ?>">
                     <a href="facebook_scraper.php" data-tooltip="Facebook Scraper"><span class="icon">🕸️</span><span class="menu-label"> Facebook Scraper</span></a>
+                </li>
+                <li class="<?php echo ($current_page == 'comment_posts') ? 'active' : ''; ?>">
+                    <a href="comment_posts.php" data-tooltip="Comment Post"><span class="icon">💬</span><span class="menu-label"> Comment Post</span></a>
                 </li>
             </ul>
         </li>

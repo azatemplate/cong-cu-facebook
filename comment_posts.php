@@ -1,0 +1,410 @@
+<?php
+$current_page = 'comment_posts';
+require_once __DIR__ . '/includes/db.php';
+require_once __DIR__ . '/includes/security.php';
+require_once __DIR__ . '/includes/header.php';
+
+$account_id = $_SESSION['account_id'];
+
+// Silently ensure table exists
+try {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS fetched_fanpage_posts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        account_id INT NOT NULL,
+        page_id VARCHAR(100) NOT NULL,
+        fb_post_id VARCHAR(100) UNIQUE NOT NULL,
+        message TEXT NULL,
+        picture TEXT NULL,
+        permalink_url TEXT NULL,
+        likes_count INT DEFAULT 0,
+        comments_count INT DEFAULT 0,
+        views_count INT DEFAULT 0,
+        post_created_at DATETIME NOT NULL,
+        synced_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_acc_page (account_id, page_id),
+        INDEX idx_stats (likes_count, comments_count, post_created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+} catch (Exception $e) {}
+
+// Fetch pages for filter
+$stmt_p = $pdo->prepare("
+    (SELECT p.page_id, p.name, p.avatar FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = :aid)
+    UNION
+    (SELECT p.page_id, p.name, p.avatar FROM pages p JOIN page_shares ps ON p.page_id = ps.page_id WHERE ps.shared_with_account_id = :aid2)
+    ORDER BY name ASC
+");
+$stmt_p->execute([':aid' => $account_id, ':aid2' => $account_id]);
+$pages = $stmt_p->fetchAll(PDO::FETCH_ASSOC);
+
+// Filters
+$filter_page_id = $_GET['page_id'] ?? 'ALL';
+$filter_sort    = $_GET['sort'] ?? 'newest';
+$filter_keyword = trim($_GET['keyword'] ?? '');
+$filter_date_from = $_GET['date_from'] ?? '';
+$filter_date_to   = $_GET['date_to'] ?? '';
+
+// Build Query
+$where_clauses = ["f.account_id = :aid"];
+$params = [':aid' => $account_id];
+
+if ($filter_page_id !== 'ALL' && !empty($filter_page_id)) {
+    $where_clauses[] = "f.page_id = :pid";
+    $params[':pid'] = $filter_page_id;
+}
+
+if ($filter_keyword !== '') {
+    $where_clauses[] = "f.message LIKE :kw";
+    $params[':kw'] = "%{$filter_keyword}%";
+}
+
+if (!empty($filter_date_from)) {
+    $where_clauses[] = "f.post_created_at >= :date_from";
+    $params[':date_from'] = $filter_date_from . " 00:00:00";
+}
+
+if (!empty($filter_date_to)) {
+    $where_clauses[] = "f.post_created_at <= :date_to";
+    $params[':date_to'] = $filter_date_to . " 23:59:59";
+}
+
+$where_sql = implode(' AND ', $where_clauses);
+
+// Sorting logic
+$order_sql = "f.post_created_at DESC";
+switch ($filter_sort) {
+    case 'likes_desc':
+        $order_sql = "f.likes_count DESC, f.post_created_at DESC";
+        break;
+    case 'likes_asc':
+        $order_sql = "f.likes_count ASC, f.post_created_at DESC";
+        break;
+    case 'comments_desc':
+        $order_sql = "f.comments_count DESC, f.post_created_at DESC";
+        break;
+    case 'comments_asc':
+        $order_sql = "f.comments_count ASC, f.post_created_at DESC";
+        break;
+    case 'no_comments':
+        $where_sql .= " AND f.comments_count = 0";
+        $order_sql = "f.post_created_at DESC";
+        break;
+    case 'oldest':
+        $order_sql = "f.post_created_at ASC";
+        break;
+    default:
+        $order_sql = "f.post_created_at DESC";
+        break;
+}
+
+$sql = "
+    SELECT f.*, p.name AS page_name, p.avatar AS page_avatar,
+           (SELECT COUNT(*) FROM scheduled_posts sp WHERE sp.fb_post_id = f.fb_post_id AND sp.account_id = f.account_id AND sp.comment_lines IS NOT NULL) AS has_scheduled_cmt
+    FROM fetched_fanpage_posts f
+    LEFT JOIN pages p ON f.page_id = p.page_id
+    WHERE {$where_sql}
+    ORDER BY {$order_sql}
+    LIMIT 200
+";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+$posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+?>
+
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:10px;">
+    <div>
+        <h2 style="margin:0; font-size:22px; font-weight:700; color:var(--text-main);">💬 Comment Post (Quản lý Bài viết & Seeding Bình luận)</h2>
+        <p style="margin:4px 0 0 0; font-size:13px; color:#6b7280;">Quét danh sách bài viết từ Fanpage, lọc tương tác và tự động kích hoạt chiến dịch bình luận qua Cron.</p>
+    </div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button onclick="syncPosts()" id="btn_sync" class="btn" style="background:#0284c7; color:#fff; font-weight:600; display:flex; align-items:center; gap:6px;">
+            <span>🔄</span> <span>Quét Bài Viết Fanpage</span>
+        </button>
+        <button onclick="openCampaignModal()" id="btn_campaign" class="btn btn-primary" style="font-weight:600; display:flex; align-items:center; gap:6px;" disabled>
+            <span>🚀</span> <span>Tạo Chiến Dịch Bình Luận (<span id="sel_cnt">0</span>)</span>
+        </button>
+    </div>
+</div>
+
+<!-- Bộ lọc tìm kiếm -->
+<div style="background:var(--card-bg, #fff); padding:16px; border-radius:10px; border:1px solid var(--border-color, #e5e7eb); margin-bottom:20px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+    <form method="GET" action="comment_posts.php" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+        <div style="flex:1; min-width:180px;">
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Fanpage</label>
+            <select name="page_id" onchange="this.form.submit()" style="width:100%; padding:8px 12px; border-radius:6px; border:1px solid #d1d5db; font-size:13px;">
+                <option value="ALL">-- Tất cả Fanpage --</option>
+                <?php foreach($pages as $p): ?>
+                    <option value="<?php echo htmlspecialchars($p['page_id']); ?>" <?php echo ($filter_page_id === $p['page_id']) ? 'selected' : ''; ?>>
+                        <?php echo htmlspecialchars($p['name']); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+
+        <div style="flex:1; min-width:180px;">
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Sắp xếp & Tương tác</label>
+            <select name="sort" onchange="this.form.submit()" style="width:100%; padding:8px 12px; border-radius:6px; border:1px solid #d1d5db; font-size:13px;">
+                <option value="newest" <?php echo ($filter_sort === 'newest') ? 'selected' : ''; ?>>📅 Mới nhất xếp trước</option>
+                <option value="oldest" <?php echo ($filter_sort === 'oldest') ? 'selected' : ''; ?>>📅 Cũ nhất xếp trước</option>
+                <option value="likes_desc" <?php echo ($filter_sort === 'likes_desc') ? 'selected' : ''; ?>>👍 Lượt Thích cao nhất</option>
+                <option value="likes_asc" <?php echo ($filter_sort === 'likes_asc') ? 'selected' : ''; ?>>👍 Lượt Thích thấp nhất</option>
+                <option value="comments_desc" <?php echo ($filter_sort === 'comments_desc') ? 'selected' : ''; ?>>💬 Bình luận nhiều nhất</option>
+                <option value="comments_asc" <?php echo ($filter_sort === 'comments_asc') ? 'selected' : ''; ?>>💬 Bình luận ít nhất</option>
+                <option value="no_comments" <?php echo ($filter_sort === 'no_comments') ? 'selected' : ''; ?>>🚫 Chưa có bình luận nào</option>
+            </select>
+        </div>
+
+        <div style="width:140px;">
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Từ ngày</label>
+            <input type="date" name="date_from" value="<?php echo htmlspecialchars($filter_date_from); ?>" onchange="this.form.submit()" style="width:100%; padding:7px 10px; border-radius:6px; border:1px solid #d1d5db; font-size:13px;">
+        </div>
+
+        <div style="width:140px;">
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Đến ngày</label>
+            <input type="date" name="date_to" value="<?php echo htmlspecialchars($filter_date_to); ?>" onchange="this.form.submit()" style="width:100%; padding:7px 10px; border-radius:6px; border:1px solid #d1d5db; font-size:13px;">
+        </div>
+
+        <div style="flex:1.5; min-width:200px;">
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Tìm bài viết</label>
+            <input type="text" name="keyword" value="<?php echo htmlspecialchars($filter_keyword); ?>" placeholder="Nhập từ khóa nội dung..." style="width:100%; padding:7px 12px; border-radius:6px; border:1px solid #d1d5db; font-size:13px;">
+        </div>
+
+        <div>
+            <button type="submit" class="btn btn-secondary" style="padding:8px 16px;">Lọc</button>
+            <?php if($filter_page_id !== 'ALL' || $filter_sort !== 'newest' || $filter_keyword !== '' || $filter_date_from !== '' || $filter_date_to !== ''): ?>
+                <a href="comment_posts.php" class="btn" style="background:#f3f4f6; color:#374151; padding:8px 12px; text-decoration:none;">Xóa lọc</a>
+            <?php endif; ?>
+        </div>
+    </form>
+</div>
+
+<!-- Danh sách bài viết -->
+<div style="background:var(--card-bg, #fff); border-radius:10px; border:1px solid var(--border-color, #e5e7eb); overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+    <div style="padding:12px 16px; background:#f9fafb; border-bottom:1px solid #e5e7eb; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:13px; font-weight:600; color:#374151;">Danh sách bài viết (Hiển thị tối đa <?php echo count($posts); ?> bài)</span>
+        <label style="font-size:13px; font-weight:600; color:#0284c7; cursor:pointer; display:flex; align-items:center; gap:6px;">
+            <input type="checkbox" id="chk_select_all" onchange="toggleSelectAll(this)" style="width:16px; height:16px;"> Chọn tất cả trang này
+        </label>
+    </div>
+
+    <?php if(empty($posts)): ?>
+        <div style="text-align:center; padding:50px 20px; color:#9ca3af;">
+            <span style="font-size:40px;">📭</span>
+            <p style="margin-top:10px; font-size:14px;">Chưa có bài viết nào được quét hoặc không tìm thấy bài khớp bộ lọc.</p>
+            <button onclick="syncPosts()" class="btn" style="background:#0284c7; color:#fff; margin-top:10px;">Bấm vào đây để quét bài viết mới nhất từ Fanpage</button>
+        </div>
+    <?php else: ?>
+        <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; text-align:left; font-size:13px;">
+                <thead>
+                    <tr style="background:#f9fafb; border-bottom:1px solid #e5e7eb; color:#6b7280; font-weight:600;">
+                        <th style="padding:12px; width:40px; text-align:center;"></th>
+                        <th style="padding:12px; width:180px;">Fanpage</th>
+                        <th style="padding:12px;">Nội dung Bài viết</th>
+                        <th style="padding:12px; width:90px; text-align:center;">👍 Thích</th>
+                        <th style="padding:12px; width:90px; text-align:center;">💬 Cmt</th>
+                        <th style="padding:12px; width:140px;">📅 Ngày đăng</th>
+                        <th style="padding:12px; width:120px; text-align:center;">Trạng thái</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach($posts as $p): ?>
+                        <tr style="border-bottom:1px solid #f3f4f6; transition:background 0.15s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='transparent'">
+                            <td style="padding:12px; text-align:center;">
+                                <input type="checkbox" class="post_cb" value="<?php echo htmlspecialchars($p['fb_post_id']); ?>" onchange="updateSelectedCount()" style="width:16px; height:16px; cursor:pointer;">
+                            </td>
+                            <td style="padding:12px;">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <img src="<?php echo htmlspecialchars($p['page_avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($p['page_name'] ?: 'P')); ?>" style="width:28px; height:28px; border-radius:50%; object-fit:cover; border:1px solid #e5e7eb;">
+                                    <span style="font-weight:600; color:#1f2937; line-height:1.2; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?php echo htmlspecialchars($p['page_name']); ?>">
+                                        <?php echo htmlspecialchars($p['page_name'] ?: $p['page_id']); ?>
+                                    </span>
+                                </div>
+                            </td>
+                            <td style="padding:12px;">
+                                <div style="display:flex; gap:12px; align-items:flex-start;">
+                                    <?php if(!empty($p['picture'])): ?>
+                                        <img src="<?php echo htmlspecialchars($p['picture']); ?>" style="width:50px; height:50px; border-radius:6px; object-fit:cover; border:1px solid #e5e7eb; flex-shrink:0;">
+                                    <?php endif; ?>
+                                    <div style="flex:1;">
+                                        <div style="color:#374151; font-size:13px; line-height:1.4; max-height:42px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">
+                                            <?php echo htmlspecialchars($p['message'] ?: '[Không có nội dung văn bản]'); ?>
+                                        </div>
+                                        <a href="<?php echo htmlspecialchars($p['permalink_url'] ?: "https://facebook.com/{$p['fb_post_id']}"); ?>" target="_blank" style="font-size:11px; color:#0284c7; text-decoration:none; display:inline-flex; align-items:center; gap:3px; margin-top:3px;">
+                                            <span>Xem trên Facebook</span> <span>↗</span>
+                                        </a>
+                                    </div>
+                                </div>
+                            </td>
+                            <td style="padding:12px; text-align:center; font-weight:600; color:#1d4ed8;">
+                                <?php echo number_format($p['likes_count']); ?>
+                            </td>
+                            <td style="padding:12px; text-align:center; font-weight:600; color:#059669;">
+                                <?php echo number_format($p['comments_count']); ?>
+                            </td>
+                            <td style="padding:12px; font-size:12px; color:#6b7280; white-space:nowrap;">
+                                <?php echo date('d/m/Y H:i', strtotime($p['post_created_at'])); ?>
+                            </td>
+                            <td style="padding:12px; text-align:center;">
+                                <?php if($p['has_scheduled_cmt'] > 0): ?>
+                                    <span style="font-size:11px; padding:3px 8px; background:#dcfce7; color:#15803d; border-radius:12px; font-weight:600;">Đã có lịch Cmt</span>
+                                <?php else: ?>
+                                    <span style="font-size:11px; padding:3px 8px; background:#f3f4f6; color:#6b7280; border-radius:12px;">Chưa cmt</span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+</div>
+
+<!-- Modal Tạo Chiến Dịch Bình Luận -->
+<div id="campaignModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:#fff; padding:25px; border-radius:10px; width:100%; max-width:650px; max-height:90vh; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
+        <h3 style="margin-top:0; border-bottom:1px solid #e5e7eb; padding-bottom:10px; color:#1f2937; display:flex; justify-content:space-between; align-items:center;">
+            <span>🚀 Tạo Chiến Dịch Bình Luận Seeding</span>
+            <span style="font-size:13px; background:#e0f2fe; color:#0369a1; padding:3px 10px; border-radius:12px; font-weight:600;" id="modal_sel_badge">0 bài viết</span>
+        </h3>
+        
+        <form id="frm_campaign" onsubmit="submitCampaign(event)">
+            <div style="margin-bottom:15px;">
+                <label style="display:block; font-weight:bold; font-size:13px; margin-bottom:6px; color:#374151;">Nội dung bình luận mẫu</label>
+                <textarea id="txt_comment_lines" rows="6" placeholder="Nhập mẫu bình luận (mỗi dòng một câu)...
+Ví dụ:
+Chào shop, sản phẩm này còn hàng không ạ?
+Em muốn tư vấn mẫu này với ạ!
+{Chào|Xin chào} shop, check inbox giúp mình nhé!" style="width:100%; padding:10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;" required></textarea>
+                <div style="font-size:11px; color:#6b7280; margin-top:4px;">Nhập <b>mỗi dòng một câu</b> để hệ thống chọn ngẫu nhiên. Hỗ trợ cú pháp tráo câu Spintax: <code>{Nội dung 1|Nội dung 2}</code>.</div>
+            </div>
+
+            <div style="display:flex; gap:15px; margin-bottom:20px; flex-wrap:wrap;">
+                <div style="flex:1; min-width:200px;">
+                    <label style="display:block; font-weight:bold; font-size:13px; margin-bottom:6px; color:#374151;">Giãn cách giữa các bài (phút)</label>
+                    <input type="number" id="num_delay_minutes" value="5" min="0" max="1440" style="width:100%; padding:8px 12px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;">
+                    <div style="font-size:11px; color:#6b7280; margin-top:4px;">Giúp các bài viết không bị cmt dồn dập cùng lúc.</div>
+                </div>
+
+                <div style="flex:1; min-width:200px;">
+                    <label style="display:block; font-weight:bold; font-size:13px; margin-bottom:6px; color:#374151;">Thời gian bắt đầu</label>
+                    <input type="datetime-local" id="dt_start_time" style="width:100%; padding:7px 12px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;">
+                    <div style="font-size:11px; color:#6b7280; margin-top:4px;">Để trống nếu muốn hệ thống kích hoạt ngay.</div>
+                </div>
+            </div>
+
+            <div style="text-align:right; border-top:1px solid #e5e7eb; padding-top:15px;">
+                <button type="button" onclick="document.getElementById('campaignModal').style.display='none';" class="btn" style="background:#f3f4f6; color:#374151; margin-right:10px;">Hủy</button>
+                <button type="submit" class="btn btn-primary" id="btn_submit_campaign" style="font-weight:600;">Lưu & Kích Hoạt Seeding</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function syncPosts() {
+    const pageId = '<?php echo $filter_page_id; ?>';
+    const btn = document.getElementById('btn_sync');
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳</span> <span>Đang quét bài viết...</span>';
+
+    const fd = new FormData();
+    fd.append('page_id', pageId);
+
+    fetch('actions/sync_fanpage_posts.php', {
+        method: 'POST',
+        body: fd
+    })
+    .then(r => r.json())
+    .then(res => {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🔄</span> <span>Quét Bài Viết Fanpage</span>';
+        if (res.status === 'success') {
+            alert(res.msg);
+            location.reload();
+        } else {
+            alert('Lỗi: ' + res.msg);
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🔄</span> <span>Quét Bài Viết Fanpage</span>';
+        alert('Lỗi kết nối máy chủ: ' + err);
+    });
+}
+
+function toggleSelectAll(el) {
+    const cbs = document.querySelectorAll('.post_cb');
+    cbs.forEach(cb => cb.checked = el.checked);
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const checkedVals = Array.from(document.querySelectorAll('.post_cb:checked')).map(el => el.value);
+    const count = checkedVals.length;
+    document.getElementById('sel_cnt').innerText = count;
+    document.getElementById('modal_sel_badge').innerText = count + ' bài viết';
+    document.getElementById('btn_campaign').disabled = (count === 0);
+}
+
+function openCampaignModal() {
+    const checkedVals = Array.from(document.querySelectorAll('.post_cb:checked')).map(el => el.value);
+    if (checkedVals.length === 0) {
+        alert('Vui lòng tích chọn ít nhất 1 bài viết!');
+        return;
+    }
+    document.getElementById('campaignModal').style.display = 'flex';
+}
+
+function submitCampaign(e) {
+    e.preventDefault();
+    const checkedVals = Array.from(document.querySelectorAll('.post_cb:checked')).map(el => el.value);
+    const commentLines = document.getElementById('txt_comment_lines').value.trim();
+    const delayMinutes = document.getElementById('num_delay_minutes').value;
+    const startTime = document.getElementById('dt_start_time').value;
+    const btn = document.getElementById('btn_submit_campaign');
+
+    if (checkedVals.length === 0) {
+        alert('Vui lòng chọn bài viết!');
+        return;
+    }
+
+    if (!commentLines) {
+        alert('Vui lòng nhập nội dung bình luận mẫu!');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerText = 'Đang khởi tạo...';
+
+    const fd = new FormData();
+    fd.append('post_ids', JSON.stringify(checkedVals));
+    fd.append('comment_lines', commentLines);
+    fd.append('delay_minutes', delayMinutes);
+    fd.append('start_time', startTime);
+
+    fetch('actions/create_comment_campaign.php', {
+        method: 'POST',
+        body: fd
+    })
+    .then(r => r.json())
+    .then(res => {
+        btn.disabled = false;
+        btn.innerText = 'Lưu & Kích Hoạt Seeding';
+        if (res.status === 'success') {
+            alert(res.msg);
+            document.getElementById('campaignModal').style.display = 'none';
+            location.reload();
+        } else {
+            alert('Lỗi: ' + res.msg);
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerText = 'Lưu & Kích Hoạt Seeding';
+        alert('Lỗi kết nối máy chủ: ' + err);
+    });
+}
+</script>
+
+<?php require_once __DIR__ . '/includes/footer.php'; ?>

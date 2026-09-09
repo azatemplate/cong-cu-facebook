@@ -161,6 +161,23 @@ $migrations = [
     ["ALTER TABLE web_chat_configs ADD COLUMN bottom_offset INT DEFAULT 24", "web_chat_configs.bottom_offset"],
     ["ALTER TABLE web_chat_configs ADD COLUMN side_offset INT DEFAULT 24", "web_chat_configs.side_offset"],
     ["ALTER TABLE customer_api_configs ADD COLUMN send_scope VARCHAR(50) DEFAULT 'all'", "customer_api_configs.send_scope"],
+
+    ["CREATE TABLE IF NOT EXISTS fetched_fanpage_posts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        account_id INT NOT NULL,
+        page_id VARCHAR(100) NOT NULL,
+        fb_post_id VARCHAR(100) UNIQUE NOT NULL,
+        message TEXT NULL,
+        picture TEXT NULL,
+        permalink_url TEXT NULL,
+        likes_count INT DEFAULT 0,
+        comments_count INT DEFAULT 0,
+        views_count INT DEFAULT 0,
+        post_created_at DATETIME NOT NULL,
+        synced_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_acc_page (account_id, page_id),
+        INDEX idx_stats (likes_count, comments_count, post_created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci", "fetched_fanpage_posts table"],
 ];
 
 // Default system settings seed
