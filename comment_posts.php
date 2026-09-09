@@ -126,6 +126,9 @@ $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </div>
 
+<!-- Thẻ thông báo trên giao diện PHP (Thay thế alert trình duyệt) -->
+<div id="notice_banner" style="display:none; margin-bottom:20px; padding:14px 18px; border-radius:8px; font-size:14px; font-weight:500; box-shadow:0 2px 4px rgba(0,0,0,0.05);"></div>
+
 <!-- Bộ lọc tìm kiếm -->
 <div style="background:var(--card-bg, #fff); padding:16px; border-radius:10px; border:1px solid var(--border-color, #e5e7eb); margin-bottom:20px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
     <form method="GET" action="comment_posts.php" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
@@ -302,6 +305,23 @@ Em muốn tư vấn mẫu này với ạ!
 </div>
 
 <script>
+function showNotice(msg, type = 'success') {
+    const banner = document.getElementById('notice_banner');
+    if (!banner) return;
+    banner.style.display = 'block';
+    if (type === 'success') {
+        banner.style.background = '#dcfce7';
+        banner.style.color = '#15803d';
+        banner.style.border = '1px solid #86efac';
+    } else {
+        banner.style.background = '#fee2e2';
+        banner.style.color = '#b91c1c';
+        banner.style.border = '1px solid #fca5a5';
+    }
+    banner.innerHTML = msg;
+    banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 function syncPosts() {
     const pageId = '<?php echo $filter_page_id; ?>';
     const btn = document.getElementById('btn_sync');
@@ -320,16 +340,16 @@ function syncPosts() {
         btn.disabled = false;
         btn.innerHTML = '<span>🔄</span> <span>Quét Bài Viết Fanpage</span>';
         if (res.status === 'success') {
-            alert(res.msg);
-            location.reload();
+            showNotice(res.msg, 'success');
+            setTimeout(() => location.reload(), 1500);
         } else {
-            alert('Lỗi: ' + res.msg);
+            showNotice('Lỗi: ' + res.msg, 'error');
         }
     })
     .catch(err => {
         btn.disabled = false;
         btn.innerHTML = '<span>🔄</span> <span>Quét Bài Viết Fanpage</span>';
-        alert('Lỗi kết nối máy chủ: ' + err);
+        showNotice('Lỗi kết nối máy chủ: ' + err, 'error');
     });
 }
 
@@ -350,7 +370,7 @@ function updateSelectedCount() {
 function openCampaignModal() {
     const checkedVals = Array.from(document.querySelectorAll('.post_cb:checked')).map(el => el.value);
     if (checkedVals.length === 0) {
-        alert('Vui lòng tích chọn ít nhất 1 bài viết!');
+        showNotice('Vui lòng tích chọn ít nhất 1 bài viết!', 'error');
         return;
     }
     document.getElementById('campaignModal').style.display = 'flex';
@@ -365,12 +385,12 @@ function submitCampaign(e) {
     const btn = document.getElementById('btn_submit_campaign');
 
     if (checkedVals.length === 0) {
-        alert('Vui lòng chọn bài viết!');
+        showNotice('Vui lòng chọn bài viết!', 'error');
         return;
     }
 
     if (!commentLines) {
-        alert('Vui lòng nhập nội dung bình luận mẫu!');
+        showNotice('Vui lòng nhập nội dung bình luận mẫu!', 'error');
         return;
     }
 
@@ -392,17 +412,16 @@ function submitCampaign(e) {
         btn.disabled = false;
         btn.innerText = 'Lưu & Kích Hoạt Seeding';
         if (res.status === 'success') {
-            alert(res.msg);
             document.getElementById('campaignModal').style.display = 'none';
             window.location.href = res.redirect || 'manage_posts.php';
         } else {
-            alert('Lỗi: ' + res.msg);
+            showNotice('Lỗi: ' + res.msg, 'error');
         }
     })
     .catch(err => {
         btn.disabled = false;
         btn.innerText = 'Lưu & Kích Hoạt Seeding';
-        alert('Lỗi kết nối máy chủ: ' + err);
+        showNotice('Lỗi kết nối máy chủ: ' + err, 'error');
     });
 }
 </script>

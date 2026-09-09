@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $account_id = (int)$_SESSION['account_id'];
-$target_page_id = $_POST['page_id'] ?? 'ALL';
+$target_page_id = trim($_POST['page_id'] ?? 'ALL');
 session_write_close();
 
 try {
@@ -39,33 +39,31 @@ try {
         INDEX idx_stats (likes_count, comments_count, post_created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
-    // Fetch pages
-    if ($target_page_id === 'ALL' || empty($target_page_id)) {
-        $stmt_pages = $pdo->prepare("
-            (SELECT p.page_id, p.name, p.access_token FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = :aid)
-            UNION
-            (SELECT p.page_id, p.name, p.access_token FROM pages p JOIN page_shares ps ON p.page_id = ps.page_id WHERE ps.shared_with_account_id = :aid2)
-        ");
-        $stmt_pages->execute([':aid' => $account_id, ':aid2' => $account_id]);
-    } else {
-        $stmt_pages = $pdo->prepare("
-            SELECT p.page_id, p.name, p.access_token 
-            FROM pages p 
-            JOIN users u ON p.user_id = u.id 
-            WHERE u.account_id = :aid AND p.page_id = :pid
-        ");
-        $stmt_pages->execute([':aid' => $account_id, ':pid' => $target_page_id]);
-    }
-
+    // Fetch page using strict page token belonging to the target page
+    $stmt_pages = $pdo->prepare("
+        SELECT DISTINCT p.page_id, p.name, p.access_token 
+        FROM pages p 
+        LEFT JOIN users u ON p.user_id = u.id 
+        LEFT JOIN page_shares ps ON p.page_id = ps.page_id 
+        WHERE (u.account_id = :aid OR ps.shared_with_account_id = :aid2)
+          AND (:pid = 'ALL' OR p.page_id = :pid2)
+    ");
+    $stmt_pages->execute([
+        ':aid'  => $account_id,
+        ':aid2' => $account_id,
+        ':pid'  => $target_page_id,
+        ':pid2' => $target_page_id
+    ]);
     $pages = $stmt_pages->fetchAll(PDO::FETCH_ASSOC);
 
     if (empty($pages)) {
-        echo json_encode(['status' => 'error', 'msg' => 'Không tìm thấy Fanpage nào để quét']);
+        echo json_encode(['status' => 'error', 'msg' => 'Không tìm thấy Fanpage hợp lệ hoặc bạn chưa được phân quyền sử dụng Fanpage này']);
         exit;
     }
 
     $total_synced = 0;
     $pages_synced = 0;
+    $api_errors = [];
 
     $stmt_upsert = $pdo->prepare("
         INSERT INTO fetched_fanpage_posts 
@@ -82,23 +80,46 @@ try {
     ");
 
     foreach ($pages as $p) {
-        if (empty($p['access_token'])) continue;
-        $page_token = decryptData($p['access_token']);
-        if (empty($page_token)) continue;
+        if (empty($p['access_token'])) {
+            $api_errors[] = "Trang {$p['name']}: Thiếu Access Token";
+            continue;
+        }
 
-        // Fetch top 50 published posts
-        $endpoint = "{$p['page_id']}/published_posts";
+        $page_token = decryptData($p['access_token']);
+        if (empty($page_token)) {
+            $api_errors[] = "Trang {$p['name']}: Token không hợp lệ";
+            continue;
+        }
+
+        // Fetch published posts using page token
         $params = [
             'access_token' => $page_token,
             'fields'       => 'id,message,created_time,full_picture,permalink_url,reactions.summary(true),comments.summary(true)',
             'limit'        => 50
         ];
 
-        $res = fb_api_request($endpoint, $params, 'GET');
+        // Primary endpoint: published_posts, Fallback endpoints: posts, feed
+        $endpoints = ["{$p['page_id']}/published_posts", "{$p['page_id']}/posts", "{$p['page_id']}/feed"];
+        $res_data = [];
+        $last_err = '';
 
-        if (!empty($res['data']) && is_array($res['data'])) {
+        foreach ($endpoints as $ep) {
+            $res = fb_api_request($ep, $params, 'GET');
+            if (!empty($res['data']) && is_array($res['data'])) {
+                $res_data = $res['data'];
+                break;
+            } elseif (!empty($res['error']['message'])) {
+                $last_err = $res['error']['message'];
+            }
+        }
+
+        if (empty($res_data) && !empty($last_err)) {
+            $api_errors[] = "Trang {$p['name']}: {$last_err}";
+        }
+
+        if (!empty($res_data)) {
             $pages_synced++;
-            foreach ($res['data'] as $post) {
+            foreach ($res_data as $post) {
                 $fb_post_id = $post['id'] ?? '';
                 if (empty($fb_post_id)) continue;
 
@@ -127,9 +148,14 @@ try {
         }
     }
 
+    $msg = "Đã quét và cập nhật thành công {$total_synced} bài viết từ {$pages_synced} Fanpage bằng Token chính chủ.";
+    if (!empty($api_errors) && $total_synced === 0) {
+        $msg .= " Thông báo từ Facebook: " . implode(" | ", array_unique($api_errors));
+    }
+
     echo json_encode([
-        'status' => 'success',
-        'msg'    => "Đã quét và cập nhật thành công {$total_synced} bài viết từ {$pages_synced} Fanpage."
+        'status' => ($total_synced > 0 || empty($api_errors)) ? 'success' : 'error',
+        'msg'    => $msg
     ]);
 } catch (Exception $e) {
     echo json_encode(['status' => 'error', 'msg' => 'Lỗi quét bài viết: ' . $e->getMessage()]);
