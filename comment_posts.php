@@ -37,16 +37,18 @@ $stmt_p->execute([':aid' => $account_id, ':aid2' => $account_id]);
 $pages = $stmt_p->fetchAll(PDO::FETCH_ASSOC);
 
 // Filters
-$raw_selected_pages = $_GET['page_ids'] ?? ($_GET['page_id'] ?? 'ALL');
+$raw_selected_pages = $_GET['page_ids'] ?? ($_GET['page_id'] ?? null);
 if (is_array($raw_selected_pages)) {
-    $filter_page_ids = array_map('strval', $raw_selected_pages);
+    $filter_page_ids = array_values(array_filter(array_map('strval', $raw_selected_pages)));
 } elseif (is_string($raw_selected_pages) && strpos($raw_selected_pages, '[') !== false) {
     $decoded = @json_decode($raw_selected_pages, true);
-    $filter_page_ids = is_array($decoded) ? array_map('strval', $decoded) : [$raw_selected_pages];
-} elseif ($raw_selected_pages === 'ALL' || empty($raw_selected_pages)) {
+    $filter_page_ids = is_array($decoded) ? array_values(array_filter(array_map('strval', $decoded))) : [$raw_selected_pages];
+} elseif ($raw_selected_pages === 'ALL') {
     $filter_page_ids = ['ALL'];
-} else {
+} elseif (!empty($raw_selected_pages)) {
     $filter_page_ids = [(string)$raw_selected_pages];
+} else {
+    $filter_page_ids = []; // Default: Unchecked!
 }
 
 $filter_sort    = $_GET['sort'] ?? 'newest';
@@ -161,7 +163,7 @@ $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 </label>
                 <div style="padding:4px 0;">
                     <?php if(!empty($pages)): foreach($pages as $p): 
-                        $is_checked = in_array('ALL', $filter_page_ids, true) || in_array((string)$p['page_id'], $filter_page_ids, true);
+                        $is_checked = !empty($filter_page_ids) && (in_array('ALL', $filter_page_ids, true) || in_array((string)$p['page_id'], $filter_page_ids, true));
                     ?>
                         <label style="display:flex; align-items:center; gap:8px; padding:6px 12px; cursor:pointer; font-size:13px; transition:background 0.15s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
                             <input type="checkbox" name="page_ids[]" class="filter_page_cb" value="<?php echo htmlspecialchars($p['page_id']); ?>" onchange="updatePageSelectText()" <?php echo $is_checked ? 'checked' : ''; ?> style="width:16px; height:16px; margin:0;">
