@@ -119,8 +119,8 @@ try {
             continue;
         }
 
-        // Request a larger batch size from Graph API so filtering empty posts still yields exact target $limit count
-        $fetch_batch_limit = min(100, max(25, $limit * 3));
+        // Safe batch size per API call (20 max) to avoid Facebook 'Please reduce the amount of data' payload error
+        $fetch_batch_limit = min(20, max(10, $limit));
         $params = [
             'access_token' => $page_token,
             'fields'       => 'id,message,created_time,permalink_url,full_picture,attachments{media,type,url}',
