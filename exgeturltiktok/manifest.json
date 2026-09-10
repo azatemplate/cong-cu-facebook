@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "default_locale": "vi",
   "name": "TikTok URL Collector Extension",
   "version": "2.0.0",
   "description": "Extension thu thập URL TikTok tự động (Kênh, Từ khóa, Hashtag) cho tiktok_search.php.",
