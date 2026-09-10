@@ -110,32 +110,6 @@ require_once __DIR__ . '/includes/header.php';
     cursor:pointer; display:none; align-items:center; gap:8px;
 }
 
-/* ─── URL Import Box ─── */
-.import-card {
-    background: var(--card-bg); border: 1px solid var(--border-color);
-    border-radius: 14px; padding: 20px 24px; margin-bottom: 20px;
-}
-.import-head {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 10px; flex-wrap: wrap; gap: 10px;
-}
-.import-title { font-size: 14px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
-.import-textarea {
-    width: 100%; height: 90px; padding: 12px;
-    border: 1px solid var(--border-color); border-radius: 10px;
-    background: var(--bg-color); color: var(--text-main);
-    font-family: monospace; font-size: 13px; outline: none;
-    resize: vertical; transition: border-color 0.2s;
-}
-.import-textarea:focus { border-color: #25f4ee; box-shadow: 0 0 0 3px rgba(37,244,238,0.12); }
-
-.btn-import {
-    padding: 9px 20px; background: linear-gradient(135deg, #25f4ee, #0dcfca);
-    color: #010101; border: none; border-radius: 8px; font-size: 13px; font-weight: 700;
-    cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.15s;
-    margin-top: 10px; box-shadow: 0 3px 10px rgba(37,244,238,0.3);
-}
-
 /* ─── Column Filter ─── */
 .col-filter-wrap {
     margin-bottom: 16px; background: var(--card-bg);
@@ -308,17 +282,6 @@ require_once __DIR__ . '/includes/header.php';
     </p>
 </div>
 
-<!-- URL Import Box (Fallback/Manual Paste) -->
-<div class="import-card">
-    <div class="import-head">
-        <div class="import-title">
-            <span>📥</span> Nhập / Dán thủ công danh sách URL (Nếu không dùng Extension)
-        </div>
-    </div>
-    <textarea id="import-textarea" class="import-textarea" placeholder="Dán danh sách URL TikTok vào đây (mỗi URL một dòng)..."></textarea>
-    <button class="btn-import" onclick="parseAndAddUrls()">⚡ Phân tích & Thêm vào danh sách</button>
-</div>
-
 <!-- Column Filter Chips -->
 <div class="col-filter-wrap" id="col-filter-wrap" style="display:none;">
     <div class="col-filter-label">🎛 Hiển thị cột</div>
@@ -370,7 +333,7 @@ const COLUMNS = [
 ];
 
 // ─── State ────────────────────────────────────────────────────────────────────
-let allVideos    = [];
+let videoMap     = new Map(); // video_id -> object
 let sortKey      = null;
 let sortDir      = 'desc';
 let colVisible   = {};
@@ -430,7 +393,7 @@ window.addEventListener('message', (event) => {
         updateVideosFromList(finalContent);
         setExtensionStatus(true, false);
         toggleScanButtons(false);
-        showToast(`✅ Đã hoàn thành quét ${allVideos.length} URL TikTok!`);
+        showToast(`🎉 Đã quét xong ${videoMap.size} URL bài viết TikTok và tự động đóng tab!`);
     }
 });
 
@@ -492,7 +455,7 @@ function startScan(mode) {
         limit: limit
     }, '*');
 
-    showToast(`🚀 Extension đang mở TikTok và quét tự động...`);
+    showToast(`🚀 Extension đang mở tab TikTok và quét tự động...`);
 }
 
 function stopScan() {
@@ -505,7 +468,7 @@ function stopScan() {
         type: 'STOP_SCAN'
     }, '*');
 
-    showToast('⏸ Đã yêu cầu dừng quét.');
+    showToast('⏸ Đã dừng quét và đóng tab TikTok.');
 }
 
 function toggleScanButtons(scanning) {
@@ -516,33 +479,48 @@ function toggleScanButtons(scanning) {
     stopBtns.forEach(b => b.style.display = scanning ? 'flex' : 'none');
 }
 
-// ─── Update Table Videos ──────────────────────────────────────────────────────
+// ─── Update Table Videos (Strict deduplication by video_id) ────────────────────
 function updateVideosFromList(list) {
     if (!Array.isArray(list) || list.length === 0) return;
 
-    let added = 0;
-    const existingMap = new Map();
-    allVideos.forEach(v => existingMap.set(v.url, v));
+    let addedOrUpdated = false;
 
     list.forEach(v => {
-        if (!v || !v.url) return;
-        const prev = existingMap.get(v.url);
-        const merged = prev ? {
-            ...prev,
-            title: (v.title && !v.title.startsWith('TikTok Video')) ? v.title : prev.title,
-            play_count: Math.max(v.play_count || 0, prev.play_count || 0),
-            digg_count: Math.max(v.digg_count || 0, prev.digg_count || 0),
-            comment_count: Math.max(v.comment_count || 0, prev.comment_count || 0),
-            share_count: Math.max(v.share_count || 0, prev.share_count || 0)
-        } : v;
+        if (!v) return;
+        const vId = v.video_id || extractVideoId(v.url);
+        if (!vId) return;
 
-        existingMap.set(v.url, merged);
-        if (!prev) added++;
+        const prev = videoMap.get(vId);
+        if (!prev) {
+            videoMap.set(vId, v);
+            addedOrUpdated = true;
+        } else {
+            // Merge & refine author/title/stats
+            const prevAuthor = prev.author?.unique_id || '';
+            const newAuthor = v.author?.unique_id || '';
+            const useAuthor = (/^\d{12,}$/.test(prevAuthor) && !/^\d{12,}$/.test(newAuthor)) ? newAuthor : (prevAuthor || newAuthor);
+
+            const merged = {
+                video_id: vId,
+                url: useAuthor ? `https://www.tiktok.com/@${useAuthor}/video/${vId}` : (v.url || prev.url),
+                title: (v.title && !v.title.startsWith('TikTok Video')) ? v.title : prev.title,
+                author: {
+                    unique_id: useAuthor,
+                    nickname: v.author?.nickname || prev.author?.nickname || useAuthor
+                },
+                play_count: Math.max(v.play_count || 0, prev.play_count || 0),
+                digg_count: Math.max(v.digg_count || 0, prev.digg_count || 0),
+                comment_count: Math.max(v.comment_count || 0, prev.comment_count || 0),
+                share_count: Math.max(v.share_count || 0, prev.share_count || 0),
+                create_time: v.create_time || prev.create_time || Math.floor(Date.now() / 1000)
+            };
+
+            videoMap.set(vId, merged);
+            addedOrUpdated = true;
+        }
     });
 
-    allVideos = Array.from(existingMap.values());
-
-    if (allVideos.length > 0) {
+    if (videoMap.size > 0 && addedOrUpdated) {
         document.getElementById('empty-state').style.display = 'none';
         document.getElementById('col-filter-wrap').style.display = 'block';
         document.getElementById('results-section').style.display = 'block';
@@ -551,41 +529,10 @@ function updateVideosFromList(list) {
     }
 }
 
-// ─── Manual Paste Parser ──────────────────────────────────────────────────────
-function parseAndAddUrls() {
-    const raw = document.getElementById('import-textarea').value.trim();
-    if (!raw) { alert('Vui lòng dán danh sách URL!'); return; }
-
-    const lines = raw.split(/\r?\n/);
-    const newList = [];
-
-    lines.forEach(line => {
-        const m = line.match(/https?:\/\/(?:www\.)?tiktok\.com\/@([^/]+)\/video\/(\d+)/i);
-        if (m) {
-            const authorId = m[1];
-            const videoId = m[2];
-            const cleanUrl = `https://www.tiktok.com/@${authorId}/video/${videoId}`;
-            newList.push({
-                url: cleanUrl,
-                video_id: videoId,
-                title: `TikTok Video ${videoId}`,
-                author: { unique_id: authorId, nickname: authorId },
-                play_count: 0,
-                digg_count: 0,
-                comment_count: 0,
-                share_count: 0,
-                create_time: Math.floor(Date.now() / 1000)
-            });
-        }
-    });
-
-    if (newList.length > 0) {
-        updateVideosFromList(newList);
-        document.getElementById('import-textarea').value = '';
-        showToast(`✅ Đã thêm ${newList.length} URL từ ô dán!`);
-    } else {
-        alert('Không tìm thấy URL TikTok hợp lệ nào!');
-    }
+function extractVideoId(url) {
+    if (!url) return '';
+    const m = url.match(/\/video\/(\d+)/i);
+    return m ? m[1] : '';
 }
 
 // ─── Table & Column Management ────────────────────────────────────────────────
@@ -635,7 +582,7 @@ function buildHeader() {
 
 function renderTable() {
     buildHeader();
-    let videos = [...allVideos];
+    let videos = Array.from(videoMap.values());
 
     if (sortKey) {
         videos.sort((a, b) => {
@@ -657,9 +604,10 @@ function renderTable() {
 
     let html = '';
     videos.forEach((v, idx) => {
-        const tiktokUrl  = v.url || (v.video_id ? `https://www.tiktok.com/@${v.author?.unique_id || 'user'}/video/${v.video_id}` : '');
-        const title      = (v.title || '').trim() || `TikTok Video ${v.video_id || ''}`;
-        const authorName = v.author?.nickname || v.author?.unique_id || '—';
+        const videoId    = v.video_id || extractVideoId(v.url);
+        const authorName = v.author?.unique_id || v.author?.nickname || 'user';
+        const tiktokUrl  = `https://www.tiktok.com/@${authorName}/video/${videoId}`;
+        const title      = (v.title || '').trim() || `TikTok Video ${videoId}`;
         const dateStr    = v.create_time ? new Date(v.create_time * 1000).toLocaleDateString('vi-VN') : '—';
 
         html += `<tr data-idx="${idx}">`;
@@ -727,15 +675,17 @@ function copySelectedUrls() {
 }
 
 function exportTXT() {
-    if (!allVideos.length) { showToast('Chưa có dữ liệu để xuất!'); return; }
-    const text = allVideos.map(v => v.url).join('\n');
+    const videos = Array.from(videoMap.values());
+    if (!videos.length) { showToast('Chưa có dữ liệu để xuất!'); return; }
+    const text = videos.map(v => v.url).join('\n');
     downloadBlob(text, 'tiktok_urls.txt', 'text/plain');
 }
 
 function exportCSV() {
-    if (!allVideos.length) { showToast('Chưa có dữ liệu để xuất!'); return; }
+    const videos = Array.from(videoMap.values());
+    if (!videos.length) { showToast('Chưa có dữ liệu để xuất!'); return; }
     let csv = 'STT,URL,Title,Author,Views,Likes,Comments,Shares\n';
-    allVideos.forEach((v, idx) => {
+    videos.forEach((v, idx) => {
         const title = `"${(v.title || '').replace(/"/g, '""')}"`;
         const author = `"${(v.author?.unique_id || '').replace(/"/g, '""')}"`;
         csv += `${idx + 1},"${v.url}",${title},${author},${v.play_count || 0},${v.digg_count || 0},${v.comment_count || 0},${v.share_count || 0}\n`;
@@ -745,7 +695,7 @@ function exportCSV() {
 
 function clearAllTableData() {
     if (confirm('Bạn có chắc muốn xóa tất cả bài viết trong danh sách?')) {
-        allVideos = [];
+        videoMap.clear();
         renderTable();
         document.getElementById('results-section').style.display = 'none';
         document.getElementById('col-filter-wrap').style.display = 'none';
@@ -769,7 +719,7 @@ function downloadBlob(content, fileName, mimeType) {
 function showToast(msg) {
     const t = document.getElementById('copy-toast');
     t.textContent = msg; t.style.display = 'block';
-    setTimeout(() => { t.style.display = 'none'; }, 3000);
+    setTimeout(() => { t.style.display = 'none'; }, 3500);
 }
 
 function fmtNum(n) {

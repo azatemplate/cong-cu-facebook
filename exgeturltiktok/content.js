@@ -7,15 +7,25 @@
   let isAutoScrolling = true;
   let scrollInterval = null;
   let scrollDelayMs = 1200;
-  const collectedVideosMap = new Map();
+  const collectedVideosMap = new Map(); // videoId -> video object
 
-  // Start auto-scroll by default when opened
+  // Start auto-scroll by default when tab opens
   startAutoScroll();
 
-  // ─── Extract TikTok Video links from DOM ─────────────────────────────────────
+  function sanitizeAuthorHandle(handle, nickname) {
+    if (!handle) return nickname || 'user';
+    // If handle is a raw 15+ digit user ID (e.g. 7426562186972218376) and nickname exists
+    if (/^\d{12,}$/.test(handle) && nickname && !/^\d{12,}$/.test(nickname)) {
+      return nickname.replace(/\s+/g, '').toLowerCase();
+    }
+    return handle;
+  }
+
+  // ─── Scan TikTok links from DOM ──────────────────────────────────────────────
   function scanDOMForVideos() {
     const links = document.querySelectorAll('a[href*="/video/"]');
     let added = false;
+
     links.forEach(a => {
       let href = a.getAttribute('href') || '';
       if (!href) return;
@@ -24,21 +34,25 @@
         href = 'https://www.tiktok.com' + href;
       }
 
-      const match = href.match(/https?:\/\/(?:www\.)?tiktok\.com\/@([^/]+)\/video\/(\d+)/i);
+      // Match /video/1234567890123456789
+      const match = href.match(/\/video\/(\d+)/i);
       if (match) {
-        const authorId = match[1];
-        const videoId = match[2];
-        const cleanUrl = `https://www.tiktok.com/@${authorId}/video/${videoId}`;
+        const videoId = match[1];
 
-        if (!collectedVideosMap.has(cleanUrl)) {
-          let title = (a.innerText || a.getAttribute('aria-label') || '').trim();
-          if (title.length > 200) title = title.substring(0, 200);
+        // Extract author handle from URL if present e.g. /@username/video/123...
+        const authorMatch = href.match(/@([^/]+)\/video/i);
+        let authorHandle = authorMatch ? authorMatch[1] : 'user';
 
-          collectedVideosMap.set(cleanUrl, {
-            url: cleanUrl,
+        let title = (a.innerText || a.getAttribute('aria-label') || '').trim();
+        if (title.length > 200) title = title.substring(0, 200);
+
+        if (!collectedVideosMap.has(videoId)) {
+          const cleanUrl = `https://www.tiktok.com/@${authorHandle}/video/${videoId}`;
+          collectedVideosMap.set(videoId, {
             video_id: videoId,
+            url: cleanUrl,
             title: title || `TikTok Video ${videoId}`,
-            author: { unique_id: authorId, nickname: authorId },
+            author: { unique_id: authorHandle, nickname: authorHandle },
             play_count: 0,
             digg_count: 0,
             comment_count: 0,
@@ -46,6 +60,14 @@
             create_time: Math.floor(Date.now() / 1000)
           });
           added = true;
+        } else {
+          // If existing item has numeric raw ID handle and we found a better one or title
+          const existing = collectedVideosMap.get(videoId);
+          if (/^\d{12,}$/.test(existing.author.unique_id) && !/^\d{12,}$/.test(authorHandle)) {
+            existing.author.unique_id = authorHandle;
+            existing.url = `https://www.tiktok.com/@${authorHandle}/video/${videoId}`;
+            added = true;
+          }
         }
       }
     });
@@ -62,28 +84,29 @@
 
     Object.keys(snap).forEach(awemeId => {
       const item = snap[awemeId];
-      if (!item) return;
+      if (!item || !awemeId) return;
 
-      const authorId = item.author?.uniqueId || item.author?.nickname || 'user';
-      const cleanUrl = `https://www.tiktok.com/@${authorId}/video/${awemeId}`;
+      const rawHandle = item.author?.uniqueId || item.author?.nickname || 'user';
+      const authorHandle = sanitizeAuthorHandle(rawHandle, item.author?.nickname);
+      const cleanUrl = `https://www.tiktok.com/@${authorHandle}/video/${awemeId}`;
 
-      const existing = collectedVideosMap.get(cleanUrl) || {};
+      const existing = collectedVideosMap.get(awemeId) || {};
       const updatedObj = {
-        url: cleanUrl,
         video_id: awemeId,
-        title: item.desc || existing.title || `TikTok Video ${awemeId}`,
+        url: cleanUrl,
+        title: (item.desc && !item.desc.startsWith('TikTok Video')) ? item.desc : (existing.title || `TikTok Video ${awemeId}`),
         author: {
-          unique_id: authorId,
-          nickname: item.author?.nickname || authorId
+          unique_id: authorHandle,
+          nickname: item.author?.nickname || authorHandle
         },
-        play_count: item.play || existing.play_count || 0,
-        digg_count: item.digg || existing.digg_count || 0,
-        comment_count: item.comment || existing.comment_count || 0,
-        share_count: item.share || existing.share_count || 0,
+        play_count: Math.max(item.play || 0, existing.play_count || 0),
+        digg_count: Math.max(item.digg || 0, existing.digg_count || 0),
+        comment_count: Math.max(item.comment || 0, existing.comment_count || 0),
+        share_count: Math.max(item.share || 0, existing.share_count || 0),
         create_time: item.createTime || existing.create_time || Math.floor(Date.now() / 1000)
       };
 
-      collectedVideosMap.set(cleanUrl, updatedObj);
+      collectedVideosMap.set(awemeId, updatedObj);
       addedOrUpdated = true;
     });
 
@@ -95,10 +118,10 @@
   // Request snapshot from hook.js
   setTimeout(() => {
     try { window.dispatchEvent(new CustomEvent('tpt-request-video-map')); } catch (_) { }
-  }, 800);
+  }, 600);
 
   // Periodic DOM scan
-  setInterval(scanDOMForVideos, 1500);
+  setInterval(scanDOMForVideos, 1200);
 
   // ─── Auto-Scroll Engine ──────────────────────────────────────────────────────
   function startAutoScroll() {
@@ -107,7 +130,7 @@
 
     scrollInterval = setInterval(() => {
       if (!isAutoScrolling) return;
-      const distance = Math.floor(Math.random() * 300) + 600;
+      const distance = Math.floor(Math.random() * 300) + 650;
       window.scrollBy({ top: distance, behavior: 'smooth' });
       scanDOMForVideos();
     }, scrollDelayMs);
@@ -132,7 +155,7 @@
     } catch (_) { }
   }
 
-  // ─── Listen to Extension Messages ───────────────────────────────────────────
+  // Listen to messages from Background Worker
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || !msg.type) return;
 
@@ -149,7 +172,7 @@
     }
   });
 
-  // Create floating indicator on TikTok page
+  // Floating indicator on TikTok tab
   createFloatingBadge();
 
   function createFloatingBadge() {
@@ -180,7 +203,7 @@
     badge.innerHTML = `
       <div style="display:flex;align-items:center;gap:6px;">
         <span style="font-size:16px;">🎵</span>
-        <span>Thu thập cho PHP: <strong id="tpt-badge-count" style="color:#fe2c55;font-size:15px;">0</strong> URL</span>
+        <span>Đã quét: <strong id="tpt-badge-count" style="color:#fe2c55;font-size:15px;">0</strong> URL</span>
       </div>
       <button id="tpt-badge-toggle-scroll" style="
         background: linear-gradient(135deg, #fe2c55, #c9134c);
