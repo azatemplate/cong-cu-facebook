@@ -9,7 +9,7 @@ require_once __DIR__ . '/includes/header.php';
 .tiktok-hero {
     background: linear-gradient(135deg, #010101 0%, #1a0533 40%, #2d0b55 100%);
     border-radius: 16px; padding: 28px 32px; margin-bottom: 24px;
-    display: flex; align-items: center; gap: 20px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;
     position: relative; overflow: hidden;
 }
 .tiktok-hero::before {
@@ -24,6 +24,7 @@ require_once __DIR__ . '/includes/header.php';
     background: radial-gradient(circle, rgba(254,44,85,0.3) 0%, transparent 70%);
     pointer-events: none;
 }
+.tiktok-hero-left { display: flex; align-items: center; gap: 20px; }
 .tiktok-logo-wrap {
     width: 56px; height: 56px;
     background: linear-gradient(135deg, #fe2c55, #25f4ee);
@@ -32,6 +33,15 @@ require_once __DIR__ . '/includes/header.php';
 }
 .tiktok-hero-text h1 { font-size: 22px; font-weight: 700; color: #fff; margin: 0 0 4px; }
 .tiktok-hero-text p  { font-size: 13px; color: rgba(255,255,255,0.65); margin: 0; }
+
+.btn-download-ext {
+    padding: 12px 22px; background: linear-gradient(135deg, #25f4ee, #0dcfca);
+    color: #010101; border-radius: 10px; font-size: 14px; font-weight: 700;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 8px;
+    box-shadow: 0 4px 16px rgba(37,244,238,0.4); transition: transform 0.2s, box-shadow 0.2s;
+    white-space: nowrap; z-index: 2;
+}
+.btn-download-ext:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(37,244,238,0.6); color: #000; }
 
 /* Extension Status Banner */
 .ext-status-banner {
@@ -182,11 +192,16 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- Hero -->
 <div class="tiktok-hero">
-    <div class="tiktok-logo-wrap">🎵</div>
-    <div class="tiktok-hero-text">
-        <h1>TikTok URL Collector & Search</h1>
-        <p>Tự động mở trình duyệt & cuộn trang thu thập URL video TikTok (Kênh, Từ khóa, Hashtag) · Quản lý & Xuất dữ liệu</p>
+    <div class="tiktok-hero-left">
+        <div class="tiktok-logo-wrap">🎵</div>
+        <div class="tiktok-hero-text">
+            <h1>TikTok URL Collector & Search</h1>
+            <p>Tự động mở trình duyệt & cuộn trang thu thập URL video TikTok (Kênh, Từ khóa, Hashtag) · Quản lý & Xuất dữ liệu</p>
+        </div>
     </div>
+    <a href="https://fbweb.hongdolab.com/caourltiktok.zip" target="_blank" class="btn-download-ext">
+        <span>📥</span> Tải Extension "Cào URL TikTok"
+    </a>
 </div>
 
 <!-- Extension Status Banner -->
@@ -196,7 +211,8 @@ require_once __DIR__ . '/includes/header.php';
         <span id="ext-status-badge" class="ext-badge inactive">⚪ Đang kiểm tra kết nối Extension...</span>
     </div>
     <div id="ext-help-text" style="font-size:12px;color:var(--text-muted);">
-        Chưa phát hiện Extension <code>exgeturltiktok</code>. Hãy cài đặt Extension để sử dụng tính năng quét tự động.
+        Chưa phát hiện Extension <code>Cào URL TikTok</code>. Hãy tải và cài đặt Extension để sử dụng tính năng quét tự động.
+        <a href="https://fbweb.hongdolab.com/caourltiktok.zip" target="_blank" style="color:#25f4ee;margin-left:6px;font-weight:700;">Tải Extension tại đây ↗</a>
     </div>
 </div>
 
@@ -211,8 +227,8 @@ require_once __DIR__ . '/includes/header.php';
 <div class="search-form-card" id="form-profile">
     <div class="search-row">
         <div class="search-field grow">
-            <label for="profile-input">Username Kênh TikTok (ví dụ: copphavietcom)</label>
-            <input type="text" id="profile-input" placeholder="Nhập username..." value="copphavietcom" autocomplete="off">
+            <label for="profile-input">Username Kênh TikTok</label>
+            <input type="text" id="profile-input" placeholder="Nhập username kênh TikTok..." value="" autocomplete="off">
         </div>
         <div class="search-field">
             <label for="profile-limit">Số bài viết / URL muốn quét</label>
@@ -228,7 +244,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
     <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0;">
-        Link quét mục tiêu: <code id="profile-url-preview" style="color:#06b6d4;">https://www.tiktok.com/@copphavietcom</code>
+        Link quét mục tiêu: <code id="profile-url-preview" style="color:#06b6d4;">https://www.tiktok.com/@...</code>
     </p>
 </div>
 
@@ -236,8 +252,8 @@ require_once __DIR__ . '/includes/header.php';
 <div class="search-form-card" id="form-keyword" style="display:none;">
     <div class="search-row">
         <div class="search-field grow">
-            <label for="kw-input">Từ khóa tìm kiếm (ví dụ: giàn giáo)</label>
-            <input type="text" id="kw-input" placeholder="Nhập từ khóa tìm kiếm..." value="giàn giáo" autocomplete="off">
+            <label for="kw-input">Từ khóa tìm kiếm</label>
+            <input type="text" id="kw-input" placeholder="Nhập từ khóa tìm kiếm TikTok..." value="" autocomplete="off">
         </div>
         <div class="search-field">
             <label for="kw-limit">Số bài viết / URL muốn quét</label>
@@ -253,7 +269,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
     <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0;">
-        Link quét mục tiêu: <code id="kw-url-preview" style="color:#fe2c55;">https://www.tiktok.com/search/video?q=gi%C3%A0n%20gi%C3%A1o</code>
+        Link quét mục tiêu: <code id="kw-url-preview" style="color:#fe2c55;">https://www.tiktok.com/search/video?q=...</code>
     </p>
 </div>
 
@@ -261,8 +277,8 @@ require_once __DIR__ . '/includes/header.php';
 <div class="search-form-card" id="form-hashtag" style="display:none;">
     <div class="search-row">
         <div class="search-field grow">
-            <label for="ht-input">Tên Hashtag (ví dụ: copphaviet - không cần #)</label>
-            <input type="text" id="ht-input" placeholder="Nhập hashtag..." value="copphaviet" autocomplete="off">
+            <label for="ht-input">Tên Hashtag (không cần #)</label>
+            <input type="text" id="ht-input" placeholder="Nhập tên hashtag..." value="" autocomplete="off">
         </div>
         <div class="search-field">
             <label for="ht-limit">Số bài viết / URL muốn quét</label>
@@ -278,7 +294,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
     <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0;">
-        Link quét mục tiêu: <code id="ht-url-preview" style="color:#8b5cf6;">https://www.tiktok.com/tag/copphaviet</code>
+        Link quét mục tiêu: <code id="ht-url-preview" style="color:#8b5cf6;">https://www.tiktok.com/tag/...</code>
     </p>
 </div>
 
@@ -365,12 +381,12 @@ function setExtensionStatus(connected, scanning = false) {
         help.textContent = 'Extension đang tự động cuộn trang TikTok để thu thập danh sách URL...';
     } else if (connected) {
         badge.className = 'ext-badge active';
-        badge.innerHTML = '🟢 Extension Đã Kết Nối Sẵn Sàng';
-        help.textContent = 'Extension exgeturltiktok đã kết nối thành công. Bấm Bắt đầu quét để tự động mở TikTok và cuộn trang!';
+        badge.innerHTML = '🟢 Extension "Cào URL TikTok" Đã Kết Nối';
+        help.textContent = 'Extension đã kết nối sẵn sàng. Nhập thông tin và bấm Bắt đầu quét để tự động mở TikTok và quét!';
     } else {
         badge.className = 'ext-badge inactive';
         badge.innerHTML = '🔴 Chưa Phát Hiện Extension';
-        help.textContent = 'Extension exgeturltiktok chưa được tải hoặc chưa kích hoạt. Hãy load extension trong chrome://extensions.';
+        help.innerHTML = 'Chưa phát hiện Extension <code>Cào URL TikTok</code>. <a href="https://fbweb.hongdolab.com/caourltiktok.zip" target="_blank" style="color:#25f4ee;font-weight:700;">Tải Extension caourltiktok.zip tại đây ↗</a> để quét tự động.';
     }
 }
 
@@ -411,16 +427,16 @@ function switchMode(mode) {
 
 // Dynamic preview text
 document.getElementById('profile-input').addEventListener('input', e => {
-    let val = e.target.value.trim().replace(/^@/, '') || 'copphavietcom';
-    document.getElementById('profile-url-preview').textContent = `https://www.tiktok.com/@${val}`;
+    let val = e.target.value.trim().replace(/^@/, '');
+    document.getElementById('profile-url-preview').textContent = val ? `https://www.tiktok.com/@${val}` : 'https://www.tiktok.com/@...';
 });
 document.getElementById('kw-input').addEventListener('input', e => {
-    let val = e.target.value.trim() || 'giàn giáo';
-    document.getElementById('kw-url-preview').textContent = `https://www.tiktok.com/search/video?q=${encodeURIComponent(val)}`;
+    let val = e.target.value.trim();
+    document.getElementById('kw-url-preview').textContent = val ? `https://www.tiktok.com/search/video?q=${encodeURIComponent(val)}` : 'https://www.tiktok.com/search/video?q=...';
 });
 document.getElementById('ht-input').addEventListener('input', e => {
-    let val = e.target.value.trim().replace(/^#/, '') || 'copphaviet';
-    document.getElementById('ht-url-preview').textContent = `https://www.tiktok.com/tag/${encodeURIComponent(val)}`;
+    let val = e.target.value.trim().replace(/^#/, '');
+    document.getElementById('ht-url-preview').textContent = val ? `https://www.tiktok.com/tag/${encodeURIComponent(val)}` : 'https://www.tiktok.com/tag/...';
 });
 
 // ─── Start / Stop Scan via Extension ──────────────────────────────────────────
@@ -429,15 +445,18 @@ function startScan(mode) {
     let limit = 50;
 
     if (mode === 'profile') {
-        let val = document.getElementById('profile-input').value.trim().replace(/^@/, '') || 'copphavietcom';
+        let val = document.getElementById('profile-input').value.trim().replace(/^@/, '');
+        if (!val) { alert('Vui lòng nhập Username Kênh TikTok cần quét!'); document.getElementById('profile-input').focus(); return; }
         targetUrl = `https://www.tiktok.com/@${encodeURIComponent(val)}`;
         limit = parseInt(document.getElementById('profile-limit').value) || 50;
     } else if (mode === 'keyword') {
-        let val = document.getElementById('kw-input').value.trim() || 'giàn giáo';
+        let val = document.getElementById('kw-input').value.trim();
+        if (!val) { alert('Vui lòng nhập Từ khóa tìm kiếm!'); document.getElementById('kw-input').focus(); return; }
         targetUrl = `https://www.tiktok.com/search/video?q=${encodeURIComponent(val)}`;
         limit = parseInt(document.getElementById('kw-limit').value) || 50;
     } else if (mode === 'hashtag') {
-        let val = document.getElementById('ht-input').value.trim().replace(/^#/, '') || 'copphaviet';
+        let val = document.getElementById('ht-input').value.trim().replace(/^#/, '');
+        if (!val) { alert('Vui lòng nhập tên Hashtag!'); document.getElementById('ht-input').focus(); return; }
         targetUrl = `https://www.tiktok.com/tag/${encodeURIComponent(val)}`;
         limit = parseInt(document.getElementById('ht-limit').value) || 50;
     }
