@@ -46,17 +46,48 @@ require_once __DIR__ . '/includes/header.php';
 /* Extension Status Banner */
 .ext-status-banner {
     background: var(--card-bg); border: 1px solid var(--border-color);
-    border-radius: 12px; padding: 14px 20px; margin-bottom: 20px;
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    border-radius: 12px; padding: 16px 22px; margin-bottom: 20px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;
+    transition: all 0.3s ease;
 }
-.ext-status-info { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; }
+.ext-status-banner.banner-warning {
+    background: linear-gradient(135deg, rgba(239,68,68,0.12), rgba(185,28,28,0.08));
+    border-color: rgba(239,68,68,0.4);
+}
+.ext-status-info { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; }
 .ext-badge {
-    display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px;
     border-radius: 20px; font-size: 12px; font-weight: 700;
 }
 .ext-badge.active { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
-.ext-badge.inactive { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+.ext-badge.inactive { background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.4); }
 .ext-badge.scanning { background: rgba(254,44,85,0.15); color: #fe2c55; border: 1px solid rgba(254,44,85,0.3); }
+
+/* Extension Warning Callout Box */
+.ext-warning-box {
+    background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(220,38,38,0.1));
+    border: 1px solid rgba(239,68,68,0.4); border-radius: 14px; padding: 20px 24px;
+    margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 16px;
+}
+.ext-warning-text h3 { font-size: 16px; font-weight: 700; color: #ef4444; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+.ext-warning-text p { font-size: 13px; color: rgba(255,255,255,0.8); margin: 0; }
+
+/* Disabled Overlay / States for Search Form */
+.search-form-card.ext-disabled {
+    opacity: 0.55;
+    pointer-events: none;
+    user-select: none;
+    position: relative;
+}
+.search-form-card.ext-disabled::after {
+    content: '⚠️ Bạn cần cài đặt Extension "Cào URL TikTok" để nhập dữ liệu và sử dụng';
+    position: absolute; inset: 0; background: rgba(15, 15, 20, 0.65);
+    backdrop-filter: blur(2px); border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    color: #ef4444; font-weight: 700; font-size: 14px; pointer-events: auto; cursor: not-allowed;
+    text-align: center; padding: 20px;
+}
 
 /* ─── Mode Tabs ─── */
 .mode-tabs {
@@ -88,6 +119,7 @@ require_once __DIR__ . '/includes/header.php';
 .search-form-card {
     background: var(--card-bg); border: 1px solid var(--border-color);
     border-radius: 14px; padding: 24px; margin-bottom: 20px;
+    transition: opacity 0.3s;
 }
 .search-row  { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .search-field { display: flex; flex-direction: column; gap: 6px; }
@@ -113,6 +145,7 @@ require_once __DIR__ . '/includes/header.php';
 .btn-start-scan:hover { transform:translateY(-1px); box-shadow:0 6px 18px rgba(254,44,85,.55); }
 .btn-start-scan.profile { background:linear-gradient(135deg,#06b6d4,#0891b2); box-shadow:0 4px 14px rgba(6,182,212,.4); }
 .btn-start-scan.hashtag { background:linear-gradient(135deg,#7c3aed,#5b21b6); box-shadow:0 4px 14px rgba(124,58,237,.4); }
+.btn-start-scan:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
 .btn-stop-scan {
     padding: 11px 20px; background: linear-gradient(135deg, #ef4444, #dc2626);
@@ -205,15 +238,25 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <!-- Extension Status Banner -->
-<div class="ext-status-banner">
+<div class="ext-status-banner" id="ext-banner">
     <div class="ext-status-info">
         <span>Trạng thái Extension:</span>
         <span id="ext-status-badge" class="ext-badge inactive">⚪ Đang kiểm tra kết nối Extension...</span>
     </div>
-    <div id="ext-help-text" style="font-size:12px;color:var(--text-muted);">
-        Chưa phát hiện Extension <code>Cào URL TikTok</code>. Hãy tải và cài đặt Extension để sử dụng tính năng quét tự động.
-        <a href="https://fbweb.hongdolab.com/caourltiktok.zip" target="_blank" style="color:#25f4ee;margin-left:6px;font-weight:700;">Tải Extension tại đây ↗</a>
+    <div id="ext-help-text" style="font-size:13px;">
+        Đang kiểm tra kết nối Extension...
     </div>
+</div>
+
+<!-- Extension Warning Box (shown when extension is NOT installed) -->
+<div class="ext-warning-box" id="ext-warning-box" style="display:none;">
+    <div class="ext-warning-text">
+        <h3>⚠️ Bạn chưa cài đặt Extension "Cào URL TikTok"!</h3>
+        <p>Tính năng thu thập URL tự động yêu cầu phải cài đặt Extension. Hãy tải và cài đặt Extension vào trình duyệt để mở khóa nhập dữ liệu và quét tự động.</p>
+    </div>
+    <a href="https://fbweb.hongdolab.com/caourltiktok.zip" target="_blank" class="btn-download-ext">
+        <span>📥</span> Tải Extension Ngay (caourltiktok.zip)
+    </a>
 </div>
 
 <!-- Mode Tabs -->
@@ -224,18 +267,18 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <!-- Search Card: PROFILE -->
-<div class="search-form-card" id="form-profile">
+<div class="search-form-card ext-disabled" id="form-profile">
     <div class="search-row">
         <div class="search-field grow">
             <label for="profile-input">Username Kênh TikTok</label>
-            <input type="text" id="profile-input" placeholder="Nhập username kênh TikTok..." value="" autocomplete="off">
+            <input type="text" id="profile-input" placeholder="Nhập username kênh TikTok..." value="" autocomplete="off" disabled>
         </div>
         <div class="search-field">
             <label for="profile-limit">Số bài viết / URL muốn quét</label>
-            <input type="number" id="profile-limit" value="50" min="1" max="500" style="width:140px;">
+            <input type="number" id="profile-limit" value="50" min="1" max="500" style="width:140px;" disabled>
         </div>
         <div style="display:flex; align-items:flex-end; gap:8px;">
-            <button class="btn-start-scan profile" id="btn-start-profile" onclick="startScan('profile')">
+            <button class="btn-start-scan profile" id="btn-start-profile" onclick="startScan('profile')" disabled>
                 <span>🚀</span> Bắt đầu quét URL
             </button>
             <button class="btn-stop-scan" id="btn-stop-profile" onclick="stopScan()">
@@ -249,18 +292,18 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <!-- Search Card: KEYWORD -->
-<div class="search-form-card" id="form-keyword" style="display:none;">
+<div class="search-form-card ext-disabled" id="form-keyword" style="display:none;">
     <div class="search-row">
         <div class="search-field grow">
             <label for="kw-input">Từ khóa tìm kiếm</label>
-            <input type="text" id="kw-input" placeholder="Nhập từ khóa tìm kiếm TikTok..." value="" autocomplete="off">
+            <input type="text" id="kw-input" placeholder="Nhập từ khóa tìm kiếm TikTok..." value="" autocomplete="off" disabled>
         </div>
         <div class="search-field">
             <label for="kw-limit">Số bài viết / URL muốn quét</label>
-            <input type="number" id="kw-limit" value="50" min="1" max="500" style="width:140px;">
+            <input type="number" id="kw-limit" value="50" min="1" max="500" style="width:140px;" disabled>
         </div>
         <div style="display:flex; align-items:flex-end; gap:8px;">
-            <button class="btn-start-scan" id="btn-start-keyword" onclick="startScan('keyword')">
+            <button class="btn-start-scan" id="btn-start-keyword" onclick="startScan('keyword')" disabled>
                 <span>🚀</span> Bắt đầu quét URL
             </button>
             <button class="btn-stop-scan" id="btn-stop-keyword" onclick="stopScan()">
@@ -274,18 +317,18 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <!-- Search Card: HASHTAG -->
-<div class="search-form-card" id="form-hashtag" style="display:none;">
+<div class="search-form-card ext-disabled" id="form-hashtag" style="display:none;">
     <div class="search-row">
         <div class="search-field grow">
             <label for="ht-input">Tên Hashtag (không cần #)</label>
-            <input type="text" id="ht-input" placeholder="Nhập tên hashtag..." value="" autocomplete="off">
+            <input type="text" id="ht-input" placeholder="Nhập tên hashtag..." value="" autocomplete="off" disabled>
         </div>
         <div class="search-field">
             <label for="ht-limit">Số bài viết / URL muốn quét</label>
-            <input type="number" id="ht-limit" value="50" min="1" max="500" style="width:140px;">
+            <input type="number" id="ht-limit" value="50" min="1" max="500" style="width:140px;" disabled>
         </div>
         <div style="display:flex; align-items:flex-end; gap:8px;">
-            <button class="btn-start-scan hashtag" id="btn-start-hashtag" onclick="startScan('hashtag')">
+            <button class="btn-start-scan hashtag" id="btn-start-hashtag" onclick="startScan('hashtag')" disabled>
                 <span>🚀</span> Bắt đầu quét URL
             </button>
             <button class="btn-stop-scan" id="btn-stop-hashtag" onclick="stopScan()">
@@ -328,7 +371,7 @@ require_once __DIR__ . '/includes/header.php';
 <!-- Empty State -->
 <div id="empty-state" class="empty-state">
     <div class="empty-icon">🎵</div>
-    <p>Chưa có URL video nào trong danh sách. Hãy nhập thông tin Kênh, Từ khóa hoặc Hashtag ở trên rồi bấm <strong>🚀 Bắt đầu quét URL</strong>.</p>
+    <p id="empty-state-desc">Bạn cần phải cài đặt Extension <strong>"Cào URL TikTok"</strong> trước để thực hiện tính năng này.</p>
 </div>
 
 <!-- Toast -->
@@ -359,34 +402,68 @@ let isScanning     = false;
 
 COLUMNS.forEach(c => { colVisible[c.key] = c.visible; });
 
-// ─── Check Extension Connection ────────────────────────────────────────────────
+// ─── Check Extension Connection & Lock/Unlock Inputs ───────────────────────────
 function checkExtensionConnection() {
     window.postMessage({ source: 'TIKTOK_SEARCH_PAGE', type: 'CHECK_EXT' }, '*');
-    setTimeout(() => {
-        if (!isExtConnected) {
-            const hasAttr = document.documentElement.getAttribute('data-tiktok-ext-installed') === 'true';
-            if (hasAttr) setExtensionStatus(true);
+
+    let checks = 0;
+    const interval = setInterval(() => {
+        checks++;
+        const hasAttr = document.documentElement.getAttribute('data-tiktok-ext-installed') === 'true';
+        if (hasAttr || isExtConnected) {
+            setExtensionStatus(true);
+            clearInterval(interval);
+        } else if (checks >= 6) {
+            setExtensionStatus(false);
+            clearInterval(interval);
         }
-    }, 400);
+    }, 150);
 }
 
 function setExtensionStatus(connected, scanning = false) {
     isExtConnected = connected;
     const badge = document.getElementById('ext-status-badge');
     const help = document.getElementById('ext-help-text');
+    const warningBox = document.getElementById('ext-warning-box');
+    const banner = document.getElementById('ext-banner');
+
+    const inputs = document.querySelectorAll('.search-form-card input');
+    const startBtns = document.querySelectorAll('.btn-start-scan');
+    const formCards = document.querySelectorAll('.search-form-card');
 
     if (scanning) {
+        banner.className = 'ext-status-banner';
+        warningBox.style.display = 'none';
         badge.className = 'ext-badge scanning';
         badge.innerHTML = '🟢 ĐANG QUÉT URL TIKTOK TỰ ĐỘNG...';
         help.textContent = 'Extension đang tự động cuộn trang TikTok để thu thập danh sách URL...';
+
+        formCards.forEach(c => c.classList.remove('ext-disabled'));
+        inputs.forEach(i => i.disabled = true);
     } else if (connected) {
+        banner.className = 'ext-status-banner';
+        warningBox.style.display = 'none';
         badge.className = 'ext-badge active';
         badge.innerHTML = '🟢 Extension "Cào URL TikTok" Đã Kết Nối';
-        help.textContent = 'Extension đã kết nối sẵn sàng. Nhập thông tin và bấm Bắt đầu quét để tự động mở TikTok và quét!';
+        help.textContent = 'Extension đã kết nối sẵn sàng. Nhập thông tin và bấm Bắt đầu quét!';
+
+        // UNLOCK INPUTS & BUTTONS
+        formCards.forEach(c => c.classList.remove('ext-disabled'));
+        inputs.forEach(i => i.disabled = false);
+        startBtns.forEach(b => b.disabled = false);
+        document.getElementById('empty-state-desc').innerHTML = 'Chưa có URL video nào trong danh sách. Hãy nhập thông tin và bấm <strong>🚀 Bắt đầu quét URL</strong>.';
     } else {
+        // LOCK INPUTS & BUTTONS - SHOW WARNING
+        banner.className = 'ext-status-banner banner-warning';
+        warningBox.style.display = 'flex';
         badge.className = 'ext-badge inactive';
-        badge.innerHTML = '🔴 Chưa Phát Hiện Extension';
-        help.innerHTML = 'Chưa phát hiện Extension <code>Cào URL TikTok</code>. <a href="https://fbweb.hongdolab.com/caourltiktok.zip" target="_blank" style="color:#25f4ee;font-weight:700;">Tải Extension caourltiktok.zip tại đây ↗</a> để quét tự động.';
+        badge.innerHTML = '🔴 CHƯA CÀI EXTENSION';
+        help.innerHTML = '<strong style="color:#ef4444;">Bạn cần phải cài đặt Extension "Cào URL TikTok" để thực hiện tính năng này.</strong>';
+
+        formCards.forEach(c => c.classList.add('ext-disabled'));
+        inputs.forEach(i => i.disabled = true);
+        startBtns.forEach(b => b.disabled = true);
+        document.getElementById('empty-state-desc').innerHTML = '⚠️ Bạn cần phải cài đặt Extension <strong>"Cào URL TikTok"</strong> trước khi có thể nhập và quét dữ liệu.';
     }
 }
 
@@ -441,6 +518,12 @@ document.getElementById('ht-input').addEventListener('input', e => {
 
 // ─── Start / Stop Scan via Extension ──────────────────────────────────────────
 function startScan(mode) {
+    if (!isExtConnected) {
+        alert('⚠️ Bạn cần phải tải và cài đặt Extension "Cào URL TikTok" trước mới có thể quét!');
+        window.open('https://fbweb.hongdolab.com/caourltiktok.zip', '_blank');
+        return;
+    }
+
     let targetUrl = '';
     let limit = 50;
 
