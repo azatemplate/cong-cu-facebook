@@ -609,7 +609,11 @@ function renderTable() {
     let html = '';
     videos.forEach((v, idx) => {
         const videoId    = v.video_id || extractVideoId(v.url);
-        const authorName = v.author?.unique_id || v.author?.nickname || 'user';
+        let rawAuthor    = v.author?.unique_id || v.author?.nickname || 'user';
+        if (/^\d{12,}$/.test(rawAuthor) && v.author?.nickname && !/^\d{12,}$/.test(v.author.nickname)) {
+            rawAuthor = v.author.nickname.replace(/\s+/g, '').toLowerCase();
+        }
+        const authorName = rawAuthor;
         const tiktokUrl  = `https://www.tiktok.com/@${authorName}/video/${videoId}`;
         const title      = (v.title || '').trim() || `TikTok Video ${videoId}`;
         const dateStr    = v.create_time ? new Date(v.create_time * 1000).toLocaleDateString('vi-VN') : '—';

@@ -6,7 +6,7 @@
 
   let isAutoScrolling = true;
   let scrollInterval = null;
-  let scrollDelayMs = 1200;
+  let scrollDelayMs = 1000;
   const collectedVideosMap = new Map(); // videoId -> video object
 
   // Start auto-scroll by default when tab opens
@@ -14,19 +14,30 @@
 
   function sanitizeAuthorHandle(handle, nickname) {
     if (!handle) return nickname || 'user';
-    // If handle is a raw 15+ digit user ID (e.g. 7426562186972218376) and nickname exists
     if (/^\d{12,}$/.test(handle) && nickname && !/^\d{12,}$/.test(nickname)) {
       return nickname.replace(/\s+/g, '').toLowerCase();
     }
     return handle;
   }
 
+  // ─── Filter out Navigation & Sidebar Elements ───────────────────────────────
+  function isInsideNavOrSidebar(el) {
+    if (!el) return false;
+    // Check if element is inside header, nav, sidebar, or user profile drawer
+    const navSelector = 'header, nav, aside, [class*="sidebar" i], [class*="Sidebar" i], [class*="Header" i], [class*="Nav" i], [data-e2e*="nav"], [data-e2e*="sidebar"], [data-e2e="user-avatar"], [class*="DivSideNav"]';
+    return !!el.closest(navSelector);
+  }
+
   // ─── Scan TikTok links from DOM ──────────────────────────────────────────────
   function scanDOMForVideos() {
+    // Only scan links inside main content areas, ignoring header & sidebar
     const links = document.querySelectorAll('a[href*="/video/"]');
     let added = false;
 
     links.forEach(a => {
+      // Ignore links in header/nav/sidebar (prevents collecting logged-in user's own profile videos)
+      if (isInsideNavOrSidebar(a)) return;
+
       let href = a.getAttribute('href') || '';
       if (!href) return;
 
@@ -42,6 +53,11 @@
         // Extract author handle from URL if present e.g. /@username/video/123...
         const authorMatch = href.match(/@([^/]+)\/video/i);
         let authorHandle = authorMatch ? authorMatch[1] : 'user';
+
+        // Ignore raw numeric secUid handles if possible
+        if (/^\d{12,}$/.test(authorHandle)) {
+          authorHandle = 'user';
+        }
 
         let title = (a.innerText || a.getAttribute('aria-label') || '').trim();
         if (title.length > 200) title = title.substring(0, 200);
@@ -61,9 +77,9 @@
           });
           added = true;
         } else {
-          // If existing item has numeric raw ID handle and we found a better one or title
+          // If existing item has generic 'user' handle and we found a real handle
           const existing = collectedVideosMap.get(videoId);
-          if (/^\d{12,}$/.test(existing.author.unique_id) && !/^\d{12,}$/.test(authorHandle)) {
+          if (existing.author.unique_id === 'user' && authorHandle !== 'user') {
             existing.author.unique_id = authorHandle;
             existing.url = `https://www.tiktok.com/@${authorHandle}/video/${videoId}`;
             added = true;
@@ -118,22 +134,43 @@
   // Request snapshot from hook.js
   setTimeout(() => {
     try { window.dispatchEvent(new CustomEvent('tpt-request-video-map')); } catch (_) { }
-  }, 600);
+  }, 500);
 
   // Periodic DOM scan
-  setInterval(scanDOMForVideos, 1200);
+  setInterval(scanDOMForVideos, 1000);
 
-  // ─── Auto-Scroll Engine ──────────────────────────────────────────────────────
+  // ─── Universal Auto-Scroll Engine (Works for Search, Tag, and Profile) ───────
+  function performScrollStep() {
+    if (!isAutoScrolling) return;
+
+    const scrollDistance = Math.floor(Math.random() * 300) + 700;
+
+    // 1. Scroll window
+    window.scrollBy({ top: scrollDistance, behavior: 'smooth' });
+
+    // 2. Scroll documentElement & body
+    if (document.documentElement) document.documentElement.scrollTop += scrollDistance;
+    if (document.body) document.body.scrollTop += scrollDistance;
+
+    // 3. Scroll any inner overflow scroll containers (TikTok Search / Tag containers)
+    const scrollContainers = document.querySelectorAll('div[class*="Container"], div[class*="List"], div[class*="Feed"], div[class*="Search"], main');
+    scrollContainers.forEach(container => {
+      if (container.scrollHeight > container.clientHeight && container.clientHeight > 200) {
+        container.scrollTop += scrollDistance;
+      }
+    });
+
+    // 4. Dispatch synthetic scroll event to trigger TikTok infinite loading observers
+    window.dispatchEvent(new Event('scroll'));
+
+    scanDOMForVideos();
+  }
+
   function startAutoScroll() {
     if (scrollInterval) clearInterval(scrollInterval);
     isAutoScrolling = true;
 
-    scrollInterval = setInterval(() => {
-      if (!isAutoScrolling) return;
-      const distance = Math.floor(Math.random() * 300) + 650;
-      window.scrollBy({ top: distance, behavior: 'smooth' });
-      scanDOMForVideos();
-    }, scrollDelayMs);
+    scrollInterval = setInterval(performScrollStep, scrollDelayMs);
   }
 
   function stopAutoScroll() {
