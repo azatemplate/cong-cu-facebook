@@ -442,6 +442,10 @@ function startScan(mode) {
         limit = parseInt(document.getElementById('ht-limit').value) || 50;
     }
 
+    // Reset old data for new scan session
+    videoMap.clear();
+    renderTable();
+
     isScanning = true;
     toggleScanButtons(true);
     setExtensionStatus(true, true);
