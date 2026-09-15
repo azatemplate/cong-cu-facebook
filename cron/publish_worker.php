@@ -2713,12 +2713,12 @@ foreach ($pending_posts as $post) {
     }
 
     // 5. Call API
-    set_time_limit(600); // Allow long upload for videos
+    @set_time_limit(1800); // Cho phép tối đa 30 phút cho video/reel dung lượng lớn
     try {
         $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW() WHERE id = ?")->execute([$post['id']]);
     } catch (Exception $e) {}
     if (strpos($post_type, 'Story') === false) {
-        $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 600 : 30;
+        $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 1800 : 60;
         $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
     }
 

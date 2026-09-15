@@ -200,12 +200,14 @@ function download_drive_file_temp($access_token, $file_id) {
         return ['error' => 'Không thể tạo file tạm trên Server.'];
     }
 
+    @set_time_limit(1800);
     $ch2 = curl_init($download_url);
     curl_setopt($ch2, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
     curl_setopt($ch2, CURLOPT_FILE, $fp);
     curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch2, CURLOPT_CONNECTTIMEOUT, 20);
-    curl_setopt($ch2, CURLOPT_TIMEOUT, 600);
+    curl_setopt($ch2, CURLOPT_CONNECTTIMEOUT, 30);
+    curl_setopt($ch2, CURLOPT_TIMEOUT, 1800); // 30 phút cho video dung lượng lớn
+    curl_setopt($ch2, CURLOPT_BUFFERSIZE, 131072); // Bộ đệm 128KB tăng tốc độ tải file
     curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch2, CURLOPT_SSL_VERIFYHOST, false);
     $success = curl_exec($ch2);
