@@ -64,7 +64,7 @@ try {
 
 
 try {
-    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending', retry_count=0 WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE)");
+    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending', retry_count=0 WHERE status='processing' AND (updated_at IS NULL OR updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE))");
     if ($stuck_count > 0) {
         echo "  [RESET] Da reset $stuck_count bai bi stuck 'processing' => 'pending'.\n";
     }
@@ -130,8 +130,8 @@ try {
     if ($res_limit) $MAX_WORKERS = (int)$res_limit;
 } catch (Exception $e) {}
 
-// Đếm số luồng đang chạy (processing)
-$active_workers = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+// Đếm số luồng đang thực sự chạy (processing) gần đây
+$active_workers = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing' AND updated_at > DATE_SUB(NOW(), INTERVAL 3 MINUTE)")->fetchColumn();
 
 echo "  [THROTTLE] Hien dang co $active_workers luong dang xu ly.\n";
 
