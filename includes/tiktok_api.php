@@ -75,7 +75,7 @@ function get_tiktok_auth_url($redirect_uri, $state = '') {
         return '';
     }
 
-    $scopes = !empty($cfg['scopes']) ? $cfg['scopes'] : 'user.info.basic,video.upload,user.info.profile';
+    $scopes = !empty($cfg['scopes']) ? $cfg['scopes'] : 'user.info.basic,video.upload,user.info.profile,user.info.stats,video.list';
     
     $params = [
         'client_key' => $client_key,

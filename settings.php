@@ -269,7 +269,7 @@ try {
 // Đọc Cấu hình TikTok App dùng chung cho toàn hệ thống
 $tiktok_client_key = '';
 $tiktok_client_secret = '';
-$tiktok_scopes = 'user.info.basic,video.upload,user.info.profile';
+$tiktok_scopes = 'user.info.basic,video.upload,user.info.profile,user.info.stats,video.list';
 try {
     $stmt_tt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('tiktok_client_key', 'tiktok_client_secret', 'tiktok_scopes')");
     while ($row_tt = $stmt_tt->fetch(PDO::FETCH_ASSOC)) {
@@ -440,7 +440,7 @@ if (isset($_SESSION['flash_msg'])) {
             </div>
             <div class="form-group">
                 <label>TikTok OAuth Scopes (Quyền yêu cầu)</label>
-                <input type="text" name="tiktok_scopes" value="<?php echo htmlspecialchars($tiktok_scopes); ?>" placeholder="user.info.basic,video.upload,user.info.profile" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace; font-size: 13px;">
+                <input type="text" name="tiktok_scopes" value="<?php echo htmlspecialchars($tiktok_scopes); ?>" placeholder="user.info.basic,video.upload,user.info.profile,user.info.stats,video.list" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace; font-size: 13px;">
                 <small style="color: #64748b; font-size: 11px; display: block; margin-top: 4px;">
                     * Lưu ý: Các Scope phân cách bởi dấu phẩy và BẮT BUỘC phải khớp với các Quyền (Products / Scopes) đã được bật trong TikTok Developer Portal của App bạn.
                 </small>
