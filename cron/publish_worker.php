@@ -482,7 +482,7 @@ $has_comment_mode = true;
 
 // Fetch system settings for retry logic
 $sys_retry_interval = 1;
-$sys_max_retries = 3;
+$sys_max_retries = 1;
 
 // Chuỗi Fallback Chain 4 tầng bóc tách TikTok theo đúng tài liệu kỹ thuật huong-dan.txt (ongchummo.com)
 function fetch_tiktok_info(string $tiktok_url): ?array
@@ -749,7 +749,7 @@ class TokenLocker {
 
 // 1. Fetch pending posts for ALL page_ids of this Token User
 $retry_clause = $has_retry_count
-    ? "OR (sp.status = 'failed' AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3)))"
+    ? "OR (sp.status = 'failed' AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 1)))"
     : '';
 
 // Build placeholders cho IN clause
@@ -2881,7 +2881,7 @@ if ($lock_fp) {
 @unlink($lock_file);
 // Cleanup DB chay rieng qua cron/cleanup.php (59 23 * * *).
 
-function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $has_error_msg = true, $has_retry_count = true)
+function marKAsFailed($pdo, $id, $msg, $max_retries = 1, $retry_interval = 1, $has_error_msg = true, $has_retry_count = true)
 {
     // Cắt và chuẩn hóa thông báo lỗi Quota YouTube API 429
     if (stripos($msg, 'Quota exceeded') !== false || stripos($msg, 'rateLimitExceeded') !== false || stripos($msg, 'RESOURCE_EXHAUSTED') !== false || stripos($msg, 'defaultVideoInsertPerDayPerProject') !== false) {

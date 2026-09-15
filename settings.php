@@ -12,7 +12,7 @@ if (!file_exists($settings_flag)) {
             setting_value TEXT
         )");
         $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1')");
-        $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_retries', '3')");
+        $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_retries', '1')");
         $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('disable_local_upload', '0')");
         $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_publish_workers', '30')");
         $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_comment_workers', '15')");
@@ -26,7 +26,7 @@ if (!file_exists($settings_flag)) {
         $pdo->exec("ALTER TABLE system_accounts ADD COLUMN email VARCHAR(255) DEFAULT NULL");
         $pdo->exec("ALTER TABLE system_accounts ADD COLUMN login_by_email TINYINT(1) DEFAULT 0");
         $pdo->exec("ALTER TABLE system_accounts ADD COLUMN retry_interval_minutes INT DEFAULT 1");
-        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 1");
         $pdo->exec("ALTER TABLE system_accounts ADD COLUMN sales_list TEXT DEFAULT NULL");
         @touch($settings_flag);
     } catch (Exception $e) {}
@@ -129,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Update user's delay and retry settings (cho bất kỳ user nào)
         $delay = isset($_POST['post_delay_seconds']) ? (int)trim($_POST['post_delay_seconds']) : 15;
         $interval = isset($_POST['retry_interval_minutes']) ? (int)trim($_POST['retry_interval_minutes']) : 1;
-        $max_retries = isset($_POST['max_retries']) ? (int)trim($_POST['max_retries']) : 3;
+        $max_retries = isset($_POST['max_retries']) ? (int)trim($_POST['max_retries']) : 1;
         
         $u_stmt = $pdo->prepare("UPDATE system_accounts SET post_delay_seconds = ?, retry_interval_minutes = ?, max_retries = ? WHERE id = ?");
         $u_stmt->execute([$delay, $interval, $max_retries, $account_id]);
@@ -225,7 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Lấy Cấu hình Retry từ User
 $retry_interval = isset($account['retry_interval_minutes']) && $account['retry_interval_minutes'] !== null ? $account['retry_interval_minutes'] : '1';
-$max_retries = isset($account['max_retries']) && $account['max_retries'] !== null ? $account['max_retries'] : '3';
+$max_retries = isset($account['max_retries']) && $account['max_retries'] !== null ? $account['max_retries'] : '1';
 
 // Lấy cấu hình Telegram từ account của user hiện tại
 $tg_bot_token = $account['telegram_bot_token'] ?? '';

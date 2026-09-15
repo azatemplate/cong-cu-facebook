@@ -109,9 +109,9 @@ try {
 // ── BUOC 3: Xoa scheduled_posts failed da het retry va qua han > retain_days ──
 echo "\n[STEP 3] Xoa rows scheduled_posts cu (failed het retry > {$retain_days} ngay)...\n";
 try {
-    $max_retries_cfg = 3;
+    $max_retries_cfg = 1;
     $mr = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key='max_retries'");
-    if ($mr) $max_retries_cfg = (int)($mr->fetchColumn() ?: 3);
+    if ($mr) $max_retries_cfg = (int)($mr->fetchColumn() ?: 1);
 
     $del_fail = $pdo->prepare("
         DELETE FROM scheduled_posts

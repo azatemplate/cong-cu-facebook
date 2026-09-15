@@ -155,7 +155,7 @@ $sql = "
     WHERE sp.scheduled_time <= NOW()
       AND sp.page_id IS NOT NULL
       AND (sa.id IS NULL OR sa.expire_date IS NULL OR sa.expire_date >= NOW())
-      AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3))
+      AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 1))
       AND sp.status IN ('pending', 'failed')
 ";
 $stmt = $pdo->prepare($sql);
