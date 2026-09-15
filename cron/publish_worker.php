@@ -2718,8 +2718,12 @@ foreach ($pending_posts as $post) {
         $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW() WHERE id = ?")->execute([$post['id']]);
     } catch (Exception $e) {}
     if (strpos($post_type, 'Story') === false) {
-        $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 1800 : 60;
-        $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
+        if (($post_type === 'Video' || $post_type === 'Reel') && $has_media && file_exists($abs_media_path)) {
+            $response = fb_upload_video_resumable($post['page_id'], $page_access_token, $abs_media_path, $post_data, $pdo, $post['id']);
+        } else {
+            $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 1800 : 60;
+            $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
+        }
     }
 
     handle_response:

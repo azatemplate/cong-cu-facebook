@@ -217,6 +217,56 @@ function download_drive_file_temp($access_token, $file_id) {
     @fclose($fp);
 
     if (!$success || $http_code !== 200 || @filesize($temp_path_with_ext) < 10) {
+        // Fallback gdown-php: Bóc tách confirmation token vượt qua trang cảnh báo virus/file lớn của Google Drive
+        $public_url = "https://drive.google.com/uc?export=download&id=" . urlencode($file_id);
+        $cookie_file = tempnam(sys_get_temp_dir(), 'gd_ck_');
+
+        $ch_p = curl_init($public_url);
+        curl_setopt_array($ch_p, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_COOKIEJAR => $cookie_file,
+            CURLOPT_COOKIEFILE => $cookie_file,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        ]);
+        $html_res = curl_exec($ch_p);
+        curl_close($ch_p);
+
+        $confirm_code = '';
+        if ($html_res && preg_match('/confirm=([0-9a-zA-Z_]+)/', $html_res, $m_conf)) {
+            $confirm_code = $m_conf[1];
+        } elseif ($html_res && preg_match('/name="confirm"\s+value="([^"]+)"/', $html_res, $m_conf2)) {
+            $confirm_code = $m_conf2[1];
+        } elseif ($html_res && preg_match('/download_warning[^\=]*=([0-9a-zA-Z_]+)/', $html_res, $m_conf3)) {
+            $confirm_code = $m_conf3[1];
+        }
+
+        if (!empty($confirm_code)) {
+            $dl_confirm_url = "https://drive.google.com/uc?export=download&id=" . urlencode($file_id) . "&confirm=" . urlencode($confirm_code);
+            $fp_p = @fopen($temp_path_with_ext, 'w+');
+            if ($fp_p) {
+                $ch_dl = curl_init($dl_confirm_url);
+                curl_setopt_array($ch_dl, [
+                    CURLOPT_FILE => $fp_p,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_COOKIEFILE => $cookie_file,
+                    CURLOPT_TIMEOUT => 1800,
+                    CURLOPT_BUFFERSIZE => 131072,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                    CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                ]);
+                $success = curl_exec($ch_dl);
+                $http_code = curl_getinfo($ch_dl, CURLINFO_HTTP_CODE);
+                curl_close($ch_dl);
+                @fclose($fp_p);
+            }
+        }
+        @unlink($cookie_file);
+    }
+
+    if (!$success || $http_code !== 200 || @filesize($temp_path_with_ext) < 10) {
         @unlink($temp_path_with_ext);
         $err_msg = !empty($curl_err2) ? $curl_err2 : ('HTTP ' . $http_code);
         return ['error' => 'Lỗi tải file từ Google Drive (' . $err_msg . ').'];
