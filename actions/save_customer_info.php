@@ -33,6 +33,14 @@ $consulted = isset($_POST['consulted']) ? intval($_POST['consulted']) : 0;
 $sales_phone = trim($_POST['sales_phone'] ?? '');
 $sales_notes = trim($_POST['sales_notes'] ?? '');
 
+// If customer has ALL 4 FIELDS (name, phone, province, notes), promote status 0 -> 4 (Chờ xử lý). If info incomplete, reset 4 -> 0.
+$is_full_info = !empty($name) && !empty($phone) && !empty($province) && !empty($notes);
+if ($is_full_info && $consulted === 0) {
+    $consulted = 4;
+} elseif (!$is_full_info && $consulted === 4) {
+    $consulted = 0;
+}
+
 if (!$page_id || !$sender_id) {
     echo json_encode(['status' => 'error', 'msg' => 'Thiếu page_id hoặc sender_id']);
     exit;

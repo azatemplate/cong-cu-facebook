@@ -6,25 +6,29 @@ require_once __DIR__ . '/includes/header.php';
 
 $account_id = $_SESSION['account_id'];
 
-// Silently ensure table exists
-try {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS fetched_fanpage_posts (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        account_id INT NOT NULL,
-        page_id VARCHAR(100) NOT NULL,
-        fb_post_id VARCHAR(100) UNIQUE NOT NULL,
-        message TEXT NULL,
-        picture TEXT NULL,
-        permalink_url TEXT NULL,
-        likes_count INT DEFAULT 0,
-        comments_count INT DEFAULT 0,
-        views_count INT DEFAULT 0,
-        post_created_at DATETIME NOT NULL,
-        synced_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_acc_page (account_id, page_id),
-        INDEX idx_stats (likes_count, comments_count, post_created_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
-} catch (Exception $e) {}
+// Silently ensure table exists (run once)
+$cp_flag = sys_get_temp_dir() . '/fetched_posts_tbl_v2.done';
+if (!file_exists($cp_flag)) {
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS fetched_fanpage_posts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            account_id INT NOT NULL,
+            page_id VARCHAR(100) NOT NULL,
+            fb_post_id VARCHAR(100) UNIQUE NOT NULL,
+            message TEXT NULL,
+            picture TEXT NULL,
+            permalink_url TEXT NULL,
+            likes_count INT DEFAULT 0,
+            comments_count INT DEFAULT 0,
+            views_count INT DEFAULT 0,
+            post_created_at DATETIME NOT NULL,
+            synced_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_acc_page (account_id, page_id),
+            INDEX idx_stats (likes_count, comments_count, post_created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+        @touch($cp_flag);
+    } catch (Exception $e) {}
+}
 
 // Fetch pages for filter dropdown
 $stmt_p = $pdo->prepare("
@@ -107,44 +111,72 @@ $sql = "
     LEFT JOIN pages p ON f.page_id = p.page_id
     WHERE {$where_sql}
     ORDER BY {$order_sql}
-    LIMIT 200
+    LIMIT 1000
 ";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$notice_msg  = $_SESSION['notice_msg'] ?? $_GET['msg'] ?? '';
+$notice_type = $_SESSION['notice_type'] ?? $_GET['msg_type'] ?? 'success';
+unset($_SESSION['notice_msg'], $_SESSION['notice_type']);
 ?>
 
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:10px;">
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:15px;">
     <div>
-        <h2 style="margin:0; font-size:22px; font-weight:700; color:var(--text-main);">💬 Comment Post (Quản lý Bài viết & Seeding Bình luận)</h2>
-        <p style="margin:4px 0 0 0; font-size:13px; color:#6b7280;">Quét danh sách bài viết từ Fanpage, lọc tương tác và tự động kích hoạt chiến dịch bình luận qua Cron.</p>
+        <h2 style="margin:0; font-size:22px; font-weight:700; color:var(--text-main);">💬 Comment Post (Quản lý Bài viết & Seeding)</h2>
+        <p style="margin:4px 0 0 0; font-size:13px; color:#6b7280;">Quét bài viết từ Fanpage, lọc tương tác và tự động khởi tạo chiến dịch seeding bình luận.</p>
     </div>
+    
     <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-        <div style="display:flex; align-items:center; gap:8px; background:var(--card-bg, #fff); padding:4px 10px; border-radius:8px; border:1px solid var(--border-color, #cbd5e1); box-shadow:0 1px 2px rgba(0,0,0,0.05);">
-            <label style="font-size:12px; font-weight:600; color:#475569; white-space:nowrap;">Limit bài/page:</label>
-            <input type="number" id="sync_limit" value="10" min="1" max="100" style="width:55px; padding:5px 6px; border-radius:6px; border:1px solid #cbd5e1; font-weight:700; font-size:13px; text-align:center;">
+        <!-- Compact Scan Box -->
+        <div style="display:flex; align-items:center; gap:6px; background:var(--card-bg, #fff); padding:4px 8px; border-radius:8px; border:1px solid var(--border-color, #cbd5e1); box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+            <span style="font-size:12px; font-weight:600; color:#475569;">Limit/page:</span>
+            <input type="number" id="sync_limit" value="10" min="1" max="1000" style="width:60px; padding:4px; border-radius:6px; border:1px solid #cbd5e1; font-weight:700; font-size:12px; text-align:center;">
             
-            <label style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:600; color:#475569; cursor:pointer; border-left:1px solid #cbd5e1; padding-left:8px; margin-left:4px;">
-                <input type="checkbox" id="chk_only_has_text" checked style="width:15px; height:15px; cursor:pointer;">
-                <span>Chỉ quét bài có nội dung</span>
+            <label style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:500; color:#475569; cursor:pointer; padding-left:6px; border-left:1px solid #e2e8f0;">
+                <input type="checkbox" id="chk_only_has_text" checked style="width:14px; height:14px; cursor:pointer;">
+                <span>Chỉ bài có chữ</span>
             </label>
 
-            <button onclick="syncPosts()" id="btn_sync" class="btn" style="background:#0284c7; color:#fff; font-weight:600; display:flex; align-items:center; gap:6px; padding:6px 14px; margin-left:4px;">
-                <span>🔄</span> <span>Quét Bài Viết Fanpage</span>
-            </button>
-            <button onclick="clearFetchedPosts()" class="btn" style="background:#ef4444; color:#fff; font-weight:600; display:flex; align-items:center; gap:4px; padding:6px 12px;" title="Xóa toàn bộ bài viết đã quét khỏi danh sách tạm">
-                <span>🗑️</span> <span>Xóa bài đã quét</span>
+            <button onclick="syncPosts()" id="btn_sync" class="btn" style="background:#0284c7; color:#fff; font-weight:600; display:flex; align-items:center; gap:5px; padding:6px 12px; margin-left:4px; font-size:13px;">
+                <span>🔄</span> <span>Quét Bài Viết</span>
             </button>
         </div>
-        <button onclick="openCampaignModal()" id="btn_campaign" class="btn btn-primary" style="font-weight:600; display:flex; align-items:center; gap:6px; padding:9px 16px;" disabled>
-            <span>🚀</span> <span>Tạo Chiến Dịch Bình Luận (<span id="sel_cnt">0</span>)</span>
+
+        <!-- Primary Action: Campaign Button -->
+        <button onclick="openCampaignModal()" id="btn_campaign" class="btn btn-primary" style="font-weight:600; display:flex; align-items:center; gap:6px; padding:8px 16px; font-size:13px;" disabled>
+            <span>🚀</span> <span>Tạo Chiến Dịch (<span id="sel_cnt">0</span>)</span>
         </button>
+
+        <!-- Dropdown Menu: Manage / Delete Actions -->
+        <div style="position:relative; display:inline-block;">
+            <button type="button" id="btn_action_menu" onclick="toggleActionMenu(event)" class="btn" style="background:#f8fafc; color:#334155; border:1px solid #cbd5e1; font-weight:600; display:flex; align-items:center; gap:6px; padding:8px 14px; font-size:13px; border-radius:8px; cursor:pointer;">
+                <span>⚙️ Quản lý bài</span> <span style="font-size:10px;">▼</span>
+            </button>
+
+            <div id="action_dropdown_menu" style="display:none; position:absolute; right:0; top:100%; min-width:270px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.15); z-index:999; padding:6px 0; margin-top:4px;">
+                <button type="button" id="btn_delete_selected" onclick="deleteSelectedPosts()" disabled style="width:100%; text-align:left; background:transparent; border:none; padding:9px 14px; font-size:13px; font-weight:600; color:#dc2626; display:flex; align-items:center; gap:8px; cursor:pointer; transition:background 0.15s;" onmouseover="if(!this.disabled) this.style.background='#fef2f2'" onmouseout="this.style.background='transparent'">
+                    <span>🗑️</span> <span>Xóa bài đã chọn khỏi Fanpage (<span id="del_sel_cnt">0</span>)</span>
+                </button>
+                <div style="border-top:1px solid #f1f5f9; margin:4px 0;"></div>
+                <button type="button" onclick="scanAndDeleteEmptyPosts()" style="width:100%; text-align:left; background:transparent; border:none; padding:9px 14px; font-size:13px; font-weight:600; color:#ea580c; display:flex; align-items:center; gap:8px; cursor:pointer; transition:background 0.15s;" onmouseover="this.style.background='#fff7ed'" onmouseout="this.style.background='transparent'">
+                    <span>🧹</span> <span>Quét & Xóa bài KHÔNG chữ khỏi Fanpage</span>
+                </button>
+                <div style="border-top:1px solid #f1f5f9; margin:4px 0;"></div>
+                <button type="button" onclick="clearFetchedPosts()" style="width:100%; text-align:left; background:transparent; border:none; padding:9px 14px; font-size:13px; font-weight:500; color:#64748b; display:flex; align-items:center; gap:8px; cursor:pointer; transition:background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                    <span>🗑️</span> <span>Xóa danh sách bài đã quét tạm</span>
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
 <!-- Thẻ thông báo trên giao diện PHP -->
-<div id="notice_banner" style="display:none; margin-bottom:20px; padding:14px 18px; border-radius:8px; font-size:14px; font-weight:500; box-shadow:0 2px 4px rgba(0,0,0,0.05);"></div>
+<div id="notice_banner" style="<?php echo !empty($notice_msg) ? 'display:block;' : 'display:none;'; ?> margin-bottom:20px; padding:14px 18px; border-radius:8px; font-size:14px; font-weight:500; box-shadow:0 2px 4px rgba(0,0,0,0.05); <?php echo ($notice_type === 'success') ? 'background:#dcfce7; color:#15803d; border:1px solid #86efac;' : 'background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5;'; ?>">
+    <?php echo htmlspecialchars($notice_msg); ?>
+</div>
 
 <!-- Bộ lọc tìm kiếm -->
 <div style="background:var(--card-bg, #fff); padding:16px; border-radius:10px; border:1px solid var(--border-color, #e5e7eb); margin-bottom:20px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
@@ -159,19 +191,24 @@ $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </button>
             
             <!-- Menu xổ xuống chứa Checkbox danh sách Fanpage -->
-            <div id="menu_page_dropdown" style="display:none; position:absolute; top:100%; left:0; width:100%; min-width:280px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.15); z-index:999; padding:8px 0; margin-top:4px;">
+            <div id="menu_page_dropdown" style="display:none; position:absolute; top:100%; left:0; width:100%; min-width:280px; max-height:320px; overflow-y:auto; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.15); z-index:999; padding:0; margin-top:4px;">
+                <!-- Ô tìm kiếm Fanpage -->
+                <div style="padding:8px 12px; border-bottom:1px solid #f1f5f9; background:#fff; position:sticky; top:0; z-index:10;">
+                    <input type="text" id="search_fanpage_input" onkeyup="filterFanpageList()" placeholder="🔍 Tìm kiếm tên Fanpage..." style="width:100%; padding:6px 10px; border-radius:6px; border:1px solid #cbd5e1; font-size:12px; outline:none; box-sizing:border-box;">
+                </div>
+
                 <label style="display:flex; align-items:center; gap:8px; padding:8px 12px; font-weight:600; cursor:pointer; color:#0284c7; font-size:13px; border-bottom:1px solid #f1f5f9; background:#f8fafc;">
                     <input type="checkbox" id="chk_page_all" onchange="toggleAllPageCbs(this)" <?php echo in_array('ALL', $filter_page_ids, true) ? 'checked' : ''; ?> style="width:16px; height:16px; margin:0;">
                     <span>Tất cả Fanpage</span>
                 </label>
-                <div style="padding:4px 0;">
+                <div id="fanpage_list_container" style="padding:4px 0;">
                     <?php if(!empty($pages)): foreach($pages as $p): 
                         $is_checked = !empty($filter_page_ids) && (in_array('ALL', $filter_page_ids, true) || in_array((string)$p['page_id'], $filter_page_ids, true));
                     ?>
-                        <label style="display:flex; align-items:center; gap:8px; padding:6px 12px; cursor:pointer; font-size:13px; transition:background 0.15s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+                        <label class="fanpage-item" style="display:flex; align-items:center; gap:8px; padding:6px 12px; cursor:pointer; font-size:13px; transition:background 0.15s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
                             <input type="checkbox" name="page_ids[]" class="filter_page_cb" value="<?php echo htmlspecialchars($p['page_id']); ?>" onchange="updatePageSelectText()" <?php echo $is_checked ? 'checked' : ''; ?> style="width:16px; height:16px; margin:0;">
                             <img src="<?php echo htmlspecialchars($p['avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($p['name']).'&background=random'); ?>" style="width:20px; height:20px; border-radius:50%; object-fit:cover;">
-                            <span style="color:#334155; font-weight:500;"><?php echo htmlspecialchars($p['name']); ?></span>
+                            <span class="fanpage-name" style="color:#334155; font-weight:500;"><?php echo htmlspecialchars($p['name']); ?></span>
                         </label>
                     <?php endforeach; endif; ?>
                 </div>
@@ -273,11 +310,14 @@ $posts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <?php echo date('d/m/Y H:i', strtotime($p['post_created_at'])); ?>
                             </td>
                             <td style="padding:12px; text-align:center;">
-                                <?php if($p['has_scheduled_cmt'] > 0): ?>
-                                    <span style="font-size:11px; padding:3px 8px; background:#dcfce7; color:#15803d; border-radius:12px; font-weight:600;">Đã có lịch Cmt</span>
-                                <?php else: ?>
-                                    <span style="font-size:11px; padding:3px 8px; background:#f3f4f6; color:#6b7280; border-radius:12px;">Chưa cmt</span>
-                                <?php endif; ?>
+                                <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+                                    <?php if($p['has_scheduled_cmt'] > 0): ?>
+                                        <span style="font-size:11px; padding:3px 8px; background:#dcfce7; color:#15803d; border-radius:12px; font-weight:600;">Đã có lịch Cmt</span>
+                                    <?php else: ?>
+                                        <span style="font-size:11px; padding:3px 8px; background:#f3f4f6; color:#6b7280; border-radius:12px;">Chưa cmt</span>
+                                    <?php endif; ?>
+                                    <button type="button" onclick="deleteSinglePost('<?php echo htmlspecialchars($p['fb_post_id']); ?>')" class="btn" style="background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; font-size:11px; padding:2px 6px; border-radius:4px; cursor:pointer;" title="Xóa bài viết này trực tiếp khỏi Fanpage">🗑️ Xóa bài</button>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -328,12 +368,25 @@ Em muốn tư vấn mẫu này với ạ!
     </div>
 </div>
 
+<!-- Custom Confirmation Modal (Thay thế hoàn toàn pop-up confirm của trình duyệt) -->
+<div id="customConfirmModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.65); backdrop-filter:blur(4px); z-index:99999; align-items:center; justify-content:center;">
+    <div style="background:#fff; padding:24px 28px; border-radius:14px; max-width:440px; width:90%; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); border:1px solid #e2e8f0; text-align:center;">
+        <div style="font-size:38px; margin-bottom:12px;" id="confirm_modal_icon">⚠️</div>
+        <h4 style="margin:0 0 10px 0; font-size:18px; font-weight:700; color:#0f172a;" id="confirm_modal_title">Xác nhận thao tác</h4>
+        <p style="margin:0 0 22px 0; font-size:13px; color:#475569; line-height:1.50;" id="confirm_modal_msg">Bạn có chắc chắn muốn thực hiện thao tác này không?</p>
+        <div style="display:flex; justify-content:center; gap:12px;">
+            <button type="button" onclick="closeCustomConfirm()" class="btn" style="background:#f1f5f9; color:#475569; font-weight:600; padding:9px 20px; border-radius:8px; border:1px solid #cbd5e1; cursor:pointer;">Hủy bỏ</button>
+            <button type="button" onclick="executeCustomConfirm()" class="btn" style="background:#dc2626; color:#fff; font-weight:600; padding:9px 22px; border-radius:8px; border:none; cursor:pointer;">Xác nhận xóa</button>
+        </div>
+    </div>
+</div>
+
 <!-- Modal Loading Quét Bài Viết -->
 <div id="syncLoadingModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.65); backdrop-filter:blur(4px); z-index:99999; align-items:center; justify-content:center;">
     <div style="background:#fff; padding:30px 40px; border-radius:16px; text-align:center; max-width:440px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); border:1px solid #e2e8f0;">
         <div style="display:inline-block; width:48px; height:48px; border:4px solid #e2e8f0; border-top-color:#0284c7; border-radius:50%; animation:spin_loader 0.8s linear infinite; margin-bottom:16px;"></div>
-        <h4 style="margin:0 0 8px 0; font-size:18px; font-weight:700; color:#0f172a;">Đang quét bài viết từ Fanpage...</h4>
-        <p style="margin:0; font-size:13px; color:#64748b; line-height:1.5;">Hệ thống đang kết nối với Facebook Graph API để tải bài viết mới nhất. Vui lòng giữ màn hình và chờ trong giây lát...</p>
+        <h4 id="sync_loading_title" style="margin:0 0 8px 0; font-size:18px; font-weight:700; color:#0f172a;">Đang quét bài viết từ Fanpage...</h4>
+        <p id="sync_loading_desc" style="margin:0; font-size:13px; color:#64748b; line-height:1.5;">Hệ thống đang kết nối với Facebook Graph API để tải bài viết mới nhất. Vui lòng giữ màn hình và chờ trong giây lát...</p>
     </div>
 </div>
 
@@ -348,14 +401,50 @@ Em muốn tư vấn mẫu này với ạ!
 function togglePageDropdown(e) {
     if (e) e.stopPropagation();
     const menu = document.getElementById('menu_page_dropdown');
-    menu.style.display = (menu.style.display === 'none' || !menu.style.display) ? 'block' : 'none';
+    if (menu) {
+        menu.style.display = (menu.style.display === 'none' || !menu.style.display) ? 'block' : 'none';
+        if (menu.style.display === 'block') {
+            const searchInput = document.getElementById('search_fanpage_input');
+            if (searchInput) searchInput.focus();
+        }
+    }
+}
+
+function toggleActionMenu(e) {
+    if (e) e.stopPropagation();
+    const menu = document.getElementById('action_dropdown_menu');
+    if (menu) {
+        menu.style.display = (menu.style.display === 'none' || !menu.style.display) ? 'block' : 'none';
+    }
+}
+
+function filterFanpageList() {
+    const input = document.getElementById('search_fanpage_input');
+    if (!input) return;
+    const filter = input.value.toLowerCase().trim();
+    const items = document.querySelectorAll('.fanpage-item');
+    items.forEach(item => {
+        const nameEl = item.querySelector('.fanpage-name');
+        const text = nameEl ? nameEl.innerText.toLowerCase() : '';
+        if (text.includes(filter)) {
+            item.style.display = 'flex';
+        } else {
+            item.style.display = 'none';
+        }
+    });
 }
 
 document.addEventListener('click', function(e) {
-    const btn = document.getElementById('btn_page_dropdown');
-    const menu = document.getElementById('menu_page_dropdown');
-    if (menu && btn && !btn.contains(e.target) && !menu.contains(e.target)) {
-        menu.style.display = 'none';
+    const btnPage = document.getElementById('btn_page_dropdown');
+    const menuPage = document.getElementById('menu_page_dropdown');
+    if (menuPage && btnPage && !btnPage.contains(e.target) && !menuPage.contains(e.target)) {
+        menuPage.style.display = 'none';
+    }
+
+    const btnAction = document.getElementById('btn_action_menu');
+    const menuAction = document.getElementById('action_dropdown_menu');
+    if (menuAction && btnAction && !btnAction.contains(e.target) && !menuAction.contains(e.target)) {
+        menuAction.style.display = 'none';
     }
 });
 
@@ -407,75 +496,138 @@ function showNotice(msg, type = 'success') {
     banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
+function safeFetchJson(url, options) {
+    return fetch(url, options)
+    .then(r => r.text())
+    .then(text => {
+        try {
+            return JSON.parse(text);
+        } catch(e) {
+            let cleanText = text.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+            if (cleanText.length > 250) cleanText = cleanText.substring(0, 250) + '...';
+            return { status: 'error', msg: 'Phản hồi máy chủ: ' + (cleanText || 'Lỗi từ phía máy chủ PHP') };
+        }
+    });
+}
+
 function syncPosts() {
     const checkedPageCbs = Array.from(document.querySelectorAll('.filter_page_cb:checked')).map(el => el.value);
     const allChk = document.getElementById('chk_page_all');
     
     let targetPages = checkedPageCbs;
-    if (allChk.checked || checkedPageCbs.length === 0) {
+    if ((allChk && allChk.checked) || checkedPageCbs.length === 0) {
         targetPages = ['ALL'];
     }
 
     const limitEl = document.getElementById('sync_limit');
-    const limit   = limitEl ? limitEl.value : 10;
+    const limit   = limitEl ? parseInt(limitEl.value) : 10;
 
     const onlyTextEl = document.getElementById('chk_only_has_text');
     const onlyHasText = (onlyTextEl && onlyTextEl.checked) ? 1 : 0;
 
     const btn = document.getElementById('btn_sync');
-    btn.disabled = true;
-    btn.innerHTML = '<span>⏳</span> <span>Đang quét bài viết...</span>';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span> <span>Đang quét bài viết...</span>'; }
 
     const loadingModal = document.getElementById('syncLoadingModal');
-    if (loadingModal) loadingModal.style.display = 'flex';
+    const loadingTitle = document.getElementById('sync_loading_title');
+    const loadingDesc = document.getElementById('sync_loading_desc');
+    if (loadingModal) {
+        if (loadingTitle) loadingTitle.innerText = 'Đang quét bài viết từ Fanpage...';
+        if (loadingDesc) loadingDesc.innerText = `Hệ thống đang khởi tạo kết nối Facebook API (Giới hạn ${limit} bài)...`;
+        loadingModal.style.display = 'flex';
+    }
 
+    runSyncChunk(targetPages, limit, onlyHasText, 1, 0, '');
+}
+
+function runSyncChunk(targetPages, limit, onlyHasText, isFirst, accumulatedSynced, nextCursors) {
     const fd = new FormData();
     fd.append('page_ids', JSON.stringify(targetPages));
     fd.append('limit', limit);
     fd.append('only_has_text', onlyHasText);
+    fd.append('is_first', isFirst);
+    fd.append('accumulated_synced', accumulatedSynced);
+    if (nextCursors) fd.append('next_cursors', nextCursors);
 
-    fetch('actions/sync_fanpage_posts.php', {
-        method: 'POST',
-        body: fd
-    })
-    .then(r => r.json())
+    safeFetchJson('actions/sync_fanpage_posts.php', { method: 'POST', body: fd })
     .then(res => {
-        btn.disabled = false;
-        btn.innerHTML = '<span>🔄</span> <span>Quét Bài Viết Fanpage</span>';
-        if (loadingModal) loadingModal.style.display = 'none';
+        const btn = document.getElementById('btn_sync');
+        const loadingModal = document.getElementById('syncLoadingModal');
+        const loadingDesc = document.getElementById('sync_loading_desc');
 
         if (res.status === 'success') {
-            showNotice(res.msg, 'success');
-            setTimeout(() => location.reload(), 1200);
+            if (loadingDesc) loadingDesc.innerText = res.msg;
+
+            if (res.finished) {
+                if (btn) { btn.disabled = false; btn.innerHTML = '<span>🔄</span> <span>Quét Bài Viết Fanpage</span>'; }
+                if (loadingModal) loadingModal.style.display = 'none';
+                showNotice(res.msg, 'success');
+                setTimeout(() => location.reload(), 1200);
+            } else {
+                runSyncChunk(targetPages, limit, onlyHasText, 0, res.total_synced, res.next_cursors);
+            }
         } else {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<span>🔄</span> <span>Quét Bài Viết Fanpage</span>'; }
+            if (loadingModal) loadingModal.style.display = 'none';
             showNotice('Lỗi: ' + res.msg, 'error');
         }
     })
     .catch(err => {
-        btn.disabled = false;
-        btn.innerHTML = '<span>🔄</span> <span>Quét Bài Viết Fanpage</span>';
+        const btn = document.getElementById('btn_sync');
+        const loadingModal = document.getElementById('syncLoadingModal');
+        if (btn) { btn.disabled = false; btn.innerHTML = '<span>🔄</span> <span>Quét Bài Viết Fanpage</span>'; }
         if (loadingModal) loadingModal.style.display = 'none';
         showNotice('Lỗi kết nối máy chủ: ' + err, 'error');
     });
 }
 
-function clearFetchedPosts() {
-    if (!confirm('Bạn có chắc chắn muốn xóa toàn bộ danh sách bài viết đã quét tạm thời không?')) {
-        return;
+let pendingConfirmCallback = null;
+
+function openCustomConfirm(title, message, icon, callback) {
+    const iconEl = document.getElementById('confirm_modal_icon'); if (iconEl) iconEl.innerText = icon || '⚠️';
+    const titleEl = document.getElementById('confirm_modal_title'); if (titleEl) titleEl.innerText = title || 'Xác nhận thao tác';
+    const msgEl = document.getElementById('confirm_modal_msg'); if (msgEl) msgEl.innerText = message || 'Bạn có chắc chắn muốn thực hiện thao tác này không?';
+    pendingConfirmCallback = callback;
+    const modal = document.getElementById('customConfirmModal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function closeCustomConfirm() {
+    const modal = document.getElementById('customConfirmModal');
+    if (modal) modal.style.display = 'none';
+    pendingConfirmCallback = null;
+}
+
+function executeCustomConfirm() {
+    const modal = document.getElementById('customConfirmModal');
+    if (modal) modal.style.display = 'none';
+    if (typeof pendingConfirmCallback === 'function') {
+        const cb = pendingConfirmCallback;
+        pendingConfirmCallback = null;
+        cb();
     }
-    fetch('actions/clear_fetched_posts.php', { method: 'POST' })
-    .then(r => r.json())
-    .then(res => {
-        if (res.status === 'success') {
-            showNotice(res.msg, 'success');
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showNotice('Lỗi: ' + res.msg, 'error');
+}
+
+function clearFetchedPosts() {
+    openCustomConfirm(
+        'Xóa danh sách bài quét tạm',
+        'Bạn có chắc chắn muốn xóa toàn bộ danh sách bài viết đã quét tạm thời khỏi cơ sở dữ liệu không?',
+        '🗑️',
+        function() {
+            safeFetchJson('actions/clear_fetched_posts.php', { method: 'POST' })
+            .then(res => {
+                if (res.status === 'success') {
+                    showNotice(res.msg, 'success');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showNotice('Lỗi: ' + res.msg, 'error');
+                }
+            })
+            .catch(err => {
+                showNotice('Lỗi kết nối máy chủ: ' + err, 'error');
+            });
         }
-    })
-    .catch(err => {
-        showNotice('Lỗi kết nối máy chủ: ' + err, 'error');
-    });
+    );
 }
 
 function toggleSelectAll(el) {
@@ -487,9 +639,162 @@ function toggleSelectAll(el) {
 function updateSelectedCount() {
     const checkedVals = Array.from(document.querySelectorAll('.post_cb:checked')).map(el => el.value);
     const count = checkedVals.length;
-    document.getElementById('sel_cnt').innerText = count;
-    document.getElementById('modal_sel_badge').innerText = count + ' bài viết';
-    document.getElementById('btn_campaign').disabled = (count === 0);
+    const selCnt = document.getElementById('sel_cnt'); if (selCnt) selCnt.innerText = count;
+    const delSelCnt = document.getElementById('del_sel_cnt'); if (delSelCnt) delSelCnt.innerText = count;
+    const badge = document.getElementById('modal_sel_badge'); if (badge) badge.innerText = count + ' bài viết';
+    
+    const btnCampaign = document.getElementById('btn_campaign'); if (btnCampaign) btnCampaign.disabled = (count === 0);
+    const btnDelSel = document.getElementById('btn_delete_selected'); if (btnDelSel) btnDelSel.disabled = (count === 0);
+}
+
+function deleteSelectedPosts() {
+    const checkedVals = Array.from(document.querySelectorAll('.post_cb:checked')).map(el => el.value);
+    if (checkedVals.length === 0) {
+        showNotice('Vui lòng tích chọn ít nhất 1 bài viết để xóa!', 'error');
+        return;
+    }
+
+    openCustomConfirm(
+        'Xác nhận XÓA BÀI VIẾT khỏi Fanpage',
+        `Bạn có chắc chắn muốn XÓA VĨNH VIỄN ${checkedVals.length} BÀI VIẾT ĐÃ CHỌN khỏi Fanpage qua Facebook API không? Hành động này không thể hoàn tác!`,
+        '🗑️',
+        function() {
+            const btn = document.getElementById('btn_delete_selected');
+            if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span> <span>Đang xóa bài...</span>'; }
+
+            const loadingModal = document.getElementById('syncLoadingModal');
+            const loadingTitle = document.getElementById('sync_loading_title');
+            const loadingDesc = document.getElementById('sync_loading_desc');
+            if (loadingModal) {
+                if (loadingTitle) loadingTitle.innerText = 'Đang xóa bài viết khỏi Fanpage...';
+                if (loadingDesc) loadingDesc.innerText = 'Hệ thống đang gửi yêu cầu xóa bài viết trực tiếp lên Facebook Graph API. Vui lòng chờ trong giây lát...';
+                loadingModal.style.display = 'flex';
+            }
+
+            const fd = new FormData();
+            fd.append('post_ids', JSON.stringify(checkedVals));
+
+            safeFetchJson('actions/delete_fanpage_posts.php', { method: 'POST', body: fd })
+            .then(res => {
+                if (btn) { btn.disabled = false; btn.innerHTML = '<span>🗑️</span> <span>Xóa bài đã chọn khỏi Fanpage (<span id="del_sel_cnt">0</span>)</span>'; }
+                if (loadingModal) loadingModal.style.display = 'none';
+
+                if (res.status === 'success') {
+                    showNotice(res.msg, 'success');
+                    setTimeout(() => location.reload(), 1200);
+                } else {
+                    showNotice('Lỗi: ' + res.msg, 'error');
+                }
+            })
+            .catch(err => {
+                if (btn) { btn.disabled = false; btn.innerHTML = '<span>🗑️</span> <span>Xóa bài đã chọn khỏi Fanpage (<span id="del_sel_cnt">0</span>)</span>'; }
+                if (loadingModal) loadingModal.style.display = 'none';
+                showNotice('Lỗi kết nối máy chủ: ' + err, 'error');
+            });
+        }
+    );
+}
+
+function deleteSinglePost(postId) {
+    openCustomConfirm(
+        'Xác nhận Xóa Bài Viết khỏi Fanpage',
+        'Bạn có chắc chắn muốn XÓA VĨNH VIỄN bài viết này khỏi Fanpage qua Facebook API không? Hành động này không thể hoàn tác!',
+        '🗑️',
+        function() {
+            const loadingModal = document.getElementById('syncLoadingModal');
+            const loadingTitle = document.getElementById('sync_loading_title');
+            const loadingDesc = document.getElementById('sync_loading_desc');
+            if (loadingModal) {
+                if (loadingTitle) loadingTitle.innerText = 'Đang xóa bài viết khỏi Fanpage...';
+                if (loadingDesc) loadingDesc.innerText = 'Hệ thống đang gửi yêu cầu xóa bài viết lên Facebook API...';
+                loadingModal.style.display = 'flex';
+            }
+
+            const fd = new FormData();
+            fd.append('post_ids', JSON.stringify([postId]));
+
+            safeFetchJson('actions/delete_fanpage_posts.php', { method: 'POST', body: fd })
+            .then(res => {
+                if (loadingModal) loadingModal.style.display = 'none';
+                if (res.status === 'success') {
+                    showNotice(res.msg, 'success');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showNotice('Lỗi: ' + res.msg, 'error');
+                }
+            })
+            .catch(err => {
+                if (loadingModal) loadingModal.style.display = 'none';
+                showNotice('Lỗi kết nối máy chủ: ' + err, 'error');
+            });
+        }
+    );
+}
+
+function scanAndDeleteEmptyPosts() {
+    const checkedPageCbs = Array.from(document.querySelectorAll('.filter_page_cb:checked')).map(el => el.value);
+    const allChk = document.getElementById('chk_page_all');
+    
+    let targetPages = checkedPageCbs;
+    if ((allChk && allChk.checked) || checkedPageCbs.length === 0) {
+        targetPages = ['ALL'];
+    }
+
+    const limitEl = document.getElementById('sync_limit');
+    const limit   = limitEl ? parseInt(limitEl.value) : 100;
+
+    openCustomConfirm(
+        'Xác nhận Quét & Xóa bài KHÔNG chữ',
+        `Bạn có chắc chắn muốn QUÉT VÀ XÓA TẤT CẢ BÀI VIẾT KHÔNG CÓ NỘI DUNG VĂN BẢN (Giới hạn ${limit} bài/page)? Các bài không có chữ sẽ bị XÓA VĨNH VIỄN khỏi Fanpage qua Facebook API!`,
+        '🧹',
+        function() {
+            const loadingModal = document.getElementById('syncLoadingModal');
+            const loadingTitle = document.getElementById('sync_loading_title');
+            const loadingDesc = document.getElementById('sync_loading_desc');
+            if (loadingModal) {
+                if (loadingTitle) loadingTitle.innerText = 'Đang quét & xóa bài không chữ...';
+                if (loadingDesc) loadingDesc.innerText = `Hệ thống đang bắt đầu duyệt Fanpage (giới hạn ${limit} bài)...`;
+                loadingModal.style.display = 'flex';
+            }
+
+            runScanDeleteChunk(targetPages, limit, 0, 0, '');
+        }
+    );
+}
+
+function runScanDeleteChunk(targetPages, limit, accumulatedScanned, accumulatedDeleted, nextCursors) {
+    const fd = new FormData();
+    fd.append('page_ids', JSON.stringify(targetPages));
+    fd.append('limit', limit);
+    fd.append('accumulated_scanned', accumulatedScanned);
+    fd.append('accumulated_deleted', accumulatedDeleted);
+    if (nextCursors) fd.append('next_cursors', nextCursors);
+
+    safeFetchJson('actions/scan_and_delete_empty_posts.php', { method: 'POST', body: fd })
+    .then(res => {
+        const loadingModal = document.getElementById('syncLoadingModal');
+        const loadingDesc = document.getElementById('sync_loading_desc');
+
+        if (res.status === 'success') {
+            if (loadingDesc) loadingDesc.innerText = res.msg;
+
+            if (res.finished) {
+                if (loadingModal) loadingModal.style.display = 'none';
+                showNotice(res.msg, 'success');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                runScanDeleteChunk(targetPages, limit, res.total_scanned, res.total_deleted, res.next_cursors);
+            }
+        } else {
+            if (loadingModal) loadingModal.style.display = 'none';
+            showNotice('Lỗi: ' + res.msg, 'error');
+        }
+    })
+    .catch(err => {
+        const loadingModal = document.getElementById('syncLoadingModal');
+        if (loadingModal) loadingModal.style.display = 'none';
+        showNotice('Lỗi kết nối máy chủ: ' + err, 'error');
+    });
 }
 
 function openCampaignModal() {
@@ -528,11 +833,10 @@ function submitCampaign(e) {
     fd.append('delay_minutes', delayMinutes);
     fd.append('start_time', startTime);
 
-    fetch('actions/create_comment_campaign.php', {
+    safeFetchJson('actions/create_comment_campaign.php', {
         method: 'POST',
         body: fd
     })
-    .then(r => r.json())
     .then(res => {
         btn.disabled = false;
         btn.innerText = 'Lưu & Kích Hoạt Seeding';

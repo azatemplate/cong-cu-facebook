@@ -32,12 +32,14 @@ try {
 
     $search = trim($_GET['search'] ?? '');
     $search_param = '%' . $search . '%';
+    $search_clean = '%' . preg_replace('/[\s\.\-\(\)]/', '', $search) . '%';
 
     $sql = "
         SELECT 
             m.sender_id,
-            COALESCE(c.name, m.sender_name, 'Khách hàng Zalo') AS sender_name,
+            COALESCE(NULLIF(c.name, ''), m.sender_name, 'Khách hàng Zalo') AS sender_name,
             COALESCE(c.avatar, 'https://ui-avatars.com/api/?name=Zalo') AS sender_avatar,
+            c.name AS cust_name,
             c.phone,
             c.province,
             c.consulted,
@@ -49,7 +51,7 @@ try {
         WHERE m.oa_id = :oa_id
     ";
     if ($search !== '') {
-        $sql .= " AND (COALESCE(c.name, m.sender_name) LIKE :search OR m.snippet LIKE :search OR m.sender_id LIKE :search OR c.phone LIKE :search2)";
+        $sql .= " AND (COALESCE(c.name, m.sender_name) LIKE :search OR m.snippet LIKE :search OR m.sender_id LIKE :search OR c.phone LIKE :search2 OR REPLACE(REPLACE(REPLACE(c.phone, ' ', ''), '.', ''), '-', '') LIKE :search_clean)";
     }
     $sql .= " ORDER BY m.updated_time DESC";
 
@@ -58,6 +60,7 @@ try {
     if ($search !== '') {
         $stmt->bindValue(':search', $search_param, PDO::PARAM_STR);
         $stmt->bindValue(':search2', $search_param, PDO::PARAM_STR);
+        $stmt->bindValue(':search_clean', $search_clean, PDO::PARAM_STR);
     }
     $stmt->execute();
     $conversations = $stmt->fetchAll(PDO::FETCH_ASSOC);

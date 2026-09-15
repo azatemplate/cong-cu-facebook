@@ -52,10 +52,15 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete_account' && !empty($_G
 $current_page = 'instagram';
 require_once __DIR__ . '/includes/header.php';
 
-// Fetch Instagram Accounts
+// Fetch Instagram Accounts & limit
 $ig_accounts = get_instagram_accounts($account_id);
 $selected_ig_id = $_GET['ig_id'] ?? ($ig_accounts[0]['ig_user_id'] ?? '');
 $active_tab = $_GET['tab'] ?? 'channels';
+
+$stmt_lim = $pdo->prepare("SELECT max_instagram_accounts FROM system_accounts WHERE id = ?");
+$stmt_lim->execute([$account_id]);
+$max_ig_accounts = intval($stmt_lim->fetchColumn() ?: 10);
+$max_ig_display = $is_admin ? '&infin;' : number_format($max_ig_accounts);
 
 // ── Calculate Dashboard Insights Metrics (8 Metrics) ────────────────────
 $total_ig_accounts   = count($ig_accounts);
@@ -236,6 +241,12 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
     </div>
 </div>
 
+<?php if (isset($_SESSION['flash_msg'])): ?>
+    <div class="alert alert-info" style="margin-bottom: 15px;">
+        <?php echo htmlspecialchars($_SESSION['flash_msg']); unset($_SESSION['flash_msg']); ?>
+    </div>
+<?php endif; ?>
+
 <?php if (isset($_GET['synced'])): ?>
     <div class="alert alert-success">
         ✅ Đã quét và đồng bộ thành công <strong><?php echo (int)$_GET['synced']; ?></strong> tài khoản Instagram Doanh nghiệp kết nối từ Facebook Pages!
@@ -254,7 +265,7 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
             <div class="icon-box grad-ig-pink">📷</div>
             <div class="lbl">Tài khoản</div>
         </div>
-        <div class="val text-pink"><?php echo number_format($total_ig_accounts); ?></div>
+        <div class="val text-pink"><?php echo number_format($total_ig_accounts) . ' / ' . $max_ig_display; ?></div>
     </div>
 
     <div class="ig-stat-card">
@@ -320,7 +331,7 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
 <!-- ── NAVIGATION TABS ─────────────────────────────────────────────────── -->
 <div class="ig-nav-tabs">
     <a href="instagram.php?tab=channels" class="ig-tab-btn <?php echo $active_tab==='channels'?'active':''; ?>">
-        📌 Các Kênh Đã Đồng Bộ (<?php echo $total_ig_accounts; ?>)
+        📌 Các Kênh Đã Đồng Bộ (<?php echo $total_ig_accounts; ?> / <?php echo $max_ig_display; ?>)
     </a>
     <a href="instagram.php?tab=create" class="ig-tab-btn <?php echo $active_tab==='create'?'active':''; ?>">
         🚀 Đăng Bài & Lên Lịch

@@ -142,11 +142,7 @@ try {
 } catch (Exception $e) {}
 
 // Insert to scheduled_posts
-$has_extra_cols = false;
-try {
-    $col_chk = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME='campaign_id'");
-    $has_extra_cols = ($col_chk && $col_chk->fetchColumn() > 0);
-} catch (Exception $e) {}
+$has_extra_cols = true;
 
 $s_stmt_with    = $has_extra_cols
     ? $pdo->prepare("INSERT INTO scheduled_posts (account_id, page_id, post_type, content, media_path, scheduled_time, status, campaign_id, comment_lines) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)")

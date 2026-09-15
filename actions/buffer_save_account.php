@@ -114,6 +114,14 @@ if ($action === 'add_account' || $action === 'edit_account') {
         $channel_count = 0;
         $chan_query = 'query GetChannels($orgId: OrganizationId!) { channels(input: { organizationId: $orgId }) { id name displayName service avatar } }';
 
+        // Read max_buffer_channels limit for user
+        $acc_stmt = $pdo->prepare("SELECT role, max_buffer_channels FROM system_accounts WHERE id = ?");
+        $acc_stmt->execute([$account_id]);
+        $acc_info = $acc_stmt->fetch(PDO::FETCH_ASSOC);
+        $max_buffer_channels = (int)($acc_info['max_buffer_channels'] ?? 10);
+        $is_admin = (($acc_info['role'] ?? '') === 'admin');
+        $buf_limit_reached = false;
+
         foreach ($orgs as $org) {
             $org_id = $org['id'];
             $org_name = $org['name'] ?? $first_org_name;
@@ -127,6 +135,21 @@ if ($action === 'add_account' || $action === 'edit_account') {
                     $channel_name = $c['displayName'] ?? $c['name'] ?? 'Channel';
                     $service = strtolower($c['service'] ?? 'social');
                     $avatar = $c['avatar'] ?? '';
+
+                    $chk_buf = $pdo->prepare("SELECT id FROM buffer_channels WHERE account_id = ? AND channel_id = ?");
+                    $chk_buf->execute([$account_id, $channel_id]);
+                    $existing_buf = $chk_buf->fetch();
+
+                    if (!$existing_buf && !$is_admin && $max_buffer_channels > 0) {
+                        $cnt_buf_stmt = $pdo->prepare("SELECT COUNT(*) FROM buffer_channels WHERE account_id = ?");
+                        $cnt_buf_stmt->execute([$account_id]);
+                        $curr_buf_count = (int)$cnt_buf_stmt->fetchColumn();
+
+                        if ($curr_buf_count >= $max_buffer_channels) {
+                            $buf_limit_reached = true;
+                            continue; // Chặn không lưu thêm kênh Buffer vượt hạn ngạch vào CSDL
+                        }
+                    }
 
                     $stmt_chan = $pdo->prepare("
                         INSERT INTO buffer_channels (account_id, buffer_account_id, channel_id, channel_name, service, service_type, avatar, organization)
@@ -144,7 +167,11 @@ if ($action === 'add_account' || $action === 'edit_account') {
             }
         }
 
-        $_SESSION['flash_msg'] = "Kết nối & Đồng bộ thành công $channel_count kênh từ tài khoản Buffer $email!";
+        $msg = "Kết nối & Đồng bộ thành công $channel_count kênh từ tài khoản Buffer $email!";
+        if (!empty($buf_limit_reached)) {
+            $msg .= " ⚠️ Đã đạt giới hạn tối đa $max_buffer_channels Kênh Buffer. Các kênh vượt quá đã bị ngắt không lưu CSDL.";
+        }
+        $_SESSION['flash_msg'] = $msg;
         if ($is_redirect) { header("Location: ../buffer.php?tab=channels"); exit; }
         echo json_encode(['status' => 'success', 'msg' => $_SESSION['flash_msg'], 'channel_count' => $channel_count]);
     } catch (Exception $e) {

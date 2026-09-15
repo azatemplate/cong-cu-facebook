@@ -39,6 +39,16 @@ if (!$settings || empty($settings['oa_secret'])) {
 $secretKey = decryptData($settings['oa_secret']);
 $acc_id = $settings['account_id'];
 
+// Check if account has live_chat_oa enabled
+$st_chk = $pdo->prepare("SELECT role, enable_live_chat_oa FROM system_accounts WHERE id = ?");
+$st_chk->execute([$acc_id]);
+$acc_info = $st_chk->fetch(PDO::FETCH_ASSOC);
+if ($acc_info && ($acc_info['role'] ?? '') !== 'admin' && (int)($acc_info['enable_live_chat_oa'] ?? 1) === 0) {
+    http_response_code(200);
+    echo "OK (Feature live_chat_oa disabled for account)";
+    exit;
+}
+
 // 2. Validate Signature
 $receivedSignature = $_SERVER['HTTP_X_ZEVENT_SIGNATURE'] 
     ?? $_SERVER['HTTP_X_ZALO_SIGNATURE'] 
@@ -576,6 +586,8 @@ try {
                     }
                     if (isset($parsed_extracted['stop_consulting']) && $parsed_extracted['stop_consulting'] === true) {
                         $ai_upd_fields[] = "consulted = 3";
+                    } else {
+                        $ai_upd_fields[] = "consulted = IF(name IS NOT NULL AND TRIM(name) != '' AND name != 'Khách hàng Zalo' AND phone IS NOT NULL AND TRIM(phone) != '' AND province IS NOT NULL AND TRIM(province) != '' AND notes IS NOT NULL AND TRIM(notes) != '', IF(consulted = 0, 4, consulted), IF(consulted = 4, 0, consulted))";
                     }
                     
                     if (!empty($ai_upd_fields)) {
@@ -605,6 +617,7 @@ try {
                     $php_upd_vals[] = $php_detected_province;
                     $cust_province = $php_detected_province;
                 }
+                $php_upd_cols[] = "consulted = IF(name IS NOT NULL AND TRIM(name) != '' AND name != 'Khách hàng Zalo' AND phone IS NOT NULL AND TRIM(phone) != '' AND province IS NOT NULL AND TRIM(province) != '' AND notes IS NOT NULL AND TRIM(notes) != '', IF(consulted = 0, 4, consulted), IF(consulted = 4, 0, consulted))";
                 if (!empty($php_upd_cols)) {
                     $php_upd_vals[] = $oa_id;
                     $php_upd_vals[] = $sender_id;

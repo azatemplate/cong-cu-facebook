@@ -5,26 +5,19 @@ require_once __DIR__ . '/includes/header.php';
 $account_id = $_SESSION['account_id'];
 $is_admin = ($_SESSION['role'] === 'admin');
 
-// Tự động dọn dẹp nick cá nhân (nếu trước đây bị lưu nhầm vào bảng pages)
-try {
-    $pdo->exec("DELETE p FROM pages p JOIN users u ON p.page_id = u.fb_id");
-} catch (Exception $e) {}
+
 
 // Regular user (and Admin) sees their own pages AND pages shared with their system account
 // 1. Owned pages (indirectly via users table), plus who they shared them with
 // 2. Shared pages
 
 $stmt = $pdo->prepare("
-    (SELECT pages.*, users.name as user_name,
-           (SELECT GROUP_CONCAT(CONCAT(sa.username, ':', sa.id) SEPARATOR ', ')
-            FROM page_shares ps
-            JOIN system_accounts sa ON ps.shared_with_account_id = sa.id
-            WHERE ps.page_id = pages.page_id) as shared_to_users
+    (SELECT pages.*, users.name as user_name
      FROM pages 
      JOIN users ON pages.user_id = users.id 
      WHERE users.account_id = :aid)
-    UNION
-    (SELECT p.*, 'Shared' as user_name, NULL as shared_to_users
+    UNION ALL
+    (SELECT p.*, 'Shared' as user_name
      FROM pages p
      JOIN page_shares ps ON p.page_id = ps.page_id
      WHERE ps.shared_with_account_id = :aid2)
@@ -33,25 +26,54 @@ $stmt = $pdo->prepare("
 $stmt->bindValue(':aid', $account_id, PDO::PARAM_INT);
 $stmt->bindValue(':aid2', $account_id, PDO::PARAM_INT);
 $stmt->execute();
+$all_pages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Batch map shared_to_users in PHP memory (O(1) query instead of O(N) subqueries)
+if (!empty($all_pages)) {
+    $owned_page_ids = [];
+    foreach ($all_pages as $p) {
+        if (($p['user_name'] ?? '') !== 'Shared' && !empty($p['page_id'])) {
+            $owned_page_ids[] = $p['page_id'];
+        }
+    }
+    
+    $shares_map = [];
+    if (!empty($owned_page_ids)) {
+        $in_placeholders = implode(',', array_fill(0, count($owned_page_ids), '?'));
+        $stmt_shares = $pdo->prepare("
+            SELECT ps.page_id, sa.username, sa.id
+            FROM page_shares ps
+            JOIN system_accounts sa ON ps.shared_with_account_id = sa.id
+            WHERE ps.page_id IN ($in_placeholders)
+        ");
+        $stmt_shares->execute($owned_page_ids);
+        while ($row = $stmt_shares->fetch(PDO::FETCH_ASSOC)) {
+            $pid = $row['page_id'];
+            if (!isset($shares_map[$pid])) $shares_map[$pid] = [];
+            $shares_map[$pid][] = $row['username'] . ':' . $row['id'];
+        }
+    }
+    
+    foreach ($all_pages as &$p) {
+        $pid = $p['page_id'] ?? '';
+        $p['shared_to_users'] = isset($shares_map[$pid]) ? implode(', ', $shares_map[$pid]) : null;
+    }
+    unset($p);
+}
 
 $stmt_sys_u_2 = $pdo->prepare("SELECT id, username FROM system_accounts WHERE id != ? ORDER BY username ASC");
 $stmt_sys_u_2->execute([$account_id]);
 $sys_users = $stmt_sys_u_2->fetchAll(PDO::FETCH_ASSOC);
 
 $stmt_u = $pdo->prepare("
-    SELECT DISTINCT u.id, u.name 
-    FROM users u 
-    LEFT JOIN pages p ON u.id = p.user_id 
-    LEFT JOIN page_shares ps ON p.page_id = ps.page_id 
-    WHERE u.account_id = :aid OR ps.shared_with_account_id = :aid2
-    ORDER BY u.name ASC
+    SELECT id, name 
+    FROM users 
+    WHERE account_id = :aid
+    ORDER BY name ASC
 ");
 $stmt_u->bindValue(':aid', $account_id, PDO::PARAM_INT);
-$stmt_u->bindValue(':aid2', $account_id, PDO::PARAM_INT);
 $stmt_u->execute();
 $users = $stmt_u->fetchAll(PDO::FETCH_ASSOC);
-
-$all_pages = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <div class="page-title">Quản lý Fanpage</div>

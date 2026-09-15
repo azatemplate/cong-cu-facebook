@@ -71,12 +71,12 @@ if ($campaign_id) {
         exit;
     }
 
-    // Retry all or Force Run (GET)
+    // Retry failed posts or Force Run (GET)
     if (isset($_GET['action'])) {
         $act = $_GET['action'];
         if ($act === 'retry_all' || $act === 'run_now') {
             try {
-                $pdo->prepare("UPDATE scheduled_posts SET status='pending', retry_count=0, error_msg=NULL WHERE campaign_id = ? AND status IN ('failed','checkpoint','processing','pending')")->execute([$campaign_id]);
+                $pdo->prepare("UPDATE scheduled_posts SET status='pending', retry_count=0, error_msg=NULL WHERE campaign_id = ? AND status IN ('failed','checkpoint')")->execute([$campaign_id]);
                 trigger_campaign_publisher_worker($pdo, $campaign_id);
             } catch (PDOException $e) { /* ignore */ }
             header("Location: campaign_detail.php?id=$campaign_id");
@@ -105,6 +105,7 @@ require_once __DIR__ . '/includes/header.php';
 
 $account_id  = $_SESSION['account_id'];
 $is_admin    = ($_SESSION['role'] === 'admin');
+session_write_close();
 $campaign_id = intval($_GET['id'] ?? 0);
 
 if (!$campaign_id) {
@@ -150,57 +151,133 @@ try {
 } catch (PDOException $e) {}
 $total_pgs = max(1, ceil($total_filtered / $per_page));
 
-// Posts
+// Posts (Phân trang 50 bài - Tải trực tiếp siêu tốc từ 1 bảng indexed)
 $posts = [];
 try {
     $posts_stmt = $pdo->prepare("
-        SELECT sp.*, 
-               p.name AS page_name,
-               p.avatar AS page_avatar,
-               COALESCE(yt1.channel_title, yt2.channel_title) AS yt_channel_name,
-               COALESCE(yt1.channel_avatar, yt2.channel_avatar) AS yt_channel_avatar,
-               bc.channel_name AS buffer_channel_name,
-               bc.avatar AS buffer_avatar,
-               bc.service AS buffer_service,
-               tt.display_name AS tt_channel_name,
-               tt.avatar AS tt_channel_avatar,
-               ig.username AS ig_username,
-               ig.name AS ig_name,
-               ig.avatar AS ig_avatar
+        SELECT sp.*
         FROM scheduled_posts sp
-        LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' AND sp.post_type NOT LIKE 'Instagram%'
-        LEFT JOIN instagram_accounts ig ON (sp.page_id = ig.ig_user_id OR sp.page_id = ig.id) AND sp.post_type LIKE 'Instagram%'
-        LEFT JOIN youtube_channels yt1 ON sp.page_id = yt1.channel_id AND sp.post_type = 'YouTube'
-        LEFT JOIN youtube_channels yt2 ON sp.page_id = yt2.id AND sp.post_type = 'YouTube'
-        LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
-        LEFT JOIN tiktok_accounts tt ON sp.page_id = tt.id AND sp.post_type = 'TikTok'
         WHERE sp.campaign_id = ? $filter_sql
         ORDER BY sp.scheduled_time ASC, sp.id ASC
         LIMIT $per_page OFFSET $offset
     ");
     $posts_stmt->execute([$campaign_id]);
-    $posts = $posts_stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    try {
-        $posts_stmt = $pdo->prepare("
-            SELECT sp.*, p.name AS page_name, p.avatar AS page_avatar
-            FROM scheduled_posts sp
-            LEFT JOIN pages p ON sp.page_id = p.page_id
-            WHERE sp.campaign_id = ? $filter_sql
-            ORDER BY sp.scheduled_time ASC, sp.id ASC
-            LIMIT $per_page OFFSET $offset
-        ");
-        $posts_stmt->execute([$campaign_id]);
-        $posts = $posts_stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (PDOException $ex) {}
-}
+    $raw_posts = $posts_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Detect if comment_status column exists (fault-tolerant, using fast query cache)
-$has_comment_status_col = false;
-try {
-    $pdo->query("SELECT comment_status FROM scheduled_posts LIMIT 1");
-    $has_comment_status_col = true;
-} catch (Exception $e) {}
+    if (!empty($raw_posts)) {
+        $fb_pids = [];
+        $ig_pids = [];
+        $yt_pids = [];
+        $buf_pids = [];
+        $tt_pids = [];
+
+        foreach ($raw_posts as $rp) {
+            $pid = $rp['page_id'] ?? '';
+            if (empty($pid)) continue;
+            $pt = $rp['post_type'] ?? '';
+
+            if (strpos($pt, 'Instagram') === 0) {
+                $ig_pids[] = $pid;
+            } elseif ($pt === 'YouTube') {
+                $yt_pids[] = $pid;
+            } elseif (strpos($pt, 'Buffer') === 0) {
+                $buf_pids[] = $pid;
+            } elseif ($pt === 'TikTok') {
+                $tt_pids[] = $pid;
+            } else {
+                $fb_pids[] = $pid;
+            }
+        }
+
+        $meta_cache = [];
+
+        if (!empty($fb_pids)) {
+            $unique_fb = array_values(array_unique($fb_pids));
+            $in_fb = implode(',', array_fill(0, count($unique_fb), '?'));
+            $st_fb = $pdo->prepare("SELECT page_id, name, avatar FROM pages WHERE page_id IN ($in_fb)");
+            $st_fb->execute($unique_fb);
+            while ($r = $st_fb->fetch(PDO::FETCH_ASSOC)) {
+                $meta_cache['fb_' . $r['page_id']] = ['name' => $r['name'], 'avatar' => $r['avatar']];
+            }
+        }
+
+        if (!empty($ig_pids)) {
+            $unique_ig = array_values(array_unique($ig_pids));
+            $in_ig = implode(',', array_fill(0, count($unique_ig), '?'));
+            $st_ig = $pdo->prepare("SELECT ig_user_id, CAST(id AS CHAR) as sys_id, username, name, avatar FROM instagram_accounts WHERE ig_user_id IN ($in_ig) OR id IN ($in_ig)");
+            $st_ig->execute(array_merge($unique_ig, $unique_ig));
+            while ($r = $st_ig->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($r['ig_user_id'])) $meta_cache['ig_' . $r['ig_user_id']] = ['username' => $r['username'], 'name' => $r['name'], 'avatar' => $r['avatar']];
+                if (!empty($r['sys_id'])) $meta_cache['ig_' . $r['sys_id']] = ['username' => $r['username'], 'name' => $r['name'], 'avatar' => $r['avatar']];
+            }
+        }
+
+        if (!empty($yt_pids)) {
+            $unique_yt = array_values(array_unique($yt_pids));
+            $in_yt = implode(',', array_fill(0, count($unique_yt), '?'));
+            $st_yt = $pdo->prepare("SELECT channel_id, CAST(id AS CHAR) as sys_id, channel_title, channel_avatar FROM youtube_channels WHERE channel_id IN ($in_yt) OR id IN ($in_yt)");
+            $st_yt->execute(array_merge($unique_yt, $unique_yt));
+            while ($r = $st_yt->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($r['channel_id'])) $meta_cache['yt_' . $r['channel_id']] = ['title' => $r['channel_title'], 'avatar' => $r['channel_avatar']];
+                if (!empty($r['sys_id'])) $meta_cache['yt_' . $r['sys_id']] = ['title' => $r['channel_title'], 'avatar' => $r['channel_avatar']];
+            }
+        }
+
+        if (!empty($buf_pids)) {
+            $unique_buf = array_values(array_unique($buf_pids));
+            $in_buf = implode(',', array_fill(0, count($unique_buf), '?'));
+            $st_buf = $pdo->prepare("SELECT channel_id, channel_name, avatar, service FROM buffer_channels WHERE channel_id IN ($in_buf)");
+            $st_buf->execute($unique_buf);
+            while ($r = $st_buf->fetch(PDO::FETCH_ASSOC)) {
+                $meta_cache['buf_' . $r['channel_id']] = ['name' => $r['channel_name'], 'avatar' => $r['avatar'], 'service' => $r['service']];
+            }
+        }
+
+        if (!empty($tt_pids)) {
+            $unique_tt = array_values(array_unique($tt_pids));
+            $in_tt = implode(',', array_fill(0, count($unique_tt), '?'));
+            $st_tt = $pdo->prepare("SELECT id, open_id, display_name, avatar FROM tiktok_accounts WHERE id IN ($in_tt) OR open_id IN ($in_tt)");
+            $st_tt->execute(array_merge($unique_tt, $unique_tt));
+            while ($r = $st_tt->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($r['id'])) $meta_cache['tt_' . $r['id']] = ['name' => $r['display_name'], 'avatar' => $r['avatar']];
+                if (!empty($r['open_id'])) $meta_cache['tt_' . $r['open_id']] = ['name' => $r['display_name'], 'avatar' => $r['avatar']];
+            }
+        }
+
+        foreach ($raw_posts as $rp) {
+            $pid = $rp['page_id'] ?? '';
+            $pt  = $rp['post_type'] ?? '';
+
+            if (strpos($pt, 'Instagram') === 0) {
+                $m = $meta_cache['ig_' . $pid] ?? [];
+                $rp['ig_username'] = $m['username'] ?? '';
+                $rp['ig_name']     = $m['name'] ?? '';
+                $rp['ig_avatar']   = $m['avatar'] ?? '';
+            } elseif ($pt === 'YouTube') {
+                $m = $meta_cache['yt_' . $pid] ?? [];
+                $rp['yt_channel_name']   = $m['title'] ?? '';
+                $rp['yt_channel_avatar'] = $m['avatar'] ?? '';
+            } elseif (strpos($pt, 'Buffer') === 0) {
+                $m = $meta_cache['buf_' . $pid] ?? [];
+                $rp['buffer_channel_name'] = $m['name'] ?? '';
+                $rp['buffer_avatar']       = $m['avatar'] ?? '';
+                $rp['buffer_service']      = $m['service'] ?? '';
+            } elseif ($pt === 'TikTok') {
+                $m = $meta_cache['tt_' . $pid] ?? [];
+                $rp['tt_channel_name']   = $m['name'] ?? '';
+                $rp['tt_channel_avatar'] = $m['avatar'] ?? '';
+            } else {
+                $m = $meta_cache['fb_' . $pid] ?? [];
+                $rp['page_name']   = $m['name'] ?? '';
+                $rp['page_avatar'] = $m['avatar'] ?? '';
+            }
+
+            $posts[] = $rp;
+        }
+    }
+} catch (PDOException $e) {}
+
+$has_comment_status_col = true;
 
 
 $stats = ['pub' => 0, 'pend' => 0, 'proc' => 0, 'fail' => 0, 'total' => 0];
@@ -285,8 +362,8 @@ function status_label($s) {
         </div>
     </div>
     <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center;">
-        <?php if ((int)$stats['fail'] > 0 || (int)($stats['chk'] ?? 0) > 0 || (int)$stats['proc'] > 0): ?>
-        <button onclick="showCampaignModal('retry_all', <?php echo $campaign_id; ?>, 'Thử lại tất cả bài kẹt/lỗi trong chiến dịch này?', false)" style="padding:8px 16px;background:#3b82f6;color:white;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🔄 Reset/Thử Lại Tất Cả</button>
+        <?php if ((int)$stats['fail'] > 0 || (int)($stats['chk'] ?? 0) > 0): ?>
+        <button onclick="showCampaignModal('retry_all', <?php echo $campaign_id; ?>, 'Thử lại tất cả các bài viết bị lỗi trong chiến dịch này?', false)" style="padding:8px 16px;background:#3b82f6;color:white;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🔄 Reset / Thử Lại Bài Lỗi</button>
         <?php endif; ?>
         <?php if ((int)$stats['pend'] > 0 || (int)$stats['proc'] > 0 || (int)$stats['fail'] > 0 || (int)($stats['chk'] ?? 0) > 0): ?>
         <button onclick="showCampaignModal('delete_pending', <?php echo $campaign_id; ?>, 'Xóa toàn bộ bài chưa hoàn tất trong chiến dịch này?', true)" style="padding:8px 16px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;">🗑 Xóa bài chưa/lỗi</button>

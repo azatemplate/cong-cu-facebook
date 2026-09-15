@@ -238,6 +238,16 @@ try {
     // 2. VISITOR GỬI TIN NHẮN TỪ WIDGET
     if ($action === 'send_visitor_msg') {
         $account_id = intval($_POST['account_id'] ?? $_GET['account_id'] ?? ($_SESSION['account_id'] ?? 1));
+        
+        // Check if enable_website is enabled for account
+        $st_chk = $pdo->prepare("SELECT role, enable_website FROM system_accounts WHERE id = ?");
+        $st_chk->execute([$account_id]);
+        $acc_info = $st_chk->fetch(PDO::FETCH_ASSOC);
+        if ($acc_info && ($acc_info['role'] ?? '') !== 'admin' && (int)($acc_info['enable_website'] ?? 1) === 0) {
+            echo json_encode(['status' => 'error', 'msg' => 'Tính năng Live Chat Website đã bị tắt cho tài khoản này.']);
+            exit;
+        }
+
         $visitor_uuid = trim($_POST['visitor_uuid'] ?? $_GET['visitor_uuid'] ?? '');
         $user_msg = trim($_POST['message'] ?? $_GET['message'] ?? '');
         
@@ -566,6 +576,14 @@ try {
         $province = trim($_POST['province'] ?? '');
         $notes = trim($_POST['notes'] ?? '');
         $consulted = intval($_POST['consulted'] ?? 0);
+
+        // If customer has ALL 4 FIELDS (name, phone, province, notes), promote status 0 -> 4 (Chờ xử lý). If info incomplete, reset 4 -> 0.
+        $is_full_info = !empty($name) && !empty($phone) && !empty($province) && !empty($notes);
+        if ($is_full_info && $consulted === 0) {
+            $consulted = 4;
+        } elseif (!$is_full_info && $consulted === 4) {
+            $consulted = 0;
+        }
 
         if (empty($visitor_uuid)) {
             echo json_encode(['status' => 'error', 'msg' => 'Thiếu visitor_uuid']);

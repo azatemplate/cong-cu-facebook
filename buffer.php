@@ -27,6 +27,11 @@ $stmt_acc = $pdo->prepare("SELECT * FROM buffer_accounts WHERE account_id = ? OR
 $stmt_acc->execute([$account_id]);
 $buffer_accounts = $stmt_acc->fetchAll(PDO::FETCH_ASSOC);
 
+$stmt_lim = $pdo->prepare("SELECT max_buffer_channels FROM system_accounts WHERE id = ?");
+$stmt_lim->execute([$account_id]);
+$max_buffer_channels = intval($stmt_lim->fetchColumn() ?: 10);
+$max_buf_display = $is_admin ? '&infin;' : number_format($max_buffer_channels);
+
 $total_channels = 0;
 $has_channels = false;
 foreach ($buffer_accounts as &$acc) {
@@ -495,7 +500,7 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
             🚀 Đăng Bài &amp; Lịch Trình Buffer
         </a>
         <a href="buffer.php?tab=channels" style="padding:9px 18px; border-radius:8px; font-weight:600; font-size:14px; text-decoration:none; display:flex; align-items:center; gap:8px; transition:all 0.2s; <?php echo ($active_tab === 'channels') ? 'background:var(--primary-color, #0284c7); color:white;' : 'background:#f1f5f9; color:var(--text-main);'; ?>">
-            📡 Quản Lý Kênh &amp; API Key (<?php echo $total_channels; ?>)
+            📡 Quản Lý Kênh &amp; API Key (<?php echo $total_channels; ?> / <?php echo $max_buf_display; ?>)
         </a>
     </div>
 

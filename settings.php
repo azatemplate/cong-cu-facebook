@@ -2,55 +2,35 @@
 $current_page = 'settings';
 require_once __DIR__ . '/includes/header.php';
 
-// Auto-migrate database changes for Phase 15 and 17
-try {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS system_settings (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        setting_key VARCHAR(100) NOT NULL UNIQUE,
-        setting_value TEXT
-    )");
-    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1')");
-    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_retries', '3')");
-    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('disable_local_upload', '0')");
-    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_publish_workers', '30')");
-    $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_comment_workers', '15')");
+// Auto-migrate database changes (run once)
+$settings_flag = sys_get_temp_dir() . '/settings_schema_v2.done';
+if (!file_exists($settings_flag)) {
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS system_settings (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            setting_key VARCHAR(100) NOT NULL UNIQUE,
+            setting_value TEXT
+        )");
+        $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1')");
+        $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_retries', '3')");
+        $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('disable_local_upload', '0')");
+        $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_publish_workers', '30')");
+        $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_comment_workers', '15')");
 
-} catch (Exception $e) {}
-
-// Auto-migrate Telegram columns per-user
-try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN telegram_bot_token VARCHAR(255) DEFAULT NULL"); } catch (Exception $e) {}
-try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN telegram_chat_id VARCHAR(100) DEFAULT NULL"); } catch (Exception $e) {}
-try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN tiktok_client_key VARCHAR(255) DEFAULT NULL"); } catch (Exception $e) {}
-try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN tiktok_client_secret VARCHAR(255) DEFAULT NULL"); } catch (Exception $e) {}
-
-try {
-    // Add column if it doesn't exist
-    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN retry_count INT DEFAULT 0 AFTER status");
-} catch (Exception $e) {}
-
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");
-} catch (Exception $e) {}
-
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN email VARCHAR(255) DEFAULT NULL");
-} catch (Exception $e) {}
-
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN login_by_email TINYINT(1) DEFAULT 0");
-} catch (Exception $e) {}
-
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN retry_interval_minutes INT DEFAULT 1");
-} catch (Exception $e) {}
-
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
-} catch (Exception $e) {}
-
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN sales_list TEXT DEFAULT NULL");
-} catch (Exception $e) {}
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN telegram_bot_token VARCHAR(255) DEFAULT NULL");
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN telegram_chat_id VARCHAR(100) DEFAULT NULL");
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN tiktok_client_key VARCHAR(255) DEFAULT NULL");
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN tiktok_client_secret VARCHAR(255) DEFAULT NULL");
+        $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN retry_count INT DEFAULT 0 AFTER status");
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN email VARCHAR(255) DEFAULT NULL");
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN login_by_email TINYINT(1) DEFAULT 0");
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN retry_interval_minutes INT DEFAULT 1");
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN sales_list TEXT DEFAULT NULL");
+        @touch($settings_flag);
+    } catch (Exception $e) {}
+}
 
 $alert_type = '';
 $alert_message = '';
@@ -297,6 +277,13 @@ if (empty($tiktok_client_key) && !empty($account['tiktok_client_key'])) {
     <?php endif; ?>
 </div>
 
+<?php 
+if (isset($_SESSION['flash_msg'])) {
+    $alert_type = 'success';
+    $alert_message = $_SESSION['flash_msg'];
+    unset($_SESSION['flash_msg']);
+}
+?>
 <?php if ($alert_message): ?>
     <div class="alert alert-<?php echo $alert_type; ?>"><?php echo htmlspecialchars($alert_message); ?></div>
 <?php endif; ?>

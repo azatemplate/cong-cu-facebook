@@ -1,6 +1,11 @@
 <?php
 require_once __DIR__ . '/includes/db.php';
 
+$flag_file = sys_get_temp_dir() . '/live_comments_setup_v2.done';
+if (file_exists($flag_file)) {
+    return;
+}
+
 try {
     $sql = "CREATE TABLE IF NOT EXISTS page_notifications (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -19,7 +24,6 @@ try {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
     
     $pdo->exec($sql);
-    echo "Tạo bảng page_notifications thành công.\n";
-} catch (PDOException $e) {
-    echo "Lỗi: " . $e->getMessage() . "\n";
-}
+    @touch($flag_file);
+} catch (PDOException $e) {}
+

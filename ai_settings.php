@@ -22,21 +22,25 @@ if (isset($_SESSION['alert_message'])) {
     unset($_SESSION['alert_message']);
 }
 
-// Check DB schema for new columns
-try {
-    $col_chk = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='ai_configs' AND COLUMN_NAME='prompt_youtube_title'");
-    if ($col_chk && $col_chk->fetchColumn() == 0) {
-        $pdo->exec("ALTER TABLE ai_configs ADD COLUMN prompt_youtube_title TEXT DEFAULT NULL");
-        $pdo->exec("ALTER TABLE ai_configs ADD COLUMN prompt_youtube_desc TEXT DEFAULT NULL");
-        $pdo->exec("ALTER TABLE ai_configs ADD COLUMN prompt_youtube_tags TEXT DEFAULT NULL");
-    }
+// Check DB schema for new columns (run once)
+$ai_cols_flag = sys_get_temp_dir() . '/ai_settings_cols_v2.done';
+if (!file_exists($ai_cols_flag)) {
+    try {
+        $col_chk = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='ai_configs' AND COLUMN_NAME='prompt_youtube_title'");
+        if ($col_chk && $col_chk->fetchColumn() == 0) {
+            $pdo->exec("ALTER TABLE ai_configs ADD COLUMN prompt_youtube_title TEXT DEFAULT NULL");
+            $pdo->exec("ALTER TABLE ai_configs ADD COLUMN prompt_youtube_desc TEXT DEFAULT NULL");
+            $pdo->exec("ALTER TABLE ai_configs ADD COLUMN prompt_youtube_tags TEXT DEFAULT NULL");
+        }
 
-    $col_f_chk = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='ai_configs' AND COLUMN_NAME='formula'");
-    if ($col_f_chk && $col_f_chk->fetchColumn() == 0) {
-        $pdo->exec("ALTER TABLE ai_configs ADD COLUMN formula VARCHAR(50) DEFAULT 'aida'");
-        $pdo->exec("ALTER TABLE ai_configs ADD COLUMN style VARCHAR(50) DEFAULT 'ban_hang'");
-    }
-} catch (Exception $e) {}
+        $col_f_chk = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='ai_configs' AND COLUMN_NAME='formula'");
+        if ($col_f_chk && $col_f_chk->fetchColumn() == 0) {
+            $pdo->exec("ALTER TABLE ai_configs ADD COLUMN formula VARCHAR(50) DEFAULT 'aida'");
+            $pdo->exec("ALTER TABLE ai_configs ADD COLUMN style VARCHAR(50) DEFAULT 'ban_hang'");
+        }
+        @touch($ai_cols_flag);
+    } catch (Exception $e) {}
+}
 
 // Handle Form Submission (PRG Pattern)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

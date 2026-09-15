@@ -15,36 +15,40 @@
 ignore_user_abort(true);
 set_time_limit(0);
 
-$lock_file = sys_get_temp_dir() . "/facebook_comment_insights_worker.lock";
+$lock_dir = dirname(__DIR__) . '/locks';
+if (!is_dir($lock_dir)) {
+    @mkdir($lock_dir, 0777, true);
+}
+$lock_file = $lock_dir . "/facebook_comment_insights_worker.lock";
 
-// Clean stale lock (> 30 min — tăng từ 15 phút vì giờ xử lý nhiều bài hơn)
-if (file_exists($lock_file) && (time() - filemtime($lock_file)) > 1800) {
+// Clean stale lock (> 15 min)
+if (file_exists($lock_file) && (time() - filemtime($lock_file)) > 900) {
     @unlink($lock_file);
-    echo "[!] Lock file cũ > 30 phút, đã dọn sạch.\n";
+    echo "[!] Lock file cũ > 15 phút, đã dọn sạch.\n";
 }
 
-$lock_fp = @fopen($lock_file, 'c');
+$lock_fp = @fopen($lock_file, 'c+');
 if (!$lock_fp) {
     echo "Không mở được lock file. Bỏ qua.\n";
     exit;
 }
 
-$lock_got = false;
-for ($i = 0; $i < 3; $i++) {
-    if (flock($lock_fp, LOCK_EX | LOCK_NB)) { $lock_got = true; break; }
-    sleep(1);
-}
-if (!$lock_got) {
+if (!flock($lock_fp, LOCK_EX | LOCK_NB)) {
     echo "Tiến trình comment_insights_worker đang chạy, bỏ qua.\n";
     fclose($lock_fp);
     exit;
 }
 
+// Write current PID to lock file
+@ftruncate($lock_fp, 0);
+@fwrite($lock_fp, (string)getmypid());
+@fflush($lock_fp);
+
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/telegram.php';
 
-echo "\n=== Comment Insights Worker (Parallel Mode) ===\n";
+echo "\n=== Comment Insights Worker (Parallel & Throttled Mode) ===\n";
 echo "Thời gian: " . date('Y-m-d H:i:s') . "\n";
 
 // Ghi nhận thời gian chạy vào DB để theo dõi cron
@@ -52,7 +56,8 @@ try {
     $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('last_insights_cron_run', NOW()) ON DUPLICATE KEY UPDATE setting_value = NOW()")->execute();
 } catch (Exception $e) {}
 
-// ── Fetch ALL posts waiting for insights check (không giới hạn LIMIT) ─────
+// ── Fetch throttled batch of posts waiting for insights check (LIMIT 150 per run) ─────
+$batch_limit = 150;
 try {
     $stmt = $pdo->prepare("
         SELECT sp.id, sp.fb_post_id, sp.comment_lines, sp.page_id, sp.post_type,
@@ -68,8 +73,10 @@ try {
           AND sp.fb_post_id IS NOT NULL
           AND sp.fb_post_id != ''
           AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
-        ORDER BY sp.id ASC
+        ORDER BY sp.updated_at ASC, sp.id ASC
+        LIMIT :limit
     ");
+    $stmt->bindValue(':limit', $batch_limit, PDO::PARAM_INT);
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {

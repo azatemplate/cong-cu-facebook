@@ -29,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
     $search = trim($_GET['search'] ?? '');
     $search_param = '%' . $search . '%';
+    $search_clean = '%' . preg_replace('/[\s\.\-\(\)]/', '', $search) . '%';
 
     $filter = isset($_GET['filter']) ? trim($_GET['filter']) : 'all';
 
@@ -61,13 +62,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     c.conversation_id, 
                     c.page_id, 
                     c.sender_id, 
-                    c.sender_name, 
+                    COALESCE(NULLIF(cust.name, ''), c.sender_name) AS sender_name, 
                     c.snippet, 
                     c.unread_count, 
                     c.updated_time,
                     {$folder_select}
                     p.name AS page_name,
                     p.user_id,
+                    cust.name AS cust_name,
                     cust.is_ads,
                     cust.ad_title,
                     cust.ad_photo_url,
@@ -80,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 {$folder_where}
             ";
             if ($search !== '') {
-                $sql .= " AND (c.sender_name LIKE :search OR c.snippet LIKE :search OR c.sender_id LIKE :search OR cust.phone LIKE :search2)";
+                $sql .= " AND (c.sender_name LIKE :search OR cust.name LIKE :search OR c.snippet LIKE :search OR c.sender_id LIKE :search OR cust.phone LIKE :search2 OR REPLACE(REPLACE(REPLACE(cust.phone, ' ', ''), '.', ''), '-', '') LIKE :search_clean)";
             }
             $sql .= " ORDER BY c.updated_time DESC LIMIT :limit OFFSET :offset";
 
@@ -92,6 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             if ($search !== '') {
                 $stmt->bindValue(':search', $search_param, PDO::PARAM_STR);
                 $stmt->bindValue(':search2', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search_clean', $search_clean, PDO::PARAM_STR);
             }
             $stmt->execute();
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -110,13 +113,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     c.conversation_id, 
                     c.page_id, 
                     c.sender_id, 
-                    c.sender_name, 
+                    COALESCE(NULLIF(cust.name, ''), c.sender_name) AS sender_name, 
                     c.snippet, 
                     c.unread_count, 
                     c.updated_time,
                     {$folder_select}
                     p.name AS page_name,
                     p.user_id,
+                    cust.name AS cust_name,
                     cust.is_ads,
                     cust.ad_title,
                     cust.ad_photo_url,
@@ -128,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 {$folder_where}
             ";
             if ($search !== '') {
-                $sql .= " AND (c.sender_name LIKE :search OR c.snippet LIKE :search OR c.sender_id LIKE :search OR cust.phone LIKE :search2)";
+                $sql .= " AND (c.sender_name LIKE :search OR cust.name LIKE :search OR c.snippet LIKE :search OR c.sender_id LIKE :search OR cust.phone LIKE :search2 OR REPLACE(REPLACE(REPLACE(cust.phone, ' ', ''), '.', ''), '-', '') LIKE :search_clean)";
             }
             $sql .= " ORDER BY c.updated_time DESC LIMIT :limit OFFSET :offset";
 
@@ -140,6 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             if ($search !== '') {
                 $stmt->bindValue(':search', $search_param, PDO::PARAM_STR);
                 $stmt->bindValue(':search2', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search_clean', $search_clean, PDO::PARAM_STR);
             }
             $stmt->execute();
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -156,6 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             'updated_time' => date('Y-m-d\TH:i:sP', strtotime($row['updated_time'])),
             'unread_count' => (int)$row['unread_count'],
             'folder' => $row['folder'] ?? 'inbox',
+            'cust_name' => $row['cust_name'] ?? '',
             'participants' => [
                 'data' => [
                     [

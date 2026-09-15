@@ -12,11 +12,13 @@ if (!isset($_SESSION['account_id'])) {
 $account_id = $_SESSION['account_id'];
 $is_admin   = (($_SESSION['role'] ?? '') === 'admin');
 
-// Fetch system account youtube_multi_api setting
-$stmt_acc = $pdo->prepare("SELECT youtube_multi_api FROM system_accounts WHERE id = ?");
+// Fetch system account youtube_multi_api setting and max limit
+$stmt_acc = $pdo->prepare("SELECT youtube_multi_api, max_yt_channels FROM system_accounts WHERE id = ?");
 $stmt_acc->execute([$account_id]);
 $acc_info = $stmt_acc->fetch(PDO::FETCH_ASSOC);
 $youtube_multi_api = (!empty($acc_info['youtube_multi_api']) || $is_admin) ? 1 : 0;
+$max_yt_channels = intval($acc_info['max_yt_channels'] ?? 10);
+$max_yt_display = $is_admin ? '&infin;' : number_format($max_yt_channels);
 
 // Handle POST actions for channel API editing
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit_api') {
@@ -94,7 +96,7 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
         🚀 Đăng Video YouTube
     </a>
     <a href="youtube.php?tab=channels" style="padding:9px 18px; border-radius:8px; font-weight:600; font-size:14px; text-decoration:none; display:flex; align-items:center; gap:8px; transition:all 0.2s; <?php echo ($active_tab === 'channels') ? 'background:var(--primary-color); color:white;' : 'background:#f1f5f9; color:var(--text-main);'; ?>">
-        📺 Quản Lý Kênh YouTube (<?php echo count($channels); ?>)
+        📺 Quản Lý Kênh YouTube (<?php echo count($channels); ?> / <?php echo $max_yt_display; ?>)
     </a>
 </div>
 

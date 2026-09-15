@@ -12,6 +12,7 @@ try {
 } catch (Throwable $e) {}
 
 $account_id = $_SESSION['account_id'] ?? 1;
+$is_admin   = (($_SESSION['role'] ?? '') === 'admin');
 
 // 1. Fetch connected TikTok Accounts
 $tiktok_accounts = [];
@@ -21,14 +22,36 @@ try {
     $tiktok_accounts = $stmt_tt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {}
 
-// 2. Fetch sales_list
+// 2. Fetch sales_list & feature flags
 $sales_list = '';
+$enable_live_chat = 1;
+$enable_live_chat_oa = 1;
+$enable_live_chat_tiktok = 1;
+$enable_website = 1;
+$enable_customers = 1;
+
 try {
-    $stmt_acc = $pdo->prepare("SELECT sales_list FROM system_accounts WHERE id = ?");
+    $stmt_acc = $pdo->prepare("SELECT sales_list, enable_live_chat, enable_live_chat_oa, enable_live_chat_tiktok, enable_website, enable_customers FROM system_accounts WHERE id = ?");
     $stmt_acc->execute([$account_id]);
-    $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC);
+    $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC) ?: [];
     $sales_list = $acc_setup['sales_list'] ?? '';
+    
+    $enable_live_chat = $is_admin ? 1 : (int)($acc_setup['enable_live_chat'] ?? 1);
+    $enable_live_chat_oa = $is_admin ? 1 : (int)($acc_setup['enable_live_chat_oa'] ?? 1);
+    $enable_live_chat_tiktok = $is_admin ? 1 : (int)($acc_setup['enable_live_chat_tiktok'] ?? 1);
+    $enable_website = $is_admin ? 1 : (int)($acc_setup['enable_website'] ?? 1);
+    $enable_customers = $is_admin ? 1 : (int)($acc_setup['enable_customers'] ?? 1);
 } catch (Exception $e) {}
+
+if (!$enable_live_chat) {
+    echo '<div class="page-title">Truy cập bị từ chối</div>';
+    echo '<div class="card" style="border-left: 4px solid #ef4444; padding: 20px;">';
+    echo '  <h3 style="margin-top:0; color:#ef4444;">⚠️ Tính Năng Đã Bị Tắt</h3>';
+    echo '  <p style="color:#4b5563; font-size:14px; margin-bottom:0;">Tính năng Live Chat đã bị tắt cho tài khoản của bạn. Vui lòng liên hệ Admin để kích hoạt lại.</p>';
+    echo '</div>';
+    include 'includes/footer.php';
+    exit;
+}
 
 // Build Webhook & Redirect URL domain info
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || ($_SERVER['SERVER_PORT'] ?? 80) == 443) ? "https://" : "http://";
@@ -265,21 +288,31 @@ $redirect_url = $domain . 'tiktok_callback.php';
 
 <!-- Platform Switcher Tabs -->
 <div class="platform-tabs" style="display: flex; gap: 20px; border-bottom: 2px solid #e5e7eb; margin-bottom: 20px; padding-bottom: 0;">
+    <?php if ($enable_live_chat): ?>
     <a href="live_chat.php" class="platform-tab-btn" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: #4b5563; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>📘</span> Facebook Fanpage
     </a>
+    <?php endif; ?>
+    <?php if ($enable_live_chat_oa): ?>
     <a href="live-chat-oa.php" class="platform-tab-btn" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: #4b5563; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>💬</span> Zalo Official Account
     </a>
+    <?php endif; ?>
+    <?php if ($enable_live_chat_tiktok): ?>
     <a href="live-chat-tiktok.php" class="platform-tab-btn active" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: #fe2c55; border-bottom: 3px solid #fe2c55; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>🎵</span> TikTok Live Chat
     </a>
+    <?php endif; ?>
+    <?php if ($enable_website): ?>
     <a href="website.php" class="platform-tab-btn" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: #4b5563; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>🌐</span> Live Chat Website
     </a>
+    <?php endif; ?>
+    <?php if ($enable_customers): ?>
     <a href="customers.php" class="platform-tab-btn" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: #4b5563; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>👥</span> Khách Hàng
     </a>
+    <?php endif; ?>
 </div>
 
 <!-- Page Title -->
@@ -386,6 +419,7 @@ $redirect_url = $domain . 'tiktok_callback.php';
                         <label>Trạng thái tư vấn</label>
                         <select id="tt_cust_consulted" disabled style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; background:var(--card-bg); color:var(--text-main);">
                             <option value="0">🆕 Chưa tư vấn</option>
+                            <option value="4">⏳ Chờ xử lý</option>
                             <option value="1">✅ Đã tư vấn</option>
                             <option value="2">🔄 Khách quay lại</option>
                             <option value="3">⛔ Dừng tư vấn</option>

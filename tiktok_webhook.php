@@ -64,6 +64,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // B. Parse incoming TikTok messaging events
     if ($payload) {
         $open_id = $payload['open_id'] ?? ($payload['to_user_id'] ?? 'tiktok_app');
+        
+        // Check if feature is enabled for account
+        try {
+            $st_tt_acc = $pdo->prepare("SELECT sa.role, sa.enable_live_chat_tiktok FROM tiktok_accounts ta JOIN system_accounts sa ON ta.account_id = sa.id WHERE ta.open_id = ?");
+            $st_tt_acc->execute([$open_id]);
+            $tt_acc_info = $st_tt_acc->fetch(PDO::FETCH_ASSOC);
+            if ($tt_acc_info && ($tt_acc_info['role'] ?? '') !== 'admin' && (int)($tt_acc_info['enable_live_chat_tiktok'] ?? 1) === 0) {
+                exit;
+            }
+        } catch (Exception $e) {}
+
         $sender_id = $payload['from_user_id'] ?? ($payload['sender_id'] ?? '');
         $sender_name = $payload['sender_name'] ?? 'Khách TikTok';
         $message_text = $payload['content'] ?? ($payload['text'] ?? ($payload['message'] ?? ''));

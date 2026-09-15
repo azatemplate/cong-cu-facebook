@@ -4,6 +4,31 @@ $current_page = 'customers';
 require_once __DIR__ . '/includes/header.php';
 
 $account_id = $_SESSION['account_id'];
+$is_admin   = (($_SESSION['role'] ?? '') === 'admin');
+
+// Check feature flags
+$acc_setup = [];
+try {
+    $stmt_acc = $pdo->prepare("SELECT enable_live_chat, enable_live_chat_oa, enable_live_chat_tiktok, enable_website, enable_customers FROM system_accounts WHERE id = ?");
+    $stmt_acc->execute([$account_id]);
+    $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) {}
+
+$enable_live_chat = $is_admin ? 1 : (int)($acc_setup['enable_live_chat'] ?? 1);
+$enable_live_chat_oa = $is_admin ? 1 : (int)($acc_setup['enable_live_chat_oa'] ?? 1);
+$enable_live_chat_tiktok = $is_admin ? 1 : (int)($acc_setup['enable_live_chat_tiktok'] ?? 1);
+$enable_website = $is_admin ? 1 : (int)($acc_setup['enable_website'] ?? 1);
+$enable_customers = $is_admin ? 1 : (int)($acc_setup['enable_customers'] ?? 1);
+
+if (!$enable_live_chat) {
+    echo '<div class="page-title">Truy cập bị từ chối</div>';
+    echo '<div class="card" style="border-left: 4px solid #ef4444; padding: 20px;">';
+    echo '  <h3 style="margin-top:0; color:#ef4444;">⚠️ Tính Năng Đã Bị Tắt</h3>';
+    echo '  <p style="color:#4b5563; font-size:14px; margin-bottom:0;">Tính năng Live Chat đã bị tắt cho tài khoản của bạn. Vui lòng liên hệ Admin để kích hoạt lại.</p>';
+    echo '</div>';
+    include 'includes/footer.php';
+    exit;
+}
 
 $sync_lock_active = false;
 $sync_lock_file = __DIR__ . '/locks/sync_' . intval($account_id) . '.lock';
@@ -307,21 +332,31 @@ $total_customers = count($customers);
 
 <!-- Platform Switcher Tabs -->
 <div class="platform-tabs" style="display: flex; gap: 20px; border-bottom: 2px solid #e5e7eb; margin-bottom: 20px; padding-bottom: 0;">
+    <?php if ($enable_live_chat): ?>
     <a href="live_chat.php" class="platform-tab-btn" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: #4b5563; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>📘</span> Facebook Fanpage
     </a>
+    <?php endif; ?>
+    <?php if ($enable_live_chat_oa): ?>
     <a href="live-chat-oa.php" class="platform-tab-btn" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: #4b5563; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>💬</span> Zalo Official Account
     </a>
+    <?php endif; ?>
+    <?php if ($enable_live_chat_tiktok): ?>
     <a href="live-chat-tiktok.php" class="platform-tab-btn" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: #4b5563; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>🎵</span> TikTok
     </a>
+    <?php endif; ?>
+    <?php if ($enable_website): ?>
     <a href="website.php" class="platform-tab-btn" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: #4b5563; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>🌐</span> Live Chat Website
     </a>
+    <?php endif; ?>
+    <?php if ($enable_customers): ?>
     <a href="customers.php" class="platform-tab-btn active" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: #0068ff; border-bottom: 3px solid #0068ff; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>👥</span> Khách Hàng
     </a>
+    <?php endif; ?>
 </div>
 
 <!-- Page Title & Actions -->
@@ -406,11 +441,11 @@ $total_customers = count($customers);
         <option value="free">🆓 Miễn phí</option>
     </select>
     
-    <select id="filterPhone" onchange="onFilterChange()" style="width:195px;">
+    <select id="filterPhone" onchange="onFilterChange()" style="width:215px;">
         <option value="">Số điện thoại</option>
         <option value="has_phone">📞 Có SĐT</option>
         <option value="no_phone">❌ Chưa có SĐT</option>
-        <option value="has_phone_unconsulted">🔥 Có SĐT + Chưa tư vấn</option>
+        <option value="has_phone_unconsulted">🔥 Có SĐT + Chưa tư vấn / Chờ xử lý</option>
     </select>
     
     <select id="filterProvince" onchange="onFilterChange()" style="width:125px;">
@@ -423,6 +458,7 @@ $total_customers = count($customers);
     <select id="filterConsulted" onchange="onFilterChange()" style="width:150px;">
         <option value="">Trạng thái tư vấn</option>
         <option value="0">🆕 Chưa tư vấn</option>
+        <option value="4">⏳ Chờ xử lý</option>
         <option value="1">✅ Đã tư vấn</option>
         <option value="2">🔄 Khách quay lại</option>
         <option value="3">⛔ Dừng tư vấn</option>
@@ -531,20 +567,25 @@ function filterAndRender() {
         // Search text
         let matchSearch = true;
         if (search) {
+            const searchClean = search.replace(/[\s\.\-\(\)]/g, '');
             const name = (c.name || '').toLowerCase();
             const phoneVal = (c.phone || '').toLowerCase();
+            const phoneClean = phoneVal.replace(/[\s\.\-\(\)]/g, '');
             const notes = (c.notes || '').toLowerCase();
             const prov = (c.province || '').toLowerCase();
             const oaName = (c.oa_name || '').toLowerCase();
             const salesPhone = (c.sales_phone || '').toLowerCase();
+            const salesPhoneClean = salesPhone.replace(/[\s\.\-\(\)]/g, '');
             const salesNotes = (c.sales_notes || '').toLowerCase();
             
             matchSearch = name.includes(search) || 
                           phoneVal.includes(search) || 
+                          (searchClean.length >= 3 && phoneClean.includes(searchClean)) ||
                           notes.includes(search) || 
                           prov.includes(search) || 
                           oaName.includes(search) || 
                           salesPhone.includes(search) || 
+                          (searchClean.length >= 3 && salesPhoneClean.includes(searchClean)) ||
                           salesNotes.includes(search);
         }
 
@@ -561,7 +602,7 @@ function filterAndRender() {
 
         // Phone status
         const hasPhone = c.phone && c.phone.trim() !== '';
-        const isUnconsulted = String(c.consulted || 0) === '0';
+        const isUnconsulted = String(c.consulted || 0) === '0' || String(c.consulted || 0) === '4';
         let matchPhone = true;
         if (phone === 'has_phone') {
             matchPhone = hasPhone;
@@ -599,20 +640,21 @@ function filterAndRender() {
                     
                     matchDate = date >= monday && date <= sunday;
                 } else if (dateRange === 'this_month') {
-                    matchDate = date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+                    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+                    matchDate = date >= firstDay;
                 } else if (dateRange === 'last_30_days') {
-                    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                    matchDate = date >= thirtyDaysAgo && date <= now;
+                    const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+                    matchDate = date >= thirtyDaysAgo;
                 } else if (dateRange === 'custom') {
                     const startVal = document.getElementById('filterDateStart').value;
                     const endVal = document.getElementById('filterDateEnd').value;
                     if (startVal) {
-                        const start = new Date(startVal + 'T00:00:00');
-                        if (date < start) matchDate = false;
+                        const startDate = new Date(startVal + 'T00:00:00');
+                        if (date < startDate) matchDate = false;
                     }
-                    if (endVal && matchDate) {
-                        const end = new Date(endVal + 'T23:59:59');
-                        if (date > end) matchDate = false;
+                    if (endVal) {
+                        const endDate = new Date(endVal + 'T23:59:59');
+                        if (date > endDate) matchDate = false;
                     }
                 }
             } else {
@@ -629,24 +671,29 @@ function filterAndRender() {
     // Update filter count label
     document.getElementById('filterCount').textContent = `Hiển thị ${filteredCustomers.length} / ${allCustomers.length} khách hàng`;
 
-    // Render table
-    renderTable();
-    // Render pagination
+    // Reset pagination to page 1
+    currentPage = 1;
     renderPagination();
+    renderTable();
 }
 
-// Helper to format date
+// Format relative date nicely
 function formatDate(dateStr) {
     if (!dateStr) return '';
     try {
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return dateStr;
-        const day = String(d.getDate()).padStart(2, '0');
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const year = d.getFullYear();
-        const hours = String(d.getHours()).padStart(2, '0');
-        const mins = String(d.getMinutes()).padStart(2, '0');
-        return `${day}/${month}/${year}<br>${hours}:${mins}`;
+        const date = new Date(dateStr.replace(' ', 'T'));
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 1) return 'Vừa xong';
+        if (diffMins < 60) return `${diffMins} phút trước`;
+        if (diffHours < 24) return `${diffHours} giờ trước`;
+        if (diffDays === 1) return 'Hôm qua';
+        if (diffDays < 7) return `${diffDays} ngày trước`;
+        return date.toLocaleDateString('vi-VN');
     } catch(e) {
         return dateStr;
     }
@@ -710,6 +757,8 @@ function renderTable() {
         const cVal = parseInt(c.consulted || 0);
         if (cVal === 1) {
             consultedHtml = '<span style="background-color:#dcfce7;color:#15803d;border:1px solid #bbf7d0;padding:3px 10px;border-radius:50px;font-size:11px;font-weight:700;display:inline-block;white-space:nowrap;">✅ Đã tư vấn</span>';
+        } else if (cVal === 4) {
+            consultedHtml = '<span style="background-color:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:3px 10px;border-radius:50px;font-size:11px;font-weight:700;display:inline-block;white-space:nowrap;">⏳ Chờ xử lý</span>';
         } else if (cVal === 2) {
             consultedHtml = '<span style="background-color:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;padding:3px 10px;border-radius:50px;font-size:11px;font-weight:700;display:inline-block;white-space:nowrap;">🔄 Khách quay lại</span>';
         } else if (cVal === 3) {

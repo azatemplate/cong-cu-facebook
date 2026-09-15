@@ -4,6 +4,7 @@ require_once __DIR__ . '/includes/db.php';
 if (session_status() === PHP_SESSION_NONE) @session_start();
 $_s_account_id = $_SESSION['account_id'] ?? 0;
 $_s_is_admin   = ($_SESSION['role'] ?? '') === 'admin';
+session_write_close();
 
 
 // POST: bulk delete
@@ -108,23 +109,43 @@ $search_params = [];
 
 if ($search !== '') {
     $search_like = '%' . $search . '%';
-    $search_where = " AND (
-        c.name LIKE ? 
-        OR c.id IN (
-            SELECT DISTINCT sp.campaign_id 
-            FROM scheduled_posts sp
-            LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok'
-            LEFT JOIN users u ON p.user_id = u.id
-            LEFT JOIN youtube_channels yt1 ON sp.page_id = yt1.channel_id AND sp.post_type = 'YouTube'
-            LEFT JOIN youtube_channels yt2 ON sp.page_id = yt2.id AND sp.post_type = 'YouTube'
-            LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
-            LEFT JOIN tiktok_accounts tt ON sp.page_id = tt.id AND sp.post_type = 'TikTok'
-            WHERE sp.account_id = ? AND (
-                u.name LIKE ? OR p.name LIKE ? OR yt1.channel_title LIKE ? OR yt2.channel_title LIKE ? OR bc.channel_name LIKE ? OR tt.display_name LIKE ?
-            )
-        )
-    )";
-    $search_params = [$search_like, $account_id, $search_like, $search_like, $search_like, $search_like, $search_like, $search_like];
+    $matched_cids = [];
+
+    try {
+        $found_pids = [];
+        $st1 = $pdo->prepare("SELECT p.page_id FROM pages p LEFT JOIN users u ON p.user_id = u.id WHERE u.name LIKE ? OR p.name LIKE ? OR p.page_name LIKE ?");
+        $st1->execute([$search_like, $search_like, $search_like]);
+        while ($r = $st1->fetch(PDO::FETCH_COLUMN)) { if ($r) $found_pids[] = $r; }
+
+        $st2 = $pdo->prepare("SELECT channel_id FROM youtube_channels WHERE channel_title LIKE ?");
+        $st2->execute([$search_like]);
+        while ($r = $st2->fetch(PDO::FETCH_COLUMN)) { if ($r) $found_pids[] = $r; }
+
+        $st3 = $pdo->prepare("SELECT channel_id FROM buffer_channels WHERE channel_name LIKE ?");
+        $st3->execute([$search_like]);
+        while ($r = $st3->fetch(PDO::FETCH_COLUMN)) { if ($r) $found_pids[] = $r; }
+
+        $st4 = $pdo->prepare("SELECT id FROM tiktok_accounts WHERE display_name LIKE ?");
+        $st4->execute([$search_like]);
+        while ($r = $st4->fetch(PDO::FETCH_COLUMN)) { if ($r) $found_pids[] = (string)$r; }
+
+        if (!empty($found_pids)) {
+            $unique_pids = array_values(array_unique($found_pids));
+            $in_pids = implode(',', array_fill(0, count($unique_pids), '?'));
+            $st_sp = $pdo->prepare("SELECT DISTINCT campaign_id FROM scheduled_posts WHERE account_id = ? AND page_id IN ($in_pids) AND campaign_id IS NOT NULL");
+            $st_sp->execute(array_merge([$account_id], $unique_pids));
+            $matched_cids = $st_sp->fetchAll(PDO::FETCH_COLUMN);
+        }
+    } catch (Exception $e) {}
+
+    if (!empty($matched_cids)) {
+        $in_cids = implode(',', array_map('intval', $matched_cids));
+        $search_where = " AND (c.name LIKE ? OR c.id IN ($in_cids))";
+        $search_params = [$search_like];
+    } else {
+        $search_where = " AND c.name LIKE ?";
+        $search_params = [$search_like];
+    }
 }
 
 try {
@@ -168,29 +189,91 @@ try {
             }
         } catch (Exception $e) {}
 
-        // Giai đoạn 3: Lấy tên kênh/trang
+        // Giai đoạn 3: Lấy tên kênh/trang (Xử lý trong bộ nhớ PHP siêu nhanh, tránh SQL Join nặng)
         $users_map = [];
         try {
-            $users_stmt = $pdo->query("
-                SELECT 
-                    sub.campaign_id,
-                    GROUP_CONCAT(DISTINCT COALESCE(tt.display_name, u.name, bc.channel_name, yt1.channel_title, yt2.channel_title) SEPARATOR ', ') as fb_users
-                FROM (
-                    SELECT DISTINCT campaign_id, post_type, page_id 
-                    FROM scheduled_posts 
-                    WHERE campaign_id IN ($in_ids)
-                ) sub
-                LEFT JOIN pages p ON sub.page_id = p.page_id AND sub.post_type NOT LIKE 'Buffer%' AND sub.post_type != 'YouTube' AND sub.post_type != 'TikTok'
-                LEFT JOIN users u ON p.user_id = u.id
-                LEFT JOIN youtube_channels yt1 ON sub.page_id = yt1.channel_id AND sub.post_type = 'YouTube'
-                LEFT JOIN youtube_channels yt2 ON sub.page_id = yt2.id AND sub.post_type = 'YouTube'
-                LEFT JOIN buffer_channels bc ON sub.page_id = bc.channel_id AND sub.post_type LIKE 'Buffer%'
-                LEFT JOIN tiktok_accounts tt ON sub.page_id = tt.id AND sub.post_type = 'TikTok'
-                GROUP BY sub.campaign_id
-            ");
-            if ($users_stmt) {
-                while ($row = $users_stmt->fetch(PDO::FETCH_ASSOC)) {
-                    $users_map[$row['campaign_id']] = $row['fb_users'];
+            $sub_rows = $pdo->query("SELECT DISTINCT campaign_id, post_type, page_id FROM scheduled_posts WHERE campaign_id IN ($in_ids)")->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($sub_rows)) {
+                $fb_pids = [];
+                $yt_pids = [];
+                $buf_pids = [];
+                $tt_pids = [];
+                foreach ($sub_rows as $sr) {
+                    $pid = $sr['page_id'];
+                    if (empty($pid)) continue;
+                    $pt = $sr['post_type'] ?? '';
+                    if ($pt === 'YouTube') {
+                        $yt_pids[] = $pid;
+                    } elseif (strpos($pt, 'Buffer') === 0) {
+                        $buf_pids[] = $pid;
+                    } elseif ($pt === 'TikTok') {
+                        $tt_pids[] = $pid;
+                    } else {
+                        $fb_pids[] = $pid;
+                    }
+                }
+
+                $names_cache = [];
+                if (!empty($fb_pids)) {
+                    $unique_fb = array_values(array_unique($fb_pids));
+                    $in_fb = implode(',', array_fill(0, count($unique_fb), '?'));
+                    $st_fb = $pdo->prepare("SELECT p.page_id, COALESCE(u.name, p.name) as name FROM pages p LEFT JOIN users u ON p.user_id = u.id WHERE p.page_id IN ($in_fb)");
+                    $st_fb->execute($unique_fb);
+                    while ($r = $st_fb->fetch(PDO::FETCH_ASSOC)) {
+                        $names_cache['fb_' . $r['page_id']] = $r['name'];
+                    }
+                }
+                if (!empty($yt_pids)) {
+                    $unique_yt = array_values(array_unique($yt_pids));
+                    $in_yt = implode(',', array_fill(0, count($unique_yt), '?'));
+                    $st_yt = $pdo->prepare("SELECT channel_id, id, channel_title FROM youtube_channels WHERE channel_id IN ($in_yt) OR id IN ($in_yt)");
+                    $st_yt->execute(array_merge($unique_yt, $unique_yt));
+                    while ($r = $st_yt->fetch(PDO::FETCH_ASSOC)) {
+                        if (!empty($r['channel_id'])) $names_cache['yt_' . $r['channel_id']] = $r['channel_title'];
+                        if (!empty($r['id'])) $names_cache['yt_' . $r['id']] = $r['channel_title'];
+                    }
+                }
+                if (!empty($buf_pids)) {
+                    $unique_buf = array_values(array_unique($buf_pids));
+                    $in_buf = implode(',', array_fill(0, count($unique_buf), '?'));
+                    $st_buf = $pdo->prepare("SELECT channel_id, channel_name FROM buffer_channels WHERE channel_id IN ($in_buf)");
+                    $st_buf->execute($unique_buf);
+                    while ($r = $st_buf->fetch(PDO::FETCH_ASSOC)) {
+                        $names_cache['buf_' . $r['channel_id']] = $r['channel_name'];
+                    }
+                }
+                if (!empty($tt_pids)) {
+                    $unique_tt = array_values(array_unique($tt_pids));
+                    $in_tt = implode(',', array_fill(0, count($unique_tt), '?'));
+                    $st_tt = $pdo->prepare("SELECT id, open_id, display_name FROM tiktok_accounts WHERE id IN ($in_tt) OR open_id IN ($in_tt)");
+                    $st_tt->execute(array_merge($unique_tt, $unique_tt));
+                    while ($r = $st_tt->fetch(PDO::FETCH_ASSOC)) {
+                        if (!empty($r['id'])) $names_cache['tt_' . $r['id']] = $r['display_name'];
+                        if (!empty($r['open_id'])) $names_cache['tt_' . $r['open_id']] = $r['display_name'];
+                    }
+                }
+
+                $camp_names_acc = [];
+                foreach ($sub_rows as $sr) {
+                    $cid = $sr['campaign_id'];
+                    $pid = $sr['page_id'];
+                    $pt = $sr['post_type'] ?? '';
+                    $name = '';
+                    if ($pt === 'YouTube') {
+                        $name = $names_cache['yt_' . $pid] ?? '';
+                    } elseif (strpos($pt, 'Buffer') === 0) {
+                        $name = $names_cache['buf_' . $pid] ?? '';
+                    } elseif ($pt === 'TikTok') {
+                        $name = $names_cache['tt_' . $pid] ?? '';
+                    } else {
+                        $name = $names_cache['fb_' . $pid] ?? '';
+                    }
+                    if (!empty($name)) {
+                        $camp_names_acc[$cid][$name] = true;
+                    }
+                }
+                foreach ($camp_names_acc as $cid => $arr) {
+                    $users_map[$cid] = implode(', ', array_keys($arr));
                 }
             }
         } catch (Exception $e) {}

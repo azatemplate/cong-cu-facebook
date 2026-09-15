@@ -54,7 +54,7 @@ function push_customer_lead_to_api($pdo, $account_id, $customer_data, $is_manual
             'province' => $customer_data['province'] ?? '',
             'platform' => $customer_data['platform'] ?? 'Website',
             'consulted' => $consulted,
-            'consulted_label' => ($consulted === 1 ? 'Đã tư vấn' : ($consulted === 2 ? 'Khách quay lại' : ($consulted === 3 ? 'Dừng tư vấn' : 'Chưa tư vấn'))),
+            'consulted_label' => ($consulted === 1 ? 'Đã tư vấn' : ($consulted === 2 ? 'Khách quay lại' : ($consulted === 3 ? 'Dừng tư vấn' : ($consulted === 4 ? 'Chờ xử lý' : 'Chưa tư vấn')))),
             'notes' => $customer_data['notes'] ?? '',
             'sales_phone' => $customer_data['sales_phone'] ?? '',
             'sales_notes' => $customer_data['sales_notes'] ?? '',

@@ -33,15 +33,19 @@ $pages_json = json_encode($pages);
 $selected_post_id = $_GET['post_id'] ?? '';
 $selected_page_id = $_GET['page_id'] ?? '';
 
-// Silently ensure columns exist if user forgot to run migrate script
-try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_reply_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
-try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_reply_text TEXT DEFAULT NULL"); } catch (Exception $e) {}
-try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_inbox_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
-try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_inbox_text TEXT DEFAULT NULL"); } catch (Exception $e) {}
-try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_pages_scope TEXT"); } catch (Exception $e) {}
-try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_hide_phone_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
-try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_hide_keywords_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
-try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_hide_keywords_text TEXT DEFAULT NULL"); } catch (Exception $e) {}
+// Silently ensure columns exist if user forgot to run migrate script (run once)
+$lc_cols_flag = sys_get_temp_dir() . '/live_comments_cols_v2.done';
+if (!file_exists($lc_cols_flag)) {
+    try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_reply_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_reply_text TEXT DEFAULT NULL"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_inbox_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_inbox_text TEXT DEFAULT NULL"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_pages_scope TEXT"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_hide_phone_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_hide_keywords_enabled TINYINT DEFAULT 0"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN auto_hide_keywords_text TEXT DEFAULT NULL"); } catch (Exception $e) {}
+    @touch($lc_cols_flag);
+}
 
 // Fetch account auto-reply config
 $stmt_acc = $pdo->prepare("SELECT auto_reply_enabled, auto_reply_text, auto_inbox_enabled, auto_inbox_text, auto_pages_scope, auto_hide_phone_enabled, auto_hide_keywords_enabled, auto_hide_keywords_text FROM system_accounts WHERE id = ?");

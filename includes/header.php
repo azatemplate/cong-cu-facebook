@@ -15,9 +15,23 @@ if (!isset($_SESSION['account_id'])) {
 // Generate CSRF token for all pages
 $_csrf_token = csrf_token();
 
+// Extract and clear flash notifications before session_write_close() to persist deletion to disk
+$global_flash_msg = $_SESSION['flash_msg'] ?? null;
+$global_flash_error = $_SESSION['flash_error'] ?? null;
+$global_flash_type = $_SESSION['flash_type'] ?? null;
+
+unset($_SESSION['flash_msg'], $_SESSION['flash_error'], $_SESSION['flash_type']);
+
+// Release session lock immediately so clicking menus never freezes on PHP session file locks
+session_write_close();
+
+// Restore in-memory session variables for current request templates
+if ($global_flash_msg !== null) $_SESSION['flash_msg'] = $global_flash_msg;
+if ($global_flash_error !== null) $_SESSION['flash_error'] = $global_flash_error;
+if ($global_flash_type !== null) $_SESSION['flash_type'] = $global_flash_type;
+
 // Đặt $current_page ở các trang chính để highlight menu
 if(!isset($current_page)) $current_page = '';
-require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/fb_api.php';
 ?>
 <!DOCTYPE html>
@@ -51,8 +65,8 @@ require_once __DIR__ . '/fb_api.php';
                             <span id="notif_count_label" style="font-size: 11px; background: #fee2e2; color: #dc2626; padding: 2px 6px; border-radius: 10px; display:none;">0 mới</span>
                         </div>
                         <div id="notif_tabs" style="display:flex; gap: 10px; margin-bottom: 10px; font-size: 12px; font-weight: 500; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
-                            <span class="notif-tab active" data-tab="unread" style="cursor: pointer; padding: 4px 8px; border-radius: 4px; background: #0ea5e9; color: white;">Chưa đọc</span>
-                            <span class="notif-tab" data-tab="all" style="cursor: pointer; padding: 4px 8px; border-radius: 4px; color: var(--text-muted); background: transparent;">Tất cả</span>
+                            <span class="notif-tab active" data-tab="all" style="cursor: pointer; padding: 4px 8px; border-radius: 4px; background: #0ea5e9; color: white;">Tất cả</span>
+                            <span class="notif-tab" data-tab="unread" style="cursor: pointer; padding: 4px 8px; border-radius: 4px; color: var(--text-muted); background: transparent;">Chưa đọc</span>
                             <span class="notif-tab" data-tab="read" style="cursor: pointer; padding: 4px 8px; border-radius: 4px; color: var(--text-muted); background: transparent;">Đã đọc</span>
                         </div>
                         <div id="notif_content" style="font-size: 13px; color: var(--text-muted);">
@@ -150,7 +164,7 @@ require_once __DIR__ . '/fb_api.php';
                         let notifHasMore   = false;
                         let notifLoading   = false;
                         let notifInitDone  = false; // đã render lần đầu chưa
-                        let currentNotifTab = 'unread';
+                        let currentNotifTab = 'all';
 
                         notifToggle.addEventListener('click', (e) => {
                             e.stopPropagation();
@@ -161,7 +175,7 @@ require_once __DIR__ . '/fb_api.php';
                                 notifOffset   = 0;
                                 notifHasMore  = false;
                                 notifInitDone = false;
-                                currentNotifTab = 'unread';
+                                currentNotifTab = 'all';
                                 document.querySelectorAll('.notif-tab').forEach(t => {
                                     if(t.dataset.tab === currentNotifTab) {
                                         t.classList.add('active');
@@ -419,13 +433,21 @@ require_once __DIR__ . '/fb_api.php';
                         });
 
                         window.readNotif = function(id, link) {
-                            const fd = new FormData();
-                            fd.append('id', id);
-                            fetch('actions/read_notification.php', { method: 'POST', body: fd })
-                            .then(() => { window.location.href = link; });
+                            if (id) {
+                                const fd = new FormData();
+                                fd.append('id', id);
+                                if (navigator.sendBeacon) {
+                                    navigator.sendBeacon('actions/read_notification.php', fd);
+                                } else {
+                                    fetch('actions/read_notification.php', { method: 'POST', body: fd, keepalive: true }).catch(() => {});
+                                }
+                            }
+                            if (link) {
+                                window.location.href = link;
+                            }
                         };
 
-                        // Polling badge mỗi 15s (không reset dropdown đang mở)
+                        // Polling badge mỗi 30s (không reset dropdown đang mở, không làm khựng chuyển trang)
                         function pollBadge() {
                             fetch('actions/get_notifications.php?offset=0&tab=unread')
                             .then(r => r.json())
@@ -446,8 +468,9 @@ require_once __DIR__ . '/fb_api.php';
                                 }
                             }).catch(() => {});
                         }
+                        // Tải số lượng thông báo tức thì (bất đồng bộ ngầm, không làm khựng chuyển trang)
                         pollBadge();
-                        setInterval(pollBadge, 15000);
+                        setInterval(pollBadge, 20000);
 
                         // Sidebar Toggle Logic
                         const menuToggle = document.querySelector('.menu-toggle');

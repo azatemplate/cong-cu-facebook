@@ -143,6 +143,8 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
             }
             curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
         }
+    } elseif (strtoupper($method) === 'DELETE') {
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
     }
 
     $response  = curl_exec($ch);
@@ -167,8 +169,12 @@ function fb_api_request_url($url) {
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     fb_curl_setssl($ch);
+
+    if (preg_match('/[?&]access_token=([^&]+)/', $url, $m)) {
+        apply_proxy_to_curl($ch, urldecode($m[1]));
+    }
 
     $response  = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);

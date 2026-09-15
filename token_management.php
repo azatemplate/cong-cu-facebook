@@ -92,23 +92,32 @@ if (isset($_GET['status'])) {
     }
 }
 
-// Fetch existing tokens with checkpoint detection
+// Fetch existing tokens with checkpoint detection (Ultra-optimized with account_id isolation and index seek)
 $stmt = $pdo->prepare("
     SELECT u.*, 
         px.proxy_string, px.status as proxy_status, px.ip as proxy_ip, px.port as proxy_port,
-        (SELECT COUNT(id) FROM pages WHERE user_id = u.id) as page_count,
-        (SELECT COUNT(sp.id) 
-         FROM scheduled_posts sp 
-         JOIN pages p ON sp.page_id = p.page_id 
-         WHERE p.user_id = u.id 
-           AND (sp.status = 'checkpoint' OR sp.error_msg LIKE '%checkpoint%' OR sp.error_msg LIKE '%log in%')
-        ) as checkpoint_count
+        COALESCE(pg.page_count, 0) as page_count,
+        COALESCE(chk.checkpoint_count, 0) as checkpoint_count
     FROM users u 
     LEFT JOIN proxies px ON u.proxy_id = px.id
+    LEFT JOIN (
+        SELECT p.user_id, COUNT(*) as page_count 
+        FROM pages p
+        WHERE p.user_id IN (SELECT id FROM users WHERE account_id = ?)
+        GROUP BY p.user_id
+    ) pg ON pg.user_id = u.id
+    LEFT JOIN (
+        SELECT p.user_id, COUNT(sp.id) as checkpoint_count
+        FROM pages p 
+        JOIN scheduled_posts sp ON sp.page_id = p.page_id 
+        WHERE sp.account_id = ? 
+          AND (sp.status = 'checkpoint' OR (sp.status = 'failed' AND (sp.error_msg LIKE '%checkpoint%' OR sp.error_msg LIKE '%log in%')))
+        GROUP BY p.user_id
+    ) chk ON chk.user_id = u.id
     WHERE u.account_id = ? 
     ORDER BY u.created_at DESC
 ");
-$stmt->execute([$account_id]);
+$stmt->execute([$account_id, $account_id, $account_id]);
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $total_tokens = count($users);
@@ -145,9 +154,24 @@ $login_url = "";
 if ($fb_app_id) {
     $login_url = "https://www.facebook.com/v25.0/dialog/oauth?client_id=" . urlencode($fb_app_id) . "&redirect_uri=" . urlencode($redirect_uri) . "&scope=" . urlencode($fb_permissions) . "&response_type=token";
 }
+
+// Fetch user page limit
+$stmt_limit = $pdo->prepare("SELECT max_fb_pages FROM system_accounts WHERE id = ?");
+$stmt_limit->execute([$account_id]);
+$max_fb_pages = intval($stmt_limit->fetchColumn() ?: 450);
+$max_fb_display = $is_admin ? 'Không giới hạn' : number_format($max_fb_pages);
+
+$stmt_cnt = $pdo->prepare("SELECT COUNT(*) FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = ?");
+$stmt_cnt->execute([$account_id]);
+$total_connected_pages = intval($stmt_cnt->fetchColumn() ?: 0);
 ?>
 
-<div class="page-title">Quản lý Token</div>
+<div class="page-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+    <span>Quản lý Token</span>
+    <span style="font-size:13px; font-weight:600; color:#0369a1; background:#e0f2fe; padding:6px 14px; border-radius:20px; border:1px solid #bae6fd;">
+        📄 Giới hạn Fanpage FB: <strong><?php echo number_format($total_connected_pages); ?></strong> / <strong><?php echo $max_fb_display; ?></strong>
+    </span>
+</div>
 
 <?php if ($alert_message): ?>
     <div class="alert alert-<?php echo $alert_type; ?>">

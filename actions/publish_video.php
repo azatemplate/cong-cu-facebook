@@ -90,11 +90,7 @@ if (!empty($drive_file_ids_str) && !$is_drive_folder) {
         $drive_title = '';
         $drive_name = isset($drive_names_arr[$idx]) ? trim($drive_names_arr[$idx]) : '';
         if (empty($drive_name)) {
-            if (!$drive_token) {
-                $first_page_id = !empty($page_ids) ? $page_ids[0] : null;
-                $drive_token = get_drive_access_token($pdo, $account_id, $first_page_id);
-            }
-            if ($drive_token) $drive_name = get_drive_file_name($drive_token, $id);
+            $drive_name = 'Video_' . substr($id, 0, 8);
         }
         if ($drive_name) {
             $drive_title = pathinfo($drive_name, PATHINFO_FILENAME);
@@ -229,18 +225,8 @@ try {
 }
 
 // ── Insert Posts ─────────────────────────────────────────────────────
-// Detect if campaign_id/comment_lines columns exist via INFORMATION_SCHEMA
-$has_extra_cols = false;
-try {
-    $col_chk = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME='campaign_id'");
-    $has_extra_cols = ($col_chk && $col_chk->fetchColumn() > 0);
-} catch (Exception $e) { }
-
-$has_comment_mode = false;
-try {
-    $col_chk2 = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME='comment_mode'");
-    $has_comment_mode = ($col_chk2 && $col_chk2->fetchColumn() > 0);
-} catch (Exception $e) { }
+$has_extra_cols = true;
+$has_comment_mode = true;
 
 if (!$has_extra_cols) $campaign_id = null;
 

@@ -5,7 +5,7 @@ require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/includes/tiktok_api.php';
 
 $account_id = $_SESSION['account_id'];
-$is_admin = ($_SESSION['role'] === 'admin');
+$is_admin   = ($_SESSION['role'] === 'admin');
 
 // Read upload limits
 $disable_local_upload = false;
@@ -23,16 +23,23 @@ $stmt_tt = $pdo->prepare("SELECT * FROM tiktok_accounts WHERE account_id = ? AND
 $stmt_tt->execute([$account_id]);
 $tiktok_accounts = $stmt_tt->fetchAll(PDO::FETCH_ASSOC);
 
+$stmt_lim = $pdo->prepare("SELECT max_tiktok_accounts FROM system_accounts WHERE id = ?");
+$stmt_lim->execute([$account_id]);
+$max_tiktok_accounts = intval($stmt_lim->fetchColumn() ?: 10);
+$max_tt_display = $is_admin ? 'Không giới hạn' : number_format($max_tiktok_accounts);
+
 // Check if credentials exist
 $cfg = get_tiktok_client_config();
 $has_credentials = !empty($cfg['client_key']) && !empty($cfg['client_secret']);
+
+$active_tab = $_GET['tab'] ?? 'scheduler';
 ?>
 
 <style>
 .tiktok-hero-card {
     background: linear-gradient(135deg, #010101 0%, #1a0533 40%, #fe2c55 100%);
     border-radius: 12px; padding: 20px 24px; color: #fff; margin-bottom: 20px;
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
 }
 </style>
 
@@ -57,35 +64,71 @@ $has_credentials = !empty($cfg['client_key']) && !empty($cfg['client_secret']);
     </div>
 </div>
 
+<!-- Navigation Tabs -->
+<div style="display:flex; gap:10px; margin-bottom:20px; border-bottom:2px solid var(--border-color); padding-bottom:12px;">
+    <a href="tiktok.php?tab=scheduler" style="padding:9px 18px; border-radius:8px; font-weight:600; font-size:14px; text-decoration:none; display:flex; align-items:center; gap:8px; transition:all 0.2s; <?php echo ($active_tab === 'scheduler') ? 'background:#fe2c55; color:white;' : 'background:#f1f5f9; color:var(--text-main);'; ?>">
+        🚀 Đăng Video TikTok
+    </a>
+    <a href="tiktok.php?tab=channels" style="padding:9px 18px; border-radius:8px; font-weight:600; font-size:14px; text-decoration:none; display:flex; align-items:center; gap:8px; transition:all 0.2s; <?php echo ($active_tab === 'channels') ? 'background:#fe2c55; color:white;' : 'background:#f1f5f9; color:var(--text-main);'; ?>">
+        🎵 Quản Lý Kênh TikTok (<?php echo count($tiktok_accounts); ?> / <?php echo $max_tt_display; ?>)
+    </a>
+</div>
+
 <?php if (isset($_SESSION['flash_msg'])): ?>
     <div class="alert alert-info" style="margin-bottom: 20px;">
         <?php echo htmlspecialchars($_SESSION['flash_msg']); unset($_SESSION['flash_msg']); ?>
     </div>
 <?php endif; ?>
 
-<!-- Connected TikTok Channels Manager -->
-<?php if (!empty($tiktok_accounts)): ?>
-<div class="card" style="margin-bottom: 20px; border-left: 4px solid #fe2c55;">
-    <h4 style="margin: 0 0 12px; font-size: 15px; font-weight: 600; color: #fe2c55;">📋 Danh Sách Kênh TikTok Đã Kết Nối (<?php echo count($tiktok_accounts); ?>)</h4>
-    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
-        <?php foreach ($tiktok_accounts as $tt): ?>
-            <div id="tt-acc-card-<?php echo $tt['id']; ?>" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
-                <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
-                    <img src="<?php echo !empty($tt['avatar']) ? htmlspecialchars($tt['avatar']) : 'assets/images/default_avatar.png'; ?>" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid #cbd5e1;" onerror="this.src='assets/images/default_avatar.png'">
-                    <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                        <div style="font-weight: 600; font-size: 14px; color: #1e293b; text-overflow: ellipsis; overflow: hidden;"><?php echo htmlspecialchars($tt['display_name']); ?></div>
-                        <div style="font-size: 11px; color: #64748b;">OpenID: <?php echo htmlspecialchars(substr($tt['open_id'], 0, 10)); ?>...</div>
-                    </div>
-                </div>
-                <button type="button" onclick="deleteTikTokAccount(<?php echo $tt['id']; ?>, '<?php echo htmlspecialchars(addslashes($tt['display_name'])); ?>')" class="btn btn-sm" style="background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;">
-                    🗑️ Xóa / Hủy
-                </button>
-            </div>
-        <?php endforeach; ?>
+<!-- ==================== TAB 2: QUẢN LÝ KÊNH TIKTOK ==================== -->
+<?php if ($active_tab === 'channels'): ?>
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+        <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #fe2c55;">📋 Danh Sách Kênh TikTok Đã Kết Nối (<?php echo count($tiktok_accounts); ?> / <?php echo $max_tt_display; ?>)</h3>
+        <?php if ($has_credentials): ?>
+            <a href="tiktok_login.php" class="btn" style="background: #fe2c55; color: #fff; font-weight: 600; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; display: inline-flex; align-items: center; gap: 6px;">
+                ➕ Thêm Kênh TikTok Mới
+            </a>
+        <?php endif; ?>
     </div>
-</div>
-<?php endif; ?>
 
+    <?php if (empty($tiktok_accounts)): ?>
+        <div style="text-align: center; padding: 50px 20px;">
+            <span style="font-size: 48px; display: block; margin-bottom: 12px;">🎵</span>
+            <h3 style="margin: 0 0 8px 0; color: #475569;">Chưa có kênh TikTok nào được kết nối</h3>
+            <p style="color: #64748b; margin-bottom: 20px;">Vui lòng bấm nút dưới đây để kết nối và ủy quyền tài khoản TikTok của bạn.</p>
+            <?php if ($has_credentials): ?>
+                <a href="tiktok_login.php" class="btn" style="background: #fe2c55; color: #fff; font-weight: 600; padding: 10px 22px; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
+                    <span>➕</span> Kết Nối Tài Khoản TikTok Ngay
+                </a>
+            <?php else: ?>
+                <a href="settings.php" class="btn" style="background: #eab308; color: #000; font-weight: 600; padding: 10px 22px; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
+                    <span>⚙️</span> Cấu hình Client Key TikTok
+                </a>
+            <?php endif; ?>
+        </div>
+    <?php else: ?>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px;">
+            <?php foreach ($tiktok_accounts as $tt): ?>
+                <div id="tt-acc-card-<?php echo $tt['id']; ?>" style="display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                    <div style="display: flex; align-items: center; gap: 12px; overflow: hidden;">
+                        <img src="<?php echo !empty($tt['avatar']) ? htmlspecialchars($tt['avatar']) : 'assets/images/default_avatar.png'; ?>" style="width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid #fe2c55;" onerror="this.src='assets/images/default_avatar.png'">
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; text-overflow: ellipsis; overflow: hidden;"><?php echo htmlspecialchars($tt['display_name']); ?></div>
+                            <div style="font-size: 11px; color: #64748b; font-family: monospace;">OpenID: <?php echo htmlspecialchars(substr($tt['open_id'], 0, 10)); ?>...</div>
+                        </div>
+                    </div>
+                    <button type="button" onclick="deleteTikTokAccount(<?php echo $tt['id']; ?>, '<?php echo htmlspecialchars(addslashes($tt['display_name'])); ?>')" class="btn btn-sm" style="background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;">
+                        🗑️ Xóa / Hủy
+                    </button>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+</div>
+
+<!-- ==================== TAB 1: ĐĂNG & LÊN LỊCH TIKTOK ==================== -->
+<?php else: ?>
 <div class="card">
     <h3 style="margin-bottom: 15px;">Đăng & Lên Lịch TikTok</h3>
     <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
@@ -133,7 +176,7 @@ $has_credentials = !empty($cfg['client_key']) && !empty($cfg['client_secret']);
             <div id="tt-hidden-inputs"></div>
             <?php if (empty($tiktok_accounts)): ?>
                 <small style="color: #ef4444; margin-top: 4px; display: block;">
-                    ⚠️ Bạn chưa kết nối kênh TikTok nào. Vui lòng bấm nút <b>"Kết Nối Tài Khoản TikTok"</b> ở trên để ủy quyền.
+                    ⚠️ Bạn chưa kết nối kênh TikTok nào. Vui lòng bấm <a href="tiktok.php?tab=channels" style="font-weight:bold; text-decoration:underline; color:#be185d;">Vào đây để kết nối kênh</a> trước khi đăng bài.
                 </small>
             <?php endif; ?>
         </div>
@@ -322,7 +365,7 @@ $has_credentials = !empty($cfg['client_key']) && !empty($cfg['client_secret']);
             <input type="hidden" id="drive_file_names" name="drive_file_names" value="">
         </div>
 
-        <!-- 4. Bulk Scheduling Section (Giống Reels.php) -->
+        <!-- 4. Bulk Scheduling Section -->
         <div class="form-group" style="background: #f9fafb; padding: 15px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 20px;">
             <label style="color: var(--primary-color); font-weight: 600;">4. Lên lịch tự động hàng loạt (Tùy chọn)</label>
             <p style="font-size: 13px; color: var(--text-muted); margin-top: 5px; margin-bottom: 15px;">
@@ -385,74 +428,78 @@ $has_credentials = !empty($cfg['client_key']) && !empty($cfg['client_secret']);
         </div>
     </form>
 </div>
+<?php endif; ?>
 
 <script>
     const tiktokForm = document.getElementById('tiktokPublishForm');
     const btnSubmitTT = document.getElementById('btnSubmitTikTok');
     const tiktokResult = document.getElementById('tiktokResult');
 
-    tiktokForm.addEventListener('submit', function (e) {
-        e.preventDefault();
+    if (tiktokForm) {
+        tiktokForm.addEventListener('submit', function (e) {
+            e.preventDefault();
 
-        if (typeof window.tiktokSelectorValidate === 'function' && !window.tiktokSelectorValidate()) {
-            return;
-        }
-
-        btnSubmitTT.disabled = true;
-        btnSubmitTT.textContent = '⏳ Đang xử lý đăng bài / lên lịch TikTok...';
-        tiktokResult.style.display = 'none';
-
-        const formData = new FormData(tiktokForm);
-
-        fetch('actions/publish_tiktok.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(r => r.text())
-        .then(text => {
-            let data;
-            try {
-                data = JSON.parse(text);
-            } catch (e) {
-                console.error('Server Raw Response:', text);
-                data = { status: 'error', msg: 'Lỗi phản hồi máy chủ: ' + text.substring(0, 300) };
+            if (typeof window.tiktokSelectorValidate === 'function' && !window.tiktokSelectorValidate()) {
+                return;
             }
 
-            tiktokResult.style.display = 'block';
-            if (data.status === 'success') {
-                tiktokResult.className = 'alert alert-success';
-                tiktokResult.style.background = '#dcfce7';
-                tiktokResult.style.color = '#15803d';
-                tiktokResult.style.border = '1px solid #86efac';
-                tiktokResult.innerHTML = data.msg + ' (Đang chuyển sang trang Quản Lý Bài Đăng...)';
-                setTimeout(function() {
-                    window.location.href = data.redirect || 'manage_posts.php';
-                }, 800);
-            } else {
+            btnSubmitTT.disabled = true;
+            btnSubmitTT.textContent = '⏳ Đang xử lý đăng bài / lên lịch TikTok...';
+            tiktokResult.style.display = 'none';
+
+            const formData = new FormData(tiktokForm);
+
+            fetch('actions/publish_tiktok.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.text())
+            .then(text => {
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    console.error('Server Raw Response:', text);
+                    data = { status: 'error', msg: 'Lỗi phản hồi máy chủ: ' + text.substring(0, 300) };
+                }
+
+                tiktokResult.style.display = 'block';
+                if (data.status === 'success') {
+                    tiktokResult.className = 'alert alert-success';
+                    tiktokResult.style.background = '#dcfce7';
+                    tiktokResult.style.color = '#15803d';
+                    tiktokResult.style.border = '1px solid #86efac';
+                    tiktokResult.innerHTML = data.msg + ' (Đang chuyển sang trang Quản Lý Bài Đăng...)';
+                    setTimeout(function() {
+                        window.location.href = data.redirect || 'manage_posts.php';
+                    }, 800);
+                } else {
+                    tiktokResult.className = 'alert alert-danger';
+                    tiktokResult.style.background = '#fee2e2';
+                    tiktokResult.style.color = '#991b1b';
+                    tiktokResult.style.border = '1px solid #fca5a5';
+                    tiktokResult.innerHTML = data.msg;
+                    btnSubmitTT.disabled = false;
+                    btnSubmitTT.textContent = '🚀 Đăng & Lên Lịch Video TikTok';
+                }
+            })
+            .catch(err => {
+                tiktokResult.style.display = 'block';
                 tiktokResult.className = 'alert alert-danger';
-                tiktokResult.style.background = '#fee2e2';
-                tiktokResult.style.color = '#991b1b';
-                tiktokResult.style.border = '1px solid #fca5a5';
-                tiktokResult.innerHTML = data.msg;
+                tiktokResult.innerHTML = 'Lỗi kết nối máy chủ: ' + err.message;
                 btnSubmitTT.disabled = false;
                 btnSubmitTT.textContent = '🚀 Đăng & Lên Lịch Video TikTok';
-            }
-        })
-        .catch(err => {
-            tiktokResult.style.display = 'block';
-            tiktokResult.className = 'alert alert-danger';
-            tiktokResult.innerHTML = 'Lỗi kết nối máy chủ: ' + err.message;
-            btnSubmitTT.disabled = false;
-            btnSubmitTT.textContent = '🚀 Đăng & Lên Lịch Video TikTok';
+            });
         });
-    });
+    }
 
     function onDriveFilesSelected(files) {
         if (!files || files.length === 0) return;
         const fileIds = files.map(f => f.id).join(',');
         const fileNames = files.map(f => f.name).join(', ');
 
-        document.getElementById('drive_file_id').value = fileIds;
+        const elId = document.getElementById('drive_file_id');
+        if (elId) elId.value = fileIds;
         if (document.getElementById('drive_file_names')) {
             document.getElementById('drive_file_names').value = fileNames;
         }
@@ -460,40 +507,50 @@ $has_credentials = !empty($cfg['client_key']) && !empty($cfg['client_secret']);
         const videoEl = document.getElementById('video');
         if (videoEl) videoEl.value = '';
 
-        document.getElementById('driveSelectedName').innerText = fileNames;
-        document.getElementById('driveSelectionInfo').style.display = 'block';
+        const elName = document.getElementById('driveSelectedName');
+        if (elName) elName.innerText = fileNames;
+        const elInfo = document.getElementById('driveSelectionInfo');
+        if (elInfo) elInfo.style.display = 'block';
     }
 
     function onDriveFileSelected(fileId, fileName) {
-        document.getElementById('drive_file_id').value = fileId;
+        const elId = document.getElementById('drive_file_id');
+        if (elId) elId.value = fileId;
         if (document.getElementById('drive_file_names')) {
             document.getElementById('drive_file_names').value = fileName;
         }
         const videoEl = document.getElementById('video');
         if (videoEl) videoEl.value = '';
 
-        document.getElementById('driveSelectedName').innerText = fileName;
-        document.getElementById('driveSelectionInfo').style.display = 'block';
+        const elName = document.getElementById('driveSelectedName');
+        if (elName) elName.innerText = fileName;
+        const elInfo = document.getElementById('driveSelectionInfo');
+        if (elInfo) elInfo.style.display = 'block';
     }
 
     function onDriveFolderSelected(folderId, folderName) {
-        document.getElementById('drive_file_id').value = 'folder:' + folderId;
+        const elId = document.getElementById('drive_file_id');
+        if (elId) elId.value = 'folder:' + folderId;
         if (document.getElementById('drive_file_names')) {
             document.getElementById('drive_file_names').value = 'folder:' + folderName;
         }
         const videoEl = document.getElementById('video');
         if (videoEl) videoEl.value = '';
 
-        document.getElementById('driveSelectedName').innerText = '📁 Thư mục: ' + folderName;
-        document.getElementById('driveSelectionInfo').style.display = 'block';
+        const elName = document.getElementById('driveSelectedName');
+        if (elName) elName.innerText = '📁 Thư mục: ' + folderName;
+        const elInfo = document.getElementById('driveSelectionInfo');
+        if (elInfo) elInfo.style.display = 'block';
     }
 
     function clearDriveSelection() {
-        document.getElementById('drive_file_id').value = '';
+        const elId = document.getElementById('drive_file_id');
+        if (elId) elId.value = '';
         if (document.getElementById('drive_file_names')) {
             document.getElementById('drive_file_names').value = '';
         }
-        document.getElementById('driveSelectionInfo').style.display = 'none';
+        const elInfo = document.getElementById('driveSelectionInfo');
+        if (elInfo) elInfo.style.display = 'none';
     }
 
     function deleteTikTokAccount(id, name) {
@@ -529,5 +586,5 @@ $has_credentials = !empty($cfg['client_key']) && !empty($cfg['client_secret']);
 
 <?php include 'includes/drive_browser.php'; ?>
 <?php include 'includes/emoji_picker.php'; ?>
-<script>initEmojiPicker('emojiTriggerTikTok', 'emojiPopupTikTok', 'title');</script>
+<script>if (document.getElementById('emojiTriggerTikTok')) initEmojiPicker('emojiTriggerTikTok', 'emojiPopupTikTok', 'title');</script>
 <?php include 'includes/footer.php'; ?>

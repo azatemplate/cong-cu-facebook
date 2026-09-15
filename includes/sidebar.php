@@ -67,9 +67,43 @@
         <li class="<?php echo ($current_page == 'earnings') ? 'active' : ''; ?>">
             <a href="earnings.php" data-tooltip="Earnings"><span class="icon">💰</span><span class="menu-label"> Earnings</span></a>
         </li>
-        <li class="<?php echo ($current_page == 'live_chat' || $current_page == 'live_chat_zalo' || $current_page == 'live_chat_tiktok' || $current_page == 'website') ? 'active' : ''; ?>">
-            <a href="live_chat.php" data-tooltip="Live Chat"><span class="icon">💬</span><span class="menu-label"> Live Chat</span></a>
+        <?php
+        $sb_user_id = $_SESSION['account_id'] ?? 0;
+        $sb_is_admin = (($_SESSION['role'] ?? '') === 'admin');
+        $sb_enable_live_chat = 1;
+        $sb_enable_live_chat_oa = 1;
+        $sb_enable_live_chat_tiktok = 1;
+        $sb_enable_website = 1;
+        $sb_enable_customers = 1;
+
+        if (!$sb_is_admin && $sb_user_id > 0 && isset($pdo)) {
+            try {
+                $st_sb = $pdo->prepare("SELECT enable_live_chat, enable_live_chat_oa, enable_live_chat_tiktok, enable_website, enable_customers FROM system_accounts WHERE id = ?");
+                $st_sb->execute([$sb_user_id]);
+                $sb_f = $st_sb->fetch(PDO::FETCH_ASSOC);
+                if ($sb_f) {
+                    $sb_enable_live_chat = (int)($sb_f['enable_live_chat'] ?? 1);
+                    $sb_enable_live_chat_oa = (int)($sb_f['enable_live_chat_oa'] ?? 1);
+                    $sb_enable_live_chat_tiktok = (int)($sb_f['enable_live_chat_tiktok'] ?? 1);
+                    $sb_enable_website = (int)($sb_f['enable_website'] ?? 1);
+                    $sb_enable_customers = (int)($sb_f['enable_customers'] ?? 1);
+                }
+            } catch (Exception $e) {}
+        }
+
+        $sb_first_chat_page = '';
+        if ($sb_enable_live_chat) $sb_first_chat_page = 'live_chat.php';
+        elseif ($sb_enable_live_chat_oa) $sb_first_chat_page = 'live-chat-oa.php';
+        elseif ($sb_enable_live_chat_tiktok) $sb_first_chat_page = 'live-chat-tiktok.php';
+        elseif ($sb_enable_website) $sb_first_chat_page = 'website.php';
+        elseif ($sb_enable_customers) $sb_first_chat_page = 'customers.php';
+        ?>
+
+        <?php if (!empty($sb_first_chat_page)): ?>
+        <li class="<?php echo (in_array($current_page, ['live_chat', 'live_chat_zalo', 'live_chat_tiktok', 'website', 'customers'])) ? 'active' : ''; ?>">
+            <a href="<?php echo $sb_first_chat_page; ?>" data-tooltip="Live Chat"><span class="icon">💬</span><span class="menu-label"> Live Chat</span></a>
         </li>
+        <?php endif; ?>
         <li class="<?php echo ($current_page == 'live_comments') ? 'active' : ''; ?>">
             <a href="live_comments.php" data-tooltip="Live Comments"><span class="icon">📝</span><span class="menu-label"> Live Comments</span></a>
         </li>
@@ -172,4 +206,18 @@ function toggleSidebarSubmenu(el) {
         else parent.classList.remove('open');
     }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Add immediate visual feedback when clicking sidebar links
+    const sidebarLinks = document.querySelectorAll('.sidebar-menu a[href]:not([href="javascript:void(0);"])');
+    sidebarLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            if (this.getAttribute('href') === 'logout.php') return;
+            document.querySelectorAll('.sidebar-menu li').forEach(li => li.classList.remove('active'));
+            const parentLi = this.closest('li');
+            if (parentLi) parentLi.classList.add('active');
+            this.style.opacity = '0.7';
+        });
+    });
+});
 </script>

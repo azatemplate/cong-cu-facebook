@@ -36,8 +36,10 @@ try {
     }
 
     if ($platform === 'Website') {
-        $st1 = $pdo->prepare("DELETE FROM web_messages WHERE visitor_uuid = ? AND account_id = ?");
-        $st1->execute([$sender_id, $account_id]);
+        try {
+            $st1 = $pdo->prepare("DELETE FROM web_messages WHERE visitor_uuid = ? AND account_id = ?");
+            $st1->execute([$sender_id, $account_id]);
+        } catch (Exception $e) {}
 
         $st2 = $pdo->prepare("DELETE FROM web_visitors WHERE visitor_uuid = ? AND account_id = ?");
         $st2->execute([$sender_id, $account_id]);
@@ -47,24 +49,58 @@ try {
     }
 
     if ($platform === 'Zalo') {
-        $st1 = $pdo->prepare("DELETE FROM zalo_messages WHERE sender_id = ? AND oa_id = ?");
-        $st1->execute([$sender_id, $oa_id]);
+        try {
+            $st1 = $pdo->prepare("DELETE FROM zalo_messages WHERE sender_id = ? AND oa_id = ?");
+            $st1->execute([$sender_id, $oa_id]);
+        } catch (Exception $e) {}
 
-        $st2 = $pdo->prepare("DELETE FROM zalo_customers WHERE sender_id = ? AND oa_id = ?");
-        $st2->execute([$sender_id, $oa_id]);
+        if (!empty($oa_id)) {
+            $st2 = $pdo->prepare("DELETE FROM zalo_customers WHERE sender_id = ? AND oa_id = ?");
+            $st2->execute([$sender_id, $oa_id]);
+        } else {
+            $st2 = $pdo->prepare("DELETE FROM zalo_customers WHERE sender_id = ?");
+            $st2->execute([$sender_id]);
+        }
 
         echo json_encode(['status' => 'success', 'msg' => 'Đã xóa khách hàng Zalo thành công!']);
         exit;
     }
 
     if ($platform === 'Facebook') {
-        $st1 = $pdo->prepare("DELETE FROM fb_messages WHERE sender_id = ? AND page_id = ?");
-        $st1->execute([$sender_id, $oa_id]);
+        try {
+            if (!empty($oa_id)) {
+                $st_conv = $pdo->prepare("DELETE FROM fb_conversations WHERE sender_id = ? AND page_id = ?");
+                $st_conv->execute([$sender_id, $oa_id]);
+            } else {
+                $st_conv = $pdo->prepare("DELETE FROM fb_conversations WHERE sender_id = ?");
+                $st_conv->execute([$sender_id]);
+            }
+        } catch (Exception $e) {}
 
-        $st2 = $pdo->prepare("DELETE FROM fb_customers WHERE sender_id = ? AND page_id = ?");
-        $st2->execute([$sender_id, $oa_id]);
+        if (!empty($oa_id)) {
+            $st2 = $pdo->prepare("DELETE FROM fb_customers WHERE sender_id = ? AND page_id = ?");
+            $st2->execute([$sender_id, $oa_id]);
+        } else {
+            $st2 = $pdo->prepare("DELETE FROM fb_customers WHERE sender_id = ?");
+            $st2->execute([$sender_id]);
+        }
 
         echo json_encode(['status' => 'success', 'msg' => 'Đã xóa khách hàng Facebook thành công!']);
+        exit;
+    }
+
+    if ($platform === 'TikTok') {
+        try {
+            $st1 = $pdo->prepare("DELETE FROM tiktok_messages WHERE sender_id = ?");
+            $st1->execute([$sender_id]);
+        } catch (Exception $e) {}
+
+        try {
+            $st2 = $pdo->prepare("DELETE FROM tiktok_customers WHERE sender_id = ?");
+            $st2->execute([$sender_id]);
+        } catch (Exception $e) {}
+
+        echo json_encode(['status' => 'success', 'msg' => 'Đã xóa khách hàng TikTok thành công!']);
         exit;
     }
 

@@ -1,6 +1,11 @@
 <?php
 require_once __DIR__ . '/includes/db.php';
 
+$flag_file = sys_get_temp_dir() . '/live_chat_setup_v3.done';
+if (file_exists($flag_file)) {
+    return;
+}
+
 try {
     $sql = "CREATE TABLE IF NOT EXISTS bot_chat_rules (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -16,21 +21,16 @@ try {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
     
     $pdo->exec($sql);
-    echo "Tạo bảng bot_chat_rules thành công.\n";
     
     // Add delay_seconds column if it does not exist
     try {
         $pdo->exec("ALTER TABLE bot_chat_rules ADD COLUMN delay_seconds INT DEFAULT 0 AFTER is_active;");
-    } catch (PDOException $e) {
-        // column likely exists
-    }
+    } catch (PDOException $e) {}
 
     // Add history_count column if it does not exist
     try {
         $pdo->exec("ALTER TABLE bot_chat_rules ADD COLUMN history_count INT DEFAULT 6 AFTER delay_seconds;");
-    } catch (PDOException $e) {
-        // column likely exists
-    }
+    } catch (PDOException $e) {}
 
     $sql_lock = "CREATE TABLE IF NOT EXISTS bot_chat_locks (
         page_id VARCHAR(50) NOT NULL,
@@ -40,7 +40,6 @@ try {
         INDEX idx_expire (expire_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
     $pdo->exec($sql_lock);
-    echo "Tạo bảng bot_chat_locks thành công.\n";
 
     $sql_customers = "CREATE TABLE IF NOT EXISTS fb_customers (
         page_id VARCHAR(50) NOT NULL,
@@ -56,7 +55,6 @@ try {
         PRIMARY KEY (page_id, sender_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
     $pdo->exec($sql_customers);
-    echo "Tạo bảng fb_customers thành công.\n";
 
     // Migration: Thêm các cột cho tính năng Conversions API (CAPI)
     try {
@@ -66,9 +64,15 @@ try {
         $pdo->exec("ALTER TABLE pages ADD COLUMN capi_token TEXT NULL AFTER capi_pixel_id");
     } catch (PDOException $e) {}
     try {
+        $pdo->exec("ALTER TABLE pages ADD COLUMN auto_send_capi TINYINT DEFAULT 1 AFTER capi_token");
+    } catch (PDOException $e) {}
+    try {
         $pdo->exec("ALTER TABLE fb_customers ADD COLUMN capi_pushed TINYINT DEFAULT 0 AFTER info_requested_at");
     } catch (PDOException $e) {}
 
+    @touch($flag_file);
 } catch (PDOException $e) {
-    echo "Lỗi: " . $e->getMessage() . "\n";
+    // ignore
 }
+
+

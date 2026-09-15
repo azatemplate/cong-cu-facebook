@@ -19,8 +19,19 @@ if (empty($oa_id) || empty($sender_id) || empty($phone)) {
 }
 
 try {
-    // 1. Update zalo_customers phone
-    $stmt = $pdo->prepare("UPDATE zalo_customers SET phone = ? WHERE oa_id = ? AND sender_id = ?");
+    // 1. Update zalo_customers phone and auto-update consulted status based on all 4 fields
+    $stmt = $pdo->prepare("
+        UPDATE zalo_customers 
+        SET phone = ?, 
+            consulted = IF(
+                name IS NOT NULL AND TRIM(name) != '' AND name != 'Khách hàng Zalo' AND 
+                province IS NOT NULL AND TRIM(province) != '' AND 
+                notes IS NOT NULL AND TRIM(notes) != '',
+                IF(consulted = 0, 4, consulted),
+                IF(consulted = 4, 0, consulted)
+            ) 
+        WHERE oa_id = ? AND sender_id = ?
+    ");
     $stmt->execute([$phone, $oa_id, $sender_id]);
     
     // 2. Update zalo_file_messages if msg_id provided

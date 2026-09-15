@@ -25,7 +25,9 @@ if (!$bypass_ok) {
 }
 
 $now_php   = date('Y-m-d H:i:s');
+$start_db  = microtime(true);
 $now_mysql = $pdo->query("SELECT NOW()")->fetchColumn();
+$db_latency_ms = round((microtime(true) - $start_db) * 1000, 2);
 
 // ── Lấy thời gian cron chạy cuối ──────────────────────────────────────────────
 $last_cron_run = 'Chưa từng chạy';
@@ -54,7 +56,9 @@ try {
 
 // ── Đếm số worker đang thực sự chạy (active) ────────────────────────────────
 $active_publish = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
-$active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
+$tmp_dir = sys_get_temp_dir();
+$comment_locks = glob($tmp_dir . "/facebook_comment_worker_account_*.lock") ?: [];
+$active_comment = count($comment_locks);
 
 // ── Kích hoạt thủ công nếu có ?run=1 ─────────────────────────────────────────
 $run_msg = '';
@@ -98,36 +102,55 @@ if (isset($_GET['force_reset'])) {
     }
 }
 
-// ── Đếm bài theo trạng thái ───────────────────────────────────────────────────
-$stats = $pdo->query("
-    SELECT status, COUNT(*) as cnt
-    FROM scheduled_posts
-    GROUP BY status
-")->fetchAll(PDO::FETCH_KEY_PAIR);
+// ── Đếm bài theo trạng thái (Tối ưu O(1) qua Index & MAX(id)) ─────────────────
+$today_start = date('Y-m-d 00:00:00');
+$today_end   = date('Y-m-d 23:59:59');
 
-// ── Đếm bài theo trạng thái HÔM NAY ──────────────────────────────────────────
-$stats_today = $pdo->query("
-    SELECT status, COUNT(*) as cnt
-    FROM scheduled_posts
-    WHERE DATE(scheduled_time) = CURDATE()
-    GROUP BY status
-")->fetchAll(PDO::FETCH_KEY_PAIR);
+$stats = ['pending' => 0, 'processing' => 0, 'failed' => 0, 'published' => 0];
+try {
+    $active_stats = $pdo->query("
+        SELECT status, COUNT(*) as cnt
+        FROM scheduled_posts
+        WHERE status IN ('pending', 'processing', 'failed')
+        GROUP BY status
+    ")->fetchAll(PDO::FETCH_KEY_PAIR);
+    
+    $stats = array_merge($stats, $active_stats);
+    $total_approx = (int)$pdo->query("SELECT MAX(id) FROM scheduled_posts")->fetchColumn();
+    $stats['published'] = max(0, $total_approx - ($stats['pending'] + $stats['processing'] + $stats['failed']));
+} catch (Exception $e) {}
 
-// ── Top 10 Tài khoản bị lỗi nhiều hôm nay ────────────────────────────────────
+// ── Đếm bài theo trạng thái HÔM NAY (Tối ưu dùng Index trong ngày) ──────────────
+$stats_today = [];
+try {
+    $stmt_today = $pdo->prepare("
+        SELECT status, COUNT(*) as cnt
+        FROM scheduled_posts
+        WHERE scheduled_time >= ? AND scheduled_time <= ?
+        GROUP BY status
+    ");
+    $stmt_today->execute([$today_start, $today_end]);
+    $stats_today = $stmt_today->fetchAll(PDO::FETCH_KEY_PAIR);
+} catch (Exception $e) {}
+
+// ── Top 10 Tài khoản bị lỗi nhiều hôm nay (Tối ưu dùng Index) ────────────────────
 $top_failed_accounts = [];
 try {
-    $top_failed_accounts = $pdo->query("
+    $stmt_tf = $pdo->prepare("
         SELECT sa.username, COUNT(*) as cnt
         FROM scheduled_posts sp
         JOIN system_accounts sa ON sp.account_id = sa.id
-        WHERE sp.status = 'failed' AND (DATE(sp.scheduled_time) = CURDATE() OR DATE(sp.updated_at) = CURDATE())
+        WHERE sp.status = 'failed' 
+          AND sp.scheduled_time >= ? AND sp.scheduled_time <= ?
         GROUP BY sp.account_id, sa.username
         ORDER BY cnt DESC
         LIMIT 10
-    ")->fetchAll(PDO::FETCH_ASSOC);
+    ");
+    $stmt_tf->execute([$today_start, $today_end]);
+    $top_failed_accounts = $stmt_tf->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {}
 
-// ── Bài viết bị lỗi hôm nay ──────────────────────────────────────────────────
+// ── Bài viết bị lỗi hôm nay (Tối ưu dùng Index) ──────────────────────────────────
 $failed_posts_today = [];
 try {
     $failed_today_stmt = $pdo->prepare("
@@ -137,12 +160,33 @@ try {
         FROM scheduled_posts sp
         LEFT JOIN system_accounts sa ON sp.account_id = sa.id
         WHERE sp.status = 'failed' 
-          AND (DATE(sp.scheduled_time) = CURDATE() OR DATE(sp.updated_at) = CURDATE())
-        ORDER BY sp.updated_at DESC, sp.id DESC
+          AND sp.scheduled_time >= ? AND sp.scheduled_time <= ?
+        ORDER BY sp.id DESC
         LIMIT 50
     ");
-    $failed_today_stmt->execute([$max_retries]);
+    $failed_today_stmt->execute([$max_retries, $today_start, $today_end]);
     $failed_posts_today = $failed_today_stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {}
+
+// ── Thống kê bài viết theo Tài khoản User (Hôm nay & Tổng - Tối ưu Index siêu tốc) ───
+$user_posts_breakdown = [];
+try {
+    $stmt_ub = $pdo->prepare("
+        SELECT 
+            COALESCE(sa.username, CONCAT('Acc #', sp.account_id)) AS username,
+            COUNT(*) AS today_posts,
+            SUM(CASE WHEN sp.status = 'pending' THEN 1 ELSE 0 END) AS pending_posts,
+            SUM(CASE WHEN sp.status = 'published' THEN 1 ELSE 0 END) AS published_posts,
+            SUM(CASE WHEN sp.status = 'failed' THEN 1 ELSE 0 END) AS failed_posts
+        FROM scheduled_posts sp
+        LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+        WHERE sp.scheduled_time >= ? AND sp.scheduled_time <= ?
+        GROUP BY sp.account_id, sa.username
+        ORDER BY today_posts DESC
+        LIMIT 15
+    ");
+    $stmt_ub->execute([$today_start, $today_end]);
+    $user_posts_breakdown = $stmt_ub->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {}
 
 
@@ -150,10 +194,9 @@ try {
 $ready_total_stmt = $pdo->prepare("
     SELECT COUNT(*)
     FROM scheduled_posts sp
-    LEFT JOIN system_accounts sa ON sp.account_id = sa.id
-    WHERE sp.scheduled_time <= NOW()
-      AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, ?))
-      AND sp.status IN ('pending', 'failed')
+    WHERE sp.status IN ('pending', 'failed')
+      AND sp.scheduled_time <= NOW()
+      AND (sp.retry_count IS NULL OR sp.retry_count < ?)
 ");
 $ready_total_stmt->execute([$max_retries]);
 $ready_total_count = (int)$ready_total_stmt->fetchColumn();
@@ -165,9 +208,9 @@ $ready_stmt = $pdo->prepare("
            COALESCE(sa.max_retries, ?) AS limit_retries
     FROM scheduled_posts sp
     LEFT JOIN system_accounts sa ON sp.account_id = sa.id
-    WHERE sp.scheduled_time <= NOW()
+    WHERE sp.status IN ('pending', 'failed')
+      AND sp.scheduled_time <= NOW()
       AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, ?))
-      AND sp.status IN ('pending', 'failed')
     ORDER BY sp.id DESC
     LIMIT 20
 ");
@@ -225,39 +268,36 @@ $disabled_funcs = array_map('trim', explode(',', strtolower(ini_get('disable_fun
 $exec_ok = function_exists('exec') && !in_array('exec', $disabled_funcs);
 
 // ── Auto-detect PHP binary path (dùng cho hướng dẫn cron) ────────────────────
-// Luon dung 'php' cho AaPanel (shell da cau hinh san)
 $php_bin_simple = 'php';
-
-// Tim duong dan day du de hien thi nhu la alternative
 $php_bin_full = 'php';
 $php_bin_note = '';
 
-// Tu dong lay duong dan PHP CLI theo phien ban PHP Web dang chay de tranh bi chan boi open_basedir
 $current_php_version = phpversion();
-$version_parts = explode('.', $current_php_version);
-if (count($version_parts) >= 2) {
-    $ver_num = $version_parts[0] . $version_parts[1]; // VD: "85" hoac "83"
-    $php_bin_full = "/www/server/php/{$ver_num}/bin/php";
-    $php_bin_note = 'tự động nhận diện từ PHP Web';
+$ver_num = PHP_MAJOR_VERSION . PHP_MINOR_VERSION;
+$target_bin = "/www/server/php/{$ver_num}/bin/php";
+
+if (@file_exists($target_bin)) {
+    $php_bin_full = $target_bin;
+    $php_bin_note = 'tự động nhận diện từ PHP Web (' . $current_php_version . ')';
+} elseif (defined('PHP_BINARY') && PHP_BINARY
+    && strpos(PHP_BINARY, 'php-fpm') === false
+    && strpos(PHP_BINARY, 'php-cgi') === false
+    && @file_exists(PHP_BINARY)) {
+    $php_bin_full = PHP_BINARY;
+    $php_bin_note = 'từ PHP_BINARY';
 } else {
-    if (defined('PHP_BINARY') && PHP_BINARY
-        && strpos(PHP_BINARY, 'php-fpm') === false
-        && strpos(PHP_BINARY, 'php-cgi') === false
-        && @file_exists(PHP_BINARY)) {
-        $php_bin_full = PHP_BINARY;
-        $php_bin_note = 'tu PHP_BINARY';
-    }
-    if ($php_bin_full === 'php' || strpos($php_bin_full, 'fpm') !== false) {
-        foreach (['/www/server/php/85/bin/php','/www/server/php/84/bin/php',
-                  '/www/server/php/83/bin/php','/www/server/php/82/bin/php',
-                  '/www/server/php/81/bin/php','/www/server/php/80/bin/php',
-                  '/usr/bin/php8.5','/usr/bin/php8.4','/usr/bin/php8.3',
-                  '/usr/bin/php8.2','/usr/bin/php8.1','/usr/bin/php','/usr/local/bin/php'] as $p) {
-            if (@file_exists($p)) { $php_bin_full = $p; $php_bin_note = 'tim thay tren server'; break; }
-        }
+    foreach ([
+        "/www/server/php/{$ver_num}/bin/php",
+        '/www/server/php/74/bin/php', '/www/server/php/80/bin/php',
+        '/www/server/php/81/bin/php', '/www/server/php/82/bin/php',
+        '/www/server/php/83/bin/php', '/www/server/php/84/bin/php', '/www/server/php/85/bin/php',
+        '/usr/bin/php7.4', '/usr/bin/php8.0', '/usr/bin/php8.1', '/usr/bin/php8.2', '/usr/bin/php8.3',
+        '/usr/bin/php', '/usr/local/bin/php'
+    ] as $p) {
+        if (@file_exists($p)) { $php_bin_full = $p; $php_bin_note = 'tìm thấy trên server'; break; }
     }
 }
-if ($exec_ok && $php_bin_full === 'php') {
+if ($exec_ok && ($php_bin_full === 'php' || strpos($php_bin_full, 'fpm') !== false) && PHP_OS_FAMILY !== 'Windows') {
     $w = trim((string)@exec('which php 2>/dev/null'));
     if ($w && file_exists($w)) { $php_bin_full = $w; $php_bin_note = 'which php'; }
 }
@@ -267,30 +307,28 @@ $cron_dir_path = realpath(__DIR__ . '/cron');
 
 // ── Kiểm tra lock files (worker bị stuck) ────────────────────────────────────
 $lock_files = [];
-$tmp_dir = sys_get_temp_dir();
-if (is_dir($tmp_dir)) {
-    foreach (glob($tmp_dir . '/facebook_publish_worker_page_*.lock') ?: [] as $lf) {
-        $fp = @fopen($lf, 'r');
-        $is_locked = false;
-        if ($fp) {
-            $is_locked = !flock($fp, LOCK_EX | LOCK_NB);
-            if (!$is_locked) flock($fp, LOCK_UN);
-            fclose($fp);
-        }
-        $lock_files[] = [
-            'file'   => basename($lf),
-            'mtime'  => filemtime($lf),
-            'locked' => $is_locked,
-            'age_min'=> round((time() - filemtime($lf)) / 60, 1),
-        ];
+$publish_locks = is_dir($tmp_dir) ? (glob($tmp_dir . '/facebook_publish_worker_page_*.lock') ?: []) : [];
+foreach ($publish_locks as $lf) {
+    $fp = @fopen($lf, 'r');
+    $is_locked = false;
+    if ($fp) {
+        $is_locked = !flock($fp, LOCK_EX | LOCK_NB);
+        if (!$is_locked) flock($fp, LOCK_UN);
+        fclose($fp);
     }
+    $lock_files[] = [
+        'file'   => basename($lf),
+        'mtime'  => filemtime($lf),
+        'locked' => $is_locked,
+        'age_min'=> round((time() - filemtime($lf)) / 60, 1),
+    ];
 }
 
 // ── Xoá lock files cũ nếu có &clear_locks=1 ──────────────────────────────────
 $clear_msg = '';
 if (isset($_GET['clear_locks'])) {
     $cleared = 0;
-    foreach (glob($tmp_dir . '/facebook_publish_worker_page_*.lock') ?: [] as $lf) {
+    foreach ($publish_locks as $lf) {
         if (@unlink($lf)) $cleared++;
     }
     $clear_msg = "Đã xoá $cleared lock file(s).";
@@ -787,6 +825,34 @@ code {
 <body>
 
 <div class="dashboard-wrapper">
+    <!-- Top Navigation Bar -->
+    <nav style="display: flex; justify-content: space-between; align-items: center; background: rgba(13, 17, 33, 0.8); backdrop-filter: blur(16px); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 20px; margin-bottom: 24px;">
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <a href="index.php" style="color: var(--text-primary); text-decoration: none; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                Trang chủ
+            </a>
+            <a href="accounts.php" style="color: var(--text-secondary); text-decoration: none; font-size: 13px; font-weight: 500;">Tài khoản FB</a>
+            <a href="scheduled_posts.php" style="color: var(--text-secondary); text-decoration: none; font-size: 13px; font-weight: 500;">Bài viết</a>
+            <a href="diagnostics.php" style="color: var(--color-primary); text-decoration: none; font-size: 13px; font-weight: 600; background: var(--color-primary-glow); padding: 4px 10px; border-radius: 6px;">Chẩn đoán Cron</a>
+            <a href="settings.php" style="color: var(--text-secondary); text-decoration: none; font-size: 13px; font-weight: 500;">Cấu hình</a>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <!-- Auto refresh control -->
+            <div style="display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.3); padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border-color); font-size: 12px;">
+                <span style="color: var(--text-secondary);">Tự động làm mới:</span>
+                <select id="auto-refresh-select" onchange="changeAutoRefresh(this.value)" style="background: transparent; color: var(--color-primary); border: none; font-weight: 600; font-size: 12px; cursor: pointer; outline: none;">
+                    <option value="0" style="background:#0d1121; color:#fff;">Tắt</option>
+                    <option value="10" style="background:#0d1121; color:#fff;">10 giây</option>
+                    <option value="30" style="background:#0d1121; color:#fff;" selected>30 giây</option>
+                    <option value="60" style="background:#0d1121; color:#fff;">60 giây</option>
+                </select>
+                <span id="refresh-timer" class="mono" style="color: var(--color-info); font-weight: 700; min-width: 24px; text-align: right;">30s</span>
+            </div>
+            <a href="logout.php" style="color: var(--color-danger); text-decoration: none; font-size: 13px; font-weight: 500;">Đăng xuất</a>
+        </div>
+    </nav>
+
     <!-- Header -->
     <header class="dashboard-header">
         <div class="header-title">
@@ -795,9 +861,14 @@ code {
                 Cron Diagnostics Panel
             </h1>
         </div>
-        <div class="system-pulse">
-            <span class="pulse-dot"></span>
-            Hệ thống đang hoạt động
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div class="system-pulse" style="background: rgba(6, 182, 212, 0.08); border-color: rgba(6, 182, 212, 0.2); color: var(--color-info);">
+                ⚡ DB Latency: <strong class="mono" style="margin-left: 2px;"><?= $db_latency_ms ?> ms</strong>
+            </div>
+            <div class="system-pulse">
+                <span class="pulse-dot"></span>
+                Hệ thống đang hoạt động
+            </div>
         </div>
     </header>
 
@@ -917,6 +988,45 @@ code {
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Thống kê bài viết theo Tài khoản User -->
+            <div class="card" style="border-top: 3px solid var(--color-primary);">
+                <h3 class="card-title" style="color: var(--color-primary);">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    Bài viết theo Tài khoản User
+                </h3>
+                <?php if (empty($user_posts_breakdown)): ?>
+                <div style="font-size: 13px; color: var(--text-muted); padding: 4px 0;">
+                    Chưa có bài viết nào.
+                </div>
+                <?php else: ?>
+                <table style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="padding: 6px 8px;">Tài khoản</th>
+                            <th style="padding: 6px 8px; text-align: right;">Bài hôm nay</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($user_posts_breakdown as $ub): ?>
+                        <tr>
+                            <td style="padding: 8px 8px;">
+                                <div style="font-weight: 600; color: #a5b4fc;"><?= htmlspecialchars($ub['username']) ?></div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                                    ⏳ <?= number_format($ub['pending_posts']) ?> | ✅ <?= number_format($ub['published_posts']) ?> | ❌ <?= number_format($ub['failed_posts']) ?>
+                                </div>
+                            </td>
+                            <td style="padding: 8px 8px; text-align: right; font-weight: 700; font-size: 15px;" class="mono">
+                                <span class="<?= $ub['today_posts'] > 0 ? 'text-success' : 'text-muted' ?>">
+                                    <?= number_format($ub['today_posts']) ?>
+                                </span>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
             </div>
 
             <!-- Top 10 Failed Accounts Today -->
@@ -1420,6 +1530,66 @@ function copyText(id) {
         document.execCommand('copy');
         document.body.removeChild(ta);
     });
+}
+
+// ── Auto Refresh Countdown Timer ──
+var refreshIntervalSec = 30;
+var countdownSec = refreshIntervalSec;
+var timerInterval = null;
+
+function startTimer() {
+    if (timerInterval) clearInterval(timerInterval);
+    if (refreshIntervalSec <= 0) {
+        document.getElementById('refresh-timer').innerText = 'Off';
+        return;
+    }
+    countdownSec = refreshIntervalSec;
+    document.getElementById('refresh-timer').innerText = countdownSec + 's';
+    
+    timerInterval = setInterval(function() {
+        countdownSec--;
+        if (countdownSec <= 0) {
+            document.getElementById('refresh-timer').innerText = '0s';
+            location.reload();
+        } else {
+            document.getElementById('refresh-timer').innerText = countdownSec + 's';
+        }
+    }, 1000);
+}
+
+function changeAutoRefresh(val) {
+    refreshIntervalSec = parseInt(val, 10);
+    localStorage.setItem('diag_auto_refresh', refreshIntervalSec);
+    startTimer();
+}
+
+// Restore auto-refresh preference
+(function initRefresh() {
+    var saved = localStorage.getItem('diag_auto_refresh');
+    if (saved !== null) {
+        refreshIntervalSec = parseInt(saved, 10);
+        var selectEl = document.getElementById('auto-refresh-select');
+        if (selectEl) selectEl.value = refreshIntervalSec;
+    }
+    startTimer();
+})();
+
+// ── Client-side Live Table Filter ──
+function filterTable(inputId, tableId) {
+    var input = document.getElementById(inputId);
+    var filter = input.value.toLowerCase();
+    var table = document.getElementById(tableId);
+    if (!table) return;
+    var trs = table.getElementsByTagName('tr');
+    
+    for (var i = 1; i < trs.length; i++) {
+        var tdText = trs[i].textContent.toLowerCase();
+        if (tdText.indexOf(filter) > -1) {
+            trs[i].style.display = '';
+        } else {
+            trs[i].style.display = 'none';
+        }
+    }
 }
 </script>
 

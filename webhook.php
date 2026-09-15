@@ -158,7 +158,16 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
     foreach ($data['entry'] as $entry) {
         $page_id = $entry['id'];
 
-                                                     // Do not retry on 4xx client errors
+        // Check if enable_live_chat is enabled for this page's account
+        try {
+            $st_chk_fb = $pdo->prepare("SELECT sa.role, sa.enable_live_chat FROM pages p JOIN users u ON p.user_id = u.id JOIN system_accounts sa ON u.account_id = sa.id WHERE p.page_id = ?");
+            $st_chk_fb->execute([$page_id]);
+            $fb_acc_info = $st_chk_fb->fetch(PDO::FETCH_ASSOC);
+            if ($fb_acc_info && ($fb_acc_info['role'] ?? '') !== 'admin' && (int)($fb_acc_info['enable_live_chat'] ?? 1) === 0) {
+                continue;
+            }
+        } catch (Exception $e) {}
+
         if (isset($entry['messaging'])) {
             foreach ($entry['messaging'] as $messaging_event) {
                 $is_message = isset($messaging_event['message']) && !isset($messaging_event['message']['is_echo']);
@@ -385,6 +394,7 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
                                     $php_upd_cols[] = "province = ?";
                                     $php_upd_vals[] = $detected_province;
                                 }
+                                $php_upd_cols[] = "consulted = IF(name IS NOT NULL AND TRIM(name) != '' AND phone IS NOT NULL AND TRIM(phone) != '' AND province IS NOT NULL AND TRIM(province) != '' AND notes IS NOT NULL AND TRIM(notes) != '', IF(consulted = 0, 4, consulted), IF(consulted = 4, 0, consulted))";
                                 
                                 if (!empty($php_upd_cols)) {
                                     $php_upd_vals[] = $page_id;

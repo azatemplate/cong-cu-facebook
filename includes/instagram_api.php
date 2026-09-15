@@ -13,6 +13,37 @@ if (session_status() === PHP_SESSION_NONE) {
 function sync_instagram_accounts($account_id) {
     global $pdo;
     $synced_map = [];
+    $limit_reached = false;
+
+    // Fetch user max_instagram_accounts limit
+    $acc_stmt = $pdo->prepare("SELECT role, max_instagram_accounts FROM system_accounts WHERE id = ?");
+    $acc_stmt->execute([$account_id]);
+    $acc_info = $acc_stmt->fetch(PDO::FETCH_ASSOC);
+    $max_ig = (int)($acc_info['max_instagram_accounts'] ?? 10);
+    $is_admin = (($acc_info['role'] ?? '') === 'admin');
+
+    $save_ig_account = function($up_stmt, $account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $p_token) use ($pdo, &$synced_map, &$limit_reached, $is_admin, $max_ig) {
+        $chk = $pdo->prepare("SELECT id FROM instagram_accounts WHERE account_id = ? AND ig_user_id = ?");
+        $chk->execute([$account_id, $ig_id]);
+        $exists = $chk->fetchColumn();
+
+        if ($exists) {
+            $up_stmt->execute([$account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $p_token]);
+            $synced_map[$ig_id] = true;
+        } else {
+            if (!$is_admin && $max_ig > 0) {
+                $c_stmt = $pdo->prepare("SELECT COUNT(*) FROM instagram_accounts WHERE account_id = ?");
+                $c_stmt->execute([$account_id]);
+                $curr = (int)$c_stmt->fetchColumn();
+                if ($curr >= $max_ig) {
+                    $limit_reached = true;
+                    return;
+                }
+            }
+            $up_stmt->execute([$account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $p_token]);
+            $synced_map[$ig_id] = true;
+        }
+    };
 
     try {
         $up_stmt = $pdo->prepare("
@@ -59,8 +90,7 @@ function sync_instagram_accounts($account_id) {
                         $followers = (int)($ig_info['followers_count'] ?? 0);
 
                         if (!empty($username)) {
-                            $up_stmt->execute([$account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $p_token]);
-                            $synced_map[$ig_id] = true;
+                            $save_ig_account($up_stmt, $account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $p_token);
                         }
                     }
                 }
@@ -138,8 +168,7 @@ function sync_instagram_accounts($account_id) {
                         $followers = (int)($ig_info['followers_count'] ?? 0);
 
                         if (!empty($username)) {
-                            $up_stmt->execute([$account_id, $ig_id, $item['page_id'], $username, $name, $avatar, $followers, $item['token']]);
-                            $synced_map[$ig_id] = true;
+                            $save_ig_account($up_stmt, $account_id, $ig_id, $item['page_id'], $username, $name, $avatar, $followers, $item['token']);
                         }
                     }
                 }
@@ -149,6 +178,11 @@ function sync_instagram_accounts($account_id) {
     } catch (Exception $e) {
         error_log("sync_instagram_accounts error: " . $e->getMessage());
     }
+
+    if ($limit_reached) {
+        $_SESSION['flash_msg'] = "⚠️ Đã đạt giới hạn tối đa $max_ig tài khoản Instagram. Một số tài khoản vượt hạn ngạch đã bị chặn không lưu vào CSDL.";
+    }
+
     return count($synced_map);
 }
 

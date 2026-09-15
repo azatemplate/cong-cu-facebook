@@ -37,7 +37,7 @@ try {
     if ($merge_all === 1) {
         $stmt_notif = $pdo->prepare("
             SELECT n.post_id FROM page_notifications n
-            JOIN pages p ON n.page_id COLLATE utf8mb4_0900_ai_ci = p.page_id
+            JOIN pages p ON n.page_id = p.page_id
             JOIN users u ON p.user_id = u.id
             WHERE (
                 u.account_id = ?

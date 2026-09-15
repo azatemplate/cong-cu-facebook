@@ -2,35 +2,68 @@
 // includes/db.php
 require_once __DIR__ . '/config.php';
 
+$max_attempts = 3;
+$attempt = 0;
+$pdo = null;
+
+while ($attempt < $max_attempts) {
+    try {
+        $attempt++;
+        $pdo = new PDO(
+            "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET,
+            DB_USER,
+            DB_PASS,
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT => 5
+            ]
+        );
+        break;
+    } catch (PDOException $e) {
+        if ($attempt >= $max_attempts) {
+            $err_msg = date('[Y-m-d H:i:s] ') . 'DB Connection Error: ' . $e->getMessage() . "\n";
+            @file_put_contents(__DIR__ . '/../uploads/app_error.log', $err_msg, FILE_APPEND | LOCK_EX);
+            if (defined('APP_ENV') && APP_ENV === 'development') {
+                die("Lỗi kết nối CSDL: " . $e->getMessage());
+            } else {
+                die("Hệ thống tạm thời gặp sự cố. Vui lòng thử lại sau hoặc liên hệ Admin.");
+            }
+        }
+        usleep(150000); // Thử lại sau 150ms nếu kết nối bị nghẽn tạm thời
+    }
+}
+
 try {
-    $pdo = new PDO(
-        "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET,
-        DB_USER,
-        DB_PASS
-    );
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->exec("SET NAMES '" . DB_CHARSET . "'");
     // Timezone: wrapped separately — some MariaDB servers lack tz tables
     try { $pdo->exec("SET time_zone = '+07:00'"); } catch (Exception $e) {}
 
-    // Auto-save base_site_url when accessed via Web HTTP to ensure correct domain for API URLs
+    // Auto-save base_site_url (cached to avoid DB write locks on every request)
     if (!empty($_SERVER['HTTP_HOST'])) {
-        $is_ssl = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-            || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
-            || ($_SERVER['SERVER_PORT'] ?? 80) == 443;
-        $scheme = $is_ssl ? 'https' : 'http';
-        $current_domain = $scheme . '://' . $_SERVER['HTTP_HOST'];
-        try {
-            $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('base_site_url', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
-                ->execute([$current_domain, $current_domain]);
-        } catch (Exception $e) {}
+        static $base_url_done = false;
+        if (!$base_url_done) {
+            $base_url_done = true;
+            $flag_url_file = __DIR__ . '/../uploads/fb_base_site_url_' . md5($_SERVER['HTTP_HOST']) . '.done';
+            if (!file_exists($flag_url_file)) {
+                $is_ssl = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                    || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+                    || ($_SERVER['SERVER_PORT'] ?? 80) == 443;
+                $scheme = $is_ssl ? 'https' : 'http';
+                $current_domain = $scheme . '://' . $_SERVER['HTTP_HOST'];
+                try {
+                    $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('base_site_url', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
+                        ->execute([$current_domain, $current_domain]);
+                    @file_put_contents($flag_url_file, '1');
+                } catch (Exception $e) {}
+            }
+        }
     }
 
 function ensure_db_schema_ready($pdo) {
     static $already_checked = false;
     if ($already_checked) return;
 
-    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v5.done';
+    $flag_file = __DIR__ . '/../uploads/fb_schema_init_v19.done';
     if (file_exists($flag_file)) {
         $already_checked = true;
         return;
@@ -320,6 +353,28 @@ function ensure_db_schema_ready($pdo) {
             if ($col->rowCount() === 0) {
                 $pdo->exec("ALTER TABLE system_accounts ADD COLUMN drive_multi_api TINYINT(1) DEFAULT 0");
             }
+
+            // Migration: Add per-channel max limit columns & feature toggles for system_accounts
+            $channel_limit_cols = [
+                'max_fb_pages' => "INT DEFAULT 450",
+                'max_yt_channels' => "INT DEFAULT 10",
+                'max_tiktok_accounts' => "INT DEFAULT 10",
+                'max_buffer_channels' => "INT DEFAULT 10",
+                'max_instagram_accounts' => "INT DEFAULT 10",
+                'enable_live_chat' => "TINYINT(1) DEFAULT 1",
+                'enable_live_chat_oa' => "TINYINT(1) DEFAULT 1",
+                'enable_live_chat_tiktok' => "TINYINT(1) DEFAULT 1",
+                'enable_website' => "TINYINT(1) DEFAULT 1",
+                'enable_customers' => "TINYINT(1) DEFAULT 1",
+            ];
+            foreach ($channel_limit_cols as $cname => $ctype) {
+                try {
+                    $c_check = $pdo->query("SHOW COLUMNS FROM system_accounts LIKE '$cname'");
+                    if ($c_check->rowCount() === 0) {
+                        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN $cname $ctype");
+                    }
+                } catch (Exception $e) {}
+            }
             
             $col = $pdo->query("SHOW COLUMNS FROM youtube_channels LIKE 'gg_client_id'");
             if ($col->rowCount() === 0) {
@@ -410,14 +465,33 @@ function ensure_db_schema_ready($pdo) {
         };
         $add_idx($pdo, 'scheduled_posts', 'idx_camp_status', 'campaign_id, status');
         $add_idx($pdo, 'scheduled_posts', 'idx_acc_camp', 'account_id, campaign_id');
+        $add_idx($pdo, 'scheduled_posts', 'idx_single_camp_id', 'campaign_id');
+        $add_idx($pdo, 'scheduled_posts', 'idx_acc_status', 'account_id, status');
+        $add_idx($pdo, 'scheduled_posts', 'idx_page_status', 'page_id, status');
+        $add_idx($pdo, 'scheduled_posts', 'idx_acc_page_status', 'account_id, page_id, status');
+        $add_idx($pdo, 'scheduled_posts', 'idx_camp_sched_id', 'campaign_id, scheduled_time, id');
+        $add_idx($pdo, 'scheduled_posts', 'idx_camp_type_page', 'campaign_id, post_type, page_id');
+        $add_idx($pdo, 'pages', 'idx_user_id', 'user_id');
+        $add_idx($pdo, 'pages', 'idx_page_id', 'page_id');
+        $add_idx($pdo, 'users', 'idx_account_id', 'account_id');
         $add_idx($pdo, 'post_campaigns', 'idx_acc_created', 'account_id, created_at');
         $add_idx($pdo, 'youtube_channels', 'idx_yt_channel_id', 'channel_id');
+        $add_idx($pdo, 'page_shares', 'idx_ps_page_shared', 'page_id, shared_with_account_id');
+        $add_idx($pdo, 'page_shares', 'idx_ps_shared_page', 'shared_with_account_id, page_id');
+        $add_idx($pdo, 'buffer_channels', 'idx_buf_chan_id', 'channel_id');
+        $add_idx($pdo, 'instagram_accounts', 'idx_ig_user_id', 'ig_user_id');
+        $add_idx($pdo, 'page_notifications', 'idx_pn_page_created', 'page_id, created_at');
+        $add_idx($pdo, 'scheduled_posts', 'idx_insights_queue', 'status, comment_mode, comment_status, comment_done, updated_at');
+        $add_idx($pdo, 'fb_customers', 'idx_cust_phone_scan', 'page_id, sender_id, phone, phone_scanned_at');
 
         try {
             $pdo->exec("ALTER TABLE scheduled_posts ADD INDEX IF NOT EXISTS idx_cron_dispatch (status, scheduled_time, page_id)");
         } catch (Exception $e) {}
         try {
             $pdo->exec("ALTER TABLE scheduled_posts ADD INDEX IF NOT EXISTS idx_comment_queue (status, comment_at, comment_done)");
+        } catch (Exception $e) {}
+        try {
+            $pdo->exec("ALTER TABLE scheduled_posts ADD INDEX IF NOT EXISTS idx_insights_queue (status, comment_mode, comment_status, comment_done, updated_at)");
         } catch (Exception $e) {}
 
         try {
@@ -568,7 +642,8 @@ function ensure_db_schema_ready($pdo) {
             "ALTER TABLE users ADD COLUMN gg_client_secret VARCHAR(255) DEFAULT NULL",
             "ALTER TABLE users ADD COLUMN gg_refresh_token TEXT DEFAULT NULL",
             "ALTER TABLE system_accounts ADD COLUMN phone_request_limit INT DEFAULT 3",
-            "ALTER TABLE zalo_settings ADD COLUMN phone_request_limit INT DEFAULT 3"
+            "ALTER TABLE zalo_settings ADD COLUMN phone_request_limit INT DEFAULT 3",
+            "ALTER TABLE scheduled_posts ADD COLUMN is_read TINYINT(1) DEFAULT 0"
         ];
 
         foreach ($auto_req_migrations as $query) {
@@ -576,6 +651,52 @@ function ensure_db_schema_ready($pdo) {
                 $pdo->exec($query);
             } catch (PDOException $e) {}
         }
+
+        try {
+            // Re-evaluate consulted status 4: requires ALL 4 FIELDS (name, phone, province, notes)
+            $pdo->exec("UPDATE fb_customers SET consulted = 0 WHERE consulted = 4 AND (name IS NULL OR TRIM(name) = '' OR phone IS NULL OR TRIM(phone) = '' OR province IS NULL OR TRIM(province) = '' OR notes IS NULL OR TRIM(notes) = '')");
+            $pdo->exec("UPDATE zalo_customers SET consulted = 0 WHERE consulted = 4 AND (name IS NULL OR TRIM(name) = '' OR name = 'Khách hàng Zalo' OR phone IS NULL OR TRIM(phone) = '' OR province IS NULL OR TRIM(province) = '' OR notes IS NULL OR TRIM(notes) = '')");
+
+            $pdo->exec("UPDATE fb_customers SET consulted = 4 WHERE consulted = 0 AND name IS NOT NULL AND TRIM(name) != '' AND phone IS NOT NULL AND TRIM(phone) != '' AND province IS NOT NULL AND TRIM(province) != '' AND notes IS NOT NULL AND TRIM(notes) != ''");
+            $pdo->exec("UPDATE zalo_customers SET consulted = 4 WHERE consulted = 0 AND name IS NOT NULL AND TRIM(name) != '' AND name != 'Khách hàng Zalo' AND phone IS NOT NULL AND TRIM(phone) != '' AND province IS NOT NULL AND TRIM(province) != '' AND notes IS NOT NULL AND TRIM(notes) != ''");
+        } catch (Exception $e) {}
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS page_notifications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                page_id VARCHAR(255) NOT NULL,
+                type VARCHAR(50) DEFAULT 'message',
+                sender_id VARCHAR(255) DEFAULT NULL,
+                sender_name VARCHAR(255) DEFAULT NULL,
+                conversation_id VARCHAR(255) DEFAULT NULL,
+                post_id VARCHAR(255) DEFAULT NULL,
+                comment_id VARCHAR(255) DEFAULT NULL,
+                snippet TEXT DEFAULT NULL,
+                is_read TINYINT(1) DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_page (page_id),
+                INDEX idx_read (is_read),
+                INDEX idx_type (type),
+                INDEX idx_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS zalo_oas (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                oa_id VARCHAR(100) UNIQUE NOT NULL,
+                account_id INT NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                avatar VARCHAR(500) DEFAULT NULL,
+                access_token TEXT,
+                refresh_token TEXT,
+                expires_at INT DEFAULT 0,
+                refresh_expires_at INT DEFAULT 0,
+                is_active TINYINT(1) DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_acc (account_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
 
         $pdo->exec("
             CREATE TABLE IF NOT EXISTS zalo_file_messages (
@@ -701,6 +822,19 @@ function ensure_db_schema_ready($pdo) {
                 $pdo->exec("ALTER TABLE users ADD COLUMN proxy_id INT DEFAULT NULL");
             }
         } catch (Exception $e) {}
+
+        try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN enable_live_chat TINYINT(1) DEFAULT 1"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN enable_live_chat_oa TINYINT(1) DEFAULT 1"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN enable_live_chat_tiktok TINYINT(1) DEFAULT 1"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN enable_website TINYINT(1) DEFAULT 1"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN enable_customers TINYINT(1) DEFAULT 1"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_fb_pages INT DEFAULT 450"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_yt_channels INT DEFAULT 10"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_tiktok_accounts INT DEFAULT 10"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_buffer_channels INT DEFAULT 10"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_instagram_accounts INT DEFAULT 10"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN youtube_multi_api TINYINT DEFAULT 0"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE system_accounts ADD COLUMN drive_multi_api TINYINT DEFAULT 0"); } catch (Exception $e) {}
 
         @file_put_contents($flag_file, date('Y-m-d H:i:s'));
         $already_checked = true;
