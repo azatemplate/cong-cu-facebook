@@ -53,11 +53,9 @@ if (!file_exists($htaccess_file)) {
     @chmod($htaccess_file, 0644);
 }
 
-// ── CƠ CHẾ TỰ ĐỘNG DỌN DẸP AN TOÀN CHO BUFFER & MẠNG XÃ HỘI (Garbage Collector) ───────────────
-// 1. Thư mục /uploads/ (File hoàn chỉnh): Giữ 24 GIỜ (86,400 giây)
-//    Đảm bảo Buffer/Instagram/TikTok/Pinterest/YouTube có thừa thời gian tải và xử lý video.
-// 2. Thư mục /uploads_tmp/ (File tạm dở dang): Giữ 1 GIỜ (3600 giây).
-function cleanup_old_files($upload_dir, $temp_dir, $upload_max_age = 86400, $tmp_max_age = 3600) {
+// ── CƠ CHẾ TỰ ĐỘNG DỌN DẸP AN TOÀN (Garbage Collector) ─────────────────────────
+// Giữ tệp trong 5 PHÚT (300 giây) theo đúng yêu cầu của hệ thống
+function cleanup_old_files($upload_dir, $temp_dir, $upload_max_age = 300, $tmp_max_age = 300) {
     $now = time();
     $real_upload = realpath($upload_dir);
     $upload_dir  = $real_upload ? (rtrim($real_upload, '/') . '/') : (rtrim($upload_dir, '/') . '/');
@@ -117,11 +115,11 @@ function cleanup_old_files($upload_dir, $temp_dir, $upload_max_age = 86400, $tmp
     return $log;
 }
 
-// CHẠY DỌN DẸP TỰ ĐỘNG MỖI 30 PHÚT
+// CHẠY DỌN DẸP TỰ ĐỘNG MỖI 5 PHÚT
 $last_cleanup_file = $temp_dir . 'last_cleanup.txt';
-if ($action === 'cleanup' || !file_exists($last_cleanup_file) || (time() - @filemtime($last_cleanup_file)) > 1800) {
+if ($action === 'cleanup' || !file_exists($last_cleanup_file) || (time() - @filemtime($last_cleanup_file)) > 300) {
     @touch($last_cleanup_file);
-    $cleanup_log = cleanup_old_files($upload_dir, $temp_dir, 86400, 3600);
+    $cleanup_log = cleanup_old_files($upload_dir, $temp_dir, 300, 300);
     if ($action === 'cleanup') {
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(['status' => 'success', 'server_time' => date('Y-m-d H:i:s'), 'scanned_dir' => $upload_dir, 'details' => $cleanup_log]);
