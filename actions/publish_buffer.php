@@ -92,6 +92,26 @@ if (!function_exists('upload_file_to_hongdolab_cdn')) {
         
         $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
         $is_image = in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+
+        // --- LOCAL FAST-PATH FOR VPS: Copy trực tiếp không qua HTTP loopback ---
+        $local_cdn_dirs = [
+            '/www/wwwroot/data.hongdolab.com/uploads/',
+            dirname(dirname(__DIR__)) . '/data.hongdolab.com/uploads/',
+            dirname(__DIR__) . '/uploads/'
+        ];
+        foreach ($local_cdn_dirs as $lcd) {
+            if (is_dir($lcd) && is_writable($lcd)) {
+                $prefix = $is_image ? 'img_' : 'vid_';
+                $ext_clean = !empty($ext) ? $ext : ($is_image ? 'jpg' : 'mp4');
+                $stored_name = $prefix . date('Ymd_His') . '_' . bin2hex(random_bytes(6)) . '.' . $ext_clean;
+                $dest = $lcd . $stored_name;
+                if (@copy($file_path, $dest)) {
+                    @chmod($dest, 0777);
+                    return 'https://data.hongdolab.com/uploads/' . $stored_name;
+                }
+            }
+        }
+
         $upload_tmp_dir = dirname($file_path) . '/';
         if (!is_dir($upload_tmp_dir)) $upload_tmp_dir = __DIR__ . '/../uploads/';
         

@@ -138,16 +138,18 @@ function download_drive_file_temp($access_token, $file_id) {
     $ch = curl_init($meta_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
     $meta_response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_err = curl_error($ch);
     curl_close($ch);
 
     $meta = json_decode($meta_response, true);
     if (!isset($meta['name'])) {
-        $g_err = isset($meta['error']['message']) ? $meta['error']['message'] : ("HTTP " . $http_code);
+        $g_err = isset($meta['error']['message']) ? $meta['error']['message'] : (!empty($curl_err) ? $curl_err : ("HTTP " . $http_code));
         return ['error' => 'Không thể lấy thông tin file từ Google Drive (' . $g_err . '). Vui lòng kiểm tra lại liên kết Drive hoặc Token.'];
     }
 
@@ -193,7 +195,7 @@ function download_drive_file_temp($access_token, $file_id) {
     $temp_path_with_ext = $temp_path . '.' . $ext;
     rename($temp_path, $temp_path_with_ext);
 
-    $fp = fopen($temp_path_with_ext, 'w+');
+    $fp = @fopen($temp_path_with_ext, 'w+');
     if ($fp === false) {
         return ['error' => 'Không thể tạo file tạm trên Server.'];
     }
@@ -202,17 +204,20 @@ function download_drive_file_temp($access_token, $file_id) {
     curl_setopt($ch2, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
     curl_setopt($ch2, CURLOPT_FILE, $fp);
     curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch2, CURLOPT_CONNECTTIMEOUT, 20);
     curl_setopt($ch2, CURLOPT_TIMEOUT, 600);
     curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch2, CURLOPT_SSL_VERIFYHOST, false);
     $success = curl_exec($ch2);
     $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+    $curl_err2 = curl_error($ch2);
     curl_close($ch2);
-    fclose($fp);
+    @fclose($fp);
 
-    if (!$success || $http_code !== 200) {
+    if (!$success || $http_code !== 200 || @filesize($temp_path_with_ext) < 10) {
         @unlink($temp_path_with_ext);
-        return ['error' => 'Lỗi tải file từ Google Drive (HTTP ' . $http_code . ').'];
+        $err_msg = !empty($curl_err2) ? $curl_err2 : ('HTTP ' . $http_code);
+        return ['error' => 'Lỗi tải file từ Google Drive (' . $err_msg . ').'];
     }
 
     return [
