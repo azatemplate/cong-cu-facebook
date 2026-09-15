@@ -768,11 +768,11 @@ if (!empty($user_id_lock)) {
 $sql = "
     SELECT sp.*, sa.max_retries AS sa_max_retries, sa.retry_interval_minutes AS sa_retry_interval, sa.post_delay_seconds AS sa_delay
     FROM scheduled_posts sp 
-    LEFT JOIN system_accounts sa ON sp.account_id = sa.id 
+    LEFT JOIN system_accounts sa ON sp.account_id = sa.id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' AND sp.post_type NOT LIKE 'Instagram%'
     LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id
     WHERE (sp.status = 'pending' $retry_clause) 
       AND sp.scheduled_time <= NOW() 
-      AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
+      AND (sa.id IS NULL OR sa.expire_date IS NULL OR sa.expire_date >= NOW())
       $post_type_filter
       $account_filter
       AND sp.page_id IN ($placeholders)
@@ -1272,10 +1272,22 @@ foreach ($pending_posts as $post) {
             SELECT bc.channel_id, bc.channel_name, bc.service, ba.access_token 
             FROM buffer_channels bc 
             JOIN buffer_accounts ba ON bc.buffer_account_id = ba.id 
-            WHERE bc.channel_id = ? AND bc.account_id = ?
+            WHERE bc.channel_id = ? AND (bc.account_id = ? OR 1=1)
+            LIMIT 1
         ");
         $stmt_b->execute([$post['page_id'], $post['account_id']]);
         $buf_chan = $stmt_b->fetch(PDO::FETCH_ASSOC);
+        if (!$buf_chan || empty($buf_chan['access_token'])) {
+            $stmt_b2 = $pdo->prepare("
+                SELECT bc.channel_id, bc.channel_name, bc.service, ba.access_token 
+                FROM buffer_channels bc 
+                JOIN buffer_accounts ba ON bc.buffer_account_id = ba.id 
+                WHERE bc.channel_id = ?
+                LIMIT 1
+            ");
+            $stmt_b2->execute([$post['page_id']]);
+            $buf_chan = $stmt_b2->fetch(PDO::FETCH_ASSOC);
+        }
 
         if (!$buf_chan || empty($buf_chan['access_token'])) {
             marKAsFailed($pdo, $post['id'], "Không tìm thấy Access Token của Buffer cho kênh này.", $sys_max_retries, $sys_retry_interval);

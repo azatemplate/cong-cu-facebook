@@ -147,14 +147,14 @@ $sql = "
            COALESCE(p.user_id, u_ig.id) AS user_id, 
            bc.buffer_account_id
     FROM scheduled_posts sp
-    LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+    LEFT JOIN system_accounts sa ON sp.account_id = sa.id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' AND sp.post_type NOT LIKE 'Instagram%'
     LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Instagram%'
     LEFT JOIN instagram_accounts ig ON (sp.page_id = ig.ig_user_id OR sp.page_id = ig.id) AND sp.post_type LIKE 'Instagram%'
     LEFT JOIN users u_ig ON ig.account_id = u_ig.account_id
     LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id
     WHERE sp.scheduled_time <= NOW()
       AND sp.page_id IS NOT NULL
-      AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
+      AND (sa.id IS NULL OR sa.expire_date IS NULL OR sa.expire_date >= NOW())
       AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3))
       AND sp.status IN ('pending', 'failed')
 ";
