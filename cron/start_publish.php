@@ -173,15 +173,15 @@ if (empty($raw_pages)) {
     exit;
 }
 
-// ── Nhóm page theo user_id của FB, page_id của YouTube, account_id của TT, hoặc buffer_account_id của Buffer ──
+// ── Nhóm page theo user_id của FB, page_id của YouTube, account_id của TT, hoặc channel_id của Buffer ──
 $pages_by_user = [];
 foreach ($raw_pages as $row) {
     if ($row['post_type'] === 'YouTube') {
         $yt_chan_id = !empty($row['page_id']) ? $row['page_id'] : $row['account_id'];
         $uid = 'yt_chan_' . $yt_chan_id;
     } elseif (strpos($row['post_type'], 'Buffer') !== false) {
-        $buf_acc_id = !empty($row['buffer_account_id']) ? $row['buffer_account_id'] : $row['account_id'];
-        $uid = 'buf_acc_' . $buf_acc_id;
+        $buf_chan_id = !empty($row['page_id']) ? $row['page_id'] : $row['account_id'];
+        $uid = 'buf_chan_' . $buf_chan_id;
     } elseif ($row['post_type'] === 'TikTok') {
         $uid = 'tt_' . $row['account_id'];
     } elseif (strpos($row['post_type'], 'Instagram') !== false) {
