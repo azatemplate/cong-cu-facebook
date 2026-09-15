@@ -181,7 +181,8 @@ foreach ($raw_pages as $row) {
     $owner_id = !empty($row['account_id']) ? ('acc_' . $row['account_id']) : (!empty($row['user_id']) ? ('usr_' . $row['user_id']) : 'system');
 
     // Phân loại Channel Key
-    // Facebook & Instagram: Nhóm tất cả Fanpage thuộc cùng 1 Facebook Access Token vào 1 luồng duy nhất để đăng LẦN LƯỢT TUẦN TỰ từng Page với Delay cấu hình (chống bão API / Checkpoint)
+    // Facebook Fanpages & Instagram: Gộp TẤT CẢ Fanpage và Instagram thuộc cùng 1 Facebook Access Token User vào 1 luồng duy nhất. 
+    // Đảm bảo chỉ có DUY NHẤT 1 BÀI (dù là FB hay Instagram) được đăng tại 1 thời điểm, đăng xong nghỉ delay rồi mới sang bài tiếp theo.
     if ($row['post_type'] === 'YouTube') {
         $yt_chan_id = !empty($row['page_id']) ? $row['page_id'] : $row['account_id'];
         $chan_key = 'yt_chan_' . $yt_chan_id;
@@ -190,10 +191,8 @@ foreach ($raw_pages as $row) {
         $chan_key = 'buf_chan_' . $buf_chan_id;
     } elseif ($row['post_type'] === 'TikTok') {
         $chan_key = 'tt_' . $row['account_id'] . '_' . $row['page_id'];
-    } elseif (strpos($row['post_type'], 'Instagram') !== false) {
-        $ig_token_user = !empty($row['user_id']) ? $row['user_id'] : ('acc_' . $row['account_id']);
-        $chan_key = 'ig_token_' . $ig_token_user;
     } else {
+        // Cả Facebook Fanpages và Instagram đều gộp chung theo Token User
         $fb_token_user = !empty($row['user_id']) ? $row['user_id'] : ('acc_' . $row['account_id']);
         $chan_key = 'fb_token_' . $fb_token_user;
     }

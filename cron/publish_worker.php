@@ -811,8 +811,8 @@ if (!empty($user_id_lock)) {
             array_unshift($params, $actual_ig_user_id);
         }
     } else {
-        // Luồng Facebook: Chỉ lấy post_type KHÔNG PHẢI YouTube, Buffer, TikTok, Instagram
-        $post_type_filter = "AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' AND sp.post_type NOT LIKE 'Instagram%' ";
+        // Luồng Facebook Fanpages & Instagram: Gộp chung theo Access Token User (Chỉ bỏ qua YouTube, Buffer, TikTok)
+        $post_type_filter = "AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' ";
     }
 }
 
