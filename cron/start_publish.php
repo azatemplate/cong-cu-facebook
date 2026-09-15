@@ -173,40 +173,60 @@ if (empty($raw_pages)) {
     exit;
 }
 
-// ── Nhóm page theo user_id của FB, page_id của YouTube, account_id của TT, hoặc channel_id của Buffer ──
-$pages_by_user = [];
+// ── 1. Nhóm tất cả Kênh đang chờ theo Tài khoản User (Owner Account ID) ──
+$user_channels = [];
+
 foreach ($raw_pages as $row) {
+    // Phân loại User Account sở hữu (owner_id)
+    $owner_id = !empty($row['account_id']) ? ('acc_' . $row['account_id']) : (!empty($row['user_id']) ? ('usr_' . $row['user_id']) : 'system');
+
+    // Phân loại Channel Key (mỗi Kênh/Fanpage = 1 Worker độc lập)
     if ($row['post_type'] === 'YouTube') {
         $yt_chan_id = !empty($row['page_id']) ? $row['page_id'] : $row['account_id'];
-        $uid = 'yt_chan_' . $yt_chan_id;
+        $chan_key = 'yt_chan_' . $yt_chan_id;
     } elseif (strpos($row['post_type'], 'Buffer') !== false) {
         $buf_chan_id = !empty($row['page_id']) ? $row['page_id'] : $row['account_id'];
-        $uid = 'buf_chan_' . $buf_chan_id;
+        $chan_key = 'buf_chan_' . $buf_chan_id;
     } elseif ($row['post_type'] === 'TikTok') {
-        $uid = 'tt_' . $row['account_id'];
+        $chan_key = 'tt_' . $row['account_id'] . '_' . $row['page_id'];
     } elseif (strpos($row['post_type'], 'Instagram') !== false) {
-        $uid = 'ig_' . $row['page_id'];
+        $chan_key = 'ig_' . $row['page_id'];
     } else {
-        $uid = $row['user_id'] ?: ('noid_' . $row['page_id']);
+        $chan_key = 'fb_' . $row['page_id'];
     }
-    if (!isset($pages_by_user[$uid])) {
-        $pages_by_user[$uid] = [];
+
+    if (!isset($user_channels[$owner_id])) {
+        $user_channels[$owner_id] = [];
     }
-    $pages_by_user[$uid][] = $row['page_id'];
+    if (!isset($user_channels[$owner_id][$chan_key])) {
+        $user_channels[$owner_id][$chan_key] = $row['page_id'];
+    }
 }
 
-// Round-Robin chọn user_id để đảm bảo công bằng
-$selected_users = [];
-$keep_going = true;
-$user_keys = array_keys($pages_by_user);
+// ── 2. Thuật toán chia đều Throttling công bằng cho tất cả User (Equal Share Interleaving) ──
+// Lần lượt cấp 1 suất cho User 1, 1 suất cho User 2, 1 suất cho User 3... theo các vòng xoay
+$dispatch_list = [];
+$owner_keys = array_keys($user_channels);
+$owner_pointers = array_fill_keys($owner_keys, 0);
 
-while ($keep_going && count($selected_users) < $available_slots) {
-    $keep_going = false;
-    foreach ($user_keys as $uid) {
-        if (!in_array($uid, $selected_users)) {
-            $selected_users[] = $uid;
-            $keep_going = true;
-            if (count($selected_users) >= $available_slots) {
+$owner_chan_lists = [];
+foreach ($user_channels as $oid => $chans) {
+    $owner_chan_lists[$oid] = [];
+    foreach ($chans as $ckey => $pid) {
+        $owner_chan_lists[$oid][] = ['chan_key' => $ckey, 'page_id' => $pid, 'owner_id' => $oid];
+    }
+}
+
+$has_more = true;
+while ($has_more && count($dispatch_list) < $available_slots) {
+    $has_more = false;
+    foreach ($owner_keys as $oid) {
+        $ptr = $owner_pointers[$oid];
+        if (isset($owner_chan_lists[$oid][$ptr])) {
+            $dispatch_list[] = $owner_chan_lists[$oid][$ptr];
+            $owner_pointers[$oid]++;
+            $has_more = true;
+            if (count($dispatch_list) >= $available_slots) {
                 break 2;
             }
         }
@@ -214,32 +234,31 @@ while ($keep_going && count($selected_users) < $available_slots) {
 }
 
 $total_pages = count($raw_pages);
-$total_users = count($selected_users);
-echo "Co {$total_pages} Fanpage/Kênh tren {$total_users} Tai khoan/Token dang cho. Moi nhom = 1 Worker doc lap...\n";
+$total_active_users = count($user_channels);
+$total_dispatched = count($dispatch_list);
+echo "Phát hiện {$total_pages} Kênh chờ đăng thuộc {$total_active_users} Tài khoản User. Đang cấp luồng chia đều cho {$total_dispatched} Worker...\n";
 
 $is_web = isset($_SERVER['HTTP_HOST']);
 $disabled_funcs = array_map('trim', explode(',', strtolower(ini_get('disable_functions'))));
 $exec_enabled = function_exists('exec') && !in_array('exec', $disabled_funcs);
 
-foreach ($selected_users as $uid) {
-    $user_page_ids = $pages_by_user[$uid];
-    // Truyền danh sách page_ids cho worker, cách nhau bởi dấu phẩy
-    $page_ids_str = implode(',', $user_page_ids);
+foreach ($dispatch_list as $item) {
+    $chan_key = $item['chan_key'];
+    $page_ids_str = $item['page_id'];
+    $owner_id = $item['owner_id'];
 
-    // Kiểm tra và giải phóng lock cũ trước khi spawn worker
-    // Nếu lock > 15 phút → worker cũ đã crash hoặc account vừa được gia hạn
+    // Kiểm tra và giải phóng lock cũ (> 15 phút) cho kênh
     $lock_dir = dirname(__DIR__) . '/locks';
-    $lock_key = md5('uid_' . $uid);
+    $lock_key = md5('uid_' . $chan_key);
     $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
     if (file_exists($lock_file)) {
         $lock_age = time() - filemtime($lock_file);
-        if ($lock_age > 900) { // > 15 phút
+        if ($lock_age > 900) {
             @unlink($lock_file);
-            echo "  ⚠ Đã dọn lock cũ ($lock_age giây) cho user #$uid trước khi spawn worker.\n";
+            echo "  ⚠ Đã dọn lock cũ ($lock_age giây) cho kênh #$chan_key trước khi spawn worker.\n";
         }
     }
     
-    // Kích hoạt song song luồng CLI và Web-Async cURL để chống cản trở bởi open_basedir / aaPanel
     $dispatched = false;
     if ($exec_enabled) {
         if (!function_exists('get_php_cli_bin')) {
@@ -249,20 +268,20 @@ foreach ($selected_users as $uid) {
         $script_path = __DIR__ . DIRECTORY_SEPARATOR . 'publish_worker.php';
         
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-            @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$uid\"", "r"));
+            @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$chan_key\"", "r"));
         } else {
-            @exec("nohup \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$uid\" > /dev/null 2>&1 &");
+            @exec("nohup \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$chan_key\" > /dev/null 2>&1 &");
         }
         $dispatched = true;
     }
     
-    // Luôn kích hoạt Web-Async cURL tới run_worker.php để đảm bảo worker chắc chắn chạy ngầm 100%
+    // Kích hoạt Web-Async cURL tới run_worker.php
     if (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
         $doc_root = $_SERVER['DOCUMENT_ROOT'] ?? '';
         $root_web_path = rtrim(str_replace('\\', '/', str_replace($doc_root, '', dirname(__DIR__))), '/');
         
-        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . $root_web_path . "/run_worker.php?type=publish&page_id=" . urlencode($page_ids_str) . "&user_id=" . urlencode($uid);
+        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . $root_web_path . "/run_worker.php?type=publish&page_id=" . urlencode($page_ids_str) . "&user_id=" . urlencode($chan_key);
 
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -276,10 +295,10 @@ foreach ($selected_users as $uid) {
     }
 
     if ($dispatched) {
-        echo "  -> Da kích hoạt luong ngam cho nhom #$uid (" . count($user_page_ids) . " pages: $page_ids_str)\n";
+        echo "  -> [CHIA ĐỀU] Đã kích hoạt Worker cho {$owner_id} (Kênh: $chan_key | PageID: $page_ids_str)\n";
     } else {
-        echo "  -> THAT BAI: Khong the kích hoat luong cho nhom #$uid\n";
+        echo "  -> THẤT BẠI: Không thể kích hoạt luồng cho {$owner_id} ($chan_key)\n";
     }
 }
 
-echo "Da Dispatch hoan tat.\n";
+echo "Đã Dispatch hoàn tất.\n";
