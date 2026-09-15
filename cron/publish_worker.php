@@ -2947,6 +2947,22 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
     }
     $new_retry = $current_retry + 1;
 
+    // Kiểm tra Lỗi Vĩnh Viễn (Fatal Error) - Đánh dấu thất bại luôn, KHÔNG thử lại để tránh nặng server
+    $is_fatal_error = (stripos($msg, 'Thiếu Token') !== false) ||
+                     (stripos($msg, 'Không tìm thấy token') !== false) ||
+                     (stripos($msg, 'Thiếu cấu hình') !== false) ||
+                     (stripos($msg, 'Không tìm thấy refresh_token') !== false) ||
+                     (stripos($msg, 'Không tìm thấy Access Token') !== false) ||
+                     (stripos($msg, 'Không thấy file') !== false) ||
+                     (stripos($msg, 'Không tìm thấy tài khoản') !== false) ||
+                     (stripos($msg, 'không hỗ trợ') !== false) ||
+                     (stripos($msg, 'không hợp lệ') !== false) ||
+                     (stripos($msg, 'Quota') !== false);
+
+    if ($is_fatal_error) {
+        $new_retry = $max_retries + 1; // Nhảy thẳng qua max_retries để hủy thử lại ngay lập tức
+    }
+
     echo " -> Lỗi: $msg (Lần thử: $new_retry/$max_retries)\n";
 
     // Build dynamic UPDATE based on available columns
@@ -2974,8 +2990,14 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
             } catch (Exception $e) {}
             // -----------------------------------------------------
             
+            // Tính toán khoảng thời gian giãn cách theo thuật toán Exponential Backoff (15p -> 45p -> 135p)
+            // Thay vì thử lại dồn dập 1 phút/lần gây quá tải server
+            $base_interval = max(1, (int)$retry_interval);
+            $backoff_multiplier = (int)pow(3, $new_retry - 1);
+            $actual_delay_minutes = max(15, $base_interval * $backoff_multiplier * 5);
+
             $pdo->prepare("UPDATE scheduled_posts SET status='failed', error_msg=?, retry_count=?, scheduled_time=DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id=?")
-                ->execute([$msg, $new_retry, $retry_interval, $id]);
+                ->execute([$msg, $new_retry, $actual_delay_minutes, $id]);
         } else {
             $pdo->prepare("UPDATE scheduled_posts SET status='failed', error_msg=?, retry_count=? WHERE id=?")
                 ->execute([$msg, $new_retry, $id]);
