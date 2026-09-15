@@ -46,19 +46,22 @@ function get_tiktok_client_config() {
     global $pdo;
     $client_key = '';
     $client_secret = '';
+    $scopes = '';
 
     // ALWAYS fetch global Admin config from system_settings ONLY
     try {
-        $stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('tiktok_client_key', 'tiktok_client_secret')");
+        $stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('tiktok_client_key', 'tiktok_client_secret', 'tiktok_scopes')");
         while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
             if ($r['setting_key'] === 'tiktok_client_key' && !empty($r['setting_value'])) $client_key = trim($r['setting_value']);
             if ($r['setting_key'] === 'tiktok_client_secret' && !empty($r['setting_value'])) $client_secret = trim($r['setting_value']);
+            if ($r['setting_key'] === 'tiktok_scopes' && !empty($r['setting_value'])) $scopes = trim($r['setting_value']);
         }
     } catch (Exception $e) {}
 
     return [
         'client_key' => $client_key,
-        'client_secret' => $client_secret
+        'client_secret' => $client_secret,
+        'scopes' => $scopes
     ];
 }
 
@@ -72,7 +75,7 @@ function get_tiktok_auth_url($redirect_uri, $state = '') {
         return '';
     }
 
-    $scopes = 'user.info.basic,user.info.profile,user.info.stats,video.list,video.publish,video.upload';
+    $scopes = !empty($cfg['scopes']) ? $cfg['scopes'] : 'user.info.basic,video.publish,video.upload,video.list';
     
     $params = [
         'client_key' => $client_key,
