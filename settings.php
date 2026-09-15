@@ -142,6 +142,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $account['max_retries'] = $max_retries;
     }
 
+    if (isset($_POST['reset_all_users_retries']) && $_SESSION['role'] === 'admin') {
+        $affected = $pdo->exec("UPDATE system_accounts SET max_retries = 1");
+        $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('max_retries', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
+        $alert_type = 'success';
+        $alert_message = "Đã cập nhật tất cả {$affected} tài khoản người dùng về Số lần thử lại = 1 thành công!";
+        $account['max_retries'] = 1;
+        $max_retries = 1;
+    }
+
     if (isset($_POST['update_telegram'])) {
         $tg_token = trim($_POST['telegram_bot_token'] ?? '');
         $tg_chat_id = trim($_POST['telegram_chat_id'] ?? '');
@@ -456,6 +465,12 @@ if (isset($_SESSION['flash_msg'])) {
             </div>
             <button type="submit" name="update_retry_settings" class="btn btn-primary">Lưu Tùy Chỉnh</button>
         </form>
+        <?php if ($is_admin): ?>
+            <form method="POST" action="settings.php" style="margin-top: 15px; border-top: 1px dashed var(--border-color); padding-top: 15px;">
+                <?php echo csrf_field(); ?>
+                <button type="submit" name="reset_all_users_retries" class="btn btn-warning" onclick="return confirm('Bạn có chắc chắn muốn chuyển Số lần thử lại về 1 cho TẤT CẢ người dùng trong hệ thống?');" style="width: 100%; background: #f59e0b; border-color: #d97706; color: #fff; font-weight: 500;">⚡ Đưa toàn bộ tài khoản người dùng về 1 lần thử lại</button>
+            </form>
+        <?php endif; ?>
     </div>
 
     <?php if ($is_admin): ?>
