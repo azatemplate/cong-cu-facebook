@@ -307,17 +307,35 @@ try {
 }
 
 // ── Trigger Background Worker ──────────────────────────────────────────────
-if (!function_exists('get_php_cli_bin')) {
-    @include_once __DIR__ . '/../includes/php_cli.php';
-}
-$php_bin = function_exists('get_php_cli_bin') ? get_php_cli_bin() : 'php';
-$script_path = __DIR__ . '/../cron/start_publish.php';
+try {
+    if (!function_exists('get_php_cli_bin')) {
+        @include_once __DIR__ . '/../includes/php_cli.php';
+    }
+    $php_bin = function_exists('get_php_cli_bin') ? get_php_cli_bin() : 'php';
+    $script_path = __DIR__ . '/../cron/start_publish.php';
 
-if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-    @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_path\" > NUL 2>&1", "r"));
-} else {
-    @exec("nohup \"$php_bin\" \"$script_path\" > /dev/null 2>&1 &");
-}
+    if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+        @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_path\" > NUL 2>&1", "r"));
+    } else {
+        @exec("nohup \"$php_bin\" \"$script_path\" > /dev/null 2>&1 &");
+    }
+
+    // Web cURL Async Trigger Fallback (Kích hoạt tức thì nếu CLI exec bị chặn bởi php.ini)
+    if (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
+        $trigger_url = $protocol . "://" . $_SERVER['HTTP_HOST'] . "/trigger_publish.php";
+        $ch = curl_init($trigger_url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT_MS => 300,
+            CURLOPT_NOSIGNAL => 1,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false
+        ]);
+        @curl_exec($ch);
+        @curl_close($ch);
+    }
+} catch (Exception $e) {}
 
 echo json_encode([
     'status' => 'success',
