@@ -180,7 +180,8 @@ foreach ($raw_pages as $row) {
     // Phân loại User Account sở hữu (owner_id)
     $owner_id = !empty($row['account_id']) ? ('acc_' . $row['account_id']) : (!empty($row['user_id']) ? ('usr_' . $row['user_id']) : 'system');
 
-    // Phân loại Channel Key (mỗi Kênh/Fanpage = 1 Worker độc lập)
+    // Phân loại Channel Key
+    // Facebook & Instagram: Nhóm tất cả Fanpage thuộc cùng 1 Facebook Access Token vào 1 luồng duy nhất để đăng LẦN LƯỢT TUẦN TỰ từng Page với Delay cấu hình (chống bão API / Checkpoint)
     if ($row['post_type'] === 'YouTube') {
         $yt_chan_id = !empty($row['page_id']) ? $row['page_id'] : $row['account_id'];
         $chan_key = 'yt_chan_' . $yt_chan_id;
@@ -190,16 +191,21 @@ foreach ($raw_pages as $row) {
     } elseif ($row['post_type'] === 'TikTok') {
         $chan_key = 'tt_' . $row['account_id'] . '_' . $row['page_id'];
     } elseif (strpos($row['post_type'], 'Instagram') !== false) {
-        $chan_key = 'ig_' . $row['page_id'];
+        $ig_token_user = !empty($row['user_id']) ? $row['user_id'] : ('acc_' . $row['account_id']);
+        $chan_key = 'ig_token_' . $ig_token_user;
     } else {
-        $chan_key = 'fb_' . $row['page_id'];
+        $fb_token_user = !empty($row['user_id']) ? $row['user_id'] : ('acc_' . $row['account_id']);
+        $chan_key = 'fb_token_' . $fb_token_user;
     }
 
     if (!isset($user_channels[$owner_id])) {
         $user_channels[$owner_id] = [];
     }
     if (!isset($user_channels[$owner_id][$chan_key])) {
-        $user_channels[$owner_id][$chan_key] = $row['page_id'];
+        $user_channels[$owner_id][$chan_key] = [];
+    }
+    if (!in_array($row['page_id'], $user_channels[$owner_id][$chan_key])) {
+        $user_channels[$owner_id][$chan_key][] = $row['page_id'];
     }
 }
 
@@ -212,8 +218,9 @@ $owner_pointers = array_fill_keys($owner_keys, 0);
 $owner_chan_lists = [];
 foreach ($user_channels as $oid => $chans) {
     $owner_chan_lists[$oid] = [];
-    foreach ($chans as $ckey => $pid) {
-        $owner_chan_lists[$oid][] = ['chan_key' => $ckey, 'page_id' => $pid, 'owner_id' => $oid];
+    foreach ($chans as $ckey => $pids) {
+        $page_ids_str = is_array($pids) ? implode(',', $pids) : $pids;
+        $owner_chan_lists[$oid][] = ['chan_key' => $ckey, 'page_id' => $page_ids_str, 'owner_id' => $oid];
     }
 }
 

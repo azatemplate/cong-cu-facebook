@@ -799,6 +799,9 @@ if (!empty($user_id_lock)) {
             $account_filter = "AND sp.account_id = ? ";
             array_unshift($params, (int)$actual_account_id);
         }
+    } elseif (strpos($user_id_lock, 'ig_token_') === 0) {
+        // Luồng Instagram nhóm theo Access Token User (đăng tuần tự từng IG Account)
+        $post_type_filter = "AND sp.post_type LIKE 'Instagram%' ";
     } elseif (strpos($user_id_lock, 'ig_') === 0) {
         // Luồng Instagram: Chỉ lấy post_type LIKE 'Instagram%' và page_id cụ thể
         $post_type_filter = "AND sp.post_type LIKE 'Instagram%' ";
