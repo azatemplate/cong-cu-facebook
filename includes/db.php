@@ -31,11 +31,8 @@ while ($attempt < $max_attempts) {
         if ($attempt >= $max_attempts) {
             $err_msg = date('[Y-m-d H:i:s] ') . 'DB Connection Error (' . $target_host . '): ' . $e->getMessage() . "\n";
             @file_put_contents(__DIR__ . '/../uploads/app_error.log', $err_msg, FILE_APPEND | LOCK_EX);
-            if (defined('APP_ENV') && APP_ENV === 'development') {
-                die("Lỗi kết nối CSDL: " . $e->getMessage());
-            } else {
-                die("Hệ thống tạm thời gặp sự cố. Vui lòng thử lại sau hoặc liên hệ Admin.");
-            }
+            $err_str = $e->getMessage();
+            die("Hệ thống tạm thời gặp sự cố kết nối CSDL ($err_str). Vui lòng kiểm tra lại dịch vụ MySQL trên VPS hoặc liên hệ Admin.");
         }
         usleep(300000); // Thử lại sau 300ms (cho tổng thời gian thử 1.5s để ngơi kết nối khi MySQL khởi động lại/nghẽn)
     }
@@ -854,11 +851,8 @@ ensure_db_schema_ready($pdo);
 } catch (PDOException $e) {
     $err_msg = date('[Y-m-d H:i:s] ') . 'DB Connection Error: ' . $e->getMessage() . "\n";
     @file_put_contents(__DIR__ . '/../uploads/app_error.log', $err_msg, FILE_APPEND | LOCK_EX);
-    if (defined('APP_ENV') && APP_ENV === 'development') {
-        die("Lỗi kết nối CSDL: " . $e->getMessage());
-    } else {
-        die("Hệ thống tạm thời gặp sự cố. Vui lòng thử lại sau hoặc liên hệ Admin.");
-    }
+    $err_str = $e->getMessage();
+    die("Hệ thống tạm thời gặp sự cố kết nối CSDL ($err_str). Vui lòng kiểm tra lại dịch vụ MySQL trên VPS hoặc liên hệ Admin.");
 }
 
 
