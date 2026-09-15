@@ -775,6 +775,14 @@ if (!empty($user_id_lock)) {
             $account_filter = "AND sp.account_id = ? ";
             array_unshift($params, (int)$actual_account_id);
         }
+    } elseif (strpos($user_id_lock, 'buf_chan_') === 0) {
+        // Luồng Buffer theo từng Kênh Buffer
+        $post_type_filter = "AND sp.post_type LIKE 'Buffer%' ";
+        $buf_chan_id = substr($user_id_lock, 9);
+        if (!empty($buf_chan_id)) {
+            $account_filter = "AND sp.page_id = ? ";
+            array_unshift($params, $buf_chan_id);
+        }
     } elseif (strpos($user_id_lock, 'buf_acc_') === 0) {
         // Luồng Buffer theo Buffer Token Account ID cụ thể (Mỗi Token Buffer = 1 Slot độc lập)
         $post_type_filter = "AND sp.post_type LIKE 'Buffer%' ";
@@ -786,19 +794,9 @@ if (!empty($user_id_lock)) {
     } elseif (strpos($user_id_lock, 'buf_') === 0) {
         // Luồng Buffer tương thích ngược
         $post_type_filter = "AND sp.post_type LIKE 'Buffer%' ";
-        $actual_account_id = substr($user_id_lock, 4);
-        if (is_numeric($actual_account_id)) {
-            $account_filter = "AND sp.account_id = ? ";
-            array_unshift($params, (int)$actual_account_id);
-        }
     } elseif (strpos($user_id_lock, 'tt_') === 0) {
-        // Luồng TikTok: Chỉ lấy post_type = TikTok và account_id cụ thể
+        // Luồng TikTok: Chỉ lấy post_type = TikTok
         $post_type_filter = "AND sp.post_type = 'TikTok' ";
-        $actual_account_id = substr($user_id_lock, 3);
-        if (is_numeric($actual_account_id)) {
-            $account_filter = "AND sp.account_id = ? ";
-            array_unshift($params, (int)$actual_account_id);
-        }
     } elseif (strpos($user_id_lock, 'ig_token_') === 0) {
         // Luồng Instagram nhóm theo Access Token User (đăng tuần tự từng IG Account)
         $post_type_filter = "AND sp.post_type LIKE 'Instagram%' ";
