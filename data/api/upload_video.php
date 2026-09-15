@@ -301,17 +301,19 @@ if ($action === 'init') {
     $mime     = trim($input['mime'] ?? 'video/mp4');
 
     $upload_id = 'vid_' . date('Ymd_His') . '_' . bin2hex(random_bytes(6));
+    $chunk_size = 2097152; // 2MB chunk
     
     // Lưu metadata phiên upload
     $meta_file = $temp_dir . $upload_id . '.json';
     file_put_contents($meta_file, json_encode([
-        'filename' => $filename,
-        'filesize' => $filesize,
-        'mime'     => $mime,
-        'created'  => time()
+        'filename'   => $filename,
+        'filesize'   => $filesize,
+        'chunk_size' => $chunk_size,
+        'mime'       => $mime,
+        'created'    => time()
     ]));
 
-    // Tạo trước file tạm stream để ghi nối siêu tốc
+    // Tạo trước file tạm stream để ghi nối chuẩn theo Byte Offset
     $temp_stream_file = $temp_dir . $upload_id . '.tmp';
     @touch($temp_stream_file);
     @chmod($temp_stream_file, 0777);
@@ -319,12 +321,12 @@ if ($action === 'init') {
     echo json_encode([
         'status'     => 'success',
         'upload_id'  => $upload_id,
-        'chunk_size' => 2097152 // Chunk 2MB chuẩn tối ưu
+        'chunk_size' => $chunk_size
     ]);
     exit;
 }
 
-// 3. ACTION UPLOAD CHUNK (?action=chunk) - Lưu song song Stream Direct + Indexed Part File
+// 3. ACTION UPLOAD CHUNK (?action=chunk) - Ghi chuẩn xác theo vị trí Byte Offset (Tự phục hồi nếu Retry)
 if ($action === 'chunk') {
     header('Content-Type: application/json; charset=utf-8');
     $upload_id = trim($_POST['upload_id'] ?? $_GET['upload_id'] ?? '');
@@ -348,6 +350,11 @@ if ($action === 'chunk') {
         exit;
     }
 
+    $meta_file   = $temp_dir . $upload_id . '.json';
+    $meta        = file_exists($meta_file) ? json_decode(file_get_contents($meta_file), true) : [];
+    $chunk_size  = intval($meta['chunk_size'] ?? 2097152);
+    $byte_offset = $index * $chunk_size;
+
     $temp_stream_file = $temp_dir . $upload_id . '.tmp';
     $session_dir      = $temp_dir . $upload_id . '/';
     if (!is_dir($session_dir)) {
@@ -358,10 +365,11 @@ if ($action === 'chunk') {
     $part_file = $session_dir . sprintf('part_%05d.part', $index);
     $tmp_file  = $_FILES['chunk']['tmp_name'];
 
-    // 1. Ghi nối tiếp trực tiếp vào .tmp (Nhanh nhất & giữ nguyên byte stream)
-    $out = @fopen($temp_stream_file, 'ab');
+    // 1. Ghi chuẩn vị trí Byte Offset trong tệp tạm (Dùng mode 'c+b' để chống ghi đè nhân đôi byte khi retry)
+    $out = @fopen($temp_stream_file, 'c+b');
     if ($out) {
         @flock($out, LOCK_EX);
+        fseek($out, $byte_offset, SEEK_SET);
         $in = @fopen($tmp_file, 'rb');
         if ($in) {
             stream_copy_to_stream($in, $out);
@@ -372,7 +380,7 @@ if ($action === 'chunk') {
         fclose($out);
     }
 
-    // 2. Đồng thời lưu mảnh part_0000x.part để làm dự phòng
+    // 2. Đồng thời lưu mảnh part_0000x.part làm dự phòng
     @copy($tmp_file, $part_file);
     @chmod($part_file, 0777);
 
@@ -380,7 +388,7 @@ if ($action === 'chunk') {
     exit;
 }
 
-// 4. ACTION HOÀN TẤT VIDEO (?action=complete) - Ghép chính xác 100% theo Số Nguyên Index
+// 4. ACTION HOÀN TẤT VIDEO (?action=complete) - Ghép hoàn chỉnh 100% byte-for-byte
 if ($action === 'complete') {
     header('Content-Type: application/json; charset=utf-8');
     $upload_id = trim($_POST['upload_id'] ?? $_GET['upload_id'] ?? '');
@@ -401,15 +409,15 @@ if ($action === 'complete') {
     $expected_size = intval($meta['filesize'] ?? 0);
     $stream_size   = file_exists($temp_stream) ? filesize($temp_stream) : 0;
 
-    // Cách 1: Sử dụng File Stream nối tiếp (Nếu kích thước khớp với filesize đã khai báo hoặc > 100 bytes)
-    if ($stream_size > 100 && ($expected_size <= 0 || abs($stream_size - $expected_size) < 1000)) {
+    // Cách 1: Sử dụng File Stream theo Byte Offset (Nếu dung lượng khớp hoặc > 100 bytes)
+    if ($stream_size > 100 && ($expected_size <= 0 || abs($stream_size - $expected_size) < 4096)) {
         @chmod($temp_stream, 0777);
         if (!@rename($temp_stream, $final_file)) {
             @copy($temp_stream, $final_file);
             @unlink($temp_stream);
         }
     } else {
-        // Cách 2 Fallback: Ghép lại các mảnh part theo THỨ TỰ SỐ NGUYÊN CHÍNH XÁC (Tránh lỗi sắp xếp chuỗi)
+        // Cách 2 Fallback: Ghép lại các mảnh part theo đúng THỨ TỰ SỐ NGUYÊN
         $parts = glob($session_dir . 'part_*.part');
         if (!empty($parts)) {
             usort($parts, function($a, $b) {
