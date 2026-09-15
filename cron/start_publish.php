@@ -254,7 +254,10 @@ foreach ($selected_users as $uid) {
             @exec("nohup \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$uid\" > /dev/null 2>&1 &");
         }
         $dispatched = true;
-    } elseif (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
+    }
+    
+    // Luôn kích hoạt Web-Async cURL tới run_worker.php để đảm bảo worker chắc chắn chạy ngầm 100%
+    if (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
         $doc_root = $_SERVER['DOCUMENT_ROOT'] ?? '';
         $root_web_path = rtrim(str_replace('\\', '/', str_replace($doc_root, '', dirname(__DIR__))), '/');
