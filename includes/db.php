@@ -2,15 +2,23 @@
 // includes/db.php
 require_once __DIR__ . '/config.php';
 
-$max_attempts = 3;
+$max_attempts = 5;
 $attempt = 0;
 $pdo = null;
 
+$hosts_to_try = [DB_HOST];
+if (DB_HOST === 'localhost') {
+    $hosts_to_try[] = '127.0.0.1';
+} elseif (DB_HOST === '127.0.0.1') {
+    $hosts_to_try[] = 'localhost';
+}
+
 while ($attempt < $max_attempts) {
+    $attempt++;
+    $target_host = $hosts_to_try[($attempt - 1) % count($hosts_to_try)];
     try {
-        $attempt++;
         $pdo = new PDO(
-            "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET,
+            "mysql:host=" . $target_host . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET,
             DB_USER,
             DB_PASS,
             [
@@ -21,7 +29,7 @@ while ($attempt < $max_attempts) {
         break;
     } catch (PDOException $e) {
         if ($attempt >= $max_attempts) {
-            $err_msg = date('[Y-m-d H:i:s] ') . 'DB Connection Error: ' . $e->getMessage() . "\n";
+            $err_msg = date('[Y-m-d H:i:s] ') . 'DB Connection Error (' . $target_host . '): ' . $e->getMessage() . "\n";
             @file_put_contents(__DIR__ . '/../uploads/app_error.log', $err_msg, FILE_APPEND | LOCK_EX);
             if (defined('APP_ENV') && APP_ENV === 'development') {
                 die("Lỗi kết nối CSDL: " . $e->getMessage());
@@ -29,7 +37,7 @@ while ($attempt < $max_attempts) {
                 die("Hệ thống tạm thời gặp sự cố. Vui lòng thử lại sau hoặc liên hệ Admin.");
             }
         }
-        usleep(150000); // Thử lại sau 150ms nếu kết nối bị nghẽn tạm thời
+        usleep(300000); // Thử lại sau 300ms (cho tổng thời gian thử 1.5s để ngơi kết nối khi MySQL khởi động lại/nghẽn)
     }
 }
 
