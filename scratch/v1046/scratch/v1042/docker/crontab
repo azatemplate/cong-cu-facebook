@@ -1,0 +1,3 @@
+* * * * * www-data /usr/local/bin/php /var/www/html/cron/start_publish.php >> /var/log/cron_publish.log 2>&1
+* * * * * www-data /usr/local/bin/php /var/www/html/cron/start_comment.php >> /var/log/cron_comment.log 2>&1
+# Dòng trống rỗng cuối cùng là bắt buộc cho file cấu hình crontab

@@ -1,0 +1,10 @@
+TikTok Pro Tools — Watermark Pro
+
+This extension contains proprietary image watermark-removal technology.
+Copyright and commercial-use terms are defined in LICENSE.
+
+Except where a separate written license or applicable law permits it, you may
+not copy, extract, resell, redistribute, publish, train a competing product
+from, or reverse engineer the protected image-watermark implementation.
+
+This notice is a human/legal rights notice. It is not a security control.

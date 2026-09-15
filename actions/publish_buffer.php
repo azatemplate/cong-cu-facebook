@@ -90,60 +90,118 @@ if (!function_exists('upload_file_to_hongdolab_cdn')) {
         if (!file_exists($file_path) || filesize($file_path) < 10) return false;
         @set_time_limit(0);
         
-        $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION)) ?: 'mp4';
+        $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
         $is_image = in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
-        $filename = basename($file_path);
-        $filesize = filesize($file_path);
-
-        // 1. SIÊU TỐC THỜI GIAN THỰC (0.001s): Nếu thư mục uploads của data.hongdolab.com có sẵn trên máy chủ
-        $possible_dirs = [
-            '/www/wwwroot/data.hongdolab.com/uploads/',
-            __DIR__ . '/../data.hongdolab.com/uploads/',
-            dirname(__DIR__) . '/uploads/'
-        ];
-
-        $doc_root = !empty($_SERVER['DOCUMENT_ROOT']) ? rtrim(str_replace('\\', '/', $_SERVER['DOCUMENT_ROOT']), '/') : '';
-        if ($doc_root) {
-            $possible_dirs[] = dirname($doc_root) . '/data.hongdolab.com/uploads/';
-        }
-
-        foreach ($possible_dirs as $target_cdn_dir) {
-            if (is_dir($target_cdn_dir) && is_writable($target_cdn_dir)) {
-                $prefix = $is_image ? 'img_' : 'vid_';
-                $stored_name = $prefix . date('Ymd_His') . '_' . bin2hex(random_bytes(6)) . '.' . $ext;
-                $final_target = $target_cdn_dir . $stored_name;
-                if (@copy($file_path, $final_target) || @move_uploaded_file($file_path, $final_target)) {
-                    @chmod($final_target, 0777);
-                    clearstatcache(true, $final_target);
-                    if (file_exists($final_target) && filesize($final_target) == $filesize) {
-                        return 'https://data.hongdolab.com/uploads/' . $stored_name;
-                    }
+        $upload_tmp_dir = dirname($file_path) . '/';
+        if (!is_dir($upload_tmp_dir)) $upload_tmp_dir = __DIR__ . '/../uploads/';
+        
+        if ($is_image) {
+            $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=image');
+            $mime = function_exists('mime_content_type') ? mime_content_type($file_path) : 'image/jpeg';
+            $cfile = new CURLFile($file_path, $mime, basename($file_path));
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => ['image' => $cfile],
+                CURLOPT_TIMEOUT => 60,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0
+            ]);
+            $res = curl_exec($ch);
+            curl_close($ch);
+            if ($res) {
+                $json = json_decode($res, true);
+                if (!empty($json['url'])) {
+                    return $json['url'];
                 }
             }
-        }
-
-        // 2. NẾU QUA HTTP API: Dùng Single-Request POST (action=video / action=image) - Không phân mảnh chunk gây lỗi
-        $action_type = $is_image ? 'image' : 'video';
-        $field_name  = $is_image ? 'image' : 'video';
-        $mime        = function_exists('mime_content_type') ? mime_content_type($file_path) : ($is_image ? ('image/' . $ext) : ('video/' . $ext));
-
-        $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=' . $action_type);
-        $cfile = new CURLFile($file_path, $mime, $filename);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => [$field_name => $cfile],
-            CURLOPT_TIMEOUT => 600,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => 0
-        ]);
-        $res = curl_exec($ch);
-        curl_close($ch);
-
-        if ($res) {
-            $json = json_decode($res, true);
-            if (!empty($json['url'])) {
-                return $json['url'];
+        } else {
+            $filename = basename($file_path);
+            $filesize = filesize($file_path);
+            $mime = function_exists('mime_content_type') ? mime_content_type($file_path) : 'video/mp4';
+            
+            $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=init');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                CURLOPT_POSTFIELDS => json_encode(['filename' => $filename, 'filesize' => $filesize, 'mime' => $mime]),
+                CURLOPT_TIMEOUT => 60,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0
+            ]);
+            $res = curl_exec($ch);
+            curl_close($ch);
+            $init_json = $res ? json_decode($res, true) : null;
+            
+            if (!empty($init_json['upload_id'])) {
+                $upload_id = $init_json['upload_id'];
+                $chunk_size = !empty($init_json['chunk_size']) ? (int)$init_json['chunk_size'] : (4 * 1024 * 1024);
+                
+                $fp = @fopen($file_path, 'rb');
+                if ($fp) {
+                    $index = 0;
+                    $ok = true;
+                    while (!feof($fp)) {
+                        $chunk_data = fread($fp, $chunk_size);
+                        if ($chunk_data === false || strlen($chunk_data) === 0) break;
+                        
+                        $tmp_chunk = tempnam($upload_tmp_dir, 'buf_chk_' . getmypid() . '_');
+                        file_put_contents($tmp_chunk, $chunk_data);
+                        
+                        $chunk_success = false;
+                        for ($retry = 0; $retry < 3 && !$chunk_success; $retry++) {
+                            $cfile = new CURLFile($tmp_chunk, 'application/octet-stream', $filename . '.part' . $index);
+                            $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=chunk');
+                            curl_setopt_array($ch, [
+                                CURLOPT_RETURNTRANSFER => true,
+                                CURLOPT_POST => true,
+                                CURLOPT_POSTFIELDS => [
+                                    'upload_id' => $upload_id,
+                                    'index' => (string)$index,
+                                    'chunk' => $cfile
+                                ],
+                                CURLOPT_TIMEOUT => 180,
+                                CURLOPT_SSL_VERIFYPEER => false,
+                                CURLOPT_SSL_VERIFYHOST => 0
+                            ]);
+                            $c_res = curl_exec($ch);
+                            curl_close($ch);
+                            $c_json = $c_res ? json_decode($c_res, true) : null;
+                            if ($c_res && isset($c_json['ok']) && $c_json['ok']) {
+                                $chunk_success = true;
+                            } else {
+                                usleep(300000);
+                            }
+                        }
+                        @unlink($tmp_chunk);
+                        
+                        if (!$chunk_success) {
+                            $ok = false;
+                            break;
+                        }
+                        $index++;
+                    }
+                    fclose($fp);
+                    
+                    if ($ok) {
+                        $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=complete');
+                        curl_setopt_array($ch, [
+                            CURLOPT_RETURNTRANSFER => true,
+                            CURLOPT_POST => true,
+                            CURLOPT_POSTFIELDS => ['upload_id' => $upload_id],
+                            CURLOPT_TIMEOUT => 300,
+                            CURLOPT_SSL_VERIFYPEER => false,
+                            CURLOPT_SSL_VERIFYHOST => 0
+                        ]);
+                        $comp_res = curl_exec($ch);
+                        curl_close($ch);
+                        $comp_json = $comp_res ? json_decode($comp_res, true) : null;
+                        if (!empty($comp_json['url'])) {
+                            return $comp_json['url'];
+                        }
+                    }
+                }
             }
         }
         return false;
