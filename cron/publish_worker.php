@@ -451,7 +451,7 @@ echo "Bat dau quet bai viet len lich luc: " . date('Y-m-d H:i:s') . "\n";
 // If a previous worker run crashed, posts stay at 'processing' forever.
 // We reset them so they can be retried.
 try {
-    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE)");
+    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
     if ($stuck > 0)
         echo "  [RESET] Reset $stuck bài bị kẹt ở trạng thái 'processing' về 'pending'.\n";
 } catch (Exception $e) {
@@ -2714,6 +2714,9 @@ foreach ($pending_posts as $post) {
 
     // 5. Call API
     set_time_limit(600); // Allow long upload for videos
+    try {
+        $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW() WHERE id = ?")->execute([$post['id']]);
+    } catch (Exception $e) {}
     if (strpos($post_type, 'Story') === false) {
         $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 600 : 30;
         $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
