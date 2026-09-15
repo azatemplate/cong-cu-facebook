@@ -164,18 +164,20 @@ try {
     $stmt_ub = $pdo->prepare("
         SELECT 
             COALESCE(sa.username, CONCAT('Acc #', sp.account_id)) AS username,
+            COALESCE(sa.page_limit, -1) AS page_limit,
             COUNT(*) AS total_posts,
-            SUM(CASE WHEN sp.scheduled_time >= ? AND sp.scheduled_time <= ? THEN 1 ELSE 0 END) AS today_posts,
+            SUM(CASE WHEN sp.scheduled_time >= ? AND sp.scheduled_time <= ? THEN 1 ELSE 0 END) AS today_scheduled,
+            SUM(CASE WHEN sp.status = 'published' AND sp.scheduled_time >= ? AND sp.scheduled_time <= ? THEN 1 ELSE 0 END) AS today_published,
             SUM(CASE WHEN sp.status = 'pending' THEN 1 ELSE 0 END) AS pending_posts,
             SUM(CASE WHEN sp.status = 'published' THEN 1 ELSE 0 END) AS published_posts,
             SUM(CASE WHEN sp.status = 'failed' THEN 1 ELSE 0 END) AS failed_posts
         FROM scheduled_posts sp
         LEFT JOIN system_accounts sa ON sp.account_id = sa.id
-        GROUP BY sp.account_id, sa.username
-        ORDER BY today_posts DESC, total_posts DESC
+        GROUP BY sp.account_id, sa.username, sa.page_limit
+        ORDER BY today_published DESC, today_scheduled DESC
         LIMIT 15
     ");
-    $stmt_ub->execute([$today_start, $today_end]);
+    $stmt_ub->execute([$today_start, $today_end, $today_start, $today_end]);
     $user_posts_breakdown = $stmt_ub->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {}
 
@@ -964,7 +966,7 @@ code {
                     <thead>
                         <tr>
                             <th style="padding: 6px 8px;">Tài khoản</th>
-                            <th style="padding: 6px 8px; text-align: right;">Hôm nay</th>
+                            <th style="padding: 6px 8px; text-align: right;">Đã đăng hôm nay</th>
                             <th style="padding: 6px 8px; text-align: right;">Tổng</th>
                         </tr>
                     </thead>
@@ -974,12 +976,15 @@ code {
                             <td style="padding: 8px 8px;">
                                 <div style="font-weight: 600; color: #a5b4fc;"><?= htmlspecialchars($ub['username']) ?></div>
                                 <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-                                    ⏳<?= number_format($ub['pending_posts']) ?> | ✅<?= number_format($ub['published_posts']) ?> | ❌<?= number_format($ub['failed_posts']) ?>
+                                    📅 Hẹn hôm nay: <?= number_format($ub['today_scheduled']) ?> | ⏳<?= number_format($ub['pending_posts']) ?> | ❌<?= number_format($ub['failed_posts']) ?>
                                 </div>
                             </td>
                             <td style="padding: 8px 8px; text-align: right; font-weight: 700;" class="mono">
-                                <span class="<?= $ub['today_posts'] > 0 ? 'text-success' : 'text-muted' ?>">
-                                    <?= number_format($ub['today_posts']) ?>
+                                <span class="<?= $ub['today_published'] > 0 ? 'text-success' : 'text-muted' ?>">
+                                    <?= number_format($ub['today_published']) ?>
+                                </span>
+                                <span style="font-size:11px; color:var(--text-muted); display:block; font-weight:400;">
+                                    / <?= ($ub['page_limit'] > 0 ? number_format($ub['page_limit']) : 'Không GH') ?>
                                 </span>
                             </td>
                             <td style="padding: 8px 8px; text-align: right; font-weight: 600;" class="mono">
