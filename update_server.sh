@@ -38,6 +38,16 @@ find "$APP_DIR" -type d -exec chmod 755 {} \;
 mkdir -p "$APP_DIR/uploads" "$APP_DIR/uploads/sessions" "$APP_DIR/uploads/rate_limits" "$APP_DIR/uploads/cache"
 chmod -R 777 "$APP_DIR/uploads"
 
+# Đồng bộ tự động tệp upload_video.php sang web data.hongdolab.com nếu có trên aaPanel
+if [ -d "/www/wwwroot/data.hongdolab.com" ]; then
+    echo "-> Đồng bộ mã nguồn upload_video.php sang data.hongdolab.com..."
+    mkdir -p "/www/wwwroot/data.hongdolab.com/api" "/www/wwwroot/data.hongdolab.com/uploads"
+    chmod 777 "/www/wwwroot/data.hongdolab.com/uploads"
+    cp -f "$APP_DIR/data/api/upload_video.php" "/www/wwwroot/data.hongdolab.com/api/upload_video.php"
+    chmod 755 "/www/wwwroot/data.hongdolab.com/api/upload_video.php"
+    chown -R www:www "/www/wwwroot/data.hongdolab.com"
+fi
+
 echo ""
 echo "============================================="
 echo "    CẬP NHẬT HOÀN TẤT, HỆ THỐNG ĐÃ LÊN MỚI!  "
