@@ -28,8 +28,8 @@ try {
         FROM scheduled_posts sp
         LEFT JOIN post_campaigns pc ON sp.campaign_id = pc.id
         LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube'
-        LEFT JOIN youtube_channels yt ON (sp.page_id = CAST(yt.id AS CHAR) OR sp.page_id = yt.channel_id) AND sp.post_type = 'YouTube'
-        LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
+        LEFT JOIN youtube_channels yt ON (sp.page_id = CAST(yt.id AS CHAR) OR sp.page_id = CAST(yt.channel_id AS CHAR)) AND sp.post_type = 'YouTube'
+        LEFT JOIN buffer_channels bc ON sp.page_id = CAST(bc.channel_id AS CHAR) AND sp.post_type LIKE 'Buffer%'
         WHERE sp.account_id = ? AND sp.status IN ('published', 'failed')
         ORDER BY sp.scheduled_time DESC
         LIMIT 20
@@ -69,8 +69,8 @@ try {
         FROM scheduled_posts sp
         LEFT JOIN post_campaigns pc ON sp.campaign_id = pc.id
         LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube'
-        LEFT JOIN youtube_channels yt ON (sp.page_id = CAST(yt.id AS CHAR) OR sp.page_id = yt.channel_id) AND sp.post_type = 'YouTube'
-        LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
+        LEFT JOIN youtube_channels yt ON (sp.page_id = CAST(yt.id AS CHAR) OR sp.page_id = CAST(yt.channel_id AS CHAR)) AND sp.post_type = 'YouTube'
+        LEFT JOIN buffer_channels bc ON sp.page_id = CAST(bc.channel_id AS CHAR) AND sp.post_type LIKE 'Buffer%'
         WHERE sp.account_id = ? AND sp.status IN ('pending', 'processing')
         ORDER BY sp.scheduled_time ASC
         LIMIT 20
