@@ -2499,12 +2499,18 @@ foreach ($pending_posts as $post) {
                 $post_data['file_url'] = $cdn_url;
                 echo "   → Đã tải tệp lên CDN Server công khai (tự xóa sau 5 phút): $cdn_url\n";
                 
-                // Chỉ xóa file tạm nếu nó nằm ở /tmp (KHÔNG xóa nếu nó nằm trong thư mục CDN data.hongdolab.com/uploads)
+                // Cập nhật abs_media_path trỏ đến bản sao CDN để resumable upload có thể dùng
                 $cdn_root = '/www/wwwroot/data.hongdolab.com/uploads/';
-                $norm_abs = str_replace('\\', '/', realpath($abs_media_path) ?: $abs_media_path);
-                $norm_cdn = str_replace('\\', '/', realpath($cdn_root) ?: $cdn_root);
-                if (strpos($norm_abs, rtrim($norm_cdn, '/') . '/') !== 0) {
-                    @unlink($abs_media_path);
+                $cdn_basename = basename(parse_url($cdn_url, PHP_URL_PATH));
+                $cdn_local_path = $cdn_root . $cdn_basename;
+                if (file_exists($cdn_local_path)) {
+                    // Xóa file tạm gốc nếu nó KHÔNG nằm trong thư mục CDN
+                    $norm_abs = str_replace('\\', '/', realpath($abs_media_path) ?: $abs_media_path);
+                    $norm_cdn = str_replace('\\', '/', realpath($cdn_root) ?: $cdn_root);
+                    if (strpos($norm_abs, rtrim($norm_cdn, '/') . '/') !== 0) {
+                        @unlink($abs_media_path);
+                    }
+                    $abs_media_path = $cdn_local_path; // Trỏ sang file CDN local
                 }
                 $temp_drive_file = null;
             } else {
@@ -2740,9 +2746,27 @@ foreach ($pending_posts as $post) {
         $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW() WHERE id = ?")->execute([$post['id']]);
     } catch (Exception $e) {}
     if (strpos($post_type, 'Story') === false) {
-        if (!empty($post_data['file_url'])) {
-            $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 1800 : 60;
-            update_post_stage($pdo, $post['id'], "⏳ 4/4: Gọi API file_url (timeout={$timeout}s)...");
+        // VIDEO/REEL: Luôn dùng Resumable Upload (tránh HTTP 504 qua proxy khi dùng file_url)
+        if (($post_type === 'Video' || $post_type === 'Reel') && $has_media && !empty($abs_media_path) && file_exists($abs_media_path)) {
+            echo "   → [STEP 4/4] Video/Reel: Dùng Resumable Upload trực tiếp (bỏ qua file_url vì proxy gây 504)\n";
+            update_post_stage($pdo, $post['id'], "⏳ 4/4: Resumable Chunk Upload...");
+            @file_put_contents($publish_log, "$log_prefix USING resumable_direct (skip file_url for video/reel) file=$abs_media_path\n", FILE_APPEND);
+            // Loại bỏ file_url và source khỏi post_data để resumable upload không bị conflict
+            unset($post_data['file_url']);
+            unset($post_data['source']);
+            $response = fb_upload_video_resumable($post['page_id'], $page_access_token, $abs_media_path, $post_data, $pdo, $post['id']);
+            $resp_code = $response['status_code'] ?? 'N/A';
+            $resp_err = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : '';
+            echo "   → [STEP 4/4] Kết quả resumable: HTTP $resp_code\n";
+            @file_put_contents($publish_log, "$log_prefix RESULT resumable HTTP=$resp_code err=$resp_err\n", FILE_APPEND);
+            if ($resp_code !== 200 && !empty($resp_err)) {
+                @file_put_contents($publish_log, "$log_prefix ERROR_DETAIL: " . json_encode($response['data'] ?? [], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+            }
+        } elseif (!empty($post_data['file_url'])) {
+            // IMAGE/STATUS: Dùng file_url (nhẹ, nhanh, không cần resumable)
+            $timeout = 120;
+            update_post_stage($pdo, $post['id'], "⏳ 4/4: Gọi API file_url...");
+            @file_put_contents($publish_log, "$log_prefix USING file_url (image/status) url={$post_data['file_url']}\n", FILE_APPEND);
             $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
             $resp_code = $response['status_code'] ?? 'N/A';
             $resp_err = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : '';
@@ -2750,33 +2774,12 @@ foreach ($pending_posts as $post) {
             @file_put_contents($publish_log, "$log_prefix RESULT file_url HTTP=$resp_code err=$resp_err\n", FILE_APPEND);
             if ($resp_code !== 200) {
                 $err_json = json_encode($response['data'] ?? [], JSON_UNESCAPED_UNICODE);
-                echo "   → [STEP 4/4] Lỗi: $resp_err\n";
                 @file_put_contents($publish_log, "$log_prefix ERROR_DETAIL: $err_json\n", FILE_APPEND);
                 update_post_stage($pdo, $post['id'], "⏳ 4/4: file_url HTTP $resp_code - $resp_err");
             }
-            // Nếu dùng file_url không thành công và có file local, thử lại bằng fb_upload_video_resumable
-            if (($response['status_code'] !== 200) && ($post_type === 'Video' || $post_type === 'Reel') && $has_media && !empty($abs_media_path) && file_exists($abs_media_path)) {
-                echo "   → Thử lại bằng fb_upload_video_resumable...\n";
-                update_post_stage($pdo, $post['id'], "⏳ 4/4: Thử lại bằng Resumable Upload...");
-                @file_put_contents($publish_log, "$log_prefix RETRY resumable upload\n", FILE_APPEND);
-                $response = fb_upload_video_resumable($post['page_id'], $page_access_token, $abs_media_path, $post_data, $pdo, $post['id']);
-                $resp_code2 = $response['status_code'] ?? 'N/A';
-                $resp_err2 = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : '';
-                echo "   → [STEP 4/4] Kết quả resumable: HTTP $resp_code2\n";
-                @file_put_contents($publish_log, "$log_prefix RESULT resumable HTTP=$resp_code2 err=$resp_err2\n", FILE_APPEND);
-            }
-        } elseif (($post_type === 'Video' || $post_type === 'Reel') && $has_media && file_exists($abs_media_path)) {
-            echo "   → [STEP 4/4] Sử dụng fb_upload_video_resumable\n";
-            update_post_stage($pdo, $post['id'], "⏳ 4/4: Resumable Upload (file local)...");
-            @file_put_contents($publish_log, "$log_prefix USING resumable (local file)\n", FILE_APPEND);
-            $response = fb_upload_video_resumable($post['page_id'], $page_access_token, $abs_media_path, $post_data, $pdo, $post['id']);
-            $resp_code = $response['status_code'] ?? 'N/A';
-            $resp_err = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : '';
-            echo "   → [STEP 4/4] Kết quả resumable: HTTP $resp_code\n";
-            @file_put_contents($publish_log, "$log_prefix RESULT resumable HTTP=$resp_code err=$resp_err\n", FILE_APPEND);
         } else {
-            $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 1800 : 60;
-            update_post_stage($pdo, $post['id'], "⏳ 4/4: Direct API (timeout={$timeout}s)...");
+            $timeout = 60;
+            update_post_stage($pdo, $post['id'], "⏳ 4/4: Direct API...");
             @file_put_contents($publish_log, "$log_prefix USING direct API timeout=$timeout\n", FILE_APPEND);
             $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
             $resp_code = $response['status_code'] ?? 'N/A';
