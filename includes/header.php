@@ -15,20 +15,8 @@ if (!isset($_SESSION['account_id'])) {
 // Generate CSRF token for all pages
 $_csrf_token = csrf_token();
 
-// Extract and clear flash notifications before session_write_close() to persist deletion to disk
-$global_flash_msg = $_SESSION['flash_msg'] ?? null;
-$global_flash_error = $_SESSION['flash_error'] ?? null;
-$global_flash_type = $_SESSION['flash_type'] ?? null;
-
-unset($_SESSION['flash_msg'], $_SESSION['flash_error'], $_SESSION['flash_type']);
-
 // Release session lock immediately so clicking menus never freezes on PHP session file locks
 session_write_close();
-
-// Restore in-memory session variables for current request templates
-if ($global_flash_msg !== null) $_SESSION['flash_msg'] = $global_flash_msg;
-if ($global_flash_error !== null) $_SESSION['flash_error'] = $global_flash_error;
-if ($global_flash_type !== null) $_SESSION['flash_type'] = $global_flash_type;
 
 // Đặt $current_page ở các trang chính để highlight menu
 if(!isset($current_page)) $current_page = '';
@@ -433,21 +421,13 @@ require_once __DIR__ . '/fb_api.php';
                         });
 
                         window.readNotif = function(id, link) {
-                            if (id) {
-                                const fd = new FormData();
-                                fd.append('id', id);
-                                if (navigator.sendBeacon) {
-                                    navigator.sendBeacon('actions/read_notification.php', fd);
-                                } else {
-                                    fetch('actions/read_notification.php', { method: 'POST', body: fd, keepalive: true }).catch(() => {});
-                                }
-                            }
-                            if (link) {
-                                window.location.href = link;
-                            }
+                            const fd = new FormData();
+                            fd.append('id', id);
+                            fetch('actions/read_notification.php', { method: 'POST', body: fd })
+                            .then(() => { window.location.href = link; });
                         };
 
-                        // Polling badge mỗi 30s (không reset dropdown đang mở, không làm khựng chuyển trang)
+                        // Polling badge mỗi 15s (không reset dropdown đang mở)
                         function pollBadge() {
                             fetch('actions/get_notifications.php?offset=0&tab=unread')
                             .then(r => r.json())
@@ -468,9 +448,8 @@ require_once __DIR__ . '/fb_api.php';
                                 }
                             }).catch(() => {});
                         }
-                        // Tải số lượng thông báo tức thì (bất đồng bộ ngầm, không làm khựng chuyển trang)
                         pollBadge();
-                        setInterval(pollBadge, 20000);
+                        setInterval(pollBadge, 15000);
 
                         // Sidebar Toggle Logic
                         const menuToggle = document.querySelector('.menu-toggle');

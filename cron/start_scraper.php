@@ -7,7 +7,6 @@ define('CRON_RUNNING', true);
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-session_write_close();
 require_once __DIR__ . '/../includes/db.php';
 if (!function_exists('is_post_within_range')) {
     function is_post_within_range($created_time, $range_filter) {

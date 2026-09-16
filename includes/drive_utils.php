@@ -92,8 +92,6 @@ function get_drive_access_token($pdo, $account_id, $page_id = null) {
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post_fields));
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
     $token_response_raw = curl_exec($ch);
     curl_close($ch);
 
@@ -133,24 +131,18 @@ function get_drive_file_name($access_token, $file_id) {
  * Trả về mảng chứa đường dẫn file tạm và mimeType
  */
 function download_drive_file_temp($access_token, $file_id) {
-    // 1. Lấy thông tin metadata của file (name, mimeType) - hỗ trợ cả Shared Drives
-    $meta_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=name,mimeType&supportsAllDrives=true";
+    // 1. Lấy thông tin metadata của file (name, mimeType)
+    $meta_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=name,mimeType";
     $ch = curl_init($meta_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
     $meta_response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curl_err = curl_error($ch);
     curl_close($ch);
 
     $meta = json_decode($meta_response, true);
     if (!isset($meta['name'])) {
-        $g_err = isset($meta['error']['message']) ? $meta['error']['message'] : (!empty($curl_err) ? $curl_err : ("HTTP " . $http_code));
-        return ['error' => 'Không thể lấy thông tin file từ Google Drive (' . $g_err . '). Vui lòng kiểm tra lại liên kết Drive hoặc Token.'];
+        return ['error' => 'Không thể lấy thông tin file từ Google Drive.'];
     }
 
     $mime_type = $meta['mimeType'];
@@ -185,7 +177,7 @@ function download_drive_file_temp($access_token, $file_id) {
     }
 
     // 2. Download nội dung file
-    $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media&supportsAllDrives=true";
+    $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media";
     
     // Tạo file tạm trên OS (Thường nằm ở /tmp trên Linux hoặc C:\Windows\Temp trên Windows)
     $temp_dir = sys_get_temp_dir();
@@ -195,81 +187,24 @@ function download_drive_file_temp($access_token, $file_id) {
     $temp_path_with_ext = $temp_path . '.' . $ext;
     rename($temp_path, $temp_path_with_ext);
 
-    $fp = @fopen($temp_path_with_ext, 'w+');
+    $fp = fopen($temp_path_with_ext, 'w+');
     if ($fp === false) {
         return ['error' => 'Không thể tạo file tạm trên Server.'];
     }
 
-    @set_time_limit(1800);
     $ch2 = curl_init($download_url);
     curl_setopt($ch2, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
     curl_setopt($ch2, CURLOPT_FILE, $fp);
     curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch2, CURLOPT_CONNECTTIMEOUT, 30);
-    curl_setopt($ch2, CURLOPT_TIMEOUT, 1800); // 30 phút cho video dung lượng lớn
-    curl_setopt($ch2, CURLOPT_BUFFERSIZE, 131072); // Bộ đệm 128KB tăng tốc độ tải file
-    curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch2, CURLOPT_SSL_VERIFYHOST, false);
+    curl_setopt($ch2, CURLOPT_TIMEOUT, 600);
     $success = curl_exec($ch2);
     $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
-    $curl_err2 = curl_error($ch2);
     curl_close($ch2);
-    @fclose($fp);
+    fclose($fp);
 
-    if (!$success || $http_code !== 200 || @filesize($temp_path_with_ext) < 10) {
-        // Fallback gdown-php: Bóc tách confirmation token vượt qua trang cảnh báo virus/file lớn của Google Drive
-        $public_url = "https://drive.google.com/uc?export=download&id=" . urlencode($file_id);
-        $cookie_file = tempnam(sys_get_temp_dir(), 'gd_ck_');
-
-        $ch_p = curl_init($public_url);
-        curl_setopt_array($ch_p, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_COOKIEJAR => $cookie_file,
-            CURLOPT_COOKIEFILE => $cookie_file,
-            CURLOPT_TIMEOUT => 30,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        ]);
-        $html_res = curl_exec($ch_p);
-        curl_close($ch_p);
-
-        $confirm_code = '';
-        if ($html_res && preg_match('/confirm=([0-9a-zA-Z_]+)/', $html_res, $m_conf)) {
-            $confirm_code = $m_conf[1];
-        } elseif ($html_res && preg_match('/name="confirm"\s+value="([^"]+)"/', $html_res, $m_conf2)) {
-            $confirm_code = $m_conf2[1];
-        } elseif ($html_res && preg_match('/download_warning[^\=]*=([0-9a-zA-Z_]+)/', $html_res, $m_conf3)) {
-            $confirm_code = $m_conf3[1];
-        }
-
-        if (!empty($confirm_code)) {
-            $dl_confirm_url = "https://drive.google.com/uc?export=download&id=" . urlencode($file_id) . "&confirm=" . urlencode($confirm_code);
-            $fp_p = @fopen($temp_path_with_ext, 'w+');
-            if ($fp_p) {
-                $ch_dl = curl_init($dl_confirm_url);
-                curl_setopt_array($ch_dl, [
-                    CURLOPT_FILE => $fp_p,
-                    CURLOPT_FOLLOWLOCATION => true,
-                    CURLOPT_COOKIEFILE => $cookie_file,
-                    CURLOPT_TIMEOUT => 1800,
-                    CURLOPT_BUFFERSIZE => 131072,
-                    CURLOPT_SSL_VERIFYPEER => false,
-                    CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                ]);
-                $success = curl_exec($ch_dl);
-                $http_code = curl_getinfo($ch_dl, CURLINFO_HTTP_CODE);
-                curl_close($ch_dl);
-                @fclose($fp_p);
-            }
-        }
-        @unlink($cookie_file);
-    }
-
-    if (!$success || $http_code !== 200 || @filesize($temp_path_with_ext) < 10) {
+    if (!$success || $http_code !== 200) {
         @unlink($temp_path_with_ext);
-        $err_msg = !empty($curl_err2) ? $curl_err2 : ('HTTP ' . $http_code);
-        return ['error' => 'Lỗi tải file từ Google Drive (' . $err_msg . ').'];
+        return ['error' => 'Lỗi tải file từ Google Drive (HTTP ' . $http_code . ').'];
     }
 
     return [
@@ -345,7 +280,7 @@ function list_drive_files_in_folder($access_token, $folder_id) {
     $q = "'" . str_replace("'", "\\'", $folder_id) . "' in parents and trashed = false";
     
     do {
-        $url = "https://www.googleapis.com/drive/v3/files?q=" . urlencode($q) . "&fields=nextPageToken,files(id,name,mimeType,createdTime,size)&orderBy=createdTime&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true";
+        $url = "https://www.googleapis.com/drive/v3/files?q=" . urlencode($q) . "&fields=nextPageToken,files(id,name,mimeType,createdTime,size)&orderBy=createdTime&pageSize=1000";
         if ($pageToken) {
             $url .= "&pageToken=" . urlencode($pageToken);
         }
@@ -354,8 +289,6 @@ function list_drive_files_in_folder($access_token, $folder_id) {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
         curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
         $response = curl_exec($ch);
         $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);

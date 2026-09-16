@@ -171,7 +171,12 @@ try {
 }
 
 // ── Insert Scheduled Posts ───────────────────────────────────────────────────
-$has_extra_cols = true;
+// Detect if campaign_id/comment_lines columns exist via INFORMATION_SCHEMA
+$has_extra_cols = false;
+try {
+    $col_chk = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME='campaign_id'");
+    $has_extra_cols = ($col_chk && $col_chk->fetchColumn() > 0);
+} catch (Exception $e) { }
 
 if (!$has_extra_cols) $campaign_id = null;
 

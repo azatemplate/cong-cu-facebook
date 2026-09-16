@@ -5,15 +5,11 @@
  * Logic lấy từ diagnostics.php — dùng chung cho start_publish, start_comment, accounts...
  */
 function get_php_cli_bin() {
-    // 1. Thử nhận diện theo phiên bản PHP đang chạy (ví dụ aaPanel /www/server/php/74/bin/php)
-    if (defined('PHP_MAJOR_VERSION') && defined('PHP_MINOR_VERSION')) {
-        $ver_bin = '/www/server/php/' . PHP_MAJOR_VERSION . PHP_MINOR_VERSION . '/bin/php';
-        if (@file_exists($ver_bin)) {
-            return $ver_bin;
-        }
+    if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
+        return '/www/server/php/85/bin/php';
     }
 
-    // 2. Từ PHP_BINARY (nếu đang chạy CLI hoặc fpm/cgi)
+    // 2. Từ PHP_BINARY (nếu không phải fpm/cgi)
     if (defined('PHP_BINARY') && PHP_BINARY) {
         $bin = PHP_BINARY;
         if (strpos($bin, 'php-fpm') === false && strpos($bin, 'php-cgi') === false) {
@@ -32,9 +28,7 @@ function get_php_cli_bin() {
     // 3. Fallback: quét tất cả phiên bản PHP trên aaPanel
     $found = glob('/www/server/php/*/bin/php');
     if (!empty($found)) {
-        foreach (array_reverse($found) as $f) {
-            if (@file_exists($f)) return $f;
-        }
+        return end($found); // Phiên bản mới nhất
     }
 
     // 4. Đường dẫn phổ biến khác

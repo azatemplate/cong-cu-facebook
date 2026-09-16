@@ -69,7 +69,8 @@ if (!empty($drive_file_ids_str) && !$is_drive_folder) {
         $drive_title = '';
         $drive_name = isset($drive_names_arr[$idx]) ? trim($drive_names_arr[$idx]) : '';
         if (empty($drive_name)) {
-            $drive_name = 'Video_' . substr($id, 0, 8);
+            if (!$drive_token) $drive_token = get_drive_access_token($pdo, $account_id);
+            if ($drive_token) $drive_name = get_drive_file_name($drive_token, $id);
         }
         if ($drive_name) {
             $drive_title = pathinfo($drive_name, PATHINFO_FILENAME);
@@ -189,7 +190,11 @@ try {
 } catch (PDOException $e) { }
 
 // Detect extra cols
-$has_extra_cols = true;
+$has_extra_cols = false;
+try {
+    $col_chk = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME='campaign_id'");
+    $has_extra_cols = ($col_chk && $col_chk->fetchColumn() > 0);
+} catch (Exception $e) { }
 
 if (!$has_extra_cols) $campaign_id = null;
 

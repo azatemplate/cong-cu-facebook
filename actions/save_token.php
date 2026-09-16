@@ -41,13 +41,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // 0.5 Check Account Expiry & Channel Limits
-    $limit_stmt = $pdo->prepare("SELECT role, page_limit, max_fb_pages, expire_date FROM system_accounts WHERE id = ?");
+    // 0.5 Check Account Expiry
+    $limit_stmt = $pdo->prepare("SELECT role, page_limit, expire_date FROM system_accounts WHERE id = ?");
     $limit_stmt->execute([$account_id]);
     $acc_info = $limit_stmt->fetch(PDO::FETCH_ASSOC);
-    $page_limit   = (int)($acc_info['page_limit'] ?? 500);
-    $max_fb_pages = (int)($acc_info['max_fb_pages'] ?? 450);
-    $is_admin     = (($acc_info['role'] ?? '') === 'admin');
+    $page_limit = (int)($acc_info['page_limit'] ?? 500);
+    $is_admin   = (($acc_info['role'] ?? '') === 'admin');
 
     if (!$is_admin && !empty($acc_info['expire_date']) && strtotime($acc_info['expire_date']) < time()) {
         header('Location: ../token_management.php?status=error&msg=' . urlencode('Tài khoản đã hết hạn. Vui lòng liên hệ Admin để gia hạn.'));
@@ -320,7 +319,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        $limit_reached_flag = false;
         foreach ($all_fb_pages as $page) {
             $page_id = $page['id'];
             $page_name = $page['name'];
@@ -344,16 +342,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $p_update_stmt->execute([$page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id, $page_id]);
                 $total_pages_count++;
             } else {
-                // Kiểm tra hạn ngạch Fanpage FB được phép chèn mới
-                if (!$is_admin && $max_fb_pages > 0) {
-                    $cnt_stmt = $pdo->prepare("SELECT COUNT(*) FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = ?");
-                    $cnt_stmt->execute([$account_id]);
-                    $curr_count = (int)$cnt_stmt->fetchColumn();
-                    if ($curr_count >= $max_fb_pages) {
-                        $limit_reached_flag = true;
-                        continue; // Dừng không lưu thêm Fanpage vượt hạn ngạch vào CSDL
-                    }
-                }
                 $p_insert_stmt->execute([$page_id, $page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id]);
                 $total_pages_count++;
             }
@@ -412,18 +400,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($total_users_count > 0) {
         $msg = "Thêm thành công $total_users_count tài khoản Facebook ($total_pages_count Fanpage)!";
-        if (!empty($limit_reached_flag)) {
-            $msg .= " ⚠️ Bạn đã đạt giới hạn tối đa $max_fb_pages Fanpage FB. Các Fanpage vượt quá hạn ngạch đã tự động bị chặn không lưu vào CSDL.";
-        }
         if (!empty($error_messages)) {
             $msg .= " (Lỗi " . count($error_messages) . " token: " . implode("; ", $error_messages) . ")";
         }
         header('Location: ../token_management.php?status=success&pages=' . $total_pages_count . '&msg=' . urlencode($msg));
     } else {
         $msg = !empty($error_messages) ? implode("; ", $error_messages) : "Không có Token nào hợp lệ.";
-        if (!empty($limit_reached_flag)) {
-            $msg = "⚠️ Tài khoản của bạn đã đạt/vượt giới hạn tối đa $max_fb_pages Fanpage FB. Vui lòng liên hệ Admin để nâng cấp gói cước!";
-        }
         header('Location: ../token_management.php?status=error&msg=' . urlencode($msg));
     }
     exit;

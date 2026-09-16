@@ -47,7 +47,11 @@ if (!function_exists('fb_api_request')) require_once __DIR__ . '/../includes/fb_
 echo "\n--- Comment Worker ---\n";
 
 // Detect if comment_status column exists
-$has_comment_status = true;
+$has_comment_status = false;
+try {
+    $col_q = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME='comment_status'");
+    $has_comment_status = ($col_q && $col_q->fetchColumn() > 0);
+} catch (Exception $e) {}
 
 try {
     $stmt = $pdo->prepare("

@@ -24,31 +24,9 @@ if (php_sapi_name() === 'cli') {
 }
 session_write_close();
 
-$lock_dir = dirname(__DIR__) . '/locks';
-if (!is_dir($lock_dir)) {
-    @mkdir($lock_dir, 0777, true);
-}
-$lock_file = $lock_dir . '/scan_' . intval($account_id) . '.lock';
-
-// Clean stale lock > 15 min
-if (file_exists($lock_file) && (time() - filemtime($lock_file)) > 900) {
-    @unlink($lock_file);
-}
-
-$lock_fp = @fopen($lock_file, 'c+');
-if (!$lock_fp || !flock($lock_fp, LOCK_EX | LOCK_NB)) {
-    if ($lock_fp) fclose($lock_fp);
-    if (php_sapi_name() !== 'cli') {
-        echo json_encode(['status' => 'success', 'scanned' => 0, 'found' => 0, 'msg' => 'Tiến trình quét đang chạy ngầm']);
-    }
-    exit;
-}
-
-register_shutdown_function(function() use ($lock_fp, $lock_file) {
-    if ($lock_fp) {
-        flock($lock_fp, LOCK_UN);
-        fclose($lock_fp);
-    }
+// Đăng ký dọn lock file khi kết thúc/lỗi/timeout
+$lock_file = __DIR__ . '/../locks/scan_' . intval($account_id) . '.lock';
+register_shutdown_function(function() use ($lock_file) {
     if (file_exists($lock_file)) {
         @unlink($lock_file);
     }

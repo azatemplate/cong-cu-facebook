@@ -61,24 +61,10 @@ try {
     }
 } catch (Exception $e) {}
 
-// Auto-migrate newly required columns in case the user missed accessing settings.php
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");
-} catch (Exception $e) {}
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN retry_interval_minutes INT DEFAULT 1");
-} catch (Exception $e) {}
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
-} catch (Exception $e) {}
 
-// Auto-migrate updated_at for scheduled_posts (stuck detection)
-try {
-    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
-} catch (Exception $e) {}
 
 try {
-    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending', retry_count=0 WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending', retry_count=0 WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE)");
     if ($stuck_count > 0) {
         echo "  [RESET] Da reset $stuck_count bai bi stuck 'processing' => 'pending'.\n";
     }
@@ -157,10 +143,14 @@ if ($available_slots <= 0) {
 
 // Tìm các bài cần đăng và nhóm theo user_id (Token User) với FB, page_id với YouTube (mỗi kênh YouTube = 1 Slot), account_id với TikTok, và buffer_account_id với Buffer (mỗi Token Buffer = 1 Slot độc lập)
 $sql = "
-    SELECT DISTINCT sp.page_id, sp.account_id, sp.post_type, p.user_id, bc.buffer_account_id
+    SELECT DISTINCT sp.page_id, sp.account_id, sp.post_type, 
+           COALESCE(p.user_id, u_ig.id) AS user_id, 
+           bc.buffer_account_id
     FROM scheduled_posts sp
     LEFT JOIN system_accounts sa ON sp.account_id = sa.id
-    LEFT JOIN pages p ON sp.page_id = p.page_id
+    LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Instagram%'
+    LEFT JOIN instagram_accounts ig ON (sp.page_id = ig.ig_user_id OR sp.page_id = ig.id) AND sp.post_type LIKE 'Instagram%'
+    LEFT JOIN users u_ig ON ig.account_id = u_ig.account_id
     LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id
     WHERE sp.scheduled_time <= NOW()
       AND sp.page_id IS NOT NULL
@@ -183,23 +173,20 @@ if (empty($raw_pages)) {
     exit;
 }
 
-// ── Nhóm page theo user_id của FB, page_id của YouTube (mỗi Kênh YouTube = 1 Slot), account_id của TT, hoặc buffer_account_id của Buffer (mỗi Token Buffer = 1 Slot) ──
-// Mỗi khóa gom nhóm sẽ chỉ có 1 worker duy nhất
+// ── Nhóm page theo user_id của FB, page_id của YouTube, account_id của TT, hoặc buffer_account_id của Buffer ──
 $pages_by_user = [];
 foreach ($raw_pages as $row) {
     if ($row['post_type'] === 'YouTube') {
-        // YouTube gom nhóm theo từng Kênh YouTube (page_id) để mỗi Kênh YouTube có 1 Slot độc lập
         $yt_chan_id = !empty($row['page_id']) ? $row['page_id'] : $row['account_id'];
         $uid = 'yt_chan_' . $yt_chan_id;
     } elseif (strpos($row['post_type'], 'Buffer') !== false) {
-        // Buffer gom nhóm theo từng kết nối/Token Buffer (buffer_account_id) để mỗi Token Buffer có 1 Slot độc lập
         $buf_acc_id = !empty($row['buffer_account_id']) ? $row['buffer_account_id'] : $row['account_id'];
         $uid = 'buf_acc_' . $buf_acc_id;
     } elseif ($row['post_type'] === 'TikTok') {
-        // TikTok gom nhóm theo account_id dưới dạng tt_account_id
         $uid = 'tt_' . $row['account_id'];
+    } elseif (strpos($row['post_type'], 'Instagram') !== false) {
+        $uid = 'ig_' . $row['page_id'];
     } else {
-        // Facebook giữ nguyên logic cũ
         $uid = $row['user_id'] ?: ('noid_' . $row['page_id']);
     }
     if (!isset($pages_by_user[$uid])) {

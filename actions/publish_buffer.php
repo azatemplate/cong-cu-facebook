@@ -92,26 +92,6 @@ if (!function_exists('upload_file_to_hongdolab_cdn')) {
         
         $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
         $is_image = in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
-
-        // --- LOCAL FAST-PATH FOR VPS: Copy trực tiếp không qua HTTP loopback ---
-        $local_cdn_dirs = [
-            '/www/wwwroot/data.hongdolab.com/uploads/',
-            dirname(dirname(__DIR__)) . '/data.hongdolab.com/uploads/',
-            dirname(__DIR__) . '/uploads/'
-        ];
-        foreach ($local_cdn_dirs as $lcd) {
-            if (is_dir($lcd) && is_writable($lcd)) {
-                $prefix = $is_image ? 'img_' : 'vid_';
-                $ext_clean = !empty($ext) ? $ext : ($is_image ? 'jpg' : 'mp4');
-                $stored_name = $prefix . date('Ymd_His') . '_' . bin2hex(random_bytes(6)) . '.' . $ext_clean;
-                $dest = $lcd . $stored_name;
-                if (@copy($file_path, $dest)) {
-                    @chmod($dest, 0777);
-                    return 'https://data.hongdolab.com/uploads/' . $stored_name;
-                }
-            }
-        }
-
         $upload_tmp_dir = dirname($file_path) . '/';
         if (!is_dir($upload_tmp_dir)) $upload_tmp_dir = __DIR__ . '/../uploads/';
         
@@ -385,35 +365,17 @@ try {
 }
 
 // ── Trigger Background Worker ──────────────────────────────────────────────
-try {
-    if (!function_exists('get_php_cli_bin')) {
-        @include_once __DIR__ . '/../includes/php_cli.php';
-    }
-    $php_bin = function_exists('get_php_cli_bin') ? get_php_cli_bin() : 'php';
-    $script_path = __DIR__ . '/../cron/start_publish.php';
+if (!function_exists('get_php_cli_bin')) {
+    @include_once __DIR__ . '/../includes/php_cli.php';
+}
+$php_bin = function_exists('get_php_cli_bin') ? get_php_cli_bin() : 'php';
+$script_path = __DIR__ . '/../cron/start_publish.php';
 
-    if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-        @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_path\" > NUL 2>&1", "r"));
-    } else {
-        @exec("nohup \"$php_bin\" \"$script_path\" > /dev/null 2>&1 &");
-    }
-
-    // Web cURL Async Trigger Fallback (Kích hoạt tức thì nếu CLI exec bị chặn bởi php.ini)
-    if (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
-        $trigger_url = $protocol . "://" . $_SERVER['HTTP_HOST'] . "/trigger_publish.php";
-        $ch = curl_init($trigger_url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT_MS => 300,
-            CURLOPT_NOSIGNAL => 1,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false
-        ]);
-        @curl_exec($ch);
-        @curl_close($ch);
-    }
-} catch (Exception $e) {}
+if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+    @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_path\" > NUL 2>&1", "r"));
+} else {
+    @exec("nohup \"$php_bin\" \"$script_path\" > /dev/null 2>&1 &");
+}
 
 echo json_encode([
     'status' => 'success',
