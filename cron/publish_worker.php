@@ -850,8 +850,8 @@ if (isset($pending_posts[0]['sa_delay']) && $pending_posts[0]['sa_delay'] !== nu
     $user_delay_sec = (int)$pending_posts[0]['sa_delay'];
 }
 
-// Xáo trộn ngẫu nhiên để công bằng giữa các Page trong cùng Token User
-shuffle($pending_posts);
+// Đảm bảo các bài đăng thuộc Token này chạy lần lượt theo thứ tự thời gian hẹn giờ (scheduled_time ASC)
+// Không shuffle để tránh bài đăng sau chạy trước bài đăng trước.
 
 echo "Tìm thấy " . count($pending_posts) . " bài viết cần đăng (Delay: {$user_delay_sec}s giữa mỗi post).\n";
 
