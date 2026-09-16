@@ -2566,6 +2566,14 @@ foreach ($pending_posts as $post) {
         if (!empty($cdn_url)) {
             $public_media_url = $cdn_url;
             $post_data['file_url'] = $cdn_url;
+            
+            $cdn_root = '/www/wwwroot/data.hongdolab.com/uploads/';
+            $cdn_basename = basename(parse_url($cdn_url, PHP_URL_PATH));
+            $cdn_local_path = $cdn_root . $cdn_basename;
+            if (file_exists($cdn_local_path)) {
+                $abs_media_path = $cdn_local_path;
+            }
+            
             echo "   → Đã tải video TikTok lên CDN data.hongdolab.com: $cdn_url\n";
         } else {
             marKAsFailed($pdo, $post['id'], "Không thể upload video TikTok lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
@@ -2586,6 +2594,14 @@ foreach ($pending_posts as $post) {
             if (!empty($cdn_url)) {
                 $public_media_url = $cdn_url;
                 $post_data['file_url'] = $cdn_url;
+                
+                $cdn_root = '/www/wwwroot/data.hongdolab.com/uploads/';
+                $cdn_basename = basename(parse_url($cdn_url, PHP_URL_PATH));
+                $cdn_local_path = $cdn_root . $cdn_basename;
+                if (file_exists($cdn_local_path)) {
+                    $abs_media_path = $cdn_local_path;
+                }
+                
                 echo "   → Đã lấy link CDN data.hongdolab.com cho tệp tải từ máy: $cdn_url\n";
             }
         }
