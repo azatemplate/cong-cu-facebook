@@ -2714,8 +2714,13 @@ foreach ($pending_posts as $post) {
     // 5. Call API
     set_time_limit(600); // Allow long upload for videos
     if (strpos($post_type, 'Story') === false) {
-        $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 600 : 30;
-        $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
+        if (($post_type === 'Video' || $post_type === 'Reel') && $has_media && file_exists($abs_media_path)) {
+            $p_title_str = isset($post_data['title']) ? $post_data['title'] : '';
+            $p_desc_str = isset($post_data['description']) ? $post_data['description'] : '';
+            $response = fb_upload_video_resumable($post['page_id'], $page_access_token, $abs_media_path, $p_title_str, $p_desc_str);
+        } else {
+            $response = fb_api_request($endpoint, $params, 'POST', $post_data, 30);
+        }
     }
 
     handle_response:
