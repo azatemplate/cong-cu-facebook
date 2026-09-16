@@ -107,7 +107,9 @@ function apply_proxy_to_curl($ch, $access_token = null) {
         if (strtolower($px['protocol'] ?? '') === 'socks5') {
             curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
         }
+        return true;
     }
+    return false;
 }
 
 function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [], $timeout = 20, $skip_proxy = false) {
@@ -117,6 +119,8 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
         $url .= (strpos($url, '?') !== false ? '&' : '?') . http_build_query($params);
     }
 
+    $access_token = $params['access_token'] ?? (is_array($post_data) ? ($post_data['access_token'] ?? null) : null);
+
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -124,8 +128,9 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
     fb_curl_setssl($ch);
 
-    if (!$skip_proxy && !empty($params['access_token'])) {
-        apply_proxy_to_curl($ch, $params['access_token']);
+    $proxy_applied = false;
+    if (!$skip_proxy && !empty($access_token)) {
+        $proxy_applied = apply_proxy_to_curl($ch, $access_token);
     }
 
     if (strtoupper($method) === 'POST') {
@@ -151,6 +156,16 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     $response  = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curl_err  = curl_error($ch);
+    
+    // Auto-retry WITHOUT proxy if proxy fails (timeout, 502, 503, 504)
+    if ($proxy_applied && ($response === false || $http_code === 0 || $http_code === 408 || $http_code >= 502)) {
+        curl_setopt($ch, CURLOPT_PROXY, '');
+        curl_setopt($ch, CURLOPT_PROXYUSERPWD, '');
+        $response  = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_err  = curl_error($ch);
+    }
+
     curl_close($ch);
 
     if ($response === false) {
@@ -272,7 +287,9 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $po
         $finish_params['published'] = $post_data['published'];
     }
 
-    $finish_res = fb_api_request($page_id . '/videos', [], 'POST', $finish_params, 120);
+    $finish_res = fb_api_request($page_id . '/videos', [
+        'access_token' => $page_access_token
+    ], 'POST', $finish_params, 120);
 
     // Bổ sung video_id vào kết quả phản hồi nếu API trả về success: true
     if ($finish_res['status_code'] === 200) {
