@@ -179,8 +179,22 @@ $owner_channels = [];
 foreach ($raw_pages as $row) {
     $owner_id = !empty($row['account_id']) ? ('acc_' . $row['account_id']) : (!empty($row['user_id']) ? ('usr_' . $row['user_id']) : 'system');
     
-    // Gom theo campaign_id. Nếu không có campaign_id (bài viết cũ/lẻ), thì gom theo page_id để không bị lỗi.
-    $chan_key = !empty($row['campaign_id']) ? ('camp_' . $row['campaign_id']) : ('noid_' . $row['page_id']);
+    // Gom theo campaign_id. Nếu không có campaign_id (bài viết cũ/lẻ), dùng lại logic phân nền tảng cũ.
+    if (!empty($row['campaign_id'])) {
+        $chan_key = 'camp_' . $row['campaign_id'];
+    } else {
+        if ($row['post_type'] === 'YouTube') {
+            $chan_key = 'yt_chan_' . (!empty($row['page_id']) ? $row['page_id'] : $row['account_id']);
+        } elseif (strpos($row['post_type'], 'Buffer') !== false) {
+            $chan_key = 'buf_acc_' . (!empty($row['buffer_account_id']) ? $row['buffer_account_id'] : $row['account_id']);
+        } elseif ($row['post_type'] === 'TikTok') {
+            $chan_key = 'tt_' . $row['account_id'];
+        } elseif (strpos($row['post_type'], 'Instagram') !== false) {
+            $chan_key = 'ig_' . $row['page_id'];
+        } else {
+            $chan_key = $row['user_id'] ?: $row['page_id'];
+        }
+    }
 
     if (!isset($owner_channels[$owner_id])) {
         $owner_channels[$owner_id] = [];
