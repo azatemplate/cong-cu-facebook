@@ -2717,8 +2717,9 @@ foreach ($pending_posts as $post) {
 
     handle_response:
     $post_id = $response['data']['id'] ?? $response['data']['post_id'] ?? null;
+    $is_success = ($response['status_code'] === 200) && ($post_id || (isset($response['data']['success']) && $response['data']['success']));
 
-    if ($response['status_code'] === 200 && $post_id) {
+    if ($is_success) {
         // Mark as published + save fb_post_id (if column exists)
         if ($has_fb_post_id) {
             $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")
