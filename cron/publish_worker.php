@@ -814,8 +814,6 @@ if (!empty($user_id_lock)) {
     }
 }
 
-}
-
 if ($is_campaign_run) {
     // Chế độ chạy theo Campaign: Gom mọi nền tảng vào 1 luồng
     $sql = "
