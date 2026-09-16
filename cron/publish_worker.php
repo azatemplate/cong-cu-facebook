@@ -823,7 +823,7 @@ $sql = "
       $account_filter
       AND sp.page_id IN ($placeholders)
     ORDER BY sp.scheduled_time ASC, sp.id ASC
-    LIMIT 5
+    LIMIT 3
 ";
 $stmt = $pdo->prepare($sql);
 if (!$stmt) {
@@ -2964,6 +2964,9 @@ foreach ($pending_posts as $post) {
     // LƯU Ý: Không xóa $temp_cdn_file (uploads/cdn/) ngay lập tức!
     // Facebook/Instagram/TikTok cần 5-15 phút để crawler đọc video từ URL công khai.
     // Các tệp pub_* trong uploads/cdn sẽ được start_publish.php tự động dọn dẹp sau 30 phút.
+    
+    // Thêm giãn cách 3 giây giữa mỗi bài đăng để tránh nghẽn I/O và CPU trên server
+    sleep(3);
 } // Ket thuc vong lap
 
 $elapsed = round(microtime(true) - $start_time, 2);
