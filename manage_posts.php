@@ -115,10 +115,11 @@ if ($search !== '') {
             FROM scheduled_posts sp
             LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok'
             LEFT JOIN users u ON p.user_id = u.id
+            LEFT JOIN instagram_accounts ig2 ON sp.page_id = CAST(ig2.id AS CHAR) AND sp.post_type LIKE 'Instagram%'
             LEFT JOIN youtube_channels yt1 ON sp.page_id = yt1.channel_id AND sp.post_type = 'YouTube'
-            LEFT JOIN youtube_channels yt2 ON sp.page_id = yt2.id AND sp.post_type = 'YouTube'
+            LEFT JOIN youtube_channels yt2 ON sp.page_id = CAST(yt2.id AS CHAR) AND sp.post_type = 'YouTube'
             LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
-            LEFT JOIN tiktok_accounts tt ON sp.page_id = tt.id AND sp.post_type = 'TikTok'
+            LEFT JOIN tiktok_accounts tt ON sp.page_id = CAST(tt.id AS CHAR) AND sp.post_type = 'TikTok'
             WHERE sp.account_id = ? AND (
                 u.name LIKE ? OR p.name LIKE ? OR yt1.channel_title LIKE ? OR yt2.channel_title LIKE ? OR bc.channel_name LIKE ? OR tt.display_name LIKE ?
             )
@@ -182,10 +183,11 @@ try {
                 ) sub
                 LEFT JOIN pages p ON sub.page_id = p.page_id AND sub.post_type NOT LIKE 'Buffer%' AND sub.post_type != 'YouTube' AND sub.post_type != 'TikTok'
                 LEFT JOIN users u ON p.user_id = u.id
+                LEFT JOIN instagram_accounts ig2 ON sub.page_id = CAST(ig2.id AS CHAR) AND sub.post_type LIKE 'Instagram%'
                 LEFT JOIN youtube_channels yt1 ON sub.page_id = yt1.channel_id AND sub.post_type = 'YouTube'
-                LEFT JOIN youtube_channels yt2 ON sub.page_id = yt2.id AND sub.post_type = 'YouTube'
+                LEFT JOIN youtube_channels yt2 ON sub.page_id = CAST(yt2.id AS CHAR) AND sub.post_type = 'YouTube'
                 LEFT JOIN buffer_channels bc ON sub.page_id = bc.channel_id AND sub.post_type LIKE 'Buffer%'
-                LEFT JOIN tiktok_accounts tt ON sub.page_id = tt.id AND sub.post_type = 'TikTok'
+                LEFT JOIN tiktok_accounts tt ON sub.page_id = CAST(tt.id AS CHAR) AND sub.post_type = 'TikTok'
                 GROUP BY sub.campaign_id
             ");
             if ($users_stmt) {

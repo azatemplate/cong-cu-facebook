@@ -172,9 +172,9 @@ try {
         LEFT JOIN instagram_accounts ig1 ON sp.page_id = ig1.ig_user_id AND sp.post_type LIKE 'Instagram%'
         LEFT JOIN instagram_accounts ig2 ON sp.page_id = CAST(ig2.id AS CHAR) AND sp.post_type LIKE 'Instagram%'
         LEFT JOIN youtube_channels yt1 ON sp.page_id = yt1.channel_id AND sp.post_type = 'YouTube'
-        LEFT JOIN youtube_channels yt2 ON sp.page_id = yt2.id AND sp.post_type = 'YouTube'
+        LEFT JOIN youtube_channels yt2 ON sp.page_id = CAST(yt2.id AS CHAR) AND sp.post_type = 'YouTube'
         LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id AND sp.post_type LIKE 'Buffer%'
-        LEFT JOIN tiktok_accounts tt ON sp.page_id = tt.id AND sp.post_type = 'TikTok'
+        LEFT JOIN tiktok_accounts tt ON sp.page_id = CAST(tt.id AS CHAR) AND sp.post_type = 'TikTok'
         WHERE sp.campaign_id = ? $filter_sql
         ORDER BY sp.scheduled_time ASC, sp.id ASC
         LIMIT $per_page OFFSET $offset
