@@ -55,13 +55,12 @@ if (!is_dir($lock_dir)) {
     @mkdir($lock_dir, 0777, true);
 }
 
-// Lock theo Token User ID (thay vì page_ids) để ngăn 2 worker cùng user chạy đồng thời
+// Lock theo Token User ID (thay vì page_ids) để đảm bảo DUY NHẤT 1 worker chạy 1 token tại 1 thời điểm
 $lock_key = !empty($user_id_lock) ? md5('uid_' . $user_id_lock) : md5($raw_page_input);
 $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
 
-// Xoá lock file cũ nếu quá 60 giây (worker cũ crash hoặc ngắt kết nối không release)
-$lock_stale_seconds = 60;
-if (file_exists($lock_file) && (time() - filemtime($lock_file)) > $lock_stale_seconds) {
+// Dọn dẹp lock rác cũ ĐÃ QUÁ 15 PHÚT (900s - nếu worker cũ bị ngắt đột ngột)
+if (file_exists($lock_file) && (time() - filemtime($lock_file)) > 900) {
     @unlink($lock_file);
 }
 
@@ -72,32 +71,14 @@ if (!$lock_fp) {
     $lock_fp = @fopen($lock_file, 'c');
 }
 
-$lock_got = false;
-if ($lock_fp) {
-    for ($lock_wait = 0; $lock_wait < 3; $lock_wait++) {
-        if (flock($lock_fp, LOCK_EX | LOCK_NB)) {
-            $lock_got = true;
-            break;
-        }
-        sleep(1);
-    }
-    
-    // Nếu lock thất bại và file lock tồn tại > 30s => ép giải phóng lock cũ
-    if (!$lock_got && file_exists($lock_file) && (time() - filemtime($lock_file)) > 30) {
-        @fclose($lock_fp);
-        @unlink($lock_file);
-        $lock_fp = @fopen($lock_file, 'c');
-        if ($lock_fp && flock($lock_fp, LOCK_EX | LOCK_NB)) {
-            $lock_got = true;
-        }
-    }
+if (!$lock_fp || !flock($lock_fp, LOCK_EX | LOCK_NB)) {
+    echo "Worker cho Token User này (#$user_id_lock) đang bận xử lý bài đăng trước. Dừng luồng mới để tránh đụng độ.\n";
+    if ($lock_fp) @fclose($lock_fp);
+    exit(0);
 }
 
-if (!$lock_got) {
-    echo "Worker cho Token User này đang bận. Tự dọn lock để ưu tiên luồng mới...\n";
-    if ($lock_fp) @fclose($lock_fp);
-    @unlink($lock_file);
-}
+// Cập nhật timestamp cho lock file để đánh dấu luồng đang hoạt động
+@touch($lock_file);
 
 echo "Worker khởi động cho " . count($target_page_ids) . " Pages: " . implode(', ', $target_page_ids) . "\n";
 
@@ -879,10 +860,16 @@ $account_limits = [];
 $post_index = 0; // Đếm số post đã xử lý để áp dụng delay
 
 foreach ($pending_posts as $post) {
+    if (file_exists($lock_file)) {
+        @touch($lock_file);
+    }
     // ── Delay giữa mỗi post (bỏ qua post đầu tiên) ──────────────────────
     if ($post_index > 0 && $user_delay_sec > 0) {
-        echo "   → Chờ {$user_delay_sec}s trước khi đăng post tiếp theo (Token User delay)...\n";
+        echo "   → Chờ {$user_delay_sec}s trước khi đăng post tiếp theo (Token User delay theo Cài đặt)...\n";
         sleep($user_delay_sec);
+        if (file_exists($lock_file)) {
+            @touch($lock_file);
+        }
     }
     $post_index++;
     echo "Đang xử lý bài đăng ID: {$post['id']} - Loại: {$post['post_type']}\n";
