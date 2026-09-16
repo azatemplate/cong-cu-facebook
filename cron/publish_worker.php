@@ -275,6 +275,9 @@ if (!function_exists('upload_file_to_hongdolab_cdn')) {
                 CURLOPT_POST => true,
                 CURLOPT_POSTFIELDS => ['image' => $cfile],
                 CURLOPT_TIMEOUT => 60,
+                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                 CURLOPT_SSL_VERIFYPEER => false,
                 CURLOPT_SSL_VERIFYHOST => 0
             ]);
@@ -298,6 +301,9 @@ if (!function_exists('upload_file_to_hongdolab_cdn')) {
                 CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
                 CURLOPT_POSTFIELDS => json_encode(['filename' => $filename, 'filesize' => $filesize, 'mime' => $mime]),
                 CURLOPT_TIMEOUT => 60,
+                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                 CURLOPT_SSL_VERIFYPEER => false,
                 CURLOPT_SSL_VERIFYHOST => 0
             ]);
@@ -333,6 +339,9 @@ if (!function_exists('upload_file_to_hongdolab_cdn')) {
                                     'chunk' => $cfile
                                 ],
                                 CURLOPT_TIMEOUT => 300,
+                                CURLOPT_CONNECTTIMEOUT => 15,
+                                CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                                 CURLOPT_SSL_VERIFYPEER => false,
                                 CURLOPT_SSL_VERIFYHOST => 0
                             ]);
@@ -362,6 +371,9 @@ if (!function_exists('upload_file_to_hongdolab_cdn')) {
                             CURLOPT_POST => true,
                             CURLOPT_POSTFIELDS => ['upload_id' => $upload_id],
                             CURLOPT_TIMEOUT => 300,
+                            CURLOPT_CONNECTTIMEOUT => 15,
+                            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                             CURLOPT_SSL_VERIFYPEER => false,
                             CURLOPT_SSL_VERIFYHOST => 0
                         ]);
@@ -1364,6 +1376,9 @@ foreach ($pending_posts as $post) {
                         CURLOPT_POST => true,
                         CURLOPT_POSTFIELDS => ['image' => $cfile],
                         CURLOPT_TIMEOUT => 60,
+                        CURLOPT_CONNECTTIMEOUT => 15,
+                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                         CURLOPT_SSL_VERIFYPEER => false,
                         CURLOPT_SSL_VERIFYHOST => 0
                     ]);
@@ -1387,6 +1402,9 @@ foreach ($pending_posts as $post) {
                         CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
                         CURLOPT_POSTFIELDS => json_encode(['filename' => $filename, 'filesize' => $filesize, 'mime' => $mime]),
                         CURLOPT_TIMEOUT => 60,
+                        CURLOPT_CONNECTTIMEOUT => 15,
+                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                         CURLOPT_SSL_VERIFYPEER => false,
                         CURLOPT_SSL_VERIFYHOST => 0
                     ]);
@@ -1422,6 +1440,9 @@ foreach ($pending_posts as $post) {
                                             'chunk' => $cfile
                                         ],
                                         CURLOPT_TIMEOUT => 300,
+                                        CURLOPT_CONNECTTIMEOUT => 15,
+                                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                                         CURLOPT_SSL_VERIFYPEER => false,
                                         CURLOPT_SSL_VERIFYHOST => 0
                                     ]);
@@ -1451,6 +1472,9 @@ foreach ($pending_posts as $post) {
                                     CURLOPT_POST => true,
                                     CURLOPT_POSTFIELDS => ['upload_id' => $upload_id],
                                     CURLOPT_TIMEOUT => 300,
+                                    CURLOPT_CONNECTTIMEOUT => 15,
+                                    CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                                     CURLOPT_SSL_VERIFYPEER => false,
                                     CURLOPT_SSL_VERIFYHOST => 0
                                 ]);

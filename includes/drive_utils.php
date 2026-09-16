@@ -88,10 +88,16 @@ function get_drive_access_token($pdo, $account_id, $page_id = null) {
     ];
 
     $ch = curl_init($token_url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post_fields));
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($post_fields),
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_SSL_VERIFYPEER => false
+    ]);
     $token_response_raw = curl_exec($ch);
     curl_close($ch);
 
@@ -109,14 +115,18 @@ function get_drive_access_token($pdo, $account_id, $page_id = null) {
  */
 function get_drive_file_name($access_token, $file_id) {
     $meta_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=name";
-    $opts = [
-        "http" => [
-            "method" => "GET",
-            "header" => "Authorization: Bearer $access_token\r\n"
-        ]
-    ];
-    $context = stream_context_create($opts);
-    $meta_response = @file_get_contents($meta_url, false, $context);
+    $ch = curl_init($meta_url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_SSL_VERIFYPEER => false
+    ]);
+    $meta_response = curl_exec($ch);
+    curl_close($ch);
     
     if (!$meta_response) return false;
     
@@ -134,15 +144,21 @@ function download_drive_file_temp($access_token, $file_id) {
     // 1. Lấy thông tin metadata của file (name, mimeType)
     $meta_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=name,mimeType";
     $ch = curl_init($meta_url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_SSL_VERIFYPEER => false
+    ]);
     $meta_response = curl_exec($ch);
     curl_close($ch);
 
     $meta = json_decode($meta_response, true);
     if (!isset($meta['name'])) {
-        return ['error' => 'Không thể lấy thông tin file từ Google Drive.'];
+        return ['error' => 'Không thể lấy thông tin file từ Google Drive. (Token hết hạn hoặc file bị xóa)'];
     }
 
     $mime_type = $meta['mimeType'];
@@ -176,35 +192,71 @@ function download_drive_file_temp($access_token, $file_id) {
         }
     }
 
-    // 2. Download nội dung file
-    $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media";
-    
-    // Tạo file tạm trên OS (Thường nằm ở /tmp trên Linux hoặc C:\Windows\Temp trên Windows)
+    // 2. Download nội dung file với cơ chế Retry 3 lần & Fallback URL
     $temp_dir = sys_get_temp_dir();
     $temp_path = tempnam($temp_dir, 'gdrive_');
-    
-    // Thêm đuôi file để CURLFile của Facebook nhận diện đúng định dạng
     $temp_path_with_ext = $temp_path . '.' . $ext;
     rename($temp_path, $temp_path_with_ext);
 
-    $fp = fopen($temp_path_with_ext, 'w+');
-    if ($fp === false) {
-        return ['error' => 'Không thể tạo file tạm trên Server.'];
+    $download_urls = [
+        "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media",
+        "https://lh3.googleusercontent.com/d/" . urlencode($file_id),
+        "https://drive.google.com/uc?export=download&id=" . urlencode($file_id)
+    ];
+
+    $download_success = false;
+    $last_http_code = 0;
+    $last_curl_err = '';
+
+    foreach ($download_urls as $d_idx => $d_url) {
+        if ($download_success) break;
+
+        for ($retry = 0; $retry < 2; $retry++) {
+            if ($retry > 0) sleep(1);
+
+            $fp = @fopen($temp_path_with_ext, 'w+');
+            if ($fp === false) {
+                return ['error' => 'Không thể tạo file tạm trên Server.'];
+            }
+
+            $ch2 = curl_init($d_url);
+            $headers = [];
+            // Chỉ thêm Bearer Authorization nếu dùng API googleapis
+            if (strpos($d_url, 'googleapis.com') !== false) {
+                $headers[] = "Authorization: Bearer $access_token";
+            }
+
+            curl_setopt_array($ch2, [
+                CURLOPT_HTTPHEADER => $headers,
+                CURLOPT_FILE => $fp,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_TIMEOUT => 600,
+                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            ]);
+
+            $success = curl_exec($ch2);
+            $last_http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+            $last_curl_err = curl_error($ch2);
+            curl_close($ch2);
+            @fclose($fp);
+
+            if ($success && $last_http_code === 200 && file_exists($temp_path_with_ext) && filesize($temp_path_with_ext) > 100) {
+                $download_success = true;
+                break;
+            } else {
+                @unlink($temp_path_with_ext);
+            }
+        }
     }
 
-    $ch2 = curl_init($download_url);
-    curl_setopt($ch2, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
-    curl_setopt($ch2, CURLOPT_FILE, $fp);
-    curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch2, CURLOPT_TIMEOUT, 600);
-    $success = curl_exec($ch2);
-    $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
-    curl_close($ch2);
-    fclose($fp);
-
-    if (!$success || $http_code !== 200) {
+    if (!$download_success) {
         @unlink($temp_path_with_ext);
-        return ['error' => 'Lỗi tải file từ Google Drive (HTTP ' . $http_code . ').'];
+        $err_detail = $last_curl_err ? " ($last_curl_err)" : "";
+        return ['error' => "Lỗi tải file từ Google Drive (HTTP {$last_http_code}{$err_detail}). Vui lòng kiểm tra lại quyền truy cập file."];
     }
 
     return [
@@ -225,10 +277,16 @@ function delete_drive_file($access_token, $file_id) {
     // === Bước 1: Thử DELETE trực tiếp (xóa vĩnh viễn, bỏ qua Trash) ===
     $delete_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?supportsAllDrives=true";
     $ch = curl_init($delete_url);
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt_array($ch, [
+        CURLOPT_CUSTOMREQUEST => 'DELETE',
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_SSL_VERIFYPEER => false
+    ]);
     $response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
@@ -242,11 +300,17 @@ function delete_drive_file($access_token, $file_id) {
     // Bước 2a: Chuyển file vào Trash bằng PATCH trashed=true
     $trash_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?supportsAllDrives=true";
     $ch2 = curl_init($trash_url);
-    curl_setopt($ch2, CURLOPT_CUSTOMREQUEST, 'PATCH');
-    curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch2, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch2, CURLOPT_POSTFIELDS, json_encode(['trashed' => true]));
-    curl_setopt($ch2, CURLOPT_TIMEOUT, 30);
+    curl_setopt_array($ch2, [
+        CURLOPT_CUSTOMREQUEST => 'PATCH',
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => json_encode(['trashed' => true]),
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_SSL_VERIFYPEER => false
+    ]);
     $trash_response = curl_exec($ch2);
     $trash_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
     curl_close($ch2);
@@ -258,10 +322,16 @@ function delete_drive_file($access_token, $file_id) {
     
     // Bước 2b: Xóa vĩnh viễn file đã nằm trong Trash
     $ch3 = curl_init($delete_url);
-    curl_setopt($ch3, CURLOPT_CUSTOMREQUEST, 'DELETE');
-    curl_setopt($ch3, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch3, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch3, CURLOPT_TIMEOUT, 30);
+    curl_setopt_array($ch3, [
+        CURLOPT_CUSTOMREQUEST => 'DELETE',
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_SSL_VERIFYPEER => false
+    ]);
     $del2_response = curl_exec($ch3);
     $del2_code = curl_getinfo($ch3, CURLINFO_HTTP_CODE);
     curl_close($ch3);
@@ -286,9 +356,15 @@ function list_drive_files_in_folder($access_token, $folder_id) {
         }
         
         $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
+            CURLOPT_TIMEOUT => 60,
+            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_SSL_VERIFYPEER => false
+        ]);
         $response = curl_exec($ch);
         $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
