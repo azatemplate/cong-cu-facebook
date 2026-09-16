@@ -192,8 +192,9 @@ foreach ($raw_pages as $row) {
     } elseif ($row['post_type'] === 'TikTok') {
         $chan_key = 'tt_' . $row['account_id'] . '_' . $row['page_id'];
     } else {
-        // Cả Facebook Fanpages và Instagram đều gộp chung theo User Account ID (account_id) để đảm bảo 1 user chỉ đăng 1 bài cùng lúc
-        $fb_user_key = !empty($row['account_id']) ? ('acc_' . $row['account_id']) : (!empty($row['user_id']) ? ('usr_' . $row['user_id']) : 'system');
+        // Facebook Fanpages & Instagram: Mỗi Facebook Access Token (user_id) có 1 luồng riêng biệt.
+        // Đảm bảo các Token khác nhau chạy song song, nhưng trong CÙNG 1 Token chỉ chạy 1 luồng nối tiếp.
+        $fb_user_key = !empty($row['user_id']) ? ('usr_' . $row['user_id']) : (!empty($row['account_id']) ? ('acc_' . $row['account_id']) : 'system');
         $chan_key = 'fb_token_' . $fb_user_key;
     }
 
@@ -279,10 +280,8 @@ foreach ($dispatch_list as $item) {
             @exec("nohup \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$chan_key\" > /dev/null 2>&1 &");
         }
         $dispatched = true;
-    }
-    
-    // Kích hoạt Web-Async cURL tới run_worker.php
-    if (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
+    } else if (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
+        // Chỉ gọi Web-Async cURL nếu CLI exec bị disable trên hosting
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
         $doc_root = $_SERVER['DOCUMENT_ROOT'] ?? '';
         $root_web_path = rtrim(str_replace('\\', '/', str_replace($doc_root, '', dirname(__DIR__))), '/');
