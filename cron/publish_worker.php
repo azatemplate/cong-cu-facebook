@@ -59,8 +59,8 @@ if (!is_dir($lock_dir)) {
 $lock_key = !empty($user_id_lock) ? md5('uid_' . $user_id_lock) : md5($raw_page_input);
 $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
 
-// Xoá lock file cũ nếu quá 900 giây (15 phút) mà không có tương tác (tránh worker ngắt đột ngột kẹt lock)
-if (file_exists($lock_file) && (time() - filemtime($lock_file)) > 900) {
+// Xoá lock file cũ nếu quá 180 giây (3 phút) mà không có tương tác (tránh worker ngắt đột ngột kẹt lock)
+if (file_exists($lock_file) && (time() - filemtime($lock_file)) > 180) {
     @unlink($lock_file);
 }
 
@@ -451,7 +451,7 @@ echo "Bat dau quet bai viet len lich luc: " . date('Y-m-d H:i:s') . "\n";
 // If a previous worker run crashed, posts stay at 'processing' forever.
 // We reset them so they can be retried.
 try {
-    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE)");
     if ($stuck > 0)
         echo "  [RESET] Reset $stuck bài bị kẹt ở trạng thái 'processing' về 'pending'.\n";
 } catch (Exception $e) {
