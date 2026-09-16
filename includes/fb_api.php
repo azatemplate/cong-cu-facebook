@@ -6,15 +6,20 @@ define('FB_API_VERSION', 'v25.0');
 define('FB_API_BASE', 'https://graph.facebook.com/' . FB_API_VERSION . '/');
 
 function fb_curl_setssl($ch) {
-    // Force IPv4 resolution and HTTP/1.1 to prevent IPv6 connection timeouts and HTTP/2 stream drops on VPS/servers
+    // Force IPv4 resolution to prevent IPv6 connection timeouts on VPS/servers
     curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
     curl_setopt($ch, CURLOPT_DNS_CACHE_TIMEOUT, 3600);
-    curl_setopt($ch, CURLOPT_BUFFERSIZE, 524288);
     curl_setopt($ch, CURLOPT_ENCODING, '');
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+
+    // Disable SSL verification only in development environment
+    if (defined('APP_ENV') && APP_ENV === 'development') {
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    } else {
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+    }
 }
 
 function apply_proxy_to_curl($ch, $access_token = null) {
@@ -105,7 +110,7 @@ function apply_proxy_to_curl($ch, $access_token = null) {
     }
 }
 
-function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [], $timeout = 20) {
+function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [], $timeout = 20, $skip_proxy = false) {
     $url = FB_API_BASE . $endpoint;
 
     if (!empty($params)) {
@@ -116,9 +121,10 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
     fb_curl_setssl($ch);
 
-    if (!empty($params['access_token'])) {
+    if (!$skip_proxy && !empty($params['access_token'])) {
         apply_proxy_to_curl($ch, $params['access_token']);
     }
 
@@ -151,15 +157,131 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
         return ['status_code' => 0, 'data' => ['error' => ['message' => $curl_err]]];
     }
 
-    $data = json_decode($response, true);
-    if ($data === null && !empty($response)) {
-        $data = ['error' => ['message' => trim(strip_tags(substr($response, 0, 300)))]];
-    }
-
     return [
         'status_code' => $http_code,
-        'data'        => $data
+        'data'        => json_decode($response, true)
     ];
+}
+
+/**
+ * Tải video dung lượng lớn lên Facebook bằng Resumable Chunked Upload API (Facebook Graph API Chunk Upload)
+ * Tham khảo facebook-api-video-upload (mrdotb)
+ * Giúp chia nhỏ tệp video thành từng phần (4MB/chunk) để tải lên thành công 100%, không bao giờ bị timeout hay văng kết nối.
+ */
+function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $post_data = [], $pdo = null, $post_id = null) {
+    if (!file_exists($file_path) || filesize($file_path) < 10) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Tệp video không tồn tại hoặc rỗng.']]];
+    }
+
+    $file_size = filesize($file_path);
+    $chunk_size = 2 * 1024 * 1024; // 2MB per chunk (nhỏ hơn để tránh proxy timeout)
+
+    // ── Giai đoạn 1: Start (Khởi tạo phiên upload) ─────────────────────────
+    $start_res = fb_api_request($page_id . '/videos', [
+        'upload_phase' => 'start',
+        'file_size'    => $file_size,
+        'access_token' => $page_access_token
+    ], 'POST', [], 60);
+
+    if ($start_res['status_code'] !== 200 || empty($start_res['data']['upload_session_id'])) {
+        return $start_res;
+    }
+
+    $upload_session_id = $start_res['data']['upload_session_id'];
+    $video_id          = $start_res['data']['video_id'] ?? null;
+    $start_offset      = (int)($start_res['data']['start_offset'] ?? 0);
+
+    $fp = @fopen($file_path, 'rb');
+    if (!$fp) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể mở tệp video tạm trên máy chủ.']]];
+    }
+
+    // ── Giai đoạn 2: Transfer (Tải từng Chunk dữ liệu lên Facebook) ────────
+    while ($start_offset < $file_size) {
+        // Cập nhật nhịp tim trong Database nếu có truyền $pdo và $post_id
+        if ($pdo && $post_id) {
+            try {
+                $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW() WHERE id = ?")->execute([$post_id]);
+            } catch (Exception $e) {}
+        }
+
+        fseek($fp, $start_offset);
+        $read_len = min($chunk_size, $file_size - $start_offset);
+        $chunk_data = fread($fp, $read_len);
+
+        if ($chunk_data === false || strlen($chunk_data) === 0) {
+            break;
+        }
+
+        // Tạo file tạm cho chunk nhỏ
+        $tmp_chunk_path = tempnam(sys_get_temp_dir(), 'fb_chk_');
+        file_put_contents($tmp_chunk_path, $chunk_data);
+
+        $cfile = new CURLFile($tmp_chunk_path, 'application/octet-stream', 'video_chunk.part');
+
+        $transfer_data = [
+            'upload_phase'      => 'transfer',
+            'upload_session_id' => $upload_session_id,
+            'start_offset'      => (string)$start_offset,
+            'video_file_chunk'  => $cfile
+        ];
+
+        $chunk_success = false;
+        $last_chunk_res = null;
+
+        // Thử lại tối đa 3 lần cho mỗi Chunk nếu gặp sự cố mạng tạm thời
+        for ($retry = 0; $retry < 3 && !$chunk_success; $retry++) {
+            // BỎ PROXY cho phase transfer (upload data nặng) để tránh HTTP 504/timeout
+            $chunk_res = fb_api_request($page_id . '/videos', [
+                'access_token' => $page_access_token
+            ], 'POST', $transfer_data, 300, true);
+
+            $last_chunk_res = $chunk_res;
+            if ($chunk_res['status_code'] === 200 && isset($chunk_res['data']['start_offset'])) {
+                $start_offset = (int)$chunk_res['data']['start_offset'];
+                $chunk_success = true;
+            } else {
+                sleep(2 + $retry);
+            }
+        }
+
+        @unlink($tmp_chunk_path);
+
+        if (!$chunk_success) {
+            @fclose($fp);
+            return $last_chunk_res ?: ['status_code' => 0, 'data' => ['error' => ['message' => 'Lỗi tải từng phần (Chunk) video lên Facebook API.']]];
+        }
+    }
+
+    @fclose($fp);
+
+    // ── Giai đoạn 3: Finish (Hoàn tất đăng Video) ──────────────────────────
+    $finish_params = [
+        'upload_phase'      => 'finish',
+        'upload_session_id' => $upload_session_id,
+        'access_token'      => $page_access_token
+    ];
+
+    if (!empty($post_data['title'])) {
+        $finish_params['title'] = $post_data['title'];
+    }
+    if (!empty($post_data['description'])) {
+        $finish_params['description'] = $post_data['description'];
+    }
+    if (isset($post_data['published'])) {
+        $finish_params['published'] = $post_data['published'];
+    }
+
+    $finish_res = fb_api_request($page_id . '/videos', [], 'POST', $finish_params, 120);
+
+    // Bổ sung video_id vào kết quả phản hồi nếu API trả về success: true
+    if ($finish_res['status_code'] === 200) {
+        if (empty($finish_res['data']['id']) && !empty($video_id)) {
+            $finish_res['data']['id'] = $video_id;
+        }
+    }
+
+    return $finish_res;
 }
 
 /**
@@ -698,124 +820,5 @@ function process_auto_comment_reply($pdo, $page_id, $comment_id, $sender_id = ''
         @file_put_contents(__DIR__ . '/../webhook_db_errors.txt', date('Y-m-d H:i:s') . " AUTO REPLY ERR: " . $e->getMessage() . "\n", FILE_APPEND);
         return false;
     }
-}
-
-/**
- * Kiểm tra offset thực tế Facebook đang nhận cho một session upload video
- */
-function fb_probe_resumable_offset($page_id, $page_access_token, $upload_session_id) {
-    $res = fb_api_request($page_id . '/videos', [
-        'upload_phase'      => 'transfer',
-        'upload_session_id' => $upload_session_id,
-        'access_token'      => $page_access_token
-    ], 'POST', [], 30);
-
-    if ($res['status_code'] === 200 && isset($res['data']['start_offset'])) {
-        return (int)$res['data']['start_offset'];
-    }
-    return false;
-}
-
-/**
- * Tải Video/Reel lên Facebook bằng Resumable Chunked Upload (3 Phase: start -> transfer -> finish)
- * Có cơ chế Probe Offset + Exponential Backoff trên từng Chunk để chống lỗi HTTP 408 / Timeout.
- */
-function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $title = '', $description = '', $chunk_size = 5242880) { // 5MB / chunk
-    if (!file_exists($file_path) || filesize($file_path) === 0) {
-        return ['status_code' => 0, 'data' => ['error' => ['message' => 'File video không tồn tại hoặc rỗng.']]];
-    }
-
-    $file_size = filesize($file_path);
-
-    // ── STEP 1: Phase START ──────────────────────────────────────────────
-    $start_res = fb_api_request($page_id . '/videos', [
-        'upload_phase' => 'start',
-        'file_size'    => $file_size,
-        'access_token' => $page_access_token
-    ], 'POST', [], 30);
-
-    if ($start_res['status_code'] !== 200 || empty($start_res['data']['upload_session_id'])) {
-        return $start_res;
-    }
-
-    $upload_session_id = $start_res['data']['upload_session_id'];
-    $current_offset = (int)($start_res['data']['start_offset'] ?? 0);
-
-    // ── STEP 2: Phase TRANSFER (Chunked Loop với Probe Offset & Backoff) ─
-    $fp = fopen($file_path, 'rb');
-    if (!$fp) {
-        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video trên Server.']]];
-    }
-
-    while ($current_offset < $file_size) {
-        fseek($fp, $current_offset);
-        $bytes_to_read = min($chunk_size, $file_size - $current_offset);
-        $chunk_data = fread($fp, $bytes_to_read);
-
-        // Tạo file tạm cho chunk này
-        $chunk_tmp_path = sys_get_temp_dir() . '/fb_chunk_' . uniqid() . '.tmp';
-        file_put_contents($chunk_tmp_path, $chunk_data);
-        unset($chunk_data);
-
-        $chunk_transferred = false;
-        $last_err_res = null;
-
-        // Retry tối đa 5 lần cho từng chunk với exponential backoff & probe offset
-        for ($retry = 0; $retry < 5; $retry++) {
-            if ($retry > 0) {
-                $sleep_sec = pow(2, $retry); // 2s, 4s, 8s, 16s
-                sleep($sleep_sec);
-
-                // PROBE FACEBOOK DÀNH CHO OFFSET THỰC TẾ TRƯỚC KHI GỬI LẠI
-                $probed_offset = fb_probe_resumable_offset($page_id, $page_access_token, $upload_session_id);
-                if ($probed_offset !== false && $probed_offset > $current_offset) {
-                    $current_offset = $probed_offset;
-                    $chunk_transferred = true;
-                    @unlink($chunk_tmp_path);
-                    break;
-                }
-            }
-
-            $post_fields = [
-                'upload_phase'      => 'transfer',
-                'upload_session_id' => $upload_session_id,
-                'start_offset'      => $current_offset,
-                'access_token'      => $page_access_token,
-                'video_file_chunk'  => new CURLFile($chunk_tmp_path, 'application/octet-stream', 'chunk.dat')
-            ];
-
-            // Timeout 60s cho mỗi chunk 5MB
-            $transfer_res = fb_api_request($page_id . '/videos', [], 'POST', $post_fields, 60);
-            $last_err_res = $transfer_res;
-
-            if ($transfer_res['status_code'] === 200 && isset($transfer_res['data']['start_offset'])) {
-                $chunk_transferred = true;
-                $current_offset = (int)$transfer_res['data']['end_offset'];
-                break;
-            }
-        }
-
-        if (file_exists($chunk_tmp_path)) {
-            @unlink($chunk_tmp_path);
-        }
-
-        if (!$chunk_transferred) {
-            fclose($fp);
-            return $last_err_res;
-        }
-    }
-
-    fclose($fp);
-
-    // ── STEP 3: Phase FINISH ─────────────────────────────────────────────
-    $finish_params = [
-        'upload_phase'      => 'finish',
-        'upload_session_id' => $upload_session_id,
-        'access_token'      => $page_access_token
-    ];
-    if (!empty($title)) $finish_params['title'] = $title;
-    if (!empty($description)) $finish_params['description'] = $description;
-
-    return fb_api_request($page_id . '/videos', [], 'POST', $finish_params, 60);
 }
 ?>
