@@ -64,7 +64,7 @@ try {
 
 
 try {
-    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending', retry_count=0 WHERE status='processing' AND (updated_at IS NULL OR updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE))");
+    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending', retry_count=0 WHERE status='processing' AND (updated_at IS NULL OR updated_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE))");
     if ($stuck_count > 0) {
         echo "  [RESET] Da reset $stuck_count bai bi stuck 'processing' => 'pending'.\n";
     }
@@ -72,12 +72,12 @@ try {
     echo "Loi reset stuck posts: " . $e->getMessage() . "\n";
 }
 
-// --- DỌN TẤT CẢ FILE LOCK CŨ > 3 PHÚT TỰ ĐỘNG ---
+// --- DỌN TẤT CẢ FILE LOCK CŨ > 15 PHÚT TỰ ĐỘNG ---
 try {
     $lock_dir = dirname(__DIR__) . '/locks';
     if (is_dir($lock_dir)) {
         foreach (glob($lock_dir . '/*.lock') as $lf) {
-            if (file_exists($lf) && (time() - filemtime($lf)) > 180) {
+            if (file_exists($lf) && (time() - filemtime($lf)) > 900) {
                 @unlink($lf);
             }
         }
