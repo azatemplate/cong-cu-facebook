@@ -141,9 +141,9 @@ if ($available_slots <= 0) {
     exit;
 }
 
-// Tìm các bài cần đăng và nhóm theo user_id (Token User) với FB, page_id với YouTube (mỗi kênh YouTube = 1 Slot), account_id với TikTok, và buffer_account_id với Buffer (mỗi Token Buffer = 1 Slot độc lập)
+// Tìm các bài cần đăng và nhóm theo Campaign ID (1 Campaign = 1 Worker độc lập, chạy tuần tự tất cả nền tảng)
 $sql = "
-    SELECT DISTINCT sp.page_id, sp.account_id, sp.post_type, 
+    SELECT DISTINCT sp.page_id, sp.account_id, sp.post_type, sp.campaign_id,
            COALESCE(p.user_id, u_ig.id) AS user_id, 
            bc.buffer_account_id
     FROM scheduled_posts sp
@@ -173,26 +173,14 @@ if (empty($raw_pages)) {
     exit;
 }
 
-// ── 1. Nhóm tất cả Kênh đang chờ theo Tài khoản Chủ sở hữu (Owner Account) ──
+// ── 1. Nhóm tất cả Bài đang chờ theo Campaign ID ──
+// Mục tiêu: 1 Campaign ID = 1 Worker duy nhất. Worker đó sẽ tự vòng lặp đăng qua các nền tảng tuần tự.
 $owner_channels = [];
 foreach ($raw_pages as $row) {
-    // Phân loại theo chủ sở hữu (account_id của user trên hệ thống)
     $owner_id = !empty($row['account_id']) ? ('acc_' . $row['account_id']) : (!empty($row['user_id']) ? ('usr_' . $row['user_id']) : 'system');
-
-    // Xác định định danh của Token/Kênh (Channel Key)
-    if ($row['post_type'] === 'YouTube') {
-        $yt_chan_id = !empty($row['page_id']) ? $row['page_id'] : $row['account_id'];
-        $chan_key = 'yt_chan_' . $yt_chan_id;
-    } elseif (strpos($row['post_type'], 'Buffer') !== false) {
-        $buf_acc_id = !empty($row['buffer_account_id']) ? $row['buffer_account_id'] : $row['account_id'];
-        $chan_key = 'buf_acc_' . $buf_acc_id;
-    } elseif ($row['post_type'] === 'TikTok') {
-        $chan_key = 'tt_' . $row['account_id'];
-    } elseif (strpos($row['post_type'], 'Instagram') !== false) {
-        $chan_key = 'ig_' . $row['page_id'];
-    } else {
-        $chan_key = $row['user_id'] ?: ('noid_' . $row['page_id']);
-    }
+    
+    // Gom theo campaign_id. Nếu không có campaign_id (bài viết cũ/lẻ), thì gom theo page_id để không bị lỗi.
+    $chan_key = !empty($row['campaign_id']) ? ('camp_' . $row['campaign_id']) : ('noid_' . $row['page_id']);
 
     if (!isset($owner_channels[$owner_id])) {
         $owner_channels[$owner_id] = [];
@@ -200,21 +188,23 @@ foreach ($raw_pages as $row) {
     if (!isset($owner_channels[$owner_id][$chan_key])) {
         $owner_channels[$owner_id][$chan_key] = [];
     }
-    if (!in_array($row['page_id'], $owner_channels[$owner_id][$chan_key])) {
-        $owner_channels[$owner_id][$chan_key][] = $row['page_id'];
+    
+    // Vì ta gom theo campaign, không cần lưu từng page_id vào mảng nữa. 
+    // Ta chỉ cần 1 cờ để báo hiệu Campaign này cần 1 worker.
+    // Tuy nhiên, để tương thích với mảng cũ, ta cứ lưu chan_key vào.
+    if (!in_array($chan_key, $owner_channels[$owner_id][$chan_key])) {
+        $owner_channels[$owner_id][$chan_key][] = $chan_key;
     }
 }
 
-// ── 2. Tuyệt đối KHÔNG chia nhỏ luồng của 1 Token, đảm bảo 1 Token = 1 luồng duy nhất ──
+// ── 2. Tuyệt đối KHÔNG chia nhỏ luồng của 1 Campaign, đảm bảo 1 Campaign = 1 luồng duy nhất ──
 $owner_chan_lists = [];
 foreach ($owner_channels as $oid => $chans) {
     $owner_chan_lists[$oid] = [];
     foreach ($chans as $ckey => $pids) {
-        // Gom TẤT CẢ các page thuộc cùng 1 Token vào ĐÚNG 1 Worker (1 slot)
-        // Worker này sẽ chạy vòng lặp và đăng tuần tự, có delay nghỉ ngơi, tránh bị kẹt API Facebook.
         $owner_chan_lists[$oid][] = [
             'chan_key' => $ckey, 
-            'page_id' => implode(',', $pids), 
+            'page_id' => $ckey, // Truyền thẳng 'camp_123' vào argv[1] của worker
             'owner_id' => $oid
         ];
     }

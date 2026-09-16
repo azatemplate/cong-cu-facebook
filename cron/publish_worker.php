@@ -24,21 +24,30 @@ if (isset($_GET['reset_report']) && $_GET['reset_report'] == '1') {
 }
 
 
-// Nhận danh sách page_ids (phẩy cách) từ dispatcher - tất cả thuộc cùng 1 Token User
+// Nhận định danh từ dispatcher (có thể là camp_123 hoặc danh sách page_ids lẻ)
 $raw_page_input = isset($argv[1]) ? trim($argv[1]) : '';
 if (empty($raw_page_input) && isset($_GET['page_id'])) {
     $raw_page_input = trim($_GET['page_id']);
 }
 if (empty($raw_page_input)) {
-    echo "Tiến trình gọi thiếu Page ID. Hủy bỏ.\n";
+    echo "Tiến trình gọi thiếu tham số định danh. Hủy bỏ.\n";
     exit;
 }
 
-// Parse danh sách page_ids
-$target_page_ids = array_filter(array_map('trim', explode(',', $raw_page_input)));
-if (empty($target_page_ids)) {
-    echo "Danh sách Page ID rỗng. Hủy bỏ.\n";
-    exit;
+$is_campaign_run = false;
+$campaign_id = null;
+$target_page_ids = [];
+
+if (strpos($raw_page_input, 'camp_') === 0) {
+    $is_campaign_run = true;
+    $campaign_id = substr($raw_page_input, 5);
+} else {
+    // Parse danh sách page_ids
+    $target_page_ids = array_filter(array_map('trim', explode(',', $raw_page_input)));
+    if (empty($target_page_ids)) {
+        echo "Danh sách Page ID rỗng. Hủy bỏ.\n";
+        exit;
+    }
 }
 
 // Nhận user_id từ dispatcher (argv[2] hoặc $_GET['user_id'])
@@ -48,7 +57,7 @@ if (empty($user_id_lock) && isset($_GET['user_id'])) {
 }
 
 // Dùng biến $target_page_id cho tương thích ngược (single page fallback)
-$target_page_id = $target_page_ids[0];
+$target_page_id = !empty($target_page_ids) ? $target_page_ids[0] : null;
 
 $lock_dir = __DIR__ . '/../locks';
 if (!is_dir($lock_dir)) {
@@ -805,20 +814,40 @@ if (!empty($user_id_lock)) {
     }
 }
 
-$sql = "
-    SELECT sp.*, sa.max_retries AS sa_max_retries, sa.retry_interval_minutes AS sa_retry_interval, sa.post_delay_seconds AS sa_delay
-    FROM scheduled_posts sp 
-    LEFT JOIN system_accounts sa ON sp.account_id = sa.id 
-    LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id
-    WHERE (sp.status = 'pending' $retry_clause) 
-      AND sp.scheduled_time <= NOW() 
-      AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
-      $post_type_filter
-      $account_filter
-      AND sp.page_id IN ($placeholders)
-    ORDER BY sp.scheduled_time ASC
-    LIMIT 5
-";
+}
+
+if ($is_campaign_run) {
+    // Chế độ chạy theo Campaign: Gom mọi nền tảng vào 1 luồng
+    $sql = "
+        SELECT sp.*, sa.max_retries AS sa_max_retries, sa.retry_interval_minutes AS sa_retry_interval, sa.post_delay_seconds AS sa_delay
+        FROM scheduled_posts sp 
+        LEFT JOIN system_accounts sa ON sp.account_id = sa.id 
+        WHERE (sp.status = 'pending' $retry_clause) 
+          AND sp.scheduled_time <= NOW() 
+          AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
+          AND sp.campaign_id = ?
+        ORDER BY sp.scheduled_time ASC
+        LIMIT 5
+    ";
+    $params = [$campaign_id]; // Ghi đè params
+} else {
+    // Chế độ chạy lẻ từng Page ID (Tương thích ngược)
+    $sql = "
+        SELECT sp.*, sa.max_retries AS sa_max_retries, sa.retry_interval_minutes AS sa_retry_interval, sa.post_delay_seconds AS sa_delay
+        FROM scheduled_posts sp 
+        LEFT JOIN system_accounts sa ON sp.account_id = sa.id 
+        LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id
+        WHERE (sp.status = 'pending' $retry_clause) 
+          AND sp.scheduled_time <= NOW() 
+          AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
+          $post_type_filter
+          $account_filter
+          AND sp.page_id IN ($placeholders)
+        ORDER BY sp.scheduled_time ASC
+        LIMIT 5
+    ";
+}
+
 $stmt = $pdo->prepare($sql);
 if (!$stmt) {
     file_put_contents(__DIR__ . '/worker_error.log', date('Y-m-d H:i:s') . " - Prepare Error: " . print_r($pdo->errorInfo(), true) . "\n", FILE_APPEND);
