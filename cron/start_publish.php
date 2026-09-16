@@ -192,8 +192,10 @@ foreach ($raw_pages as $row) {
     } elseif ($row['post_type'] === 'TikTok') {
         $chan_key = 'tt_' . $row['account_id'] . '_' . $row['page_id'];
     } else {
-        // Cả Facebook Fanpages và Instagram đều gộp chung theo User Account ID (account_id) để đảm bảo 1 user chỉ đăng 1 bài cùng lúc
-        $fb_user_key = !empty($row['account_id']) ? ('acc_' . $row['account_id']) : (!empty($row['user_id']) ? ('usr_' . $row['user_id']) : 'system');
+        // Facebook Fanpages & Instagram: Mỗi Facebook Access Token (user_id từ token_management.php / users) có 1 luồng riêng biệt.
+        // Các Token khác nhau (Token A, Token B, Token C) của cùng 1 tài khoản hệ thống (accounts.php) sẽ đăng SONG SONG cùng lúc.
+        // Các Fanpage thuộc CÙNG 1 TOKEN sẽ chạy nối tiếp 1 bài tại 1 thời điểm và có delay trước khi sang bài tiếp theo.
+        $fb_user_key = !empty($row['user_id']) ? ('usr_' . $row['user_id']) : (!empty($row['account_id']) ? ('acc_' . $row['account_id']) : 'system');
         $chan_key = 'fb_token_' . $fb_user_key;
     }
 
