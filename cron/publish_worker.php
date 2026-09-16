@@ -56,16 +56,12 @@ if (!is_dir($lock_dir)) {
 }
 
 // Lock theo Token User ID (thay vì page_ids) để ngăn 2 worker cùng user chạy đồng thời
-// Khi cron chạy lại mà worker cũ chưa xong, page set có thể khác → md5(page_ids) khác → lock cũ không chặn
-// Dùng user_id đảm bảo chỉ 1 worker/user bất kể page set nào
 $lock_key = !empty($user_id_lock) ? md5('uid_' . $user_id_lock) : md5($raw_page_input);
 $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
 
-// Xoá lock file cũ nếu quá 15 phút (worker cũ crash không release)
-$lock_stale_seconds = 15 * 60;
-if (file_exists($lock_file) && (time() - filemtime($lock_file)) > $lock_stale_seconds) {
+// Xoá lock file cũ nếu quá 900 giây (15 phút) mà không có tương tác (tránh worker ngắt đột ngột kẹt lock)
+if (file_exists($lock_file) && (time() - filemtime($lock_file)) > 900) {
     @unlink($lock_file);
-    echo "  ⚠ Lock file cũ hơn 15 phút đã được dọn sạch.\n";
 }
 
 $lock_fp = @fopen($lock_file, 'c');
@@ -75,26 +71,17 @@ if (!$lock_fp) {
     $lock_fp = @fopen($lock_file, 'c');
 }
 
-if (!$lock_fp) {
-    echo " Không mở được lock file. Bỏ qua.\n";
-    exit;
-}
-
-// Thử lock trong 5 giây (blocking) thay vì exit ngay
-$lock_wait = 0;
 $lock_got = false;
-while ($lock_wait < 5) {
+if ($lock_fp) {
     if (flock($lock_fp, LOCK_EX | LOCK_NB)) {
         $lock_got = true;
-        break;
+        @touch($lock_file);
     }
-    sleep(1);
-    $lock_wait++;
 }
 
 if (!$lock_got) {
-    echo "Worker cho Token User này đang chạy (lock không giải phóng sau 5s), bỏ qua...\n";
-    fclose($lock_fp);
+    echo "Worker cho Token User này ($user_id_lock) đang bận xử lý bài khác. Bỏ qua luồng mới.\n";
+    if ($lock_fp) @fclose($lock_fp);
     exit;
 }
 
@@ -216,6 +203,223 @@ function spin_text($text) {
     return $text;
 }
 
+if (!function_exists('ensure_https_url')) {
+    function ensure_https_url($urlStr) {
+        $url = trim((string)$urlStr);
+        if (empty($url)) return '';
+        if (strpos($url, 'http://') === 0) {
+            return 'https://' . substr($url, 7);
+        }
+        return $url;
+    }
+}
+
+if (!function_exists('get_system_site_url')) {
+    function get_system_site_url($pdo) {
+        if (!empty($_SERVER['HTTP_HOST'])) {
+            $is_ssl = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+                || ($_SERVER['SERVER_PORT'] ?? 80) == 443;
+            $scheme = $is_ssl ? 'https' : 'http';
+            $url = $scheme . '://' . $_SERVER['HTTP_HOST'];
+            try {
+                $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('base_site_url', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
+                    ->execute([$url, $url]);
+            } catch (Exception $e) {}
+            return $url;
+        }
+        try {
+            $stmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'base_site_url'");
+            $saved = $stmt ? trim($stmt->fetchColumn() ?: '') : '';
+            if (!empty($saved)) {
+                if (strpos($saved, 'http://') === 0) {
+                    $saved = 'https://' . substr($saved, 7);
+                }
+                return rtrim($saved, '/');
+            }
+        } catch (Exception $e) {}
+        return 'https://fbweb.hongdolab.com';
+    }
+}
+
+if (!function_exists('upload_file_to_hongdolab_cdn')) {
+    function upload_file_to_hongdolab_cdn($file_path) {
+        if (!file_exists($file_path) || filesize($file_path) < 10) return false;
+        @set_time_limit(0);
+        
+        $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
+        $is_image = in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+
+        // --- LOCAL FAST-PATH FOR VPS: Copy trực tiếp không qua HTTP loopback ---
+        $local_cdn_dirs = [
+            '/www/wwwroot/data.hongdolab.com/uploads/',
+            dirname(dirname(__DIR__)) . '/data.hongdolab.com/uploads/',
+            dirname(__DIR__) . '/uploads/'
+        ];
+        foreach ($local_cdn_dirs as $lcd) {
+            if (is_dir($lcd) && is_writable($lcd)) {
+                $prefix = $is_image ? 'img_' : 'vid_';
+                $ext_clean = !empty($ext) ? $ext : ($is_image ? 'jpg' : 'mp4');
+                $stored_name = $prefix . date('Ymd_His') . '_' . bin2hex(random_bytes(6)) . '.' . $ext_clean;
+                $dest = $lcd . $stored_name;
+                if (@copy($file_path, $dest)) {
+                    @chmod($dest, 0777);
+                    return 'https://data.hongdolab.com/uploads/' . $stored_name;
+                }
+            }
+        }
+
+        $upload_tmp_dir = dirname($file_path) . '/';
+        if (!is_dir($upload_tmp_dir)) $upload_tmp_dir = __DIR__ . '/../uploads/';
+        
+        if ($is_image) {
+            $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=image');
+            $mime = function_exists('mime_content_type') ? mime_content_type($file_path) : 'image/jpeg';
+            $cfile = new CURLFile($file_path, $mime, basename($file_path));
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => ['image' => $cfile],
+                CURLOPT_TIMEOUT => 60,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0
+            ]);
+            $res = curl_exec($ch);
+            curl_close($ch);
+            if ($res) {
+                $json = json_decode($res, true);
+                if (!empty($json['url'])) {
+                    return ensure_https_url($json['url']);
+                }
+            }
+        } else {
+            $filename = basename($file_path);
+            $filesize = filesize($file_path);
+            $mime = function_exists('mime_content_type') ? mime_content_type($file_path) : 'video/mp4';
+            
+            $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=init');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                CURLOPT_POSTFIELDS => json_encode(['filename' => $filename, 'filesize' => $filesize, 'mime' => $mime]),
+                CURLOPT_TIMEOUT => 60,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0
+            ]);
+            $res = curl_exec($ch);
+            curl_close($ch);
+            $init_json = $res ? json_decode($res, true) : null;
+            
+            if (!empty($init_json['upload_id'])) {
+                $upload_id = $init_json['upload_id'];
+                $chunk_size = !empty($init_json['chunk_size']) ? (int)$init_json['chunk_size'] : (4 * 1024 * 1024);
+                
+                $fp = @fopen($file_path, 'rb');
+                if ($fp) {
+                    $index = 0;
+                    $ok = true;
+                    while (!feof($fp)) {
+                        $chunk_data = fread($fp, $chunk_size);
+                        if ($chunk_data === false || strlen($chunk_data) === 0) break;
+                        
+                        $tmp_chunk = tempnam($upload_tmp_dir, 'buf_chk_' . getmypid() . '_');
+                        file_put_contents($tmp_chunk, $chunk_data);
+                        
+                        $chunk_success = false;
+                        for ($retry = 0; $retry < 5 && !$chunk_success; $retry++) {
+                            $cfile = new CURLFile($tmp_chunk, 'application/octet-stream', $filename . '.part' . $index);
+                            $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=chunk');
+                            curl_setopt_array($ch, [
+                                CURLOPT_RETURNTRANSFER => true,
+                                CURLOPT_POST => true,
+                                CURLOPT_POSTFIELDS => [
+                                    'upload_id' => $upload_id,
+                                    'index' => (string)$index,
+                                    'chunk' => $cfile
+                                ],
+                                CURLOPT_TIMEOUT => 300,
+                                CURLOPT_SSL_VERIFYPEER => false,
+                                CURLOPT_SSL_VERIFYHOST => 0
+                            ]);
+                            $c_res = curl_exec($ch);
+                            curl_close($ch);
+                            $c_json = $c_res ? json_decode($c_res, true) : null;
+                            if ($c_res && isset($c_json['ok']) && $c_json['ok']) {
+                                $chunk_success = true;
+                            } else {
+                                sleep(1 + $retry);
+                            }
+                        }
+                        @unlink($tmp_chunk);
+                        
+                        if (!$chunk_success) {
+                            $ok = false;
+                            break;
+                        }
+                        $index++;
+                    }
+                    fclose($fp);
+                    
+                    if ($ok) {
+                        $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=complete');
+                        curl_setopt_array($ch, [
+                            CURLOPT_RETURNTRANSFER => true,
+                            CURLOPT_POST => true,
+                            CURLOPT_POSTFIELDS => ['upload_id' => $upload_id],
+                            CURLOPT_TIMEOUT => 300,
+                            CURLOPT_SSL_VERIFYPEER => false,
+                            CURLOPT_SSL_VERIFYHOST => 0
+                        ]);
+                        $comp_res = curl_exec($ch);
+                        curl_close($ch);
+                        $comp_json = $comp_res ? json_decode($comp_res, true) : null;
+                        if (!empty($comp_json['url'])) {
+                            return ensure_https_url($comp_json['url']);
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+}
+
+if (!function_exists('is_valid_buffer_media_url')) {
+    function is_valid_buffer_media_url($url) {
+        $url = trim((string)$url);
+        if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) return false;
+        $path = parse_url($url, PHP_URL_PATH);
+        if (empty($path) || $path === '/' || $path === '') return false;
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        return in_array($ext, ['mp4', 'mov', 'webm', 'avi', 'mkv', 'flv', 'wmv', 'm4v', '3gp', 'jpg', 'jpeg', 'png', 'webp', 'gif']);
+    }
+}
+
+if (!function_exists('call_buffer_worker_graphql')) {
+    function call_buffer_worker_graphql($token, $query, $variables = []) {
+        $payload = ['query' => $query];
+        if (!empty($variables)) $payload['variables'] = $variables;
+
+        $ch = curl_init('https://api.buffer.com/graphql');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . trim($token),
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            ],
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_SSL_VERIFYPEER => false
+        ]);
+        $res = curl_exec($ch);
+        curl_close($ch);
+        return $res ? json_decode($res, true) : null;
+    }
+}
+
 
 
 // Auto-migrate newly required columns
@@ -247,36 +451,24 @@ echo "Bat dau quet bai viet len lich luc: " . date('Y-m-d H:i:s') . "\n";
 // If a previous worker run crashed, posts stay at 'processing' forever.
 // We reset them so they can be retried.
 try {
-    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 20 MINUTE)");
+    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
     if ($stuck > 0)
         echo "  [RESET] Reset $stuck bài bị kẹt ở trạng thái 'processing' về 'pending'.\n";
 } catch (Exception $e) {
 }
 
 // ── Detect available columns ─────────────────────────────────────────────
-$has_fb_post_id = false;
-$has_error_msg = false;
-$has_retry_count = false;
-$has_comment_lines = false;
-$has_comment_at = false;
-$has_comment_status = false;
-$has_comment_mode = false;
-try {
-    $col_q = $pdo->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME IN ('fb_post_id','error_msg','retry_count','comment_lines','comment_at','comment_status','comment_mode')");
-    $existing_cols = $col_q ? $col_q->fetchAll(PDO::FETCH_COLUMN) : [];
-    $has_fb_post_id = in_array('fb_post_id', $existing_cols);
-    $has_error_msg = in_array('error_msg', $existing_cols);
-    $has_retry_count = in_array('retry_count', $existing_cols);
-    $has_comment_lines = in_array('comment_lines', $existing_cols);
-    $has_comment_at = in_array('comment_at', $existing_cols);
-    $has_comment_status = in_array('comment_status', $existing_cols);
-    $has_comment_mode = in_array('comment_mode', $existing_cols);
-} catch (Exception $e) {
-}
+$has_fb_post_id = true;
+$has_error_msg = true;
+$has_retry_count = true;
+$has_comment_lines = true;
+$has_comment_at = true;
+$has_comment_status = true;
+$has_comment_mode = true;
 
 // Fetch system settings for retry logic
 $sys_retry_interval = 1;
-$sys_max_retries = 3;
+$sys_max_retries = 1;
 
 // Chuỗi Fallback Chain 4 tầng bóc tách TikTok theo đúng tài liệu kỹ thuật huong-dan.txt (ongchummo.com)
 function fetch_tiktok_info(string $tiktok_url): ?array
@@ -543,7 +735,7 @@ class TokenLocker {
 
 // 1. Fetch pending posts for ALL page_ids of this Token User
 $retry_clause = $has_retry_count
-    ? "OR (sp.status = 'failed' AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3)))"
+    ? "OR (sp.status = 'failed' AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 1)))"
     : '';
 
 // Build placeholders cho IN clause
@@ -569,6 +761,14 @@ if (!empty($user_id_lock)) {
             $account_filter = "AND sp.account_id = ? ";
             array_unshift($params, (int)$actual_account_id);
         }
+    } elseif (strpos($user_id_lock, 'buf_chan_') === 0) {
+        // Luồng Buffer theo từng Kênh Buffer
+        $post_type_filter = "AND sp.post_type LIKE 'Buffer%' ";
+        $buf_chan_id = substr($user_id_lock, 9);
+        if (!empty($buf_chan_id)) {
+            $account_filter = "AND sp.page_id = ? ";
+            array_unshift($params, $buf_chan_id);
+        }
     } elseif (strpos($user_id_lock, 'buf_acc_') === 0) {
         // Luồng Buffer theo Buffer Token Account ID cụ thể (Mỗi Token Buffer = 1 Slot độc lập)
         $post_type_filter = "AND sp.post_type LIKE 'Buffer%' ";
@@ -580,21 +780,22 @@ if (!empty($user_id_lock)) {
     } elseif (strpos($user_id_lock, 'buf_') === 0) {
         // Luồng Buffer tương thích ngược
         $post_type_filter = "AND sp.post_type LIKE 'Buffer%' ";
-        $actual_account_id = substr($user_id_lock, 4);
-        if (is_numeric($actual_account_id)) {
-            $account_filter = "AND sp.account_id = ? ";
-            array_unshift($params, (int)$actual_account_id);
-        }
     } elseif (strpos($user_id_lock, 'tt_') === 0) {
-        // Luồng TikTok: Chỉ lấy post_type = TikTok và account_id cụ thể
+        // Luồng TikTok: Chỉ lấy post_type = TikTok
         $post_type_filter = "AND sp.post_type = 'TikTok' ";
-        $actual_account_id = substr($user_id_lock, 3);
-        if (is_numeric($actual_account_id)) {
-            $account_filter = "AND sp.account_id = ? ";
-            array_unshift($params, (int)$actual_account_id);
+    } elseif (strpos($user_id_lock, 'ig_token_') === 0) {
+        // Luồng Instagram nhóm theo Access Token User (đăng tuần tự từng IG Account)
+        $post_type_filter = "AND sp.post_type LIKE 'Instagram%' ";
+    } elseif (strpos($user_id_lock, 'ig_') === 0) {
+        // Luồng Instagram: Chỉ lấy post_type LIKE 'Instagram%' và page_id cụ thể
+        $post_type_filter = "AND sp.post_type LIKE 'Instagram%' ";
+        $actual_ig_user_id = substr($user_id_lock, 3);
+        if (!empty($actual_ig_user_id)) {
+            $account_filter = "AND sp.page_id = ? ";
+            array_unshift($params, $actual_ig_user_id);
         }
     } else {
-        // Luồng Facebook: Chỉ lấy post_type KHÔNG PHẢI YouTube, Buffer, TikTok
+        // Luồng Facebook Fanpages & Instagram: Gộp chung theo Access Token User (Chỉ bỏ qua YouTube, Buffer, TikTok)
         $post_type_filter = "AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' ";
     }
 }
@@ -602,15 +803,15 @@ if (!empty($user_id_lock)) {
 $sql = "
     SELECT sp.*, sa.max_retries AS sa_max_retries, sa.retry_interval_minutes AS sa_retry_interval, sa.post_delay_seconds AS sa_delay
     FROM scheduled_posts sp 
-    LEFT JOIN system_accounts sa ON sp.account_id = sa.id 
+    LEFT JOIN system_accounts sa ON sp.account_id = sa.id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' AND sp.post_type NOT LIKE 'Instagram%'
     LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id
     WHERE (sp.status = 'pending' $retry_clause) 
       AND sp.scheduled_time <= NOW() 
-      AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
+      AND (sa.id IS NULL OR sa.expire_date IS NULL OR sa.expire_date >= NOW())
       $post_type_filter
       $account_filter
       AND sp.page_id IN ($placeholders)
-    ORDER BY sp.scheduled_time ASC
+    ORDER BY sp.scheduled_time ASC, sp.id ASC
     LIMIT 5
 ";
 $stmt = $pdo->prepare($sql);
@@ -651,9 +852,6 @@ if (isset($pending_posts[0]['sa_delay']) && $pending_posts[0]['sa_delay'] !== nu
     $user_delay_sec = (int)$pending_posts[0]['sa_delay'];
 }
 
-// Xáo trộn ngẫu nhiên để công bằng giữa các Page trong cùng Token User
-shuffle($pending_posts);
-
 echo "Tìm thấy " . count($pending_posts) . " bài viết cần đăng (Delay: {$user_delay_sec}s giữa mỗi post).\n";
 
 $account_published_today = [];
@@ -661,10 +859,18 @@ $account_limits = [];
 $post_index = 0; // Đếm số post đã xử lý để áp dụng delay
 
 foreach ($pending_posts as $post) {
+    // Cập nhật timestamp lock file để báo hiệu worker vẫn đang hoạt động tích cực
+    if ($lock_file && file_exists($lock_file)) {
+        @touch($lock_file);
+    }
+
     // ── Delay giữa mỗi post (bỏ qua post đầu tiên) ──────────────────────
     if ($post_index > 0 && $user_delay_sec > 0) {
         echo "   → Chờ {$user_delay_sec}s trước khi đăng post tiếp theo (Token User delay)...\n";
         sleep($user_delay_sec);
+        if ($lock_file && file_exists($lock_file)) {
+            @touch($lock_file);
+        }
     }
     $post_index++;
     echo "Đang xử lý bài đăng ID: {$post['id']} - Loại: {$post['post_type']}\n";
@@ -1020,10 +1226,10 @@ foreach ($pending_posts as $post) {
 
             // Đánh dấu thành công
             if ($has_fb_post_id) {
-                $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ? WHERE id = ?")
+                $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")
                     ->execute([$video_id, $post['id']]);
             } else {
-                $pdo->prepare("UPDATE scheduled_posts SET status = 'published' WHERE id = ?")
+                $pdo->prepare("UPDATE scheduled_posts SET status = 'published', error_msg = NULL WHERE id = ?")
                     ->execute([$post['id']]);
             }
 
@@ -1107,10 +1313,22 @@ foreach ($pending_posts as $post) {
             SELECT bc.channel_id, bc.channel_name, bc.service, ba.access_token 
             FROM buffer_channels bc 
             JOIN buffer_accounts ba ON bc.buffer_account_id = ba.id 
-            WHERE bc.channel_id = ? AND bc.account_id = ?
+            WHERE bc.channel_id = ? AND (bc.account_id = ? OR 1=1)
+            LIMIT 1
         ");
         $stmt_b->execute([$post['page_id'], $post['account_id']]);
         $buf_chan = $stmt_b->fetch(PDO::FETCH_ASSOC);
+        if (!$buf_chan || empty($buf_chan['access_token'])) {
+            $stmt_b2 = $pdo->prepare("
+                SELECT bc.channel_id, bc.channel_name, bc.service, ba.access_token 
+                FROM buffer_channels bc 
+                JOIN buffer_accounts ba ON bc.buffer_account_id = ba.id 
+                WHERE bc.channel_id = ?
+                LIMIT 1
+            ");
+            $stmt_b2->execute([$post['page_id']]);
+            $buf_chan = $stmt_b2->fetch(PDO::FETCH_ASSOC);
+        }
 
         if (!$buf_chan || empty($buf_chan['access_token'])) {
             marKAsFailed($pdo, $post['id'], "Không tìm thấy Access Token của Buffer cho kênh này.", $sys_max_retries, $sys_retry_interval);
@@ -1794,7 +2012,237 @@ foreach ($pending_posts as $post) {
         // Xong luồng Buffer, bỏ qua phần Facebook bên dưới
         continue;
     }
-    // ──────────────────────────────────────────────────────────────────────────
+    // ── XỬ LÝ RIÊNG DÀNH CHO INSTAGRAM POST / REELS / STORY ──────────────────
+    // ── XỬ LÝ RIÊNG DÀNH CHO INSTAGRAM POST / REELS / STORY / CAROUSEL ──────
+    if (strpos($post['post_type'], 'Instagram') !== false) {
+        require_once __DIR__ . '/../includes/instagram_api.php';
+
+        $ig_stmt = $pdo->prepare("SELECT * FROM instagram_accounts WHERE (ig_user_id = ? OR id = ?) AND account_id = ?");
+        $ig_stmt->execute([$post['page_id'], $post['page_id'], $post['account_id']]);
+        $ig_acc = $ig_stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$ig_acc || empty($ig_acc['access_token'])) {
+            marKAsFailed($pdo, $post['id'], "Không tìm thấy tài khoản Instagram ủy quyền hợp lệ.", $sys_max_retries, $sys_retry_interval);
+            continue;
+        }
+
+        $raw_media = $post['media_path'] ?? '';
+        $content_data = @json_decode($post['content'], true);
+        $caption = is_array($content_data) ? ($content_data['description'] ?? $content_data['text'] ?? '') : $post['content'];
+        $caption = spin_text($caption);
+
+        if (empty($raw_media)) {
+            marKAsFailed($pdo, $post['id'], "Không có URL media để đăng Instagram.", $sys_max_retries, $sys_retry_interval);
+            continue;
+        }
+
+        // Parse media paths (Single item vs JSON array for Carousel)
+        $media_items = [];
+        $decoded_media = @json_decode($raw_media, true);
+        if (is_array($decoded_media)) {
+            $media_items = array_values(array_filter($decoded_media));
+        } else {
+            $media_items = [$raw_media];
+        }
+
+        if (empty($media_items)) {
+            marKAsFailed($pdo, $post['id'], "Danh sách media Instagram rỗng.", $sys_max_retries, $sys_retry_interval);
+            continue;
+        }
+
+        $base_domain = get_system_site_url($pdo);
+        $public_media_urls = [];
+        $temp_local_files = [];
+        $created_upload_files = [];
+        $resolved_drive_file_ids = [];
+        $resolved_title_override = '';
+
+        foreach ($media_items as $item_media) {
+            $is_folder = strpos($item_media, 'folder:') === 0;
+            $is_drive  = strpos($item_media, 'drive:') === 0;
+            $is_tiktok = strpos($item_media, 'tiktok:') === 0;
+
+            if ($is_folder) {
+                $folder_id = substr($item_media, 7);
+                $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
+                if (!$drive_token) {
+                    marKAsFailed($pdo, $post['id'], "Lỗi tải Google Drive: Thiếu Token", $sys_max_retries, $sys_retry_interval);
+                    continue 2;
+                }
+                $is_anti_dup = !empty($content_data['delete_drive_file']);
+                $mime_filter = ($post['post_type'] === 'Instagram_Reels') ? 'video/*' : null;
+                $resolved_file_info = resolve_drive_folder_file($pdo, $drive_token, $folder_id, $mime_filter, $is_anti_dup);
+                if (isset($resolved_file_info['error'])) {
+                    marKAsFailed($pdo, $post['id'], "Lỗi quét thư mục Drive: " . $resolved_file_info['error'], $sys_max_retries, $sys_retry_interval);
+                    continue 2;
+                }
+                $drive_file_id = $resolved_file_info['id'];
+                $resolved_drive_file_ids[] = $drive_file_id;
+                if (!empty($resolved_file_info['name'])) {
+                    $resolved_title_override = pathinfo($resolved_file_info['name'], PATHINFO_FILENAME);
+                }
+
+                $file_info = download_drive_file_temp($drive_token, $drive_file_id);
+                if (isset($file_info['error'])) {
+                    marKAsFailed($pdo, $post['id'], "Lỗi tải tệp từ Drive: " . $file_info['error'], $sys_max_retries, $sys_retry_interval);
+                    continue 2;
+                }
+                $temp_local_files[] = $file_info['path'];
+                $ext = pathinfo($file_info['name'], PATHINFO_EXTENSION) ?: 'jpg';
+                $dest_name = 'uploads/ig_' . uniqid() . '.' . $ext;
+                $dest_full = __DIR__ . '/../' . $dest_name;
+                copy($file_info['path'], $dest_full);
+                $created_upload_files[] = $dest_full;
+                $public_media_urls[] = $base_domain . '/' . $dest_name;
+            } elseif ($is_drive) {
+                $drive_file_id = substr($item_media, 6);
+                $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
+                if (!$drive_token) {
+                    marKAsFailed($pdo, $post['id'], "Lỗi tải Google Drive: Thiếu Token", $sys_max_retries, $sys_retry_interval);
+                    continue 2;
+                }
+                $resolved_drive_file_ids[] = $drive_file_id;
+                $file_info = download_drive_file_temp($drive_token, $drive_file_id);
+                if (isset($file_info['error'])) {
+                    marKAsFailed($pdo, $post['id'], "Lỗi tải tệp từ Drive: " . $file_info['error'], $sys_max_retries, $sys_retry_interval);
+                    continue 2;
+                }
+                if (!empty($file_info['name'])) {
+                    $resolved_title_override = pathinfo($file_info['name'], PATHINFO_FILENAME);
+                }
+                $temp_local_files[] = $file_info['path'];
+                $ext = pathinfo($file_info['name'], PATHINFO_EXTENSION) ?: 'jpg';
+                $dest_name = 'uploads/ig_' . uniqid() . '.' . $ext;
+                $dest_full = __DIR__ . '/../' . $dest_name;
+                copy($file_info['path'], $dest_full);
+                $created_upload_files[] = $dest_full;
+                $public_media_urls[] = $base_domain . '/' . $dest_name;
+            } elseif ($is_tiktok) {
+                $tt_url = substr($item_media, 7);
+                if (!function_exists('download_tiktok_video')) {
+                    require_once __DIR__ . '/../includes/tiktok_downloader.php';
+                }
+                $res_tt = download_tiktok_video($tt_url);
+                if (empty($res_tt['file_path']) || !file_exists($res_tt['file_path'])) {
+                    marKAsFailed($pdo, $post['id'], "Lỗi tải video TikTok: " . ($res_tt['msg'] ?? 'Không tải được file'), $sys_max_retries, $sys_retry_interval);
+                    continue 2;
+                }
+                if (!empty($res_tt['title'])) {
+                    $resolved_title_override = $res_tt['title'];
+                }
+                $temp_local_files[] = $res_tt['file_path'];
+                $dest_name = 'uploads/ig_' . uniqid() . '.mp4';
+                $dest_full = __DIR__ . '/../' . $dest_name;
+                copy($res_tt['file_path'], $dest_full);
+                $created_upload_files[] = $dest_full;
+                $public_media_urls[] = $base_domain . '/' . $dest_name;
+            } else {
+                $local_rel = ltrim($item_media, '/');
+                if (strpos($item_media, 'http://') === 0 || strpos($item_media, 'https://') === 0) {
+                    $public_media_urls[] = $item_media;
+                } else {
+                    $resolved_title_override = pathinfo(basename($local_rel), PATHINFO_FILENAME);
+                    $local_full = __DIR__ . '/../' . $local_rel;
+                    $created_upload_files[] = $local_full;
+                    $public_media_urls[] = $base_domain . '/' . $local_rel;
+                }
+            }
+        }
+
+        if (empty($public_media_urls)) {
+            marKAsFailed($pdo, $post['id'], "Không thể tạo URL công khai cho tệp phương tiện Instagram.", $sys_max_retries, $sys_retry_interval);
+            continue;
+        }
+
+        // Tự động gán Tên file / Tiêu đề TikTok làm Caption nếu có cấu hình auto_title hoặc caption rỗng
+        $is_auto_title = !empty($content_data['auto_title']);
+        if (($is_auto_title || empty(trim($caption))) && !empty($resolved_title_override)) {
+            $user_cap = trim($caption);
+            if (!empty($user_cap) && $is_auto_title) {
+                $caption = $resolved_title_override . "\n\n" . $user_cap;
+            } else {
+                $caption = $resolved_title_override;
+            }
+        }
+        $caption = spin_text($caption);
+
+        // 2. Post to Instagram Graph API (Single vs Carousel)
+        if (count($public_media_urls) > 1) {
+            $res = post_instagram_carousel($ig_acc['ig_user_id'], $ig_acc['access_token'], $public_media_urls, $caption);
+        } elseif ($post['post_type'] === 'Instagram_Reels') {
+            $res = post_instagram_reels($ig_acc['ig_user_id'], $ig_acc['access_token'], $public_media_urls[0], $caption);
+        } elseif ($post['post_type'] === 'Instagram_Story') {
+            $is_vid = (strpos(strtolower($public_media_urls[0]), '.mp4') !== false || strpos(strtolower($public_media_urls[0]), '.mov') !== false || strpos(strtolower($public_media_urls[0]), '.webm') !== false);
+            $res = post_instagram_story($ig_acc['ig_user_id'], $ig_acc['access_token'], $public_media_urls[0], $is_vid);
+        } else {
+            $res = post_instagram_photo($ig_acc['ig_user_id'], $ig_acc['access_token'], $public_media_urls[0], $caption);
+        }
+
+        if ($res['status'] === 'success') {
+            $pub_id = $res['id'] ?? '';
+            $permalink = get_instagram_media_permalink($pub_id, $ig_acc['access_token']);
+            $save_fb_post_id = !empty($permalink) ? ($permalink . '#' . $pub_id) : $pub_id;
+
+            $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")
+                ->execute([$save_fb_post_id, $post['id']]);
+            echo " -> Đăng bài Instagram thành công! Link: " . (!empty($permalink) ? $permalink : $pub_id) . "\n";
+
+            // Hẹn giờ Comment tự động nếu có cấu hình
+            if ($has_comment_lines && $has_comment_at && !empty($post['comment_lines'])) {
+                $post_comment_mode = ($has_comment_mode && !empty($post['comment_mode'])) ? $post['comment_mode'] : 'timer';
+                if ($post_comment_mode === 'insights') {
+                    if ($has_comment_status) {
+                        $pdo->prepare("UPDATE scheduled_posts SET comment_status = 'waiting_insights' WHERE id = ?")
+                            ->execute([$post['id']]);
+                    }
+                    echo "   → Comment mode: insights (chờ cron kiểm tra metrics)\n";
+                } else {
+                    $comment_at = date('Y-m-d H:i:s', time() + 120);
+                    if ($has_comment_status) {
+                        $pdo->prepare("UPDATE scheduled_posts SET comment_at = ?, comment_status = 'pending' WHERE id = ?")
+                            ->execute([$comment_at, $post['id']]);
+                    } else {
+                        $pdo->prepare("UPDATE scheduled_posts SET comment_at = ? WHERE id = ?")
+                            ->execute([$comment_at, $post['id']]);
+                    }
+                    echo "   → Đã hẹn giờ bình luận Instagram sau 2 phút.\n";
+                }
+            }
+
+            // Dọn dẹp tệp phương tiện uploads/ sau khi đăng thành công (giống reels.php & posts.php)
+            foreach ($created_upload_files as $uf) {
+                if (!empty($uf) && file_exists($uf) && strpos(str_replace('\\', '/', $uf), '/uploads/') !== false) {
+                    $bname = basename($uf);
+                    try {
+                        $usage_chk = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing') AND media_path LIKE ? AND id != ?");
+                        $usage_chk->execute(['%' . $bname . '%', $post['id']]);
+                        if ($usage_chk->fetchColumn() == 0) {
+                            @unlink($uf);
+                            echo " -> Đã dọn tệp uploads: $bname\n";
+                        }
+                    } catch (Exception $e) {}
+                }
+            }
+
+            if (!empty($content_data['delete_drive_file']) && !empty($resolved_drive_file_ids)) {
+                $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
+                if ($drive_token) {
+                    foreach ($resolved_drive_file_ids as $fid) {
+                        delete_drive_file($drive_token, $fid);
+                        echo " -> Đã xóa file Google Drive: $fid\n";
+                    }
+                }
+            }
+        } else {
+            marKAsFailed($pdo, $post['id'], "Lỗi đăng Instagram: " . ($res['msg'] ?? 'Lỗi không xác định'), $sys_max_retries, $sys_retry_interval);
+        }
+
+        foreach ($temp_local_files as $tf) {
+            if (!empty($tf) && file_exists($tf)) @unlink($tf);
+        }
+
+        continue;
+    }
 
     // ── XỬ LÝ RIÊNG DÀNH CHO TIKTOK DIRECT POST ─────────────────────────────
     if ($post['post_type'] === 'TikTok') {
@@ -1862,7 +2310,7 @@ foreach ($pending_posts as $post) {
 
         if ($res['status'] === 'success') {
             $pub_id = $res['publish_id'] ?? '';
-            $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ? WHERE id = ?")
+            $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")
                 ->execute([$pub_id, $post['id']]);
             echo " -> Đăng Video TikTok thành công! Publish ID: $pub_id\n";
         } else {
@@ -2265,9 +2713,12 @@ foreach ($pending_posts as $post) {
     }
 
     // 5. Call API
-    set_time_limit(600); // Allow long upload for videos
+    @set_time_limit(1800); // Cho phép tối đa 30 phút cho video/reel dung lượng lớn
+    try {
+        $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW() WHERE id = ?")->execute([$post['id']]);
+    } catch (Exception $e) {}
     if (strpos($post_type, 'Story') === false) {
-        $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 600 : 30;
+        $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 1800 : 60;
         $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
     }
 
@@ -2277,10 +2728,10 @@ foreach ($pending_posts as $post) {
     if ($response['status_code'] === 200 && $post_id) {
         // Mark as published + save fb_post_id (if column exists)
         if ($has_fb_post_id) {
-            $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ? WHERE id = ?")
+            $pdo->prepare("UPDATE scheduled_posts SET status = 'published', fb_post_id = ?, error_msg = NULL WHERE id = ?")
                 ->execute([$post_id, $post['id']]);
         } else {
-            $pdo->prepare("UPDATE scheduled_posts SET status = 'published' WHERE id = ?")
+            $pdo->prepare("UPDATE scheduled_posts SET status = 'published', error_msg = NULL WHERE id = ?")
                 ->execute([$post['id']]);
         }
 
@@ -2425,7 +2876,7 @@ if ($lock_fp) {
 @unlink($lock_file);
 // Cleanup DB chay rieng qua cron/cleanup.php (59 23 * * *).
 
-function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $has_error_msg = true, $has_retry_count = true)
+function marKAsFailed($pdo, $id, $msg, $max_retries = 1, $retry_interval = 1, $has_error_msg = true, $has_retry_count = true)
 {
     // Cắt và chuẩn hóa thông báo lỗi Quota YouTube API 429
     if (stripos($msg, 'Quota exceeded') !== false || stripos($msg, 'rateLimitExceeded') !== false || stripos($msg, 'RESOURCE_EXHAUSTED') !== false || stripos($msg, 'defaultVideoInsertPerDayPerProject') !== false) {
@@ -2436,7 +2887,10 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
     $is_checkpoint = (stripos($msg, 'You cannot access the app till you log in') !== false) || 
                      (stripos($msg, 'Error validating access token') !== false) ||
                      (stripos($msg, 'changed their password') !== false) ||
-                     (stripos($msg, 'session has been invalidated') !== false);
+                     (stripos($msg, 'session has been invalidated') !== false) ||
+                     (stripos($msg, 'not a confirmed user') !== false) ||
+                     (stripos($msg, 'subcode":464') !== false) ||
+                     (stripos($msg, 'error_subcode":464') !== false);
 
     if ($is_checkpoint) {
         $checkpoint_msg = "TK Bị Checkpoint hoặc cần kết nối lại";
@@ -2488,6 +2942,22 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
     }
     $new_retry = $current_retry + 1;
 
+    // Kiểm tra Lỗi Vĩnh Viễn (Fatal Error) - Đánh dấu thất bại luôn, KHÔNG thử lại để tránh nặng server
+    $is_fatal_error = (stripos($msg, 'Thiếu Token') !== false) ||
+                     (stripos($msg, 'Không tìm thấy token') !== false) ||
+                     (stripos($msg, 'Thiếu cấu hình') !== false) ||
+                     (stripos($msg, 'Không tìm thấy refresh_token') !== false) ||
+                     (stripos($msg, 'Không tìm thấy Access Token') !== false) ||
+                     (stripos($msg, 'Không thấy file') !== false) ||
+                     (stripos($msg, 'Không tìm thấy tài khoản') !== false) ||
+                     (stripos($msg, 'không hỗ trợ') !== false) ||
+                     (stripos($msg, 'không hợp lệ') !== false) ||
+                     (stripos($msg, 'Quota') !== false);
+
+    if ($is_fatal_error) {
+        $new_retry = $max_retries + 1; // Nhảy thẳng qua max_retries để hủy thử lại ngay lập tức
+    }
+
     echo " -> Lỗi: $msg (Lần thử: $new_retry/$max_retries)\n";
 
     // Build dynamic UPDATE based on available columns
@@ -2515,8 +2985,14 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
             } catch (Exception $e) {}
             // -----------------------------------------------------
             
+            // Tính toán khoảng thời gian giãn cách theo thuật toán Exponential Backoff (15p -> 45p -> 135p)
+            // Thay vì thử lại dồn dập 1 phút/lần gây quá tải server
+            $base_interval = max(1, (int)$retry_interval);
+            $backoff_multiplier = (int)pow(3, $new_retry - 1);
+            $actual_delay_minutes = max(15, $base_interval * $backoff_multiplier * 5);
+
             $pdo->prepare("UPDATE scheduled_posts SET status='failed', error_msg=?, retry_count=?, scheduled_time=DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id=?")
-                ->execute([$msg, $new_retry, $retry_interval, $id]);
+                ->execute([$msg, $new_retry, $actual_delay_minutes, $id]);
         } else {
             $pdo->prepare("UPDATE scheduled_posts SET status='failed', error_msg=?, retry_count=? WHERE id=?")
                 ->execute([$msg, $new_retry, $id]);
