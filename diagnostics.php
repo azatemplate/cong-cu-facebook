@@ -52,8 +52,8 @@ try {
     }
 } catch (Exception $e) {}
 
-// ── Đếm số worker đang thực sự chạy (active) ────────────────────────────────
-$active_publish = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+// ── Đếm số worker đang thực sự chạy (active trong 3 phút gần đây) ───────────
+$active_publish = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing' AND updated_at > DATE_SUB(NOW(), INTERVAL 3 MINUTE)")->fetchColumn();
 $tmp_dir = sys_get_temp_dir();
 $comment_locks = glob($tmp_dir . "/facebook_comment_worker_account_*.lock") ?: [];
 $active_comment = count($comment_locks);

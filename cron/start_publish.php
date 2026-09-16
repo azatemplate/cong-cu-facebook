@@ -144,8 +144,8 @@ try {
     if ($res_limit) $MAX_WORKERS = (int)$res_limit;
 } catch (Exception $e) {}
 
-// Đếm số luồng đang chạy (processing)
-$active_workers = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+// Đếm số luồng đang thực sự chạy (processing) gần đây (trong vòng 3 phút)
+$active_workers = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing' AND updated_at > DATE_SUB(NOW(), INTERVAL 3 MINUTE)")->fetchColumn();
 
 echo "  [THROTTLE] Hien dang co $active_workers luong dang xu ly.\n";
 
