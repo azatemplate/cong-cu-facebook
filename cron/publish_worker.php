@@ -2762,6 +2762,12 @@ foreach ($pending_posts as $post) {
         $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW() WHERE id = ?")->execute([$post['id']]);
     } catch (Exception $e) {}
     if (strpos($post_type, 'Story') === false) {
+        
+        // DEBUG LOGGING
+        $debug_file_exists = file_exists($abs_media_path) ? 'TRUE' : 'FALSE';
+        $debug_has_media = $has_media ? 'TRUE' : 'FALSE';
+        @file_put_contents($publish_log, "$log_prefix DEBUG check: post_type=$post_type, has_media=$debug_has_media, abs_media_path=$abs_media_path, file_exists=$debug_file_exists\n", FILE_APPEND);
+        
         // VIDEO/REEL: Luôn dùng Resumable Upload (tránh HTTP 504 qua proxy khi dùng file_url)
         if (($post_type === 'Video' || $post_type === 'Reel') && $has_media && !empty($abs_media_path) && file_exists($abs_media_path)) {
             echo "   → [STEP 4/4] Video/Reel: Dùng Resumable Upload trực tiếp (bỏ qua file_url vì proxy gây 504)\n";
