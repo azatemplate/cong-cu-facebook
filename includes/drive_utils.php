@@ -179,8 +179,11 @@ function download_drive_file_temp($access_token, $file_id) {
     // 2. Download nội dung file
     $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media";
     
-    // Tạo file tạm trên OS (Thường nằm ở /tmp trên Linux hoặc C:\Windows\Temp trên Windows)
-    $temp_dir = sys_get_temp_dir();
+    // Tạo file tạm trên thư mục của project để tránh đầy ổ /tmp trên Linux
+    $temp_dir = __DIR__ . '/../temp';
+    if (!is_dir($temp_dir)) {
+        @mkdir($temp_dir, 0777, true);
+    }
     $temp_path = tempnam($temp_dir, 'gdrive_');
     
     // Thêm đuôi file để CURLFile của Facebook nhận diện đúng định dạng
@@ -203,8 +206,9 @@ function download_drive_file_temp($access_token, $file_id) {
     fclose($fp);
 
     if (!$success || $http_code !== 200) {
+        $curl_err = curl_error($ch2);
         @unlink($temp_path_with_ext);
-        return ['error' => 'Lỗi tải file từ Google Drive (HTTP ' . $http_code . ').'];
+        return ['error' => 'Lỗi tải file từ Google Drive (HTTP ' . $http_code . ', CURL: ' . $curl_err . ').'];
     }
 
     return [
