@@ -206,8 +206,11 @@ foreach ($raw_pages as $row) {
     // Vì ta gom theo campaign, không cần lưu từng page_id vào mảng nữa. 
     // Ta chỉ cần 1 cờ để báo hiệu Campaign này cần 1 worker.
     // Tuy nhiên, để tương thích với mảng cũ, ta cứ lưu chan_key vào.
-    if (!in_array($chan_key, $owner_channels[$owner_id][$chan_key])) {
-        $owner_channels[$owner_id][$chan_key][] = $chan_key;
+    // Vì ta gom theo campaign, không cần lưu từng page_id vào mảng nữa. 
+    // Tuy nhiên, đối với bài viết cũ/không có campaign, ta VẪN CẦN LƯU page_id thực sự để tương thích với query cũ.
+    $page_val = !empty($row['campaign_id']) ? $chan_key : $row['page_id'];
+    if (!in_array($page_val, $owner_channels[$owner_id][$chan_key])) {
+        $owner_channels[$owner_id][$chan_key][] = $page_val;
     }
 }
 
@@ -218,7 +221,7 @@ foreach ($owner_channels as $oid => $chans) {
     foreach ($chans as $ckey => $pids) {
         $owner_chan_lists[$oid][] = [
             'chan_key' => $ckey, 
-            'page_id' => $ckey, // Truyền thẳng 'camp_123' vào argv[1] của worker
+            'page_id' => implode(',', $pids), // Phục hồi lại implode cho danh sách page_ids lẻ
             'owner_id' => $oid
         ];
     }
