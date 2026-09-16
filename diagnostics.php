@@ -269,25 +269,41 @@ $php_bin_note = '';
 
 $current_php_version = phpversion();
 $version_parts = explode('.', $current_php_version);
+$php_bin_full = 'php';
+$php_bin_note = '';
+
 if (count($version_parts) >= 2) {
     $ver_num = $version_parts[0] . $version_parts[1];
-    $php_bin_full = "/www/server/php/{$ver_num}/bin/php";
-    $php_bin_note = 'tự động nhận diện từ PHP Web';
-} else {
+    $try_web_path = "/www/server/php/{$ver_num}/bin/php";
+    if (@file_exists($try_web_path)) {
+        $php_bin_full = $try_web_path;
+        $php_bin_note = "tự động nhận diện từ PHP Web ({$current_php_version})";
+    }
+}
+
+if ($php_bin_full === 'php') {
     if (defined('PHP_BINARY') && PHP_BINARY
         && strpos(PHP_BINARY, 'php-fpm') === false
         && strpos(PHP_BINARY, 'php-cgi') === false
         && @file_exists(PHP_BINARY)) {
         $php_bin_full = PHP_BINARY;
-        $php_bin_note = 'tu PHP_BINARY';
+        $php_bin_note = 'từ PHP_BINARY';
     }
-    if ($php_bin_full === 'php' || strpos($php_bin_full, 'fpm') !== false) {
-        foreach (['/www/server/php/85/bin/php','/www/server/php/84/bin/php',
-                  '/www/server/php/83/bin/php','/www/server/php/82/bin/php',
-                  '/www/server/php/81/bin/php','/www/server/php/80/bin/php',
-                  '/usr/bin/php8.5','/usr/bin/php8.4','/usr/bin/php8.3',
-                  '/usr/bin/php8.2','/usr/bin/php8.1','/usr/bin/php','/usr/local/bin/php'] as $p) {
-            if (@file_exists($p)) { $php_bin_full = $p; $php_bin_note = 'tim thay tren server'; break; }
+    if ($php_bin_full === 'php') {
+        $common_cli_list = [
+            "/www/server/php/{$ver_num}/bin/php",
+            '/www/server/php/74/bin/php',
+            '/www/server/php/80/bin/php',
+            '/www/server/php/81/bin/php',
+            '/www/server/php/82/bin/php',
+            '/www/server/php/83/bin/php',
+            '/www/server/php/84/bin/php',
+            '/www/server/php/85/bin/php',
+            '/usr/bin/php',
+            '/usr/local/bin/php'
+        ];
+        foreach ($common_cli_list as $p) {
+            if (@file_exists($p)) { $php_bin_full = $p; $php_bin_note = 'tìm thấy trên server'; break; }
         }
     }
 }
