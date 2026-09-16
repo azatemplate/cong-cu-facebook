@@ -598,6 +598,9 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
     }
 
     $res3 = fb_api_request($endpoint, $finish_params, 'POST');
+    if ($res3['status_code'] === 200 && !empty($res3['data']['success'])) {
+        $res3['data']['id'] = $video_id;
+    }
     return $res3;
 }
 

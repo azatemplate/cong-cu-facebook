@@ -68,12 +68,6 @@ if (!is_dir($lock_dir)) {
 $lock_key = !empty($user_id_lock) ? md5('uid_' . $user_id_lock) : md5($raw_page_input);
 $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
 
-// Xoá lock file cũ nếu quá 60 giây (worker cũ crash hoặc ngắt kết nối không release)
-$lock_stale_seconds = 60;
-if (file_exists($lock_file) && (time() - filemtime($lock_file)) > $lock_stale_seconds) {
-    @unlink($lock_file);
-}
-
 $lock_fp = @fopen($lock_file, 'c');
 if (!$lock_fp) {
     $lock_dir = sys_get_temp_dir();
@@ -90,22 +84,12 @@ if ($lock_fp) {
         }
         sleep(1);
     }
-    
-    // Nếu lock thất bại và file lock tồn tại > 30s => ép giải phóng lock cũ
-    if (!$lock_got && file_exists($lock_file) && (time() - filemtime($lock_file)) > 30) {
-        @fclose($lock_fp);
-        @unlink($lock_file);
-        $lock_fp = @fopen($lock_file, 'c');
-        if ($lock_fp && flock($lock_fp, LOCK_EX | LOCK_NB)) {
-            $lock_got = true;
-        }
-    }
 }
 
 if (!$lock_got) {
-    echo "Worker cho Token User này đang bận. Tự dọn lock để ưu tiên luồng mới...\n";
+    echo "Worker cho Token User này đang bận. Hủy bỏ luồng mới...\n";
     if ($lock_fp) @fclose($lock_fp);
-    @unlink($lock_file);
+    exit;
 }
 
 echo "Worker khởi động cho " . count($target_page_ids) . " Pages: " . implode(', ', $target_page_ids) . "\n";
