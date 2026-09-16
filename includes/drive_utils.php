@@ -202,11 +202,11 @@ function download_drive_file_temp($access_token, $file_id) {
     curl_setopt($ch2, CURLOPT_TIMEOUT, 600);
     $success = curl_exec($ch2);
     $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+    $curl_err = curl_error($ch2); // Lấy lỗi trước khi close
     curl_close($ch2);
     fclose($fp);
 
     if (!$success || $http_code !== 200) {
-        $curl_err = curl_error($ch2);
         @unlink($temp_path_with_ext);
         return ['error' => 'Lỗi tải file từ Google Drive (HTTP ' . $http_code . ', CURL: ' . $curl_err . ').'];
     }
