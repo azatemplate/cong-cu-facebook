@@ -289,7 +289,7 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $po
 
     $finish_res = fb_api_request($page_id . '/videos', [
         'access_token' => $page_access_token
-    ], 'POST', $finish_params, 120);
+    ], 'POST', $finish_params, 300, true);
 
     // Bổ sung video_id vào kết quả phản hồi nếu API trả về success: true
     if ($finish_res['status_code'] === 200) {
