@@ -205,21 +205,18 @@ foreach ($raw_pages as $row) {
     }
 }
 
-// ── 2. Chia nhỏ luồng cho các Token quá tải (Tối đa 5 page mỗi luồng worker) ──
+// ── 2. Tuyệt đối KHÔNG chia nhỏ luồng của 1 Token, đảm bảo 1 Token = 1 luồng duy nhất ──
 $owner_chan_lists = [];
 foreach ($owner_channels as $oid => $chans) {
     $owner_chan_lists[$oid] = [];
     foreach ($chans as $ckey => $pids) {
-        // Cắt nhỏ mảng Fanpage thành từng khối 5 page, mỗi khối tạo thành 1 worker riêng (suffix: _chunk0, _chunk1)
-        $chunks = array_chunk($pids, 5); 
-        foreach ($chunks as $index => $chunk_pids) {
-            $chunk_key = count($chunks) > 1 ? ($ckey . "_chk" . $index) : $ckey;
-            $owner_chan_lists[$oid][] = [
-                'chan_key' => $chunk_key, 
-                'page_id' => implode(',', $chunk_pids), 
-                'owner_id' => $oid
-            ];
-        }
+        // Gom TẤT CẢ các page thuộc cùng 1 Token vào ĐÚNG 1 Worker (1 slot)
+        // Worker này sẽ chạy vòng lặp và đăng tuần tự, có delay nghỉ ngơi, tránh bị kẹt API Facebook.
+        $owner_chan_lists[$oid][] = [
+            'chan_key' => $ckey, 
+            'page_id' => implode(',', $pids), 
+            'owner_id' => $oid
+        ];
     }
 }
 
