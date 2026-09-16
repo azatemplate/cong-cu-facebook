@@ -5,7 +5,9 @@
  * Logic lấy từ diagnostics.php — dùng chung cho start_publish, start_comment, accounts...
  */
 function get_php_cli_bin() {
-    // Loại bỏ đường dẫn cứng bị sai phiên bản PHP
+    if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
+        return '/www/server/php/85/bin/php';
+    }
 
     // 2. Từ PHP_BINARY (nếu không phải fpm/cgi)
     if (defined('PHP_BINARY') && PHP_BINARY) {
