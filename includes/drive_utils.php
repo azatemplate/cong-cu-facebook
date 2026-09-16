@@ -194,7 +194,7 @@ function download_drive_file_temp($access_token, $file_id) {
         }
     }
 
-    // 2. Download nội dung file trực tiếp qua Google Drive API
+    // 2. Chuẩn bị file tạm trên OS
     $temp_dir = sys_get_temp_dir();
     $temp_path = tempnam($temp_dir, 'gdrive_');
     $temp_path_with_ext = $temp_path . '.' . $ext;
@@ -202,42 +202,117 @@ function download_drive_file_temp($access_token, $file_id) {
 
     $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media";
 
-    $fp = @fopen($temp_path_with_ext, 'w+');
-    if ($fp === false) {
-        return ['error' => 'Không thể tạo file tạm trên Server.'];
+    // 3. Nếu file > 30MB -> Dùng Range Chunk Download (Resumable từng Chunk 30MB)
+    $chunk_size = 31457280; // 30MB / chunk
+    $downloaded_bytes = 0;
+
+    if ($expected_size > 0 && $expected_size > $chunk_size) {
+        while ($downloaded_bytes < $expected_size) {
+            $start_byte = $downloaded_bytes;
+            $end_byte = min($downloaded_bytes + $chunk_size - 1, $expected_size - 1);
+            $range_header = "Range: bytes={$start_byte}-{$end_byte}";
+
+            $chunk_success = false;
+            $chunk_http_code = 0;
+            $chunk_err = '';
+
+            // Retry tối đa 3 lần cho riêng chunk bị lỗi (Không tải lại từ đầu!)
+            for ($retry = 0; $retry < 3; $retry++) {
+                if ($retry > 0) sleep(2);
+
+                $fp = @fopen($temp_path_with_ext, 'c+');
+                if ($fp === false) {
+                    @unlink($temp_path_with_ext);
+                    return ['error' => 'Không thể mở file tạm trên Server.'];
+                }
+                fseek($fp, $start_byte);
+
+                $ch = curl_init($download_url);
+                curl_setopt_array($ch, [
+                    CURLOPT_HTTPHEADER => [
+                        "Authorization: Bearer $access_token",
+                        $range_header
+                    ],
+                    CURLOPT_FILE => $fp,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_TIMEOUT => 180, // Max 3 phút cho 1 chunk 30MB
+                    CURLOPT_CONNECTTIMEOUT => 15,
+                    CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                    CURLOPT_BUFFERSIZE => 524288,
+                    CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                ]);
+
+                $success = curl_exec($ch);
+                $chunk_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $chunk_err = curl_error($ch);
+                curl_close($ch);
+                @fclose($fp);
+
+                // Touch file timestamp liên tục để chống bị cron cleanup 30 phút xóa nhầm
+                @touch($temp_path_with_ext);
+
+                // HTTP 206 Partial Content (hoặc HTTP 200)
+                if ($success && ($chunk_http_code === 206 || $chunk_http_code === 200)) {
+                    $chunk_success = true;
+                    $downloaded_bytes = $end_byte + 1;
+                    break;
+                }
+            }
+
+            if (!$chunk_success) {
+                @unlink($temp_path_with_ext);
+                $err_detail = $chunk_err ? " ($chunk_err)" : "";
+                return ['error' => "Lỗi tải chunk Range bytes={$start_byte}-{$end_byte} từ Google Drive (HTTP {$chunk_http_code}{$err_detail})."];
+            }
+        }
+    } else {
+        // Tải 1 lần trực tiếp với file nhỏ
+        $fp = @fopen($temp_path_with_ext, 'w+');
+        if ($fp === false) {
+            return ['error' => 'Không thể tạo file tạm trên Server.'];
+        }
+
+        $ch2 = curl_init($download_url);
+        curl_setopt_array($ch2, [
+            CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
+            CURLOPT_FILE => $fp,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 300,
+            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_BUFFERSIZE => 524288,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        ]);
+
+        $success = curl_exec($ch2);
+        $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+        $curl_err = curl_error($ch2);
+        curl_close($ch2);
+        @fclose($fp);
+
+        @touch($temp_path_with_ext);
+
+        if (!$success || $http_code !== 200) {
+            @unlink($temp_path_with_ext);
+            $err_detail = $curl_err ? " ($curl_err)" : "";
+            return ['error' => "Lỗi tải file từ Google Drive (HTTP {$http_code}{$err_detail})."];
+        }
     }
-
-    $ch2 = curl_init($download_url);
-    curl_setopt_array($ch2, [
-        CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
-        CURLOPT_FILE => $fp,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_TIMEOUT => 300, // Max 5 phút cho tệp video lớn
-        CURLOPT_CONNECTTIMEOUT => 15,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_BUFFERSIZE => 524288, // 512KB buffer size giúp tăng tốc độ tải file lớn gấp nhiều lần
-        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    ]);
-
-    $success = curl_exec($ch2);
-    $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
-    $curl_err = curl_error($ch2);
-    curl_close($ch2);
-    @fclose($fp);
 
     $actual_size = file_exists($temp_path_with_ext) ? filesize($temp_path_with_ext) : 0;
 
     // Kiểm tra tính hợp lệ của file đã tải
-    if (!$success || $http_code !== 200 || $actual_size === 0) {
+    if ($actual_size === 0) {
         @unlink($temp_path_with_ext);
-        $err_detail = $curl_err ? " ($curl_err)" : "";
-        return ['error' => "Lỗi tải file từ Google Drive (HTTP {$http_code}{$err_detail})."];
+        return ['error' => "Lỗi tải file từ Google Drive (Tệp trống 0 bytes)."];
     }
 
-    // Nếu có expected size từ metadata, kiểm tra xem đã tải đủ chưa (chống file bị ngắt giữa chừng)
-    if ($expected_size > 0 && $actual_size < ($expected_size * 0.90)) {
+    // Nếu có expected size từ metadata, kiểm tra xem đã tải đủ chưa
+    if ($expected_size > 0 && $actual_size < ($expected_size * 0.95)) {
         @unlink($temp_path_with_ext);
         return ['error' => "Tệp tải từ Google Drive bị gián đoạn (Dung lượng: {$actual_size}/{$expected_size} bytes)."];
     }
@@ -246,7 +321,7 @@ function download_drive_file_temp($access_token, $file_id) {
     $header_check = @file_get_contents($temp_path_with_ext, false, null, 0, 200);
     if ($header_check && (stripos($header_check, '<html') !== false || stripos($header_check, '{"error"') !== false || stripos($header_check, '<!DOCTYPE') !== false)) {
         @unlink($temp_path_with_ext);
-        return ['error' => "Lỗi Google Drive trả về trang lỗi HTML/JSON thay vì tệp video."];
+        return ['error' => "Lỗi Google Drive trả về trang lỗi HTML/JSON thay vì tệp media."];
     }
 
     return [
