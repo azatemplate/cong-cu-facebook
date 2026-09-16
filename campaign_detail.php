@@ -513,18 +513,56 @@ function status_label($s) {
                             </div>
                         </div>
                     </div>
-                    <?php if ($s !== 'published' && !empty($post['error_msg'])): ?>
-                    <div style="font-size:11px;color:#dc2626;margin-top:6px;background:#fee2e2;padding:6px 8px;border-radius:4px;word-break:break-all;line-height:1.4;">
-                        <strong>Log lỗi:</strong> <?php echo htmlspecialchars($post['error_msg']); ?>
-                    </div>
-                    <?php endif; ?>
                 </td>
                 <td style="padding:10px 16px;"><span style="background:#f3f4f6;color:#374151;font-size:12px;padding:2px 8px;border-radius:4px;"><?php echo htmlspecialchars($post['post_type']); ?></span></td>
                 <td style="padding:10px 16px;font-size:12px;color:var(--text-muted);white-space:nowrap;"><?php echo date('H:i d/m/Y', strtotime($post['scheduled_time'])); ?></td>
-                <td style="padding:10px 16px;">
-                    <span style="background:<?php echo status_bg($s); ?>;color:<?php echo status_tc($s); ?>;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:500;"><?php echo status_label($s); ?></span>
+                <td style="padding:10px 16px;vertical-align:top;">
+                    <?php 
+                        $updated_ts = !empty($post['updated_at']) ? strtotime($post['updated_at']) : strtotime($post['scheduled_time']);
+                        $elapsed = max(0, time() - $updated_ts);
+                        $elapsed_str = ($elapsed < 60) ? ($elapsed . 's') : (floor($elapsed / 60) . 'm ' . ($elapsed % 60) . 's');
+                        $is_stage_info = (!empty($post['error_msg']) && (mb_strpos($post['error_msg'], '⏳') !== false || mb_strpos($post['error_msg'], 'Bước') !== false || mb_strpos($post['error_msg'], 'Đang') !== false));
+                    ?>
+                    <?php if ($s === 'processing' || $is_stage_info): ?>
+                        <div style="display:inline-flex;align-items:center;gap:6px;background:#e0f2fe;color:#0369a1;font-size:12px;padding:4px 10px;border-radius:99px;font-weight:600;border:1px solid #7dd3fc;">
+                            <span style="display:inline-block;animation:pulse 1.5s infinite;font-weight:bold;">🔄</span>
+                            Đang đăng (<?php echo $elapsed_str; ?>)
+                        </div>
+                        <?php if (!empty($post['error_msg']) && $is_stage_info): ?>
+                        <div style="font-size:11px;color:#0284c7;margin-top:4px;background:#f0f9ff;border:1px solid #bae6fd;padding:4px 8px;border-radius:6px;line-height:1.3;max-width:240px;word-break:break-word;">
+                            <?php echo htmlspecialchars($post['error_msg']); ?>
+                        </div>
+                        <?php endif; ?>
+                        <?php if ($elapsed > 180): ?>
+                        <div style="margin-top:4px;">
+                            <span style="font-size:11px;background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:4px;font-weight:bold;display:inline-block;">⚠️ Treo quá lâu (>3m)</span>
+                        </div>
+                        <?php endif; ?>
+                    <?php elseif ($s === 'published'): ?>
+                        <span style="background:#d1fae5;color:#065f46;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:600;">✅ Đã đăng</span>
+                    <?php elseif ($s === 'failed'): ?>
+                        <span style="background:#fee2e2;color:#dc2626;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:600;">❌ Thất bại</span>
+                        <?php 
+                            $has_real_error = (!empty($post['error_msg']) && mb_strpos($post['error_msg'], '⏳') === false && mb_strpos($post['error_msg'], 'Bước') === false && mb_strpos($post['error_msg'], 'Đang') === false);
+                            if ($has_real_error): 
+                        ?>
+                        <div style="font-size:11px;color:#dc2626;margin-top:4px;background:#fee2e2;border:1px solid #fecaca;padding:4px 8px;border-radius:6px;word-break:break-all;line-height:1.3;max-width:240px;">
+                            <?php echo htmlspecialchars($post['error_msg']); ?>
+                        </div>
+                        <?php endif; ?>
+                    <?php elseif ($s === 'checkpoint'): ?>
+                        <span style="background:#fee2e2;color:#991b1b;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:600;">🚫 Checkpoint</span>
+                        <?php if (!empty($post['error_msg'])): ?>
+                        <div style="font-size:11px;color:#991b1b;margin-top:4px;background:#fee2e2;border:1px solid #fecaca;padding:4px 8px;border-radius:6px;word-break:break-all;line-height:1.3;max-width:240px;">
+                            <?php echo htmlspecialchars($post['error_msg']); ?>
+                        </div>
+                        <?php endif; ?>
+                    <?php else: ?>
+                        <span style="background:#fef3c7;color:#d97706;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:500;">⏳ Chờ đăng</span>
+                    <?php endif; ?>
+
                     <?php if (!empty($post['retry_count'])): ?>
-                    <span style="font-size:11px;color:#9ca3af;"> ×<?php echo (int)$post['retry_count']; ?></span>
+                    <span style="font-size:11px;color:#9ca3af;display:block;margin-top:2px;">Thử lại: ×<?php echo (int)$post['retry_count']; ?></span>
                     <?php endif; ?>
                 </td>
                 <?php if ($has_comment_status_col):
@@ -728,8 +766,10 @@ window.addEventListener("beforeunload", function() {
 });
 
 // Auto-reload if posts are pending/processing
-<?php if (((int)$stats['pend'] + (int)$stats['proc']) > 0): ?>
-setTimeout(function() { window.location.reload(); }, 15000);
+<?php if ((int)$stats['proc'] > 0): ?>
+setTimeout(function() { window.location.reload(); }, 5000);
+<?php elseif ((int)$stats['pend'] > 0): ?>
+setTimeout(function() { window.location.reload(); }, 10000);
 <?php endif; ?>
 </script>
 
