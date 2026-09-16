@@ -115,17 +115,12 @@ function rewrite_content_with_gemini($prompt, $api_keys, $endpoint, $prompt_vait
                     ];
                     
                     $ch = curl_init($url);
-                    curl_setopt_array($ch, [
-                        CURLOPT_RETURNTRANSFER => true,
-                        CURLOPT_POST => true,
-                        CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
-                        CURLOPT_POSTFIELDS => json_encode($data),
-                        CURLOPT_TIMEOUT => $timeout,
-                        CURLOPT_CONNECTTIMEOUT => 10,
-                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                        CURLOPT_SSL_VERIFYPEER => false
-                    ]);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_POST, true);
+                    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json"]);
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+                    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                     
                     $response = curl_exec($ch);
                     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -195,17 +190,12 @@ function rewrite_content_with_openai($prompt, $api_keys, $endpoint, $prompt_vait
                     ];
                     
                     $ch = curl_init($url);
-                    curl_setopt_array($ch, [
-                        CURLOPT_RETURNTRANSFER => true,
-                        CURLOPT_POST => true,
-                        CURLOPT_HTTPHEADER => $headers,
-                        CURLOPT_POSTFIELDS => json_encode($data),
-                        CURLOPT_TIMEOUT => $timeout,
-                        CURLOPT_CONNECTTIMEOUT => 10,
-                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                        CURLOPT_SSL_VERIFYPEER => false
-                    ]);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_POST, true);
+                    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+                    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                     
                     $response = curl_exec($ch);
                     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -284,17 +274,12 @@ function rewrite_content_with_claude($prompt, $api_keys, $endpoint, $prompt_vait
                     }
                     
                     $ch = curl_init($url);
-                    curl_setopt_array($ch, [
-                        CURLOPT_RETURNTRANSFER => true,
-                        CURLOPT_POST => true,
-                        CURLOPT_HTTPHEADER => $headers,
-                        CURLOPT_POSTFIELDS => json_encode($data),
-                        CURLOPT_TIMEOUT => $timeout,
-                        CURLOPT_CONNECTTIMEOUT => 10,
-                        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                        CURLOPT_SSL_VERIFYPEER => false
-                    ]);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_POST, true);
+                    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+                    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                     
                     $response = curl_exec($ch);
                     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);

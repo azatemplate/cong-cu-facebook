@@ -158,16 +158,7 @@ if ($data && isset($data['object']) && $data['object'] === 'page') {
     foreach ($data['entry'] as $entry) {
         $page_id = $entry['id'];
 
-        // Check if enable_live_chat is enabled for this page's account
-        try {
-            $st_chk_fb = $pdo->prepare("SELECT sa.role, sa.enable_live_chat FROM pages p JOIN users u ON p.user_id = u.id JOIN system_accounts sa ON u.account_id = sa.id WHERE p.page_id = ?");
-            $st_chk_fb->execute([$page_id]);
-            $fb_acc_info = $st_chk_fb->fetch(PDO::FETCH_ASSOC);
-            if ($fb_acc_info && ($fb_acc_info['role'] ?? '') !== 'admin' && (int)($fb_acc_info['enable_live_chat'] ?? 1) === 0) {
-                continue;
-            }
-        } catch (Exception $e) {}
-
+                                                     // Do not retry on 4xx client errors
         if (isset($entry['messaging'])) {
             foreach ($entry['messaging'] as $messaging_event) {
                 $is_message = isset($messaging_event['message']) && !isset($messaging_event['message']['is_echo']);

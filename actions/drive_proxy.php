@@ -93,16 +93,9 @@ $post_fields = [
 ];
 
 $ch = curl_init($token_url);
-curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_POST => true,
-    CURLOPT_POSTFIELDS => http_build_query($post_fields),
-    CURLOPT_TIMEOUT => 30,
-    CURLOPT_CONNECTTIMEOUT => 15,
-    CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-    CURLOPT_SSL_VERIFYPEER => false
-]);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post_fields));
 $token_response_raw = curl_exec($ch);
 curl_close($ch);
 
@@ -141,14 +134,9 @@ if ($action === 'list_files') {
         }
         
         $ch_drive = curl_init($drive_url);
-        curl_setopt_array($ch_drive, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
-            CURLOPT_TIMEOUT => 60,
-            CURLOPT_CONNECTTIMEOUT => 15,
-            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            CURLOPT_SSL_VERIFYPEER => false
+        curl_setopt($ch_drive, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch_drive, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer $access_token"
         ]);
         
         $drive_response = curl_exec($ch_drive);
@@ -181,14 +169,9 @@ if ($action === 'list_files') {
     $drive_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=id,name,mimeType,thumbnailLink,size";
     
     $ch_drive = curl_init($drive_url);
-    curl_setopt_array($ch_drive, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_CONNECTTIMEOUT => 15,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_SSL_VERIFYPEER => false
+    curl_setopt($ch_drive, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch_drive, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer $access_token"
     ]);
     
     $drive_response = curl_exec($ch_drive);
@@ -290,11 +273,9 @@ if ($action === 'list_files') {
     curl_setopt_array($ch_drive, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
-        CURLOPT_TIMEOUT => 300,
-        CURLOPT_CONNECTTIMEOUT => 15,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_HTTPHEADER => [
+            "Authorization: Bearer $access_token"
+        ],
         CURLOPT_SSL_VERIFYPEER => false
     ]);
     
@@ -335,14 +316,9 @@ function get_or_create_folder_id($access_token, $folder_name) {
     $url = "https://www.googleapis.com/drive/v3/files?q=" . urlencode($q) . "&fields=files(id)";
     
     $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_CONNECTTIMEOUT => 15,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_SSL_VERIFYPEER => false
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer $access_token"
     ]);
     $response = curl_exec($ch);
     if ($response === false) {
@@ -365,19 +341,12 @@ function get_or_create_folder_id($access_token, $folder_name) {
     ];
     
     $ch = curl_init($create_url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($post_data),
-        CURLOPT_HTTPHEADER => [
-            "Authorization: Bearer $access_token",
-            "Content-Type: application/json"
-        ],
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_CONNECTTIMEOUT => 15,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_SSL_VERIFYPEER => false
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer $access_token",
+        "Content-Type: application/json"
     ]);
     $response = curl_exec($ch);
     if ($response === false) {
@@ -410,22 +379,15 @@ function upload_file_to_drive_resumable($access_token, $file_path, $file_name, $
     $metadata_json = json_encode($metadata);
     
     $ch = curl_init($init_url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $metadata_json,
-        CURLOPT_HEADER => true,
-        CURLOPT_HTTPHEADER => [
-            "Authorization: Bearer $access_token",
-            "Content-Type: application/json; charset=UTF-8",
-            "X-Upload-Content-Type: $mime_type",
-            "X-Upload-Content-Length: $file_size"
-        ],
-        CURLOPT_TIMEOUT => 60,
-        CURLOPT_CONNECTTIMEOUT => 15,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_SSL_VERIFYPEER => false
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $metadata_json);
+    curl_setopt($ch, CURLOPT_HEADER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer $access_token",
+        "Content-Type: application/json; charset=UTF-8",
+        "X-Upload-Content-Type: $mime_type",
+        "X-Upload-Content-Length: $file_size"
     ]);
     
     $response = curl_exec($ch);

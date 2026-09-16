@@ -160,26 +160,6 @@ foreach ($yt_data['items'] as $item) {
         if (!$refresh_token) {
             continue; // Lỗi: mới thêm nhưng google không trả về refresh token
         }
-
-        // Check max_yt_channels limit for user
-        $acc_stmt = $pdo->prepare("SELECT role, max_yt_channels FROM system_accounts WHERE id = ?");
-        $acc_stmt->execute([$account_id]);
-        $acc_info = $acc_stmt->fetch(PDO::FETCH_ASSOC);
-        $max_yt_channels = (int)($acc_info['max_yt_channels'] ?? 10);
-        $is_admin = (($acc_info['role'] ?? '') === 'admin');
-
-        if (!$is_admin && $max_yt_channels > 0) {
-            $cnt_yt_stmt = $pdo->prepare("SELECT COUNT(*) FROM youtube_channels WHERE account_id = ?");
-            $cnt_yt_stmt->execute([$account_id]);
-            $curr_yt_count = (int)$cnt_yt_stmt->fetchColumn();
-
-            if ($curr_yt_count >= $max_yt_channels) {
-                $_SESSION['flash_msg'] = "⚠️ Tài khoản của bạn đã đạt giới hạn tối đa $max_yt_channels Kênh YouTube (Hiện tại: $curr_yt_count/$max_yt_channels). Vui lòng nâng cấp gói cước để thêm kênh mới!";
-                header("Location: youtube_channels.php");
-                exit;
-            }
-        }
-
         $i_stmt = $pdo->prepare("INSERT INTO youtube_channels (account_id, channel_id, channel_title, channel_avatar, refresh_token, gg_client_id, gg_client_secret) VALUES (?, ?, ?, ?, ?, ?, ?)");
         $i_stmt->execute([$account_id, $channel_id, $channel_title, $channel_avatar, $refresh_token, $is_custom ? $client_id : null, $is_custom ? $client_secret : null]);
     }

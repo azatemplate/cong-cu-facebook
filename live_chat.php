@@ -9,19 +9,10 @@ ob_start();
 require_once __DIR__ . '/setup_live_chat.php'; // auto run setup for DB table
 ob_end_clean(); // Clean output entirely so no random text is printed
 
-$acc_setup = [];
-try {
-    $stmt_acc = $pdo->prepare("SELECT phone_request_enabled, phone_request_hours, phone_request_text, province_request_text, product_request_text, followup_request_enabled, followup_request_hours, followup_request_text, sales_list, phone_request_limit, enable_live_chat, enable_live_chat_oa, enable_live_chat_tiktok, enable_website, enable_customers FROM system_accounts WHERE id = ?");
-    $stmt_acc->execute([$account_id]);
-    $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC) ?: [];
-} catch (Exception $e) {
-    try {
-        $stmt_acc = $pdo->prepare("SELECT sales_list FROM system_accounts WHERE id = ?");
-        $stmt_acc->execute([$account_id]);
-        $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC) ?: [];
-    } catch (Exception $ex) {}
-}
-
+// Fetch system_accounts phone request config
+$stmt_acc = $pdo->prepare("SELECT phone_request_enabled, phone_request_hours, phone_request_text, province_request_text, product_request_text, followup_request_enabled, followup_request_hours, followup_request_text, sales_list, phone_request_limit FROM system_accounts WHERE id = ?");
+$stmt_acc->execute([$account_id]);
+$acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC);
 $phone_request_enabled = (int)($acc_setup['phone_request_enabled'] ?? 0);
 $phone_request_hours = (int)($acc_setup['phone_request_hours'] ?? 1);
 $phone_request_text = $acc_setup['phone_request_text'] ?? '';
@@ -33,56 +24,23 @@ $followup_request_hours = (int)($acc_setup['followup_request_hours'] ?? 12);
 $followup_request_text = $acc_setup['followup_request_text'] ?? '';
 $sales_list = $acc_setup['sales_list'] ?? '';
 
-$enable_live_chat = $is_admin ? 1 : (int)($acc_setup['enable_live_chat'] ?? 1);
-$enable_live_chat_oa = $is_admin ? 1 : (int)($acc_setup['enable_live_chat_oa'] ?? 1);
-$enable_live_chat_tiktok = $is_admin ? 1 : (int)($acc_setup['enable_live_chat_tiktok'] ?? 1);
-$enable_website = $is_admin ? 1 : (int)($acc_setup['enable_website'] ?? 1);
-$enable_customers = $is_admin ? 1 : (int)($acc_setup['enable_customers'] ?? 1);
-
-if (!$enable_live_chat) {
-    echo '<div class="page-title">Truy cập bị từ chối</div>';
-    echo '<div class="card" style="border-left: 4px solid #ef4444; padding: 20px;">';
-    echo '  <h3 style="margin-top:0; color:#ef4444;">⚠️ Tính Năng Đã Bị Tắt</h3>';
-    echo '  <p style="color:#4b5563; font-size:14px; margin-bottom:0;">Tính năng Live Chat Facebook Fanpage đã bị tắt cho tài khoản của bạn. Vui lòng liên hệ Admin để kích hoạt lại.</p>';
-    echo '</div>';
-    include 'includes/footer.php';
-    exit;
-}
-
 // Fetch all pages for sidebar (owned + shared)
-$pages = [];
-try {
-    $stmt2 = $pdo->prepare("
-        (SELECT p.id, p.page_id, p.name, p.avatar, p.user_id, u.name AS user_name, p.capi_pixel_id, p.capi_token, p.auto_send_capi
-         FROM pages p JOIN users u ON p.user_id = u.id
-         WHERE u.account_id = :aid)
-        UNION
-        (SELECT p.id, p.page_id, p.name, p.avatar, p.user_id, u.name AS user_name, p.capi_pixel_id, p.capi_token, p.auto_send_capi
-         FROM pages p
-         JOIN page_shares ps ON p.page_id = ps.page_id
-         JOIN users u ON p.user_id = u.id
-         WHERE ps.shared_with_account_id = :aid2)
-        ORDER BY name ASC
-    ");
-    $stmt2->bindValue(':aid',  $account_id, PDO::PARAM_INT);
-    $stmt2->bindValue(':aid2', $account_id, PDO::PARAM_INT);
-    $stmt2->execute();
-    $pages = $stmt2->fetchAll(PDO::FETCH_ASSOC);
-} catch (Exception $e) {
-    try {
-        $stmt2 = $pdo->prepare("
-            (SELECT p.id, p.page_id, p.name, p.avatar, p.user_id, u.name AS user_name
-             FROM pages p JOIN users u ON p.user_id = u.id
-             WHERE u.account_id = :aid)
-            ORDER BY name ASC
-        ");
-        $stmt2->bindValue(':aid', $account_id, PDO::PARAM_INT);
-        $stmt2->execute();
-        $pages = $stmt2->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Exception $ex) {
-        $pages = [];
-    }
-}
+$stmt2 = $pdo->prepare("
+    (SELECT p.id, p.page_id, p.name, p.avatar, p.user_id, u.name AS user_name, p.capi_pixel_id, p.capi_token, p.auto_send_capi
+     FROM pages p JOIN users u ON p.user_id = u.id
+     WHERE u.account_id = :aid)
+    UNION
+    (SELECT p.id, p.page_id, p.name, p.avatar, p.user_id, u.name AS user_name, p.capi_pixel_id, p.capi_token, p.auto_send_capi
+     FROM pages p
+     JOIN page_shares ps ON p.page_id = ps.page_id
+     JOIN users u ON p.user_id = u.id
+     WHERE ps.shared_with_account_id = :aid2)
+    ORDER BY name ASC
+");
+$stmt2->bindValue(':aid',  $account_id, PDO::PARAM_INT);
+$stmt2->bindValue(':aid2', $account_id, PDO::PARAM_INT);
+$stmt2->execute();
+$pages      = $stmt2->fetchAll(PDO::FETCH_ASSOC);
 $pages_json = json_encode($pages);
 
 $selected_page_id = $_GET['page_id'] ?? '';
@@ -146,31 +104,21 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
 
 <!-- Platform Switcher Tabs -->
 <div class="platform-tabs" style="display: flex; gap: 20px; border-bottom: 2px solid #e5e7eb; margin-bottom: 20px; padding-bottom: 0;">
-    <?php if ($enable_live_chat): ?>
     <a href="live_chat.php" class="platform-tab-btn <?php echo ($current_page === 'live_chat') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'live_chat') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'live_chat') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>📘</span> Facebook Fanpage
     </a>
-    <?php endif; ?>
-    <?php if ($enable_live_chat_oa): ?>
     <a href="live-chat-oa.php" class="platform-tab-btn <?php echo ($current_page === 'live_chat_zalo') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'live_chat_zalo') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'live_chat_zalo') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>💬</span> Zalo Official Account
     </a>
-    <?php endif; ?>
-    <?php if ($enable_live_chat_tiktok): ?>
     <a href="live-chat-tiktok.php" class="platform-tab-btn <?php echo ($current_page === 'live_chat_tiktok') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'live_chat_tiktok') ? '#fe2c55' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'live_chat_tiktok') ? '#fe2c55' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>🎵</span> TikTok
     </a>
-    <?php endif; ?>
-    <?php if ($enable_website): ?>
     <a href="website.php" class="platform-tab-btn <?php echo ($current_page === 'website') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'website') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'website') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>🌐</span> Live Chat Website
     </a>
-    <?php endif; ?>
-    <?php if ($enable_customers): ?>
     <a href="customers.php" class="platform-tab-btn <?php echo ($current_page === 'customers') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'customers') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'customers') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>👥</span> Khách Hàng
     </a>
-    <?php endif; ?>
 </div>
 
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">

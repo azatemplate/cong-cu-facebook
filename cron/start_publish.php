@@ -64,7 +64,7 @@ try {
 
 
 try {
-    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending', error_msg=NULL, retry_count=0 WHERE status='processing' AND (updated_at IS NULL OR updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE))");
+    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending', retry_count=0 WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE)");
     if ($stuck_count > 0) {
         echo "  [RESET] Da reset $stuck_count bai bi stuck 'processing' => 'pending'.\n";
     }
@@ -72,7 +72,7 @@ try {
     echo "Loi reset stuck posts: " . $e->getMessage() . "\n";
 }
 
-// --- DỌN TẤT CẢ FILE LOCK CŨ > 15 PHÚT & FILE TEMP CDN > 30 PHÚT TỰ ĐỘNG ---
+// --- DỌN TẤT CẢ FILE LOCK CŨ > 15 PHÚT TỰ ĐỘNG ---
 try {
     $lock_dir = dirname(__DIR__) . '/locks';
     if (is_dir($lock_dir)) {
@@ -81,40 +81,6 @@ try {
                 @unlink($lf);
             }
         }
-    }
-    $cdn_dirs = [
-        dirname(__DIR__) . '/uploads/cdn', 
-        dirname(__DIR__) . '/uploads/videos',
-        '/www/wwwroot/data.hongdolab.com/uploads'
-    ];
-    $now_cdn = time();
-    foreach ($cdn_dirs as $cdn_dir) {
-        if (is_dir($cdn_dir)) {
-            foreach (glob($cdn_dir . '/*.*') as $cf) {
-                if (file_exists($cf) && !is_dir($cf) && basename($cf) !== '.htaccess' && ($now_cdn - filemtime($cf)) > 300) {
-                    @unlink($cf);
-                }
-            }
-        }
-    }
-    if (function_exists('exec')) {
-        @exec('find /www/wwwroot/data.hongdolab.com/uploads -type f -mmin +5 -delete 2>/dev/null');
-    }
-    // Dọn dẹp tất cả file tạm /tmp (*.mp4, *.tmp, *.png, *.jpg, curl_*, sess_*, gdrive_*, gd_ck_*, buf_chk_*) cũ hơn 3 PHÚT
-    $sys_tmp = sys_get_temp_dir();
-    if (is_dir($sys_tmp)) {
-        $tmp_pats = ['*.mp4', '*.tmp', '*.png', '*.jpg', 'curl_*', 'sess_*', 'gdrive_*', 'gd_ck_*', 'buf_chk_*'];
-        $now = time();
-        foreach ($tmp_pats as $pat) {
-            foreach (glob($sys_tmp . '/' . $pat) ?: [] as $tf) {
-                if (file_exists($tf) && ($now - filemtime($tf)) > 180) {
-                    @unlink($tf);
-                }
-            }
-        }
-    }
-    if (function_exists('exec')) {
-        @exec('find /tmp -type f \( -name "*.mp4" -o -name "*.tmp" -o -name "*.png" -o -name "*.jpg" -o -name "curl_*" -o -name "sess_*" -o -name "gdrive_*" -o -name "gd_ck_*" -o -name "buf_chk_*" \) -mmin +3 -delete 2>/dev/null');
     }
 } catch (Exception $e) {}
 
@@ -158,14 +124,14 @@ try {
 }
 
 // Cấu hình giới hạn luồng cho máy chủ (Throttling)
-$MAX_WORKERS = 15; // Giảm từ 30 xuống 15 để tránh quá tải Server khi up video
+$MAX_WORKERS = 30;
 try {
     $res_limit = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_publish_workers'")->fetchColumn();
     if ($res_limit) $MAX_WORKERS = (int)$res_limit;
 } catch (Exception $e) {}
 
-// Đếm số luồng đang thực sự chạy (processing) gần đây
-$active_workers = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing' AND updated_at > DATE_SUB(NOW(), INTERVAL 3 MINUTE)")->fetchColumn();
+// Đếm số luồng đang chạy (processing)
+$active_workers = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 
 echo "  [THROTTLE] Hien dang co $active_workers luong dang xu ly.\n";
 
@@ -181,15 +147,15 @@ $sql = "
            COALESCE(p.user_id, u_ig.id) AS user_id, 
            bc.buffer_account_id
     FROM scheduled_posts sp
-    LEFT JOIN system_accounts sa ON sp.account_id = sa.id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' AND sp.post_type NOT LIKE 'Instagram%'
+    LEFT JOIN system_accounts sa ON sp.account_id = sa.id
     LEFT JOIN pages p ON sp.page_id = p.page_id AND sp.post_type NOT LIKE 'Instagram%'
     LEFT JOIN instagram_accounts ig ON (sp.page_id = ig.ig_user_id OR sp.page_id = ig.id) AND sp.post_type LIKE 'Instagram%'
     LEFT JOIN users u_ig ON ig.account_id = u_ig.account_id
     LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id
     WHERE sp.scheduled_time <= NOW()
       AND sp.page_id IS NOT NULL
-      AND (sa.id IS NULL OR sa.expire_date IS NULL OR sa.expire_date >= NOW())
-      AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 1))
+      AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
+      AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3))
       AND sp.status IN ('pending', 'failed')
 ";
 $stmt = $pdo->prepare($sql);
@@ -207,67 +173,40 @@ if (empty($raw_pages)) {
     exit;
 }
 
-// ── 1. Nhóm tất cả Kênh đang chờ theo Tài khoản User (Owner Account ID) ──
-$user_channels = [];
-
+// ── Nhóm page theo user_id của FB, page_id của YouTube, account_id của TT, hoặc buffer_account_id của Buffer ──
+$pages_by_user = [];
 foreach ($raw_pages as $row) {
-    // Phân loại User Account sở hữu (owner_id)
-    $owner_id = !empty($row['account_id']) ? ('acc_' . $row['account_id']) : (!empty($row['user_id']) ? ('usr_' . $row['user_id']) : 'system');
-
-    // Phân loại Channel Key
-    // Facebook Fanpages & Instagram: Gộp TẤT CẢ Fanpage và Instagram thuộc cùng 1 Facebook Access Token User vào 1 luồng duy nhất. 
-    // Đảm bảo chỉ có DUY NHẤT 1 BÀI (dù là FB hay Instagram) được đăng tại 1 thời điểm, đăng xong nghỉ delay rồi mới sang bài tiếp theo.
     if ($row['post_type'] === 'YouTube') {
         $yt_chan_id = !empty($row['page_id']) ? $row['page_id'] : $row['account_id'];
-        $chan_key = 'yt_chan_' . $yt_chan_id;
+        $uid = 'yt_chan_' . $yt_chan_id;
     } elseif (strpos($row['post_type'], 'Buffer') !== false) {
-        $buf_chan_id = !empty($row['page_id']) ? $row['page_id'] : $row['account_id'];
-        $chan_key = 'buf_chan_' . $buf_chan_id;
+        $buf_acc_id = !empty($row['buffer_account_id']) ? $row['buffer_account_id'] : $row['account_id'];
+        $uid = 'buf_acc_' . $buf_acc_id;
     } elseif ($row['post_type'] === 'TikTok') {
-        $chan_key = 'tt_' . $row['account_id'] . '_' . $row['page_id'];
+        $uid = 'tt_' . $row['account_id'];
+    } elseif (strpos($row['post_type'], 'Instagram') !== false) {
+        $uid = 'ig_' . $row['page_id'];
     } else {
-        // Mỗi Facebook Access Token (user_id trong token_management.php) nhận 1 LUỒNG WORKER ĐỘC LẬP.
-        // Tất cả Fanpage thuộc Token này sẽ được đăng lần lượt từng bài một và chờ delay giữa các bài.
-        $fb_user_key = !empty($row['user_id']) ? ('usr_' . $row['user_id']) : (!empty($row['account_id']) ? ('acc_' . $row['account_id']) : 'system');
-        $chan_key = 'fb_token_' . $fb_user_key;
+        $uid = $row['user_id'] ?: ('noid_' . $row['page_id']);
     }
-
-    if (!isset($user_channels[$owner_id])) {
-        $user_channels[$owner_id] = [];
+    if (!isset($pages_by_user[$uid])) {
+        $pages_by_user[$uid] = [];
     }
-    if (!isset($user_channels[$owner_id][$chan_key])) {
-        $user_channels[$owner_id][$chan_key] = [];
-    }
-    if (!in_array($row['page_id'], $user_channels[$owner_id][$chan_key])) {
-        $user_channels[$owner_id][$chan_key][] = $row['page_id'];
-    }
+    $pages_by_user[$uid][] = $row['page_id'];
 }
 
-// ── 2. Thuật toán chia đều Throttling công bằng cho tất cả User (Equal Share Interleaving) ──
-// Lần lượt cấp 1 suất cho User 1, 1 suất cho User 2, 1 suất cho User 3... theo các vòng xoay
-$dispatch_list = [];
-$owner_keys = array_keys($user_channels);
-$owner_pointers = array_fill_keys($owner_keys, 0);
+// Round-Robin chọn user_id để đảm bảo công bằng
+$selected_users = [];
+$keep_going = true;
+$user_keys = array_keys($pages_by_user);
 
-$owner_chan_lists = [];
-foreach ($user_channels as $oid => $chans) {
-    $owner_chan_lists[$oid] = [];
-    foreach ($chans as $ckey => $pids) {
-        $page_ids_str = is_array($pids) ? implode(',', $pids) : $pids;
-        $owner_chan_lists[$oid][] = ['chan_key' => $ckey, 'page_id' => $page_ids_str, 'owner_id' => $oid];
-    }
-}
-
-$has_more = true;
-while ($has_more && count($dispatch_list) < $available_slots) {
-    $has_more = false;
-    foreach ($owner_keys as $oid) {
-        $ptr = $owner_pointers[$oid];
-        if (isset($owner_chan_lists[$oid][$ptr])) {
-            $dispatch_list[] = $owner_chan_lists[$oid][$ptr];
-            $owner_pointers[$oid]++;
-            $has_more = true;
-            if (count($dispatch_list) >= $available_slots) {
+while ($keep_going && count($selected_users) < $available_slots) {
+    $keep_going = false;
+    foreach ($user_keys as $uid) {
+        if (!in_array($uid, $selected_users)) {
+            $selected_users[] = $uid;
+            $keep_going = true;
+            if (count($selected_users) >= $available_slots) {
                 break 2;
             }
         }
@@ -275,84 +214,71 @@ while ($has_more && count($dispatch_list) < $available_slots) {
 }
 
 $total_pages = count($raw_pages);
-$total_active_users = count($user_channels);
-$total_dispatched = count($dispatch_list);
-echo "Phát hiện {$total_pages} Kênh chờ đăng thuộc {$total_active_users} Tài khoản User. Đang cấp luồng chia đều cho {$total_dispatched} Worker...\n";
+$total_users = count($selected_users);
+echo "Co {$total_pages} Fanpage/Kênh tren {$total_users} Tai khoan/Token dang cho. Moi nhom = 1 Worker doc lap...\n";
 
-require_once __DIR__ . '/../includes/queue.php';
-$queue = new JobQueue($pdo);
-$queue_name = 'publish_jobs';
+$is_web = isset($_SERVER['HTTP_HOST']);
+$disabled_funcs = array_map('trim', explode(',', strtolower(ini_get('disable_functions'))));
+$exec_enabled = function_exists('exec') && !in_array('exec', $disabled_funcs);
 
-// Lấy danh sách Job đang tồn đọng trong Queue để tránh đẩy đúp (với MySQL fallback)
-$stmt = $pdo->prepare("SELECT payload FROM queue_jobs WHERE queue_name = ?");
-$stmt->execute([$queue_name]);
-$existing_payloads = $stmt->fetchAll(PDO::FETCH_COLUMN);
-$existing_chans = [];
-foreach ($existing_payloads as $pl) {
-    $dec = json_decode($pl, true);
-    if (isset($dec['chan_key'])) $existing_chans[] = $dec['chan_key'];
-}
+foreach ($selected_users as $uid) {
+    $user_page_ids = $pages_by_user[$uid];
+    // Truyền danh sách page_ids cho worker, cách nhau bởi dấu phẩy
+    $page_ids_str = implode(',', $user_page_ids);
 
-foreach ($dispatch_list as $item) {
-    $chan_key = $item['chan_key'];
-    
-    // Nếu chan_key này đã nằm trong hàng đợi chờ xử lý, bỏ qua không push thêm để tránh trùng lặp.
-    if (in_array($chan_key, $existing_chans)) {
-        continue;
-    }
-    
-    // Kiểm tra và giải phóng lock cũ (> 15 phút) cho kênh
+    // Kiểm tra và giải phóng lock cũ trước khi spawn worker
+    // Nếu lock > 15 phút → worker cũ đã crash hoặc account vừa được gia hạn
     $lock_dir = dirname(__DIR__) . '/locks';
-    $lock_key = md5('uid_' . $chan_key);
+    $lock_key = md5('uid_' . $uid);
     $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
     if (file_exists($lock_file)) {
         $lock_age = time() - filemtime($lock_file);
-        if ($lock_age > 900) {
+        if ($lock_age > 900) { // > 15 phút
             @unlink($lock_file);
-            echo "  ⚠ Đã dọn lock cũ ($lock_age giây) cho kênh #$chan_key.\n";
+            echo "  ⚠ Đã dọn lock cũ ($lock_age giây) cho user #$uid trước khi spawn worker.\n";
         }
     }
     
-    // Push vào Hàng Đợi (Queue)
-    $queue->push($queue_name, ['chan_key' => $chan_key]);
-    echo "  [QUEUE] Đã đẩy luồng #$chan_key vào Hàng đợi.\n";
-}
-
-// ── 3. Quản lý Daemon Workers (Trạm Thu Phí) ──
-// Thay vì sinh ra hàng chục tiến trình mỗi phút, ta chỉ duy trì 5 Daemon chạy ngầm
-$MAX_DAEMONS = 5;
-if (!function_exists('get_php_cli_bin')) {
-    require_once __DIR__ . '/../includes/php_cli.php';
-}
-$php_bin = get_php_cli_bin();
-$worker_script = __DIR__ . DIRECTORY_SEPARATOR . 'queue_worker.php';
-
-if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
-    // Đếm số lượng daemon đang chạy trên Linux
-    $running_daemons = 0;
-    exec("ps aux | grep queue_worker.php | grep -v grep | wc -l", $out, $ret);
-    if (isset($out[0])) {
-        $running_daemons = (int)$out[0];
-    }
-    
-    echo "  [DAEMON] Đang có $running_daemons/$MAX_DAEMONS worker daemons chạy ngầm.\n";
-    
-    // Bổ sung thêm Daemon nếu thiếu
-    $needed = $MAX_DAEMONS - $running_daemons;
-    if ($needed > 0 && count($dispatch_list) > 0) {
-        // Chỉ bật thêm daemon nếu có việc
-        $to_spawn = min($needed, count($dispatch_list)); // Không bật dư
-        echo "  [DAEMON] Kích hoạt thêm $to_spawn daemon worker...\n";
-        for ($i = 0; $i < $to_spawn; $i++) {
-            @exec("nohup \"$php_bin\" \"$worker_script\" > /dev/null 2>&1 &");
+    // Kích hoạt song song luồng CLI và Web-Async cURL để chống cản trở bởi open_basedir / aaPanel
+    $dispatched = false;
+    if ($exec_enabled) {
+        if (!function_exists('get_php_cli_bin')) {
+            require_once __DIR__ . '/../includes/php_cli.php';
         }
+        $php_bin = get_php_cli_bin();
+        $script_path = __DIR__ . DIRECTORY_SEPARATOR . 'publish_worker.php';
+        
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$uid\"", "r"));
+        } else {
+            @exec("nohup \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$uid\" > /dev/null 2>&1 &");
+        }
+        $dispatched = true;
     }
-} else {
-    // Trên Windows, tự động bật 1 CMD cửa sổ ẩn chạy nền
-    echo "  [WINDOWS] Đang chạy chế độ Local (Windows). Bật 1 Worker chạy ngầm...\n";
-    $cmd = "start /B \"\" \"$php_bin\" \"$worker_script\"";
-    @pclose(@popen($cmd, "r"));
+    
+    if (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
+        $doc_root = $_SERVER['DOCUMENT_ROOT'] ?? '';
+        $root_web_path = rtrim(str_replace('\\', '/', str_replace($doc_root, '', dirname(__DIR__))), '/');
+        
+        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . $root_web_path . "/run_worker.php?type=publish&page_id=" . urlencode($page_ids_str) . "&user_id=" . urlencode($uid);
+
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500);
+        curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        @curl_exec($ch);
+        @curl_close($ch);
+        $dispatched = true;
+    }
+
+    if ($dispatched) {
+        echo "  -> Da kích hoạt luong ngam cho nhom #$uid (" . count($user_page_ids) . " pages: $page_ids_str)\n";
+    } else {
+        echo "  -> THAT BAI: Khong the kích hoat luong cho nhom #$uid\n";
+    }
 }
 
-echo "Hoàn thành quy trình Dispatch.\n";
-?>
+echo "Da Dispatch hoan tat.\n";

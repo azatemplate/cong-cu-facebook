@@ -39,16 +39,6 @@ if (!$settings || empty($settings['oa_secret'])) {
 $secretKey = decryptData($settings['oa_secret']);
 $acc_id = $settings['account_id'];
 
-// Check if account has live_chat_oa enabled
-$st_chk = $pdo->prepare("SELECT role, enable_live_chat_oa FROM system_accounts WHERE id = ?");
-$st_chk->execute([$acc_id]);
-$acc_info = $st_chk->fetch(PDO::FETCH_ASSOC);
-if ($acc_info && ($acc_info['role'] ?? '') !== 'admin' && (int)($acc_info['enable_live_chat_oa'] ?? 1) === 0) {
-    http_response_code(200);
-    echo "OK (Feature live_chat_oa disabled for account)";
-    exit;
-}
-
 // 2. Validate Signature
 $receivedSignature = $_SERVER['HTTP_X_ZEVENT_SIGNATURE'] 
     ?? $_SERVER['HTTP_X_ZALO_SIGNATURE'] 

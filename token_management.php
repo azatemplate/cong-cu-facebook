@@ -154,24 +154,9 @@ $login_url = "";
 if ($fb_app_id) {
     $login_url = "https://www.facebook.com/v25.0/dialog/oauth?client_id=" . urlencode($fb_app_id) . "&redirect_uri=" . urlencode($redirect_uri) . "&scope=" . urlencode($fb_permissions) . "&response_type=token";
 }
-
-// Fetch user page limit
-$stmt_limit = $pdo->prepare("SELECT max_fb_pages FROM system_accounts WHERE id = ?");
-$stmt_limit->execute([$account_id]);
-$max_fb_pages = intval($stmt_limit->fetchColumn() ?: 450);
-$max_fb_display = $is_admin ? 'Không giới hạn' : number_format($max_fb_pages);
-
-$stmt_cnt = $pdo->prepare("SELECT COUNT(*) FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = ?");
-$stmt_cnt->execute([$account_id]);
-$total_connected_pages = intval($stmt_cnt->fetchColumn() ?: 0);
 ?>
 
-<div class="page-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-    <span>Quản lý Token</span>
-    <span style="font-size:13px; font-weight:600; color:#0369a1; background:#e0f2fe; padding:6px 14px; border-radius:20px; border:1px solid #bae6fd;">
-        📄 Giới hạn Fanpage FB: <strong><?php echo number_format($total_connected_pages); ?></strong> / <strong><?php echo $max_fb_display; ?></strong>
-    </span>
-</div>
+<div class="page-title">Quản lý Token</div>
 
 <?php if ($alert_message): ?>
     <div class="alert alert-<?php echo $alert_type; ?>">

@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/db.php';
 
-$flag_file = sys_get_temp_dir() . '/live_chat_setup_v3.done';
+$flag_file = sys_get_temp_dir() . '/live_chat_setup_v2.done';
 if (file_exists($flag_file)) {
     return;
 }
@@ -64,9 +64,6 @@ try {
         $pdo->exec("ALTER TABLE pages ADD COLUMN capi_token TEXT NULL AFTER capi_pixel_id");
     } catch (PDOException $e) {}
     try {
-        $pdo->exec("ALTER TABLE pages ADD COLUMN auto_send_capi TINYINT DEFAULT 1 AFTER capi_token");
-    } catch (PDOException $e) {}
-    try {
         $pdo->exec("ALTER TABLE fb_customers ADD COLUMN capi_pushed TINYINT DEFAULT 0 AFTER info_requested_at");
     } catch (PDOException $e) {}
 
@@ -74,5 +71,4 @@ try {
 } catch (PDOException $e) {
     // ignore
 }
-
 

@@ -69,31 +69,6 @@ if ($user_info_res['status'] === 'success') {
     $union_id     = $u['union_id'] ?? '';
 }
 
-// Check max_tiktok_accounts limit before inserting new account
-$chk_tt = $pdo->prepare("SELECT id FROM tiktok_accounts WHERE account_id = ? AND open_id = ?");
-$chk_tt->execute([$account_id, $open_id]);
-$existing_tt = $chk_tt->fetch();
-
-if (!$existing_tt) {
-    $acc_stmt = $pdo->prepare("SELECT role, max_tiktok_accounts FROM system_accounts WHERE id = ?");
-    $acc_stmt->execute([$account_id]);
-    $acc_info = $acc_stmt->fetch(PDO::FETCH_ASSOC);
-    $max_tiktok_accounts = (int)($acc_info['max_tiktok_accounts'] ?? 10);
-    $is_admin = (($acc_info['role'] ?? '') === 'admin');
-
-    if (!$is_admin && $max_tiktok_accounts > 0) {
-        $cnt_tt_stmt = $pdo->prepare("SELECT COUNT(*) FROM tiktok_accounts WHERE account_id = ?");
-        $cnt_tt_stmt->execute([$account_id]);
-        $curr_tt_count = (int)$cnt_tt_stmt->fetchColumn();
-
-        if ($curr_tt_count >= $max_tiktok_accounts) {
-            $_SESSION['flash_msg'] = "⚠️ Tài khoản của bạn đã đạt giới hạn tối đa $max_tiktok_accounts Kênh TikTok (Hiện tại: $curr_tt_count/$max_tiktok_accounts). Vui lòng liên hệ Admin để nâng cấp gói cước!";
-            header("Location: tiktok.php");
-            exit;
-        }
-    }
-}
-
 try {
     $stmt = $pdo->prepare("
         INSERT INTO tiktok_accounts (account_id, open_id, union_id, display_name, avatar, access_token, refresh_token, expires_at, refresh_expires_at, is_active)

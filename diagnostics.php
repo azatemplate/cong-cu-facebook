@@ -52,11 +52,9 @@ try {
     }
 } catch (Exception $e) {}
 
-// ── Đếm số worker đang thực sự chạy (active trong 3 phút gần đây) ───────────
-$active_publish = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing' AND updated_at > DATE_SUB(NOW(), INTERVAL 3 MINUTE)")->fetchColumn();
-$tmp_dir = sys_get_temp_dir();
-$comment_locks = glob($tmp_dir . "/facebook_comment_worker_account_*.lock") ?: [];
-$active_comment = count($comment_locks);
+// ── Đếm số worker đang thực sự chạy (active) ────────────────────────────────
+$active_publish = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+$active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
 
 // ── Kích hoạt thủ công nếu có ?run=1 ─────────────────────────────────────────
 $run_msg = '';
@@ -107,40 +105,29 @@ $stats = $pdo->query("
     GROUP BY status
 ")->fetchAll(PDO::FETCH_KEY_PAIR);
 
-$today_start = date('Y-m-d 00:00:00');
-$today_end   = date('Y-m-d 23:59:59');
+// ── Đếm bài theo trạng thái HÔM NAY ──────────────────────────────────────────
+$stats_today = $pdo->query("
+    SELECT status, COUNT(*) as cnt
+    FROM scheduled_posts
+    WHERE DATE(scheduled_time) = CURDATE()
+    GROUP BY status
+")->fetchAll(PDO::FETCH_KEY_PAIR);
 
-// ── Đếm bài theo trạng thái HÔM NAY (Tối ưu dùng Index trong ngày) ──────────────
-$stats_today = [];
-try {
-    $stmt_today = $pdo->prepare("
-        SELECT status, COUNT(*) as cnt
-        FROM scheduled_posts
-        WHERE scheduled_time >= ? AND scheduled_time <= ?
-        GROUP BY status
-    ");
-    $stmt_today->execute([$today_start, $today_end]);
-    $stats_today = $stmt_today->fetchAll(PDO::FETCH_KEY_PAIR);
-} catch (Exception $e) {}
-
-// ── Top 10 Tài khoản bị lỗi nhiều hôm nay (Tối ưu dùng Index) ────────────────────
+// ── Top 10 Tài khoản bị lỗi nhiều hôm nay ────────────────────────────────────
 $top_failed_accounts = [];
 try {
-    $stmt_tf = $pdo->prepare("
+    $top_failed_accounts = $pdo->query("
         SELECT sa.username, COUNT(*) as cnt
         FROM scheduled_posts sp
         JOIN system_accounts sa ON sp.account_id = sa.id
-        WHERE sp.status = 'failed' 
-          AND ((sp.scheduled_time >= ? AND sp.scheduled_time <= ?) OR (sp.updated_at >= ? AND sp.updated_at <= ?))
+        WHERE sp.status = 'failed' AND (DATE(sp.scheduled_time) = CURDATE() OR DATE(sp.updated_at) = CURDATE())
         GROUP BY sp.account_id, sa.username
         ORDER BY cnt DESC
         LIMIT 10
-    ");
-    $stmt_tf->execute([$today_start, $today_end, $today_start, $today_end]);
-    $top_failed_accounts = $stmt_tf->fetchAll(PDO::FETCH_ASSOC);
+    ")->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {}
 
-// ── Bài viết bị lỗi hôm nay (Tối ưu dùng Index) ──────────────────────────────────
+// ── Bài viết bị lỗi hôm nay ──────────────────────────────────────────────────
 $failed_posts_today = [];
 try {
     $failed_today_stmt = $pdo->prepare("
@@ -150,35 +137,12 @@ try {
         FROM scheduled_posts sp
         LEFT JOIN system_accounts sa ON sp.account_id = sa.id
         WHERE sp.status = 'failed' 
-          AND ((sp.scheduled_time >= ? AND sp.scheduled_time <= ?) OR (sp.updated_at >= ? AND sp.updated_at <= ?))
+          AND (DATE(sp.scheduled_time) = CURDATE() OR DATE(sp.updated_at) = CURDATE())
         ORDER BY sp.updated_at DESC, sp.id DESC
         LIMIT 50
     ");
-    $failed_today_stmt->execute([$max_retries, $today_start, $today_end, $today_start, $today_end]);
+    $failed_today_stmt->execute([$max_retries]);
     $failed_posts_today = $failed_today_stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (Exception $e) {}
-
-// ── Thống kê bài viết theo Tài khoản User (Hôm nay & Tổng) ─────────────────
-$user_posts_breakdown = [];
-try {
-    $stmt_ub = $pdo->prepare("
-        SELECT 
-            COALESCE(sa.username, CONCAT('Acc #', sp.account_id)) AS username,
-            COALESCE(sa.page_limit, -1) AS page_limit,
-            COUNT(*) AS total_posts,
-            SUM(CASE WHEN sp.scheduled_time >= ? AND sp.scheduled_time <= ? THEN 1 ELSE 0 END) AS today_scheduled,
-            SUM(CASE WHEN sp.status = 'published' AND sp.scheduled_time >= ? AND sp.scheduled_time <= ? THEN 1 ELSE 0 END) AS today_published,
-            SUM(CASE WHEN sp.status = 'pending' THEN 1 ELSE 0 END) AS pending_posts,
-            SUM(CASE WHEN sp.status = 'published' THEN 1 ELSE 0 END) AS published_posts,
-            SUM(CASE WHEN sp.status = 'failed' THEN 1 ELSE 0 END) AS failed_posts
-        FROM scheduled_posts sp
-        LEFT JOIN system_accounts sa ON sp.account_id = sa.id
-        GROUP BY sp.account_id, sa.username, sa.page_limit
-        ORDER BY today_published DESC, today_scheduled DESC
-        LIMIT 15
-    ");
-    $stmt_ub->execute([$today_start, $today_end, $today_start, $today_end]);
-    $user_posts_breakdown = $stmt_ub->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {}
 
 
@@ -223,7 +187,6 @@ $upcoming = $pdo->query("
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Bài đang xử lý (Processing) ──────────────────────────────────────────────
-$processing_total_count = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 $processing_posts = $pdo->query("
     SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time, sp.updated_at,
            TIMESTAMPDIFF(MINUTE, sp.updated_at, NOW()) AS duration_min,
@@ -231,8 +194,7 @@ $processing_posts = $pdo->query("
     FROM scheduled_posts sp
     LEFT JOIN system_accounts sa ON sp.account_id = sa.id
     WHERE sp.status = 'processing'
-    ORDER BY sp.updated_at DESC, sp.id DESC
-    LIMIT 20
+    ORDER BY sp.updated_at ASC
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Bài chờ điều kiện Insights ──────────────────────────────────────────────
@@ -263,51 +225,39 @@ $disabled_funcs = array_map('trim', explode(',', strtolower(ini_get('disable_fun
 $exec_ok = function_exists('exec') && !in_array('exec', $disabled_funcs);
 
 // ── Auto-detect PHP binary path (dùng cho hướng dẫn cron) ────────────────────
+// Luon dung 'php' cho AaPanel (shell da cau hinh san)
 $php_bin_simple = 'php';
+
+// Tim duong dan day du de hien thi nhu la alternative
 $php_bin_full = 'php';
 $php_bin_note = '';
 
+// Tu dong lay duong dan PHP CLI theo phien ban PHP Web dang chay de tranh bi chan boi open_basedir
 $current_php_version = phpversion();
 $version_parts = explode('.', $current_php_version);
-$php_bin_full = 'php';
-$php_bin_note = '';
-
 if (count($version_parts) >= 2) {
-    $ver_num = $version_parts[0] . $version_parts[1];
-    $try_web_path = "/www/server/php/{$ver_num}/bin/php";
-    if (@file_exists($try_web_path)) {
-        $php_bin_full = $try_web_path;
-        $php_bin_note = "tự động nhận diện từ PHP Web ({$current_php_version})";
-    }
-}
-
-if ($php_bin_full === 'php') {
+    $ver_num = $version_parts[0] . $version_parts[1]; // VD: "85" hoac "83"
+    $php_bin_full = "/www/server/php/{$ver_num}/bin/php";
+    $php_bin_note = 'tự động nhận diện từ PHP Web';
+} else {
     if (defined('PHP_BINARY') && PHP_BINARY
         && strpos(PHP_BINARY, 'php-fpm') === false
         && strpos(PHP_BINARY, 'php-cgi') === false
         && @file_exists(PHP_BINARY)) {
         $php_bin_full = PHP_BINARY;
-        $php_bin_note = 'từ PHP_BINARY';
+        $php_bin_note = 'tu PHP_BINARY';
     }
-    if ($php_bin_full === 'php') {
-        $common_cli_list = [
-            "/www/server/php/{$ver_num}/bin/php",
-            '/www/server/php/74/bin/php',
-            '/www/server/php/80/bin/php',
-            '/www/server/php/81/bin/php',
-            '/www/server/php/82/bin/php',
-            '/www/server/php/83/bin/php',
-            '/www/server/php/84/bin/php',
-            '/www/server/php/85/bin/php',
-            '/usr/bin/php',
-            '/usr/local/bin/php'
-        ];
-        foreach ($common_cli_list as $p) {
-            if (@file_exists($p)) { $php_bin_full = $p; $php_bin_note = 'tìm thấy trên server'; break; }
+    if ($php_bin_full === 'php' || strpos($php_bin_full, 'fpm') !== false) {
+        foreach (['/www/server/php/85/bin/php','/www/server/php/84/bin/php',
+                  '/www/server/php/83/bin/php','/www/server/php/82/bin/php',
+                  '/www/server/php/81/bin/php','/www/server/php/80/bin/php',
+                  '/usr/bin/php8.5','/usr/bin/php8.4','/usr/bin/php8.3',
+                  '/usr/bin/php8.2','/usr/bin/php8.1','/usr/bin/php','/usr/local/bin/php'] as $p) {
+            if (@file_exists($p)) { $php_bin_full = $p; $php_bin_note = 'tim thay tren server'; break; }
         }
     }
 }
-if ($exec_ok && $php_bin_full === 'php' && PHP_OS_FAMILY !== 'Windows') {
+if ($exec_ok && $php_bin_full === 'php') {
     $w = trim((string)@exec('which php 2>/dev/null'));
     if ($w && file_exists($w)) { $php_bin_full = $w; $php_bin_note = 'which php'; }
 }
@@ -317,28 +267,30 @@ $cron_dir_path = realpath(__DIR__ . '/cron');
 
 // ── Kiểm tra lock files (worker bị stuck) ────────────────────────────────────
 $lock_files = [];
-$publish_locks = is_dir($tmp_dir) ? (glob($tmp_dir . '/facebook_publish_worker_page_*.lock') ?: []) : [];
-foreach ($publish_locks as $lf) {
-    $fp = @fopen($lf, 'r');
-    $is_locked = false;
-    if ($fp) {
-        $is_locked = !flock($fp, LOCK_EX | LOCK_NB);
-        if (!$is_locked) flock($fp, LOCK_UN);
-        fclose($fp);
+$tmp_dir = sys_get_temp_dir();
+if (is_dir($tmp_dir)) {
+    foreach (glob($tmp_dir . '/facebook_publish_worker_page_*.lock') ?: [] as $lf) {
+        $fp = @fopen($lf, 'r');
+        $is_locked = false;
+        if ($fp) {
+            $is_locked = !flock($fp, LOCK_EX | LOCK_NB);
+            if (!$is_locked) flock($fp, LOCK_UN);
+            fclose($fp);
+        }
+        $lock_files[] = [
+            'file'   => basename($lf),
+            'mtime'  => filemtime($lf),
+            'locked' => $is_locked,
+            'age_min'=> round((time() - filemtime($lf)) / 60, 1),
+        ];
     }
-    $lock_files[] = [
-        'file'   => basename($lf),
-        'mtime'  => filemtime($lf),
-        'locked' => $is_locked,
-        'age_min'=> round((time() - filemtime($lf)) / 60, 1),
-    ];
 }
 
 // ── Xoá lock files cũ nếu có &clear_locks=1 ──────────────────────────────────
 $clear_msg = '';
 if (isset($_GET['clear_locks'])) {
     $cleared = 0;
-    foreach ($publish_locks as $lf) {
+    foreach (glob($tmp_dir . '/facebook_publish_worker_page_*.lock') ?: [] as $lf) {
         if (@unlink($lf)) $cleared++;
     }
     $clear_msg = "Đã xoá $cleared lock file(s).";
@@ -967,52 +919,6 @@ code {
                 </table>
             </div>
 
-            <!-- Thống kê bài viết theo Tài khoản User -->
-            <div class="card" style="border-top: 3px solid var(--color-primary);">
-                <h3 class="card-title" style="color: var(--color-primary);">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                    Bài viết theo Tài khoản User
-                </h3>
-                <?php if (empty($user_posts_breakdown)): ?>
-                <div style="font-size: 13px; color: var(--text-muted); padding: 4px 0;">
-                    Chưa có bài viết nào.
-                </div>
-                <?php else: ?>
-                <table style="width: 100%;">
-                    <thead>
-                        <tr>
-                            <th style="padding: 6px 8px;">Tài khoản</th>
-                            <th style="padding: 6px 8px; text-align: right;">Đã đăng hôm nay</th>
-                            <th style="padding: 6px 8px; text-align: right;">Tổng</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($user_posts_breakdown as $ub): ?>
-                        <tr>
-                            <td style="padding: 8px 8px;">
-                                <div style="font-weight: 600; color: #a5b4fc;"><?= htmlspecialchars($ub['username']) ?></div>
-                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-                                    📅 Hẹn hôm nay: <?= number_format($ub['today_scheduled']) ?> | ⏳<?= number_format($ub['pending_posts']) ?> | ❌<?= number_format($ub['failed_posts']) ?>
-                                </div>
-                            </td>
-                            <td style="padding: 8px 8px; text-align: right; font-weight: 700;" class="mono">
-                                <span class="<?= $ub['today_published'] > 0 ? 'text-success' : 'text-muted' ?>">
-                                    <?= number_format($ub['today_published']) ?>
-                                </span>
-                                <span style="font-size:11px; color:var(--text-muted); display:block; font-weight:400;">
-                                    / <?= ($ub['page_limit'] > 0 ? number_format($ub['page_limit']) : 'Không GH') ?>
-                                </span>
-                            </td>
-                            <td style="padding: 8px 8px; text-align: right; font-weight: 600;" class="mono">
-                                <?= number_format($ub['total_posts']) ?>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-                <?php endif; ?>
-            </div>
-
             <!-- Top 10 Failed Accounts Today -->
             <div class="card" style="border-top: 3px solid var(--color-danger);">
                 <h3 class="card-title" style="color: var(--color-danger);">
@@ -1051,7 +957,7 @@ code {
             <!-- Quick Dashboard Grid -->
             <div class="stats-grid">
                 <div class="stat-box stat-processing">
-                    <div class="stat-box-value mono"><?= $processing_total_count ?></div>
+                    <div class="stat-box-value mono"><?= count($processing_posts) ?></div>
                     <div class="stat-box-label">Đang xử lý (Processing)</div>
                     <div class="stat-box-icon">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="6.83" y1="18.17" x2="8.24" y2="16.76"/><line x1="15.76" y1="8.24" x2="17.17" y2="6.83"/></svg>
@@ -1131,7 +1037,7 @@ code {
             <div class="card" style="border-top: 4px solid var(--color-info);">
                 <h3 class="card-title" style="color: var(--color-info);">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="6.83" y1="18.17" x2="8.24" y2="16.76"/><line x1="15.76" y1="8.24" x2="17.17" y2="6.83"/></svg>
-                    Bài đang xử lý (<?= $processing_total_count ?> bài<?= $processing_total_count > 20 ? ', hiển thị 20 mới nhất' : '' ?>)
+                    Bài đang xử lý (PROCESSING - <?= count($processing_posts) ?> bài)
                 </h3>
                 
                 <?php if ($reset_msg): ?>

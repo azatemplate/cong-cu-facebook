@@ -12,7 +12,7 @@ if (!file_exists($settings_flag)) {
             setting_value TEXT
         )");
         $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1')");
-        $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_retries', '1')");
+        $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_retries', '3')");
         $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('disable_local_upload', '0')");
         $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_publish_workers', '30')");
         $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_comment_workers', '15')");
@@ -26,7 +26,7 @@ if (!file_exists($settings_flag)) {
         $pdo->exec("ALTER TABLE system_accounts ADD COLUMN email VARCHAR(255) DEFAULT NULL");
         $pdo->exec("ALTER TABLE system_accounts ADD COLUMN login_by_email TINYINT(1) DEFAULT 0");
         $pdo->exec("ALTER TABLE system_accounts ADD COLUMN retry_interval_minutes INT DEFAULT 1");
-        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 1");
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
         $pdo->exec("ALTER TABLE system_accounts ADD COLUMN sales_list TEXT DEFAULT NULL");
         @touch($settings_flag);
     } catch (Exception $e) {}
@@ -129,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Update user's delay and retry settings (cho bất kỳ user nào)
         $delay = isset($_POST['post_delay_seconds']) ? (int)trim($_POST['post_delay_seconds']) : 15;
         $interval = isset($_POST['retry_interval_minutes']) ? (int)trim($_POST['retry_interval_minutes']) : 1;
-        $max_retries = isset($_POST['max_retries']) ? (int)trim($_POST['max_retries']) : 1;
+        $max_retries = isset($_POST['max_retries']) ? (int)trim($_POST['max_retries']) : 3;
         
         $u_stmt = $pdo->prepare("UPDATE system_accounts SET post_delay_seconds = ?, retry_interval_minutes = ?, max_retries = ? WHERE id = ?");
         $u_stmt->execute([$delay, $interval, $max_retries, $account_id]);
@@ -140,15 +140,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $account['post_delay_seconds'] = $delay;
         $account['retry_interval_minutes'] = $interval;
         $account['max_retries'] = $max_retries;
-    }
-
-    if (isset($_POST['reset_all_users_retries']) && $_SESSION['role'] === 'admin') {
-        $affected = $pdo->exec("UPDATE system_accounts SET max_retries = 1");
-        $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('max_retries', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
-        $alert_type = 'success';
-        $alert_message = "Đã cập nhật tất cả {$affected} tài khoản người dùng về Số lần thử lại = 1 thành công!";
-        $account['max_retries'] = 1;
-        $max_retries = 1;
     }
 
     if (isset($_POST['update_telegram'])) {
@@ -167,7 +158,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['update_tiktok_app']) && $_SESSION['role'] === 'admin') {
         $tiktok_client_key = trim($_POST['tiktok_client_key'] ?? '');
         $tiktok_client_secret = trim($_POST['tiktok_client_secret'] ?? '');
-        $tiktok_scopes = trim($_POST['tiktok_scopes'] ?? '');
         
         $u_stmt1 = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('tiktok_client_key', ?) ON DUPLICATE KEY UPDATE setting_value = ?");
         $u_stmt1->execute([$tiktok_client_key, $tiktok_client_key]);
@@ -175,16 +165,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $u_stmt2 = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('tiktok_client_secret', ?) ON DUPLICATE KEY UPDATE setting_value = ?");
         $u_stmt2->execute([$tiktok_client_secret, $tiktok_client_secret]);
 
-        $u_stmt3 = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('tiktok_scopes', ?) ON DUPLICATE KEY UPDATE setting_value = ?");
-        $u_stmt3->execute([$tiktok_scopes, $tiktok_scopes]);
-
         // Xóa sạch toàn bộ key riêng lẻ cũ trong bảng system_accounts để buộc 100% tài khoản dùng duy nhất cấu hình Admin
         try {
             $pdo->exec("UPDATE system_accounts SET tiktok_client_key = NULL, tiktok_client_secret = NULL");
         } catch (Exception $e) {}
         
         $alert_type = 'success';
-        $alert_message = 'Đã cập nhật cấu hình TikTok Developer App (Client Key, Client Secret & Scopes) hệ thống thành công.';
+        $alert_message = 'Đã cập nhật cấu hình TikTok Developer App (Client Key & Client Secret) hệ thống thành công.';
     }
 
     if (isset($_POST['update_upload_restriction']) && $_SESSION['role'] === 'admin') {
@@ -238,7 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Lấy Cấu hình Retry từ User
 $retry_interval = isset($account['retry_interval_minutes']) && $account['retry_interval_minutes'] !== null ? $account['retry_interval_minutes'] : '1';
-$max_retries = isset($account['max_retries']) && $account['max_retries'] !== null ? $account['max_retries'] : '1';
+$max_retries = isset($account['max_retries']) && $account['max_retries'] !== null ? $account['max_retries'] : '3';
 
 // Lấy cấu hình Telegram từ account của user hiện tại
 $tg_bot_token = $account['telegram_bot_token'] ?? '';
@@ -269,13 +256,11 @@ try {
 // Đọc Cấu hình TikTok App dùng chung cho toàn hệ thống
 $tiktok_client_key = '';
 $tiktok_client_secret = '';
-$tiktok_scopes = 'user.info.basic,video.upload,user.info.profile,user.info.stats,video.list';
 try {
-    $stmt_tt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('tiktok_client_key', 'tiktok_client_secret', 'tiktok_scopes')");
+    $stmt_tt = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('tiktok_client_key', 'tiktok_client_secret')");
     while ($row_tt = $stmt_tt->fetch(PDO::FETCH_ASSOC)) {
         if ($row_tt['setting_key'] === 'tiktok_client_key') $tiktok_client_key = $row_tt['setting_value'];
         if ($row_tt['setting_key'] === 'tiktok_client_secret') $tiktok_client_secret = $row_tt['setting_value'];
-        if ($row_tt['setting_key'] === 'tiktok_scopes' && !empty($row_tt['setting_value'])) $tiktok_scopes = $row_tt['setting_value'];
     }
 } catch (Exception $e) {}
 
@@ -292,13 +277,6 @@ if (empty($tiktok_client_key) && !empty($account['tiktok_client_key'])) {
     <?php endif; ?>
 </div>
 
-<?php 
-if (isset($_SESSION['flash_msg'])) {
-    $alert_type = 'success';
-    $alert_message = $_SESSION['flash_msg'];
-    unset($_SESSION['flash_msg']);
-}
-?>
 <?php if ($alert_message): ?>
     <div class="alert alert-<?php echo $alert_type; ?>"><?php echo htmlspecialchars($alert_message); ?></div>
 <?php endif; ?>
@@ -438,13 +416,6 @@ if (isset($_SESSION['flash_msg'])) {
                 <label>TikTok Client Secret</label>
                 <input type="password" name="tiktok_client_secret" value="<?php echo htmlspecialchars($tiktok_client_secret); ?>" placeholder="Nhập Client secret..." style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box;">
             </div>
-            <div class="form-group">
-                <label>TikTok OAuth Scopes (Quyền yêu cầu)</label>
-                <input type="text" name="tiktok_scopes" value="<?php echo htmlspecialchars($tiktok_scopes); ?>" placeholder="user.info.basic,video.upload,user.info.profile,user.info.stats,video.list" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-family: monospace; font-size: 13px;">
-                <small style="color: #64748b; font-size: 11px; display: block; margin-top: 4px;">
-                    * Lưu ý: Các Scope phân cách bởi dấu phẩy và BẮT BUỘC phải khớp với các Quyền (Products / Scopes) đã được bật trong TikTok Developer Portal của App bạn.
-                </small>
-            </div>
             <button type="submit" name="update_tiktok_app" class="btn btn-primary" style="background: #fe2c55; border-color: #fe2c55;">💾 Lưu Cấu Hình TikTok Hệ Thống</button>
         </form>
     </div>
@@ -478,12 +449,6 @@ if (isset($_SESSION['flash_msg'])) {
             </div>
             <button type="submit" name="update_retry_settings" class="btn btn-primary">Lưu Tùy Chỉnh</button>
         </form>
-        <?php if ($is_admin): ?>
-            <form method="POST" action="settings.php" style="margin-top: 15px; border-top: 1px dashed var(--border-color); padding-top: 15px;">
-                <?php echo csrf_field(); ?>
-                <button type="submit" name="reset_all_users_retries" class="btn btn-warning" onclick="return confirm('Bạn có chắc chắn muốn chuyển Số lần thử lại về 1 cho TẤT CẢ người dùng trong hệ thống?');" style="width: 100%; background: #f59e0b; border-color: #d97706; color: #fff; font-weight: 500;">⚡ Đưa toàn bộ tài khoản người dùng về 1 lần thử lại</button>
-            </form>
-        <?php endif; ?>
     </div>
 
     <?php if ($is_admin): ?>

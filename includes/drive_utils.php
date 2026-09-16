@@ -88,16 +88,10 @@ function get_drive_access_token($pdo, $account_id, $page_id = null) {
     ];
 
     $ch = curl_init($token_url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => http_build_query($post_fields),
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_CONNECTTIMEOUT => 15,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_SSL_VERIFYPEER => false
-    ]);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post_fields));
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     $token_response_raw = curl_exec($ch);
     curl_close($ch);
 
@@ -115,18 +109,14 @@ function get_drive_access_token($pdo, $account_id, $page_id = null) {
  */
 function get_drive_file_name($access_token, $file_id) {
     $meta_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=name";
-    $ch = curl_init($meta_url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
-        CURLOPT_TIMEOUT => 20,
-        CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_SSL_VERIFYPEER => false
-    ]);
-    $meta_response = curl_exec($ch);
-    curl_close($ch);
+    $opts = [
+        "http" => [
+            "method" => "GET",
+            "header" => "Authorization: Bearer $access_token\r\n"
+        ]
+    ];
+    $context = stream_context_create($opts);
+    $meta_response = @file_get_contents($meta_url, false, $context);
     
     if (!$meta_response) return false;
     
@@ -141,30 +131,22 @@ function get_drive_file_name($access_token, $file_id) {
  * Trả về mảng chứa đường dẫn file tạm và mimeType
  */
 function download_drive_file_temp($access_token, $file_id) {
-    // 1. Lấy thông tin metadata của file (name, mimeType, size)
-    $meta_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=name,mimeType,size";
+    // 1. Lấy thông tin metadata của file (name, mimeType)
+    $meta_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=name,mimeType";
     $ch = curl_init($meta_url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
-        CURLOPT_TIMEOUT => 20,
-        CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_SSL_VERIFYPEER => false
-    ]);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     $meta_response = curl_exec($ch);
-    $meta_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
     $meta = json_decode($meta_response, true);
-    if ($meta_http_code !== 200 || !isset($meta['name'])) {
-        return ['error' => "Không thể lấy thông tin file từ Google Drive (HTTP {$meta_http_code}). Token hết hạn hoặc file không tồn tại."];
+    if (!isset($meta['name'])) {
+        return ['error' => 'Không thể lấy thông tin file từ Google Drive.'];
     }
 
     $mime_type = $meta['mimeType'];
     $file_name = $meta['name'];
-    $expected_size = isset($meta['size']) ? (int)$meta['size'] : 0;
 
     // Lấy extension từ tên file gốc (nếu có)
     $ext = pathinfo($file_name, PATHINFO_EXTENSION);
@@ -194,134 +176,35 @@ function download_drive_file_temp($access_token, $file_id) {
         }
     }
 
-    // 2. Chuẩn bị file tạm trên OS
+    // 2. Download nội dung file
+    $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media";
+    
+    // Tạo file tạm trên OS (Thường nằm ở /tmp trên Linux hoặc C:\Windows\Temp trên Windows)
     $temp_dir = sys_get_temp_dir();
     $temp_path = tempnam($temp_dir, 'gdrive_');
+    
+    // Thêm đuôi file để CURLFile của Facebook nhận diện đúng định dạng
     $temp_path_with_ext = $temp_path . '.' . $ext;
     rename($temp_path, $temp_path_with_ext);
 
-    $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media";
-
-    // 3. Nếu file > 30MB -> Dùng Range Chunk Download (Resumable từng Chunk 30MB)
-    $chunk_size = 31457280; // 30MB / chunk
-    $downloaded_bytes = 0;
-
-    if ($expected_size > 0 && $expected_size > $chunk_size) {
-        while ($downloaded_bytes < $expected_size) {
-            $start_byte = $downloaded_bytes;
-            $end_byte = min($downloaded_bytes + $chunk_size - 1, $expected_size - 1);
-            $range_header = "Range: bytes={$start_byte}-{$end_byte}";
-
-            $chunk_success = false;
-            $chunk_http_code = 0;
-            $chunk_err = '';
-
-            // Retry tối đa 3 lần cho riêng chunk bị lỗi (Không tải lại từ đầu!)
-            for ($retry = 0; $retry < 3; $retry++) {
-                if ($retry > 0) sleep(2);
-
-                $fp = @fopen($temp_path_with_ext, 'c+');
-                if ($fp === false) {
-                    @unlink($temp_path_with_ext);
-                    return ['error' => 'Không thể mở file tạm trên Server.'];
-                }
-                fseek($fp, $start_byte);
-
-                $ch = curl_init($download_url);
-                curl_setopt_array($ch, [
-                    CURLOPT_HTTPHEADER => [
-                        "Authorization: Bearer $access_token",
-                        $range_header
-                    ],
-                    CURLOPT_FILE => $fp,
-                    CURLOPT_FOLLOWLOCATION => true,
-                    CURLOPT_TIMEOUT => 180, // Max 3 phút cho 1 chunk 30MB
-                    CURLOPT_CONNECTTIMEOUT => 15,
-                    CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                    CURLOPT_SSL_VERIFYPEER => false,
-                    CURLOPT_BUFFERSIZE => 524288,
-                    CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                ]);
-
-                $success = curl_exec($ch);
-                $chunk_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                $chunk_err = curl_error($ch);
-                curl_close($ch);
-                @fclose($fp);
-
-                // Touch file timestamp liên tục để chống bị cron cleanup 30 phút xóa nhầm
-                @touch($temp_path_with_ext);
-
-                // HTTP 206 Partial Content (hoặc HTTP 200)
-                if ($success && ($chunk_http_code === 206 || $chunk_http_code === 200)) {
-                    $chunk_success = true;
-                    $downloaded_bytes = $end_byte + 1;
-                    break;
-                }
-            }
-
-            if (!$chunk_success) {
-                @unlink($temp_path_with_ext);
-                $err_detail = $chunk_err ? " ($chunk_err)" : "";
-                return ['error' => "Lỗi tải chunk Range bytes={$start_byte}-{$end_byte} từ Google Drive (HTTP {$chunk_http_code}{$err_detail})."];
-            }
-        }
-    } else {
-        // Tải 1 lần trực tiếp với file nhỏ
-        $fp = @fopen($temp_path_with_ext, 'w+');
-        if ($fp === false) {
-            return ['error' => 'Không thể tạo file tạm trên Server.'];
-        }
-
-        $ch2 = curl_init($download_url);
-        curl_setopt_array($ch2, [
-            CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
-            CURLOPT_FILE => $fp,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_TIMEOUT => 300,
-            CURLOPT_CONNECTTIMEOUT => 15,
-            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_BUFFERSIZE => 524288,
-            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        ]);
-
-        $success = curl_exec($ch2);
-        $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
-        $curl_err = curl_error($ch2);
-        curl_close($ch2);
-        @fclose($fp);
-
-        @touch($temp_path_with_ext);
-
-        if (!$success || $http_code !== 200) {
-            @unlink($temp_path_with_ext);
-            $err_detail = $curl_err ? " ($curl_err)" : "";
-            return ['error' => "Lỗi tải file từ Google Drive (HTTP {$http_code}{$err_detail})."];
-        }
+    $fp = fopen($temp_path_with_ext, 'w+');
+    if ($fp === false) {
+        return ['error' => 'Không thể tạo file tạm trên Server.'];
     }
 
-    $actual_size = file_exists($temp_path_with_ext) ? filesize($temp_path_with_ext) : 0;
+    $ch2 = curl_init($download_url);
+    curl_setopt($ch2, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
+    curl_setopt($ch2, CURLOPT_FILE, $fp);
+    curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch2, CURLOPT_TIMEOUT, 600);
+    $success = curl_exec($ch2);
+    $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+    curl_close($ch2);
+    fclose($fp);
 
-    // Kiểm tra tính hợp lệ của file đã tải
-    if ($actual_size === 0) {
+    if (!$success || $http_code !== 200) {
         @unlink($temp_path_with_ext);
-        return ['error' => "Lỗi tải file từ Google Drive (Tệp trống 0 bytes)."];
-    }
-
-    // Nếu có expected size từ metadata, kiểm tra xem đã tải đủ chưa
-    if ($expected_size > 0 && $actual_size < ($expected_size * 0.95)) {
-        @unlink($temp_path_with_ext);
-        return ['error' => "Tệp tải từ Google Drive bị gián đoạn (Dung lượng: {$actual_size}/{$expected_size} bytes)."];
-    }
-
-    // Kiểm tra xem file có phải là trang HTML/JSON lỗi không (đọc 200 bytes đầu)
-    $header_check = @file_get_contents($temp_path_with_ext, false, null, 0, 200);
-    if ($header_check && (stripos($header_check, '<html') !== false || stripos($header_check, '{"error"') !== false || stripos($header_check, '<!DOCTYPE') !== false)) {
-        @unlink($temp_path_with_ext);
-        return ['error' => "Lỗi Google Drive trả về trang lỗi HTML/JSON thay vì tệp media."];
+        return ['error' => 'Lỗi tải file từ Google Drive (HTTP ' . $http_code . ').'];
     }
 
     return [
@@ -342,16 +225,10 @@ function delete_drive_file($access_token, $file_id) {
     // === Bước 1: Thử DELETE trực tiếp (xóa vĩnh viễn, bỏ qua Trash) ===
     $delete_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?supportsAllDrives=true";
     $ch = curl_init($delete_url);
-    curl_setopt_array($ch, [
-        CURLOPT_CUSTOMREQUEST => 'DELETE',
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_CONNECTTIMEOUT => 15,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_SSL_VERIFYPEER => false
-    ]);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     $response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
@@ -365,17 +242,11 @@ function delete_drive_file($access_token, $file_id) {
     // Bước 2a: Chuyển file vào Trash bằng PATCH trashed=true
     $trash_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?supportsAllDrives=true";
     $ch2 = curl_init($trash_url);
-    curl_setopt_array($ch2, [
-        CURLOPT_CUSTOMREQUEST => 'PATCH',
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_POSTFIELDS => json_encode(['trashed' => true]),
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_CONNECTTIMEOUT => 15,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_SSL_VERIFYPEER => false
-    ]);
+    curl_setopt($ch2, CURLOPT_CUSTOMREQUEST, 'PATCH');
+    curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch2, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch2, CURLOPT_POSTFIELDS, json_encode(['trashed' => true]));
+    curl_setopt($ch2, CURLOPT_TIMEOUT, 30);
     $trash_response = curl_exec($ch2);
     $trash_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
     curl_close($ch2);
@@ -387,16 +258,10 @@ function delete_drive_file($access_token, $file_id) {
     
     // Bước 2b: Xóa vĩnh viễn file đã nằm trong Trash
     $ch3 = curl_init($delete_url);
-    curl_setopt_array($ch3, [
-        CURLOPT_CUSTOMREQUEST => 'DELETE',
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_CONNECTTIMEOUT => 15,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_SSL_VERIFYPEER => false
-    ]);
+    curl_setopt($ch3, CURLOPT_CUSTOMREQUEST, 'DELETE');
+    curl_setopt($ch3, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch3, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch3, CURLOPT_TIMEOUT, 30);
     $del2_response = curl_exec($ch3);
     $del2_code = curl_getinfo($ch3, CURLINFO_HTTP_CODE);
     curl_close($ch3);
@@ -421,15 +286,9 @@ function list_drive_files_in_folder($access_token, $folder_id) {
         }
         
         $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
-            CURLOPT_TIMEOUT => 60,
-            CURLOPT_CONNECTTIMEOUT => 15,
-            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            CURLOPT_SSL_VERIFYPEER => false
-        ]);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
         $response = curl_exec($ch);
         $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);

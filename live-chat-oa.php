@@ -5,86 +5,42 @@ require_once __DIR__ . '/includes/header.php';
 
 $account_id = $_SESSION['account_id'];
 
-$is_admin = ($_SESSION['role'] === 'admin');
-
 // 1. Fetch FB Pages
-$fb_pages = [];
-try {
-    $stmt_fb = $pdo->prepare("
-        (SELECT p.page_id, p.name, p.avatar, 'Facebook' AS user_name
-         FROM pages p JOIN users u ON p.user_id = u.id
-         WHERE u.account_id = :aid)
-        UNION
-        (SELECT p.page_id, p.name, p.avatar, 'Facebook' AS user_name
-         FROM pages p
-         JOIN page_shares ps ON p.page_id = ps.page_id
-         JOIN users u ON p.user_id = u.id
-         WHERE ps.shared_with_account_id = :aid2)
-    ");
-    $stmt_fb->bindValue(':aid',  $account_id, PDO::PARAM_INT);
-    $stmt_fb->bindValue(':aid2', $account_id, PDO::PARAM_INT);
-    $stmt_fb->execute();
-    $fb_pages = $stmt_fb->fetchAll(PDO::FETCH_ASSOC);
-} catch (Exception $e) {
-    try {
-        $stmt_fb = $pdo->prepare("
-            SELECT p.page_id, p.name, p.avatar, 'Facebook' AS user_name
-            FROM pages p JOIN users u ON p.user_id = u.id
-            WHERE u.account_id = :aid
-        ");
-        $stmt_fb->bindValue(':aid', $account_id, PDO::PARAM_INT);
-        $stmt_fb->execute();
-        $fb_pages = $stmt_fb->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Exception $ex) {}
-}
+$stmt_fb = $pdo->prepare("
+    (SELECT p.page_id, p.name, p.avatar, 'Facebook' AS user_name
+     FROM pages p JOIN users u ON p.user_id = u.id
+     WHERE u.account_id = :aid)
+    UNION
+    (SELECT p.page_id, p.name, p.avatar, 'Facebook' AS user_name
+     FROM pages p
+     JOIN page_shares ps ON p.page_id = ps.page_id
+     JOIN users u ON p.user_id = u.id
+     WHERE ps.shared_with_account_id = :aid2)
+");
+$stmt_fb->bindValue(':aid',  $account_id, PDO::PARAM_INT);
+$stmt_fb->bindValue(':aid2', $account_id, PDO::PARAM_INT);
+$stmt_fb->execute();
+$fb_pages = $stmt_fb->fetchAll(PDO::FETCH_ASSOC);
 
 // 2. Fetch Zalo OAs
-$zalo_oas_list = [];
-try {
-    $stmt_zalo = $pdo->prepare("
-        SELECT oa_id AS page_id, name, avatar, 'Zalo' AS user_name
-        FROM zalo_oas
-        WHERE account_id = :aid AND is_active = 1
-    ");
-    $stmt_zalo->bindValue(':aid', $account_id, PDO::PARAM_INT);
-    $stmt_zalo->execute();
-    $zalo_oas_list = $stmt_zalo->fetchAll(PDO::FETCH_ASSOC);
-} catch (Exception $e) {}
+$stmt_zalo = $pdo->prepare("
+    SELECT oa_id AS page_id, name, avatar, 'Zalo' AS user_name
+    FROM zalo_oas
+    WHERE account_id = :aid AND is_active = 1
+");
+$stmt_zalo->bindValue(':aid', $account_id, PDO::PARAM_INT);
+$stmt_zalo->execute();
+$zalo_oas_list = $stmt_zalo->fetchAll(PDO::FETCH_ASSOC);
 
 // 3. Merge lists
 $pages = array_merge($fb_pages, $zalo_oas_list);
 $pages_json = json_encode($pages);
 
-// 4. Fetch sales_list & feature flags
-$acc_setup = [];
-try {
-    $stmt_acc = $pdo->prepare("SELECT sales_list, enable_live_chat, enable_live_chat_oa, enable_live_chat_tiktok, enable_website, enable_customers FROM system_accounts WHERE id = ?");
-    $stmt_acc->execute([$account_id]);
-    $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC) ?: [];
-} catch (Exception $e) {
-    try {
-        $stmt_acc = $pdo->prepare("SELECT sales_list FROM system_accounts WHERE id = ?");
-        $stmt_acc->execute([$account_id]);
-        $acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC) ?: [];
-    } catch (Exception $ex) {}
-}
+// 4. Fetch sales_list
+$stmt_acc = $pdo->prepare("SELECT sales_list FROM system_accounts WHERE id = ?");
+$stmt_acc->execute([$account_id]);
+$acc_setup = $stmt_acc->fetch(PDO::FETCH_ASSOC);
 $sales_list = $acc_setup['sales_list'] ?? '';
-
-$enable_live_chat = $is_admin ? 1 : (int)($acc_setup['enable_live_chat'] ?? 1);
-$enable_live_chat_oa = $is_admin ? 1 : (int)($acc_setup['enable_live_chat_oa'] ?? 1);
-$enable_live_chat_tiktok = $is_admin ? 1 : (int)($acc_setup['enable_live_chat_tiktok'] ?? 1);
-$enable_website = $is_admin ? 1 : (int)($acc_setup['enable_website'] ?? 1);
-$enable_customers = $is_admin ? 1 : (int)($acc_setup['enable_customers'] ?? 1);
-
-if (!$enable_live_chat) {
-    echo '<div class="page-title">Truy cập bị từ chối</div>';
-    echo '<div class="card" style="border-left: 4px solid #ef4444; padding: 20px;">';
-    echo '  <h3 style="margin-top:0; color:#ef4444;">⚠️ Tính Năng Đã Bị Tắt</h3>';
-    echo '  <p style="color:#4b5563; font-size:14px; margin-bottom:0;">Tính năng Live Chat đã bị tắt cho tài khoản của bạn. Vui lòng liên hệ Admin để kích hoạt lại.</p>';
-    echo '</div>';
-    include 'includes/footer.php';
-    exit;
-}
 ?>
 
 <!-- Custom CSS for Premium Zalo Live Chat interface -->
@@ -545,31 +501,21 @@ if (!$enable_live_chat) {
 
 <!-- Platform Switcher Tabs -->
 <div class="platform-tabs" style="display: flex; gap: 20px; border-bottom: 2px solid #e5e7eb; margin-bottom: 20px; padding-bottom: 0;">
-    <?php if ($enable_live_chat): ?>
     <a href="live_chat.php" class="platform-tab-btn <?php echo ($current_page === 'live_chat') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'live_chat') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'live_chat') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>📘</span> Facebook Fanpage
     </a>
-    <?php endif; ?>
-    <?php if ($enable_live_chat_oa): ?>
     <a href="live-chat-oa.php" class="platform-tab-btn <?php echo ($current_page === 'live_chat_zalo') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'live_chat_zalo') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'live_chat_zalo') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>💬</span> Zalo Official Account
     </a>
-    <?php endif; ?>
-    <?php if ($enable_live_chat_tiktok): ?>
     <a href="live-chat-tiktok.php" class="platform-tab-btn <?php echo ($current_page === 'live_chat_tiktok') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'live_chat_tiktok') ? '#fe2c55' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'live_chat_tiktok') ? '#fe2c55' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>🎵</span> TikTok
     </a>
-    <?php endif; ?>
-    <?php if ($enable_website): ?>
     <a href="website.php" class="platform-tab-btn <?php echo ($current_page === 'website') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'website') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'website') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>🌐</span> Live Chat Website
     </a>
-    <?php endif; ?>
-    <?php if ($enable_customers): ?>
     <a href="customers.php" class="platform-tab-btn <?php echo ($current_page === 'customers') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'customers') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'customers') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>👥</span> Khách Hàng
     </a>
-    <?php endif; ?>
 </div>
 
 <!-- Page Header Title -->

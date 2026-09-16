@@ -59,8 +59,9 @@ if (!is_dir($lock_dir)) {
 $lock_key = !empty($user_id_lock) ? md5('uid_' . $user_id_lock) : md5($raw_page_input);
 $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
 
-// Xoá lock file cũ nếu quá 900 giây (15 phút) mà không có tương tác (tránh worker ngắt đột ngột kẹt lock)
-if (file_exists($lock_file) && (time() - filemtime($lock_file)) > 900) {
+// Xoá lock file cũ nếu quá 60 giây (worker cũ crash hoặc ngắt kết nối không release)
+$lock_stale_seconds = 60;
+if (file_exists($lock_file) && (time() - filemtime($lock_file)) > $lock_stale_seconds) {
     @unlink($lock_file);
 }
 
@@ -73,16 +74,29 @@ if (!$lock_fp) {
 
 $lock_got = false;
 if ($lock_fp) {
-    if (flock($lock_fp, LOCK_EX | LOCK_NB)) {
-        $lock_got = true;
-        @touch($lock_file);
+    for ($lock_wait = 0; $lock_wait < 3; $lock_wait++) {
+        if (flock($lock_fp, LOCK_EX | LOCK_NB)) {
+            $lock_got = true;
+            break;
+        }
+        sleep(1);
+    }
+    
+    // Nếu lock thất bại và file lock tồn tại > 30s => ép giải phóng lock cũ
+    if (!$lock_got && file_exists($lock_file) && (time() - filemtime($lock_file)) > 30) {
+        @fclose($lock_fp);
+        @unlink($lock_file);
+        $lock_fp = @fopen($lock_file, 'c');
+        if ($lock_fp && flock($lock_fp, LOCK_EX | LOCK_NB)) {
+            $lock_got = true;
+        }
     }
 }
 
 if (!$lock_got) {
-    echo "Worker cho Token User này ($user_id_lock) đang bận xử lý bài khác. Bỏ qua luồng mới.\n";
+    echo "Worker cho Token User này đang bận. Tự dọn lock để ưu tiên luồng mới...\n";
     if ($lock_fp) @fclose($lock_fp);
-    exit;
+    @unlink($lock_file);
 }
 
 echo "Worker khởi động cho " . count($target_page_ids) . " Pages: " . implode(', ', $target_page_ids) . "\n";
@@ -242,16 +256,6 @@ if (!function_exists('get_system_site_url')) {
     }
 }
 
-if (!function_exists('update_post_stage')) {
-    function update_post_stage($pdo, $post_id, $stage_msg) {
-        if (!$pdo || !$post_id) return;
-        try {
-            $stmt = $pdo->prepare("UPDATE scheduled_posts SET error_msg = ?, updated_at = NOW() WHERE id = ?");
-            $stmt->execute([$stage_msg, $post_id]);
-        } catch (Exception $e) {}
-    }
-}
-
 if (!function_exists('upload_file_to_hongdolab_cdn')) {
     function upload_file_to_hongdolab_cdn($file_path) {
         if (!file_exists($file_path) || filesize($file_path) < 10) return false;
@@ -259,27 +263,6 @@ if (!function_exists('upload_file_to_hongdolab_cdn')) {
         
         $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
         $is_image = in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
-
-        // --- LOCAL FAST-PATH FOR VPS: Copy trực tiếp nếu data.hongdolab.com nằm trên cùng VPS ---
-        $data_cdn_dir = '/www/wwwroot/data.hongdolab.com/uploads/';
-        if (is_dir($data_cdn_dir) && is_writable($data_cdn_dir)) {
-            $norm_path = str_replace('\\', '/', realpath($file_path) ?: $file_path);
-            $norm_cdn = str_replace('\\', '/', realpath($data_cdn_dir) ?: $data_cdn_dir);
-            if (strpos($norm_path, rtrim($norm_cdn, '/') . '/') === 0) {
-                // File đã được tải trực tiếp vào thư mục CDN! Không cần copy lại
-                @chmod($file_path, 0777);
-                return 'https://data.hongdolab.com/uploads/' . basename($file_path);
-            }
-            $prefix = $is_image ? 'img_' : 'vid_';
-            $ext_clean = !empty($ext) ? $ext : ($is_image ? 'jpg' : 'mp4');
-            $stored_name = $prefix . date('Ymd_His') . '_' . bin2hex(random_bytes(6)) . '.' . $ext_clean;
-            $dest = $data_cdn_dir . $stored_name;
-            if (@copy($file_path, $dest)) {
-                @chmod($dest, 0777);
-                return 'https://data.hongdolab.com/uploads/' . $stored_name;
-            }
-        }
-
         $upload_tmp_dir = dirname($file_path) . '/';
         if (!is_dir($upload_tmp_dir)) $upload_tmp_dir = __DIR__ . '/../uploads/';
         
@@ -462,24 +445,36 @@ echo "Bat dau quet bai viet len lich luc: " . date('Y-m-d H:i:s') . "\n";
 // If a previous worker run crashed, posts stay at 'processing' forever.
 // We reset them so they can be retried.
 try {
-    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE)");
+    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 20 MINUTE)");
     if ($stuck > 0)
         echo "  [RESET] Reset $stuck bài bị kẹt ở trạng thái 'processing' về 'pending'.\n";
 } catch (Exception $e) {
 }
 
 // ── Detect available columns ─────────────────────────────────────────────
-$has_fb_post_id = true;
-$has_error_msg = true;
-$has_retry_count = true;
-$has_comment_lines = true;
-$has_comment_at = true;
-$has_comment_status = true;
-$has_comment_mode = true;
+$has_fb_post_id = false;
+$has_error_msg = false;
+$has_retry_count = false;
+$has_comment_lines = false;
+$has_comment_at = false;
+$has_comment_status = false;
+$has_comment_mode = false;
+try {
+    $col_q = $pdo->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME IN ('fb_post_id','error_msg','retry_count','comment_lines','comment_at','comment_status','comment_mode')");
+    $existing_cols = $col_q ? $col_q->fetchAll(PDO::FETCH_COLUMN) : [];
+    $has_fb_post_id = in_array('fb_post_id', $existing_cols);
+    $has_error_msg = in_array('error_msg', $existing_cols);
+    $has_retry_count = in_array('retry_count', $existing_cols);
+    $has_comment_lines = in_array('comment_lines', $existing_cols);
+    $has_comment_at = in_array('comment_at', $existing_cols);
+    $has_comment_status = in_array('comment_status', $existing_cols);
+    $has_comment_mode = in_array('comment_mode', $existing_cols);
+} catch (Exception $e) {
+}
 
 // Fetch system settings for retry logic
 $sys_retry_interval = 1;
-$sys_max_retries = 1;
+$sys_max_retries = 3;
 
 // Chuỗi Fallback Chain 4 tầng bóc tách TikTok theo đúng tài liệu kỹ thuật huong-dan.txt (ongchummo.com)
 function fetch_tiktok_info(string $tiktok_url): ?array
@@ -746,7 +741,7 @@ class TokenLocker {
 
 // 1. Fetch pending posts for ALL page_ids of this Token User
 $retry_clause = $has_retry_count
-    ? "OR (sp.status = 'failed' AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 1)))"
+    ? "OR (sp.status = 'failed' AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3)))"
     : '';
 
 // Build placeholders cho IN clause
@@ -772,14 +767,6 @@ if (!empty($user_id_lock)) {
             $account_filter = "AND sp.account_id = ? ";
             array_unshift($params, (int)$actual_account_id);
         }
-    } elseif (strpos($user_id_lock, 'buf_chan_') === 0) {
-        // Luồng Buffer theo từng Kênh Buffer
-        $post_type_filter = "AND sp.post_type LIKE 'Buffer%' ";
-        $buf_chan_id = substr($user_id_lock, 9);
-        if (!empty($buf_chan_id)) {
-            $account_filter = "AND sp.page_id = ? ";
-            array_unshift($params, $buf_chan_id);
-        }
     } elseif (strpos($user_id_lock, 'buf_acc_') === 0) {
         // Luồng Buffer theo Buffer Token Account ID cụ thể (Mỗi Token Buffer = 1 Slot độc lập)
         $post_type_filter = "AND sp.post_type LIKE 'Buffer%' ";
@@ -791,12 +778,19 @@ if (!empty($user_id_lock)) {
     } elseif (strpos($user_id_lock, 'buf_') === 0) {
         // Luồng Buffer tương thích ngược
         $post_type_filter = "AND sp.post_type LIKE 'Buffer%' ";
+        $actual_account_id = substr($user_id_lock, 4);
+        if (is_numeric($actual_account_id)) {
+            $account_filter = "AND sp.account_id = ? ";
+            array_unshift($params, (int)$actual_account_id);
+        }
     } elseif (strpos($user_id_lock, 'tt_') === 0) {
-        // Luồng TikTok: Chỉ lấy post_type = TikTok
+        // Luồng TikTok: Chỉ lấy post_type = TikTok và account_id cụ thể
         $post_type_filter = "AND sp.post_type = 'TikTok' ";
-    } elseif (strpos($user_id_lock, 'ig_token_') === 0) {
-        // Luồng Instagram nhóm theo Access Token User (đăng tuần tự từng IG Account)
-        $post_type_filter = "AND sp.post_type LIKE 'Instagram%' ";
+        $actual_account_id = substr($user_id_lock, 3);
+        if (is_numeric($actual_account_id)) {
+            $account_filter = "AND sp.account_id = ? ";
+            array_unshift($params, (int)$actual_account_id);
+        }
     } elseif (strpos($user_id_lock, 'ig_') === 0) {
         // Luồng Instagram: Chỉ lấy post_type LIKE 'Instagram%' và page_id cụ thể
         $post_type_filter = "AND sp.post_type LIKE 'Instagram%' ";
@@ -806,24 +800,24 @@ if (!empty($user_id_lock)) {
             array_unshift($params, $actual_ig_user_id);
         }
     } else {
-        // Luồng Facebook Fanpages & Instagram: Gộp chung theo Access Token User (Chỉ bỏ qua YouTube, Buffer, TikTok)
-        $post_type_filter = "AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' ";
+        // Luồng Facebook: Chỉ lấy post_type KHÔNG PHẢI YouTube, Buffer, TikTok, Instagram
+        $post_type_filter = "AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' AND sp.post_type NOT LIKE 'Instagram%' ";
     }
 }
 
 $sql = "
     SELECT sp.*, sa.max_retries AS sa_max_retries, sa.retry_interval_minutes AS sa_retry_interval, sa.post_delay_seconds AS sa_delay
     FROM scheduled_posts sp 
-    LEFT JOIN system_accounts sa ON sp.account_id = sa.id AND sp.post_type NOT LIKE 'Buffer%' AND sp.post_type != 'YouTube' AND sp.post_type != 'TikTok' AND sp.post_type NOT LIKE 'Instagram%'
+    LEFT JOIN system_accounts sa ON sp.account_id = sa.id 
     LEFT JOIN buffer_channels bc ON sp.page_id = bc.channel_id
     WHERE (sp.status = 'pending' $retry_clause) 
       AND sp.scheduled_time <= NOW() 
-      AND (sa.id IS NULL OR sa.expire_date IS NULL OR sa.expire_date >= NOW())
+      AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
       $post_type_filter
       $account_filter
       AND sp.page_id IN ($placeholders)
-    ORDER BY sp.scheduled_time ASC, sp.id ASC
-    LIMIT 3
+    ORDER BY sp.scheduled_time ASC
+    LIMIT 5
 ";
 $stmt = $pdo->prepare($sql);
 if (!$stmt) {
@@ -863,6 +857,9 @@ if (isset($pending_posts[0]['sa_delay']) && $pending_posts[0]['sa_delay'] !== nu
     $user_delay_sec = (int)$pending_posts[0]['sa_delay'];
 }
 
+// Xáo trộn ngẫu nhiên để công bằng giữa các Page trong cùng Token User
+shuffle($pending_posts);
+
 echo "Tìm thấy " . count($pending_posts) . " bài viết cần đăng (Delay: {$user_delay_sec}s giữa mỗi post).\n";
 
 $account_published_today = [];
@@ -870,18 +867,10 @@ $account_limits = [];
 $post_index = 0; // Đếm số post đã xử lý để áp dụng delay
 
 foreach ($pending_posts as $post) {
-    // Cập nhật timestamp lock file để báo hiệu worker vẫn đang hoạt động tích cực
-    if ($lock_file && file_exists($lock_file)) {
-        @touch($lock_file);
-    }
-
     // ── Delay giữa mỗi post (bỏ qua post đầu tiên) ──────────────────────
     if ($post_index > 0 && $user_delay_sec > 0) {
         echo "   → Chờ {$user_delay_sec}s trước khi đăng post tiếp theo (Token User delay)...\n";
         sleep($user_delay_sec);
-        if ($lock_file && file_exists($lock_file)) {
-            @touch($lock_file);
-        }
     }
     $post_index++;
     echo "Đang xử lý bài đăng ID: {$post['id']} - Loại: {$post['post_type']}\n";
@@ -914,7 +903,7 @@ foreach ($pending_posts as $post) {
 
     // 2. Mark as processing to prevent duplicate cron runs from picking it up
     // We only update if status is still pending or failed. If 0 rows affected, another worker took it.
-    $update_processing = $pdo->prepare("UPDATE scheduled_posts SET status = 'processing', error_msg = '⏳ 1/4: Đã nhận luồng, đang chuẩn bị xử lý...', updated_at = NOW() WHERE id = ? AND status IN ('pending', 'failed')");
+    $update_processing = $pdo->prepare("UPDATE scheduled_posts SET status = 'processing' WHERE id = ? AND status IN ('pending', 'failed')");
     $update_processing->execute([$post['id']]);
     if ($update_processing->rowCount() === 0) {
         echo "   → Bài ID {$post['id']} đã được tiến trình khác xử lý. Bỏ qua.\n";
@@ -1324,22 +1313,10 @@ foreach ($pending_posts as $post) {
             SELECT bc.channel_id, bc.channel_name, bc.service, ba.access_token 
             FROM buffer_channels bc 
             JOIN buffer_accounts ba ON bc.buffer_account_id = ba.id 
-            WHERE bc.channel_id = ? AND (bc.account_id = ? OR 1=1)
-            LIMIT 1
+            WHERE bc.channel_id = ? AND bc.account_id = ?
         ");
         $stmt_b->execute([$post['page_id'], $post['account_id']]);
         $buf_chan = $stmt_b->fetch(PDO::FETCH_ASSOC);
-        if (!$buf_chan || empty($buf_chan['access_token'])) {
-            $stmt_b2 = $pdo->prepare("
-                SELECT bc.channel_id, bc.channel_name, bc.service, ba.access_token 
-                FROM buffer_channels bc 
-                JOIN buffer_accounts ba ON bc.buffer_account_id = ba.id 
-                WHERE bc.channel_id = ?
-                LIMIT 1
-            ");
-            $stmt_b2->execute([$post['page_id']]);
-            $buf_chan = $stmt_b2->fetch(PDO::FETCH_ASSOC);
-        }
 
         if (!$buf_chan || empty($buf_chan['access_token'])) {
             marKAsFailed($pdo, $post['id'], "Không tìm thấy Access Token của Buffer cho kênh này.", $sys_max_retries, $sys_retry_interval);
@@ -1368,7 +1345,128 @@ foreach ($pending_posts as $post) {
             }
         }
 
-
+        if (!function_exists('upload_file_to_hongdolab_cdn')) {
+            function upload_file_to_hongdolab_cdn($file_path) {
+                if (!file_exists($file_path) || filesize($file_path) < 10) return false;
+                @set_time_limit(0);
+                
+                $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
+                $is_image = in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                $upload_tmp_dir = dirname($file_path) . '/';
+                if (!is_dir($upload_tmp_dir)) $upload_tmp_dir = __DIR__ . '/../uploads/';
+                
+                if ($is_image) {
+                    $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=image');
+                    $mime = function_exists('mime_content_type') ? mime_content_type($file_path) : 'image/jpeg';
+                    $cfile = new CURLFile($file_path, $mime, basename($file_path));
+                    curl_setopt_array($ch, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST => true,
+                        CURLOPT_POSTFIELDS => ['image' => $cfile],
+                        CURLOPT_TIMEOUT => 60,
+                        CURLOPT_SSL_VERIFYPEER => false,
+                        CURLOPT_SSL_VERIFYHOST => 0
+                    ]);
+                    $res = curl_exec($ch);
+                    curl_close($ch);
+                    if ($res) {
+                        $json = json_decode($res, true);
+                        if (!empty($json['url'])) {
+                            return ensure_https_url($json['url']);
+                        }
+                    }
+                } else {
+                    $filename = basename($file_path);
+                    $filesize = filesize($file_path);
+                    $mime = function_exists('mime_content_type') ? mime_content_type($file_path) : 'video/mp4';
+                    
+                    $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=init');
+                    curl_setopt_array($ch, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST => true,
+                        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                        CURLOPT_POSTFIELDS => json_encode(['filename' => $filename, 'filesize' => $filesize, 'mime' => $mime]),
+                        CURLOPT_TIMEOUT => 60,
+                        CURLOPT_SSL_VERIFYPEER => false,
+                        CURLOPT_SSL_VERIFYHOST => 0
+                    ]);
+                    $res = curl_exec($ch);
+                    curl_close($ch);
+                    $init_json = $res ? json_decode($res, true) : null;
+                    
+                    if (!empty($init_json['upload_id'])) {
+                        $upload_id = $init_json['upload_id'];
+                        $chunk_size = !empty($init_json['chunk_size']) ? (int)$init_json['chunk_size'] : (4 * 1024 * 1024);
+                        
+                        $fp = @fopen($file_path, 'rb');
+                        if ($fp) {
+                            $index = 0;
+                            $ok = true;
+                            while (!feof($fp)) {
+                                $chunk_data = fread($fp, $chunk_size);
+                                if ($chunk_data === false || strlen($chunk_data) === 0) break;
+                                
+                                $tmp_chunk = tempnam($upload_tmp_dir, 'buf_chk_' . getmypid() . '_');
+                                file_put_contents($tmp_chunk, $chunk_data);
+                                
+                                $chunk_success = false;
+                                for ($retry = 0; $retry < 5 && !$chunk_success; $retry++) {
+                                    $cfile = new CURLFile($tmp_chunk, 'application/octet-stream', $filename . '.part' . $index);
+                                    $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=chunk');
+                                    curl_setopt_array($ch, [
+                                        CURLOPT_RETURNTRANSFER => true,
+                                        CURLOPT_POST => true,
+                                        CURLOPT_POSTFIELDS => [
+                                            'upload_id' => $upload_id,
+                                            'index' => (string)$index,
+                                            'chunk' => $cfile
+                                        ],
+                                        CURLOPT_TIMEOUT => 300,
+                                        CURLOPT_SSL_VERIFYPEER => false,
+                                        CURLOPT_SSL_VERIFYHOST => 0
+                                    ]);
+                                    $c_res = curl_exec($ch);
+                                    curl_close($ch);
+                                    $c_json = $c_res ? json_decode($c_res, true) : null;
+                                    if ($c_res && isset($c_json['ok']) && $c_json['ok']) {
+                                        $chunk_success = true;
+                                    } else {
+                                        sleep(1 + $retry);
+                                    }
+                                }
+                                @unlink($tmp_chunk);
+                                
+                                if (!$chunk_success) {
+                                    $ok = false;
+                                    break;
+                                }
+                                $index++;
+                            }
+                            fclose($fp);
+                            
+                            if ($ok) {
+                                $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=complete');
+                                curl_setopt_array($ch, [
+                                    CURLOPT_RETURNTRANSFER => true,
+                                    CURLOPT_POST => true,
+                                    CURLOPT_POSTFIELDS => ['upload_id' => $upload_id],
+                                    CURLOPT_TIMEOUT => 300,
+                                    CURLOPT_SSL_VERIFYPEER => false,
+                                    CURLOPT_SSL_VERIFYHOST => 0
+                                ]);
+                                $comp_res = curl_exec($ch);
+                                curl_close($ch);
+                                $comp_json = $comp_res ? json_decode($comp_res, true) : null;
+                                if (!empty($comp_json['url'])) {
+                                    return ensure_https_url($comp_json['url']);
+                                }
+                            }
+                        }
+                    }
+                }
+                return false;
+            }
+        }
 
         if (!function_exists('get_system_site_url')) {
             function get_system_site_url($pdo) {
@@ -2425,45 +2523,8 @@ foreach ($pending_posts as $post) {
         $file_name = $file_info['name'];
         $t_title_override = pathinfo($file_name, PATHINFO_FILENAME);
         $temp_drive_file = $abs_media_path;
-
-        // ĐẨY TỆP TỪ THƯ MỤC DRIVE LÊN CDN SERVER (data.hongdolab.com) ĐỂ LẤY URL TRỰC TIẾP
-        if (file_exists($abs_media_path)) {
-            update_post_stage($pdo, $post['id'], "⏳ 2/4: Đang upload tệp lên CDN data.hongdolab.com...");
-            echo "   → Đang tải tệp (thư mục Drive) lên CDN Server (data.hongdolab.com)...\n";
-            $cdn_url = false;
-            for ($cdn_retry = 0; $cdn_retry < 3 && !$cdn_url; $cdn_retry++) {
-                $cdn_url = upload_file_to_hongdolab_cdn($abs_media_path);
-                if (!$cdn_url && $cdn_retry < 2) sleep(2);
-            }
-
-            if (!empty($cdn_url)) {
-                $public_media_url = $cdn_url;
-                $post_data['file_url'] = $cdn_url;
-                echo "   → Đã tải tệp (thư mục Drive) lên CDN: $cdn_url\n";
-                
-                // Xóa file tạm nếu KHÔNG nằm trong thư mục CDN
-                $cdn_root = '/www/wwwroot/data.hongdolab.com/uploads/';
-                $norm_abs = str_replace('\\', '/', realpath($abs_media_path) ?: $abs_media_path);
-                $norm_cdn = str_replace('\\', '/', realpath($cdn_root) ?: $cdn_root);
-                if (strpos($norm_abs, rtrim($norm_cdn, '/') . '/') !== 0) {
-                    @unlink($abs_media_path);
-                }
-                $temp_drive_file = null;
-            } else {
-                $cdn_root = '/www/wwwroot/data.hongdolab.com/uploads/';
-                $norm_abs = str_replace('\\', '/', realpath($abs_media_path) ?: $abs_media_path);
-                $norm_cdn = str_replace('\\', '/', realpath($cdn_root) ?: $cdn_root);
-                if (strpos($norm_abs, rtrim($norm_cdn, '/') . '/') !== 0) {
-                    @unlink($abs_media_path);
-                }
-                $temp_drive_file = null;
-                marKAsFailed($pdo, $post['id'], "Không thể upload tệp thư mục Drive lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
-                continue;
-            }
-        }
         
     } elseif ($is_drive) {
-        update_post_stage($pdo, $post['id'], "⏳ 1/4: Đang tải video từ Google Drive...");
         $drive_file_id = substr($post['media_path'], 6);
         $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
         if (!$drive_token) {
@@ -2484,50 +2545,7 @@ foreach ($pending_posts as $post) {
         $t_title_override = pathinfo($file_name, PATHINFO_FILENAME);
         $temp_drive_file = $abs_media_path;
 
-        // ĐẨY TRỰC TIẾP TỆP LÊN CDN SERVER (data.hongdolab.com/api/upload_video.php) DÙNG CHUNG CHO TẤT CẢ NỀN TẢNG
-        if (file_exists($abs_media_path)) {
-            update_post_stage($pdo, $post['id'], "⏳ 2/4: Đang upload tệp lên CDN data.hongdolab.com...");
-            echo "   → Đang tải tệp lên CDN Server (data.hongdolab.com)...\n";
-            $cdn_url = false;
-            for ($cdn_retry = 0; $cdn_retry < 3 && !$cdn_url; $cdn_retry++) {
-                $cdn_url = upload_file_to_hongdolab_cdn($abs_media_path);
-                if (!$cdn_url && $cdn_retry < 2) sleep(2);
-            }
-
-            if (!empty($cdn_url)) {
-                $public_media_url = $cdn_url;
-                $post_data['file_url'] = $cdn_url;
-                echo "   → Đã tải tệp lên CDN Server công khai (tự xóa sau 5 phút): $cdn_url\n";
-                
-                // Cập nhật abs_media_path trỏ đến bản sao CDN để resumable upload có thể dùng
-                $cdn_root = '/www/wwwroot/data.hongdolab.com/uploads/';
-                $cdn_basename = basename(parse_url($cdn_url, PHP_URL_PATH));
-                $cdn_local_path = $cdn_root . $cdn_basename;
-                if (file_exists($cdn_local_path)) {
-                    // Xóa file tạm gốc nếu nó KHÔNG nằm trong thư mục CDN
-                    $norm_abs = str_replace('\\', '/', realpath($abs_media_path) ?: $abs_media_path);
-                    $norm_cdn = str_replace('\\', '/', realpath($cdn_root) ?: $cdn_root);
-                    if (strpos($norm_abs, rtrim($norm_cdn, '/') . '/') !== 0) {
-                        @unlink($abs_media_path);
-                    }
-                    $abs_media_path = $cdn_local_path; // Trỏ sang file CDN local
-                }
-                $temp_drive_file = null;
-            } else {
-                $cdn_root = '/www/wwwroot/data.hongdolab.com/uploads/';
-                $norm_abs = str_replace('\\', '/', realpath($abs_media_path) ?: $abs_media_path);
-                $norm_cdn = str_replace('\\', '/', realpath($cdn_root) ?: $cdn_root);
-                if (strpos($norm_abs, rtrim($norm_cdn, '/') . '/') !== 0) {
-                    @unlink($abs_media_path);
-                }
-                $temp_drive_file = null;
-                marKAsFailed($pdo, $post['id'], "Không thể upload tệp video Google Drive lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
-                continue;
-            }
-        }
-
     } elseif ($is_tiktok) {
-        update_post_stage($pdo, $post['id'], "⏳ 1/4: Đang tải video từ TikTok...");
         $tiktok_url = substr($post['media_path'], 7);
         $tik_data = fetch_tiktok_info($tiktok_url);
 
@@ -2539,46 +2557,7 @@ foreach ($pending_posts as $post) {
         $tik_title = isset($tik_data['title']) ? $tik_data['title'] : '';
         $t_title_override = $tik_title;
 
-        // 3. Tải video từ TikTok về data.hongdolab.com để lấy URL trực tiếp đăng lên nền tảng
-        $file_content = @file_get_contents($tik_data['download_url']);
-        if (!$file_content) {
-            marKAsFailed($pdo, $post['id'], "Không thể tải trực tiếp file video TikTok.", $sys_max_retries, $sys_retry_interval);
-            continue;
-        }
-
-        $cdn_dir = '/www/wwwroot/data.hongdolab.com/uploads/';
-        if (!is_dir($cdn_dir)) @mkdir($cdn_dir, 0777, true);
-        $local_tik_name = 'tik_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.mp4';
-        $abs_media_path = (is_dir($cdn_dir) && is_writable($cdn_dir)) ? ($cdn_dir . $local_tik_name) : (__DIR__ . '/../uploads/' . $local_tik_name);
-        file_put_contents($abs_media_path, $file_content);
-
-        $has_media = true;
-        $file_mime = 'video/mp4';
-        $file_name = $local_tik_name;
-
-        // Đẩy lên CDN data.hongdolab.com để có link trực tiếp
-        $cdn_url = false;
-        for ($cdn_retry = 0; $cdn_retry < 3 && !$cdn_url; $cdn_retry++) {
-            $cdn_url = upload_file_to_hongdolab_cdn($abs_media_path);
-            if (!$cdn_url && $cdn_retry < 2) sleep(2);
-        }
-
-        if (!empty($cdn_url)) {
-            $public_media_url = $cdn_url;
-            $post_data['file_url'] = $cdn_url;
-            
-            $cdn_root = '/www/wwwroot/data.hongdolab.com/uploads/';
-            $cdn_basename = basename(parse_url($cdn_url, PHP_URL_PATH));
-            $cdn_local_path = $cdn_root . $cdn_basename;
-            if (file_exists($cdn_local_path)) {
-                $abs_media_path = $cdn_local_path;
-            }
-            
-            echo "   → Đã tải video TikTok lên CDN data.hongdolab.com: $cdn_url\n";
-        } else {
-            marKAsFailed($pdo, $post['id'], "Không thể upload video TikTok lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
-            continue;
-        }
+        $post_data['file_url'] = $tik_data['download_url'];
     } else {
         $has_media = !empty($post['media_path']) && file_exists(__DIR__ . '/../' . $post['media_path']);
         if ($has_media) {
@@ -2588,26 +2567,10 @@ foreach ($pending_posts as $post) {
                 $file_mime = 'application/octet-stream';
             $file_name = basename($abs_media_path);
             $t_title_override = pathinfo($file_name, PATHINFO_FILENAME);
-
-            // 1. Tải trực tiếp từ máy -> upload/copy sang data.hongdolab.com để lấy URL trực tiếp
-            $cdn_url = upload_file_to_hongdolab_cdn($abs_media_path);
-            if (!empty($cdn_url)) {
-                $public_media_url = $cdn_url;
-                $post_data['file_url'] = $cdn_url;
-                
-                $cdn_root = '/www/wwwroot/data.hongdolab.com/uploads/';
-                $cdn_basename = basename(parse_url($cdn_url, PHP_URL_PATH));
-                $cdn_local_path = $cdn_root . $cdn_basename;
-                if (file_exists($cdn_local_path)) {
-                    $abs_media_path = $cdn_local_path;
-                }
-                
-                echo "   → Đã lấy link CDN data.hongdolab.com cho tệp tải từ máy: $cdn_url\n";
-            }
         }
     }
 
-    if (empty($post_data['file_url']) && $has_media && !empty($abs_media_path) && file_exists($abs_media_path)) {
+    if ($has_media && file_exists($abs_media_path)) {
         // Sanitize file name for CURLFile to prevent Facebook API upload issues due to diacritics/special characters
         $safe_ext = pathinfo($file_name, PATHINFO_EXTENSION);
         $safe_file_name = 'media_upload_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '');
@@ -2626,12 +2589,16 @@ foreach ($pending_posts as $post) {
 
             if ($use_ai && !empty($p_desc)) {
                 $ai_original = $p_desc;
-                $p_res = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
-                if (!empty($p_res) && $p_res !== $ai_original) {
-                    $p_desc = $p_res;
-                } else {
-                    echo "   → AI (Status/Image) không phản hồi hoặc quá hạn (15s), tự động sử dụng nội dung gốc để đăng...\n";
-                    $p_desc = $ai_original;
+                $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
+                if ($p_desc === $ai_original) {
+                    echo "   → AI lần 1 thất bại (Status/Image), thử lại sau 3s...\n";
+                    sleep(3);
+                    $p_desc = rewrite_content_with_ai($ai_original, $post['account_id'], false, $fanpage_name);
+                }
+                if ($p_desc === $ai_original) {
+                    marKAsFailed($pdo, $post['id'], "AI không thể viết nội dung (API lỗi). Sẽ thử lại lượt cron tiếp theo.", $sys_max_retries, $sys_retry_interval);
+                    if ($temp_drive_file && file_exists($temp_drive_file)) @unlink($temp_drive_file);
+                    continue;
                 }
             }
             $post_data['message'] = $p_desc;
@@ -2664,7 +2631,6 @@ foreach ($pending_posts as $post) {
                 }
 
                 if ($use_ai) {
-                    update_post_stage($pdo, $post['id'], "⏳ 3/4: Đang gửi nội dung cho AI viết lại...");
                     // Xây dựng {prompt} cho AI dựa trên auto_title
                     if ($is_auto && !empty($t_title_override)) {
                         // Checkbox auto_title ON: {prompt} = Tên file/Title TikTok + mô tả user (nếu có)
@@ -2735,80 +2701,10 @@ foreach ($pending_posts as $post) {
     }
 
     // 5. Call API
-    @set_time_limit(1800); // Cho phép tối đa 30 phút cho video/reel dung lượng lớn
-    $api_method = '';
-    $api_detail = '';
-    if (!empty($post_data['file_url'])) {
-        $api_method = 'file_url';
-        $api_detail = $post_data['file_url'];
-    } elseif (isset($post_data['source'])) {
-        $api_method = 'CURLFile';
-        $api_detail = $abs_media_path;
-    } else {
-        $api_method = 'text_only';
-        $api_detail = 'Không có media';
-    }
-    $stage_detail = "⏳ 4/4: Đang gửi API đăng bài... [$api_method] endpoint=$endpoint";
-    update_post_stage($pdo, $post['id'], $stage_detail);
-    echo "   → [STEP 4/4] Gửi API: method=$api_method, endpoint=$endpoint, post_type=$post_type\n";
-    echo "   → [STEP 4/4] Chi tiết: $api_detail\n";
-    
-    // Ghi log file để debug
-    $publish_log = __DIR__ . '/worker_publish.log';
-    $log_prefix = date('Y-m-d H:i:s') . " [PostID:{$post['id']}] [Page:{$post['page_id']}]";
-    @file_put_contents($publish_log, "$log_prefix START method=$api_method endpoint=$endpoint type=$post_type detail=$api_detail\n", FILE_APPEND);
-    
-    try {
-        $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW() WHERE id = ?")->execute([$post['id']]);
-    } catch (Exception $e) {}
+    set_time_limit(600); // Allow long upload for videos
     if (strpos($post_type, 'Story') === false) {
-        
-        // DEBUG LOGGING
-        $debug_file_exists = file_exists($abs_media_path) ? 'TRUE' : 'FALSE';
-        $debug_has_media = $has_media ? 'TRUE' : 'FALSE';
-        @file_put_contents($publish_log, "$log_prefix DEBUG check: post_type=$post_type, has_media=$debug_has_media, abs_media_path=$abs_media_path, file_exists=$debug_file_exists\n", FILE_APPEND);
-        
-        // VIDEO/REEL: Luôn dùng Resumable Upload (tránh HTTP 504 qua proxy khi dùng file_url)
-        if (($post_type === 'Video' || $post_type === 'Reel') && $has_media && !empty($abs_media_path) && file_exists($abs_media_path)) {
-            echo "   → [STEP 4/4] Video/Reel: Dùng Resumable Upload trực tiếp (bỏ qua file_url vì proxy gây 504)\n";
-            update_post_stage($pdo, $post['id'], "⏳ 4/4: Resumable Chunk Upload...");
-            @file_put_contents($publish_log, "$log_prefix USING resumable_direct (skip file_url for video/reel) file=$abs_media_path\n", FILE_APPEND);
-            // Loại bỏ file_url và source khỏi post_data để resumable upload không bị conflict
-            unset($post_data['file_url']);
-            unset($post_data['source']);
-            $response = fb_upload_video_resumable($post['page_id'], $page_access_token, $abs_media_path, $post_data, $pdo, $post['id']);
-            $resp_code = $response['status_code'] ?? 'N/A';
-            $resp_err = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : '';
-            echo "   → [STEP 4/4] Kết quả resumable: HTTP $resp_code\n";
-            @file_put_contents($publish_log, "$log_prefix RESULT resumable HTTP=$resp_code err=$resp_err\n", FILE_APPEND);
-            if ($resp_code !== 200 && !empty($resp_err)) {
-                @file_put_contents($publish_log, "$log_prefix ERROR_DETAIL: " . json_encode($response['data'] ?? [], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
-            }
-        } elseif (!empty($post_data['file_url'])) {
-            // IMAGE/STATUS: Dùng file_url (nhẹ, nhanh, không cần resumable)
-            $timeout = 120;
-            update_post_stage($pdo, $post['id'], "⏳ 4/4: Gọi API file_url...");
-            @file_put_contents($publish_log, "$log_prefix USING file_url (image/status) url={$post_data['file_url']}\n", FILE_APPEND);
-            $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
-            $resp_code = $response['status_code'] ?? 'N/A';
-            $resp_err = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : '';
-            echo "   → [STEP 4/4] Kết quả file_url: HTTP $resp_code\n";
-            @file_put_contents($publish_log, "$log_prefix RESULT file_url HTTP=$resp_code err=$resp_err\n", FILE_APPEND);
-            if ($resp_code !== 200) {
-                $err_json = json_encode($response['data'] ?? [], JSON_UNESCAPED_UNICODE);
-                @file_put_contents($publish_log, "$log_prefix ERROR_DETAIL: $err_json\n", FILE_APPEND);
-                update_post_stage($pdo, $post['id'], "⏳ 4/4: file_url HTTP $resp_code - $resp_err");
-            }
-        } else {
-            $timeout = 60;
-            update_post_stage($pdo, $post['id'], "⏳ 4/4: Direct API...");
-            @file_put_contents($publish_log, "$log_prefix USING direct API timeout=$timeout\n", FILE_APPEND);
-            $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
-            $resp_code = $response['status_code'] ?? 'N/A';
-            $resp_err = isset($response['data']['error']['message']) ? $response['data']['error']['message'] : '';
-            echo "   → [STEP 4/4] Kết quả direct: HTTP $resp_code\n";
-            @file_put_contents($publish_log, "$log_prefix RESULT direct HTTP=$resp_code err=$resp_err\n", FILE_APPEND);
-        }
+        $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 600 : 30;
+        $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
     }
 
     handle_response:
@@ -2911,13 +2807,8 @@ foreach ($pending_posts as $post) {
             // posts_history table may not exist
         }
 
-        // Xóa local file nếu là Local Scheduler File (uploads/...) - Không xóa file CDN data.hongdolab.com
-        $cdn_root = '/www/wwwroot/data.hongdolab.com/uploads/';
-        $norm_abs = str_replace('\\', '/', realpath($abs_media_path) ?: $abs_media_path);
-        $norm_cdn = str_replace('\\', '/', realpath($cdn_root) ?: $cdn_root);
-        $is_cdn_file = (strpos($norm_abs, rtrim($norm_cdn, '/') . '/') === 0);
-
-        if (!$is_drive && !$is_cdn_file && $has_media && file_exists($abs_media_path) && strpos($abs_media_path, 'uploads/') !== false) {
+        // Xóa local file nếu là Local Scheduler File (uploads/...) - Không xóa file hệ thống
+        if (!$is_drive && $has_media && file_exists($abs_media_path) && strpos($abs_media_path, 'uploads/') !== false) {
             // SAFE UNLINK: Tránh xoá nhầm ảnh nếu hình ảnh được chia sẻ cho nhiều Campaign / Page cùng lúc
             $check_usages = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing', 'failed') AND media_path = ? AND id != ?");
             $check_usages->execute([$post['media_path'], $post['id']]);
@@ -2952,21 +2843,10 @@ foreach ($pending_posts as $post) {
         }
     }
 
-    // Dọn file tạm trong /tmp (nếu có và KHÔNG nằm ở thư mục CDN công khai)
+    // Always cleanup temp drive file for this iteration
     if ($temp_drive_file && file_exists($temp_drive_file)) {
-        $cdn_root = '/www/wwwroot/data.hongdolab.com/uploads/';
-        $norm_temp = str_replace('\\', '/', realpath($temp_drive_file) ?: $temp_drive_file);
-        $norm_cdn = str_replace('\\', '/', realpath($cdn_root) ?: $cdn_root);
-        if (strpos($norm_temp, rtrim($norm_cdn, '/') . '/') !== 0) {
-            @unlink($temp_drive_file);
-        }
+        @unlink($temp_drive_file);
     }
-    // LƯU Ý: Không xóa $temp_cdn_file (uploads/cdn/) ngay lập tức!
-    // Facebook/Instagram/TikTok cần 5-15 phút để crawler đọc video từ URL công khai.
-    // Các tệp pub_* trong uploads/cdn sẽ được start_publish.php tự động dọn dẹp sau 30 phút.
-    
-    // Thêm giãn cách 3 giây giữa mỗi bài đăng để tránh nghẽn I/O và CPU trên server
-    sleep(3);
 } // Ket thuc vong lap
 
 $elapsed = round(microtime(true) - $start_time, 2);
@@ -2981,7 +2861,7 @@ if ($lock_fp) {
 @unlink($lock_file);
 // Cleanup DB chay rieng qua cron/cleanup.php (59 23 * * *).
 
-function marKAsFailed($pdo, $id, $msg, $max_retries = 1, $retry_interval = 1, $has_error_msg = true, $has_retry_count = true)
+function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $has_error_msg = true, $has_retry_count = true)
 {
     // Cắt và chuẩn hóa thông báo lỗi Quota YouTube API 429
     if (stripos($msg, 'Quota exceeded') !== false || stripos($msg, 'rateLimitExceeded') !== false || stripos($msg, 'RESOURCE_EXHAUSTED') !== false || stripos($msg, 'defaultVideoInsertPerDayPerProject') !== false) {
@@ -3047,22 +2927,6 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 1, $retry_interval = 1, $h
     }
     $new_retry = $current_retry + 1;
 
-    // Kiểm tra Lỗi Vĩnh Viễn (Fatal Error) - Đánh dấu thất bại luôn, KHÔNG thử lại để tránh nặng server
-    $is_fatal_error = (stripos($msg, 'Thiếu Token') !== false) ||
-                     (stripos($msg, 'Không tìm thấy token') !== false) ||
-                     (stripos($msg, 'Thiếu cấu hình') !== false) ||
-                     (stripos($msg, 'Không tìm thấy refresh_token') !== false) ||
-                     (stripos($msg, 'Không tìm thấy Access Token') !== false) ||
-                     (stripos($msg, 'Không thấy file') !== false) ||
-                     (stripos($msg, 'Không tìm thấy tài khoản') !== false) ||
-                     (stripos($msg, 'không hỗ trợ') !== false) ||
-                     (stripos($msg, 'không hợp lệ') !== false) ||
-                     (stripos($msg, 'Quota') !== false);
-
-    if ($is_fatal_error) {
-        $new_retry = $max_retries + 1; // Nhảy thẳng qua max_retries để hủy thử lại ngay lập tức
-    }
-
     echo " -> Lỗi: $msg (Lần thử: $new_retry/$max_retries)\n";
 
     // Build dynamic UPDATE based on available columns
@@ -3090,14 +2954,8 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 1, $retry_interval = 1, $h
             } catch (Exception $e) {}
             // -----------------------------------------------------
             
-            // Tính toán khoảng thời gian giãn cách theo thuật toán Exponential Backoff (15p -> 45p -> 135p)
-            // Thay vì thử lại dồn dập 1 phút/lần gây quá tải server
-            $base_interval = max(1, (int)$retry_interval);
-            $backoff_multiplier = (int)pow(3, $new_retry - 1);
-            $actual_delay_minutes = max(15, $base_interval * $backoff_multiplier * 5);
-
             $pdo->prepare("UPDATE scheduled_posts SET status='failed', error_msg=?, retry_count=?, scheduled_time=DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id=?")
-                ->execute([$msg, $new_retry, $actual_delay_minutes, $id]);
+                ->execute([$msg, $new_retry, $retry_interval, $id]);
         } else {
             $pdo->prepare("UPDATE scheduled_posts SET status='failed', error_msg=?, retry_count=? WHERE id=?")
                 ->execute([$msg, $new_retry, $id]);
