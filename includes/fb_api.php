@@ -6,20 +6,15 @@ define('FB_API_VERSION', 'v25.0');
 define('FB_API_BASE', 'https://graph.facebook.com/' . FB_API_VERSION . '/');
 
 function fb_curl_setssl($ch) {
-    // Force IPv4 resolution to prevent IPv6 connection timeouts on VPS/servers
+    // Force IPv4 resolution and HTTP/1.1 to prevent IPv6 connection timeouts and HTTP/2 stream drops on VPS/servers
     curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
     curl_setopt($ch, CURLOPT_DNS_CACHE_TIMEOUT, 3600);
+    curl_setopt($ch, CURLOPT_BUFFERSIZE, 524288);
     curl_setopt($ch, CURLOPT_ENCODING, '');
-
-    // Disable SSL verification only in development environment
-    if (defined('APP_ENV') && APP_ENV === 'development') {
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-    } else {
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-    }
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
 }
 
 function apply_proxy_to_curl($ch, $access_token = null) {

@@ -141,28 +141,30 @@ function get_drive_file_name($access_token, $file_id) {
  * Trả về mảng chứa đường dẫn file tạm và mimeType
  */
 function download_drive_file_temp($access_token, $file_id) {
-    // 1. Lấy thông tin metadata của file (name, mimeType)
-    $meta_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=name,mimeType";
+    // 1. Lấy thông tin metadata của file (name, mimeType, size)
+    $meta_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=name,mimeType,size";
     $ch = curl_init($meta_url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
-        CURLOPT_TIMEOUT => 30,
+        CURLOPT_TIMEOUT => 20,
         CURLOPT_CONNECTTIMEOUT => 10,
         CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
         CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
         CURLOPT_SSL_VERIFYPEER => false
     ]);
     $meta_response = curl_exec($ch);
+    $meta_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
     $meta = json_decode($meta_response, true);
-    if (!isset($meta['name'])) {
-        return ['error' => 'Không thể lấy thông tin file từ Google Drive. (Token hết hạn hoặc file bị xóa)'];
+    if ($meta_http_code !== 200 || !isset($meta['name'])) {
+        return ['error' => "Không thể lấy thông tin file từ Google Drive (HTTP {$meta_http_code}). Token hết hạn hoặc file không tồn tại."];
     }
 
     $mime_type = $meta['mimeType'];
     $file_name = $meta['name'];
+    $expected_size = isset($meta['size']) ? (int)$meta['size'] : 0;
 
     // Lấy extension từ tên file gốc (nếu có)
     $ext = pathinfo($file_name, PATHINFO_EXTENSION);
@@ -192,71 +194,59 @@ function download_drive_file_temp($access_token, $file_id) {
         }
     }
 
-    // 2. Download nội dung file với cơ chế Retry 3 lần & Fallback URL
+    // 2. Download nội dung file trực tiếp qua Google Drive API
     $temp_dir = sys_get_temp_dir();
     $temp_path = tempnam($temp_dir, 'gdrive_');
     $temp_path_with_ext = $temp_path . '.' . $ext;
     rename($temp_path, $temp_path_with_ext);
 
-    $download_urls = [
-        "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media",
-        "https://lh3.googleusercontent.com/d/" . urlencode($file_id),
-        "https://drive.google.com/uc?export=download&id=" . urlencode($file_id)
-    ];
+    $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media";
 
-    $download_success = false;
-    $last_http_code = 0;
-    $last_curl_err = '';
-
-    foreach ($download_urls as $d_idx => $d_url) {
-        if ($download_success) break;
-
-        for ($retry = 0; $retry < 2; $retry++) {
-            if ($retry > 0) sleep(1);
-
-            $fp = @fopen($temp_path_with_ext, 'w+');
-            if ($fp === false) {
-                return ['error' => 'Không thể tạo file tạm trên Server.'];
-            }
-
-            $ch2 = curl_init($d_url);
-            $headers = [];
-            // Chỉ thêm Bearer Authorization nếu dùng API googleapis
-            if (strpos($d_url, 'googleapis.com') !== false) {
-                $headers[] = "Authorization: Bearer $access_token";
-            }
-
-            curl_setopt_array($ch2, [
-                CURLOPT_HTTPHEADER => $headers,
-                CURLOPT_FILE => $fp,
-                CURLOPT_FOLLOWLOCATION => true,
-                CURLOPT_TIMEOUT => 600,
-                CURLOPT_CONNECTTIMEOUT => 15,
-                CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            ]);
-
-            $success = curl_exec($ch2);
-            $last_http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
-            $last_curl_err = curl_error($ch2);
-            curl_close($ch2);
-            @fclose($fp);
-
-            if ($success && $last_http_code === 200 && file_exists($temp_path_with_ext) && filesize($temp_path_with_ext) > 100) {
-                $download_success = true;
-                break;
-            } else {
-                @unlink($temp_path_with_ext);
-            }
-        }
+    $fp = @fopen($temp_path_with_ext, 'w+');
+    if ($fp === false) {
+        return ['error' => 'Không thể tạo file tạm trên Server.'];
     }
 
-    if (!$download_success) {
+    $ch2 = curl_init($download_url);
+    curl_setopt_array($ch2, [
+        CURLOPT_HTTPHEADER => ["Authorization: Bearer $access_token"],
+        CURLOPT_FILE => $fp,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 300, // Max 5 phút cho tệp video lớn
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_BUFFERSIZE => 524288, // 512KB buffer size giúp tăng tốc độ tải file lớn gấp nhiều lần
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    ]);
+
+    $success = curl_exec($ch2);
+    $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+    $curl_err = curl_error($ch2);
+    curl_close($ch2);
+    @fclose($fp);
+
+    $actual_size = file_exists($temp_path_with_ext) ? filesize($temp_path_with_ext) : 0;
+
+    // Kiểm tra tính hợp lệ của file đã tải
+    if (!$success || $http_code !== 200 || $actual_size === 0) {
         @unlink($temp_path_with_ext);
-        $err_detail = $last_curl_err ? " ($last_curl_err)" : "";
-        return ['error' => "Lỗi tải file từ Google Drive (HTTP {$last_http_code}{$err_detail}). Vui lòng kiểm tra lại quyền truy cập file."];
+        $err_detail = $curl_err ? " ($curl_err)" : "";
+        return ['error' => "Lỗi tải file từ Google Drive (HTTP {$http_code}{$err_detail})."];
+    }
+
+    // Nếu có expected size từ metadata, kiểm tra xem đã tải đủ chưa (chống file bị ngắt giữa chừng)
+    if ($expected_size > 0 && $actual_size < ($expected_size * 0.90)) {
+        @unlink($temp_path_with_ext);
+        return ['error' => "Tệp tải từ Google Drive bị gián đoạn (Dung lượng: {$actual_size}/{$expected_size} bytes)."];
+    }
+
+    // Kiểm tra xem file có phải là trang HTML/JSON lỗi không (đọc 200 bytes đầu)
+    $header_check = @file_get_contents($temp_path_with_ext, false, null, 0, 200);
+    if ($header_check && (stripos($header_check, '<html') !== false || stripos($header_check, '{"error"') !== false || stripos($header_check, '<!DOCTYPE') !== false)) {
+        @unlink($temp_path_with_ext);
+        return ['error' => "Lỗi Google Drive trả về trang lỗi HTML/JSON thay vì tệp video."];
     }
 
     return [
