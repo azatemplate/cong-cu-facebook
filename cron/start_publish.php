@@ -279,15 +279,28 @@ $total_active_users = count($user_channels);
 $total_dispatched = count($dispatch_list);
 echo "Phát hiện {$total_pages} Kênh chờ đăng thuộc {$total_active_users} Tài khoản User. Đang cấp luồng chia đều cho {$total_dispatched} Worker...\n";
 
-$is_web = isset($_SERVER['HTTP_HOST']);
-$disabled_funcs = array_map('trim', explode(',', strtolower(ini_get('disable_functions'))));
-$exec_enabled = function_exists('exec') && !in_array('exec', $disabled_funcs);
+require_once __DIR__ . '/../includes/queue.php';
+$queue = new JobQueue($pdo);
+$queue_name = 'publish_jobs';
+
+// Lấy danh sách Job đang tồn đọng trong Queue để tránh đẩy đúp (với MySQL fallback)
+$stmt = $pdo->prepare("SELECT payload FROM queue_jobs WHERE queue_name = ?");
+$stmt->execute([$queue_name]);
+$existing_payloads = $stmt->fetchAll(PDO::FETCH_COLUMN);
+$existing_chans = [];
+foreach ($existing_payloads as $pl) {
+    $dec = json_decode($pl, true);
+    if (isset($dec['chan_key'])) $existing_chans[] = $dec['chan_key'];
+}
 
 foreach ($dispatch_list as $item) {
     $chan_key = $item['chan_key'];
-    $page_ids_str = $item['page_id'];
-    $owner_id = $item['owner_id'];
-
+    
+    // Nếu chan_key này đã nằm trong hàng đợi chờ xử lý, bỏ qua không push thêm để tránh trùng lặp.
+    if (in_array($chan_key, $existing_chans)) {
+        continue;
+    }
+    
     // Kiểm tra và giải phóng lock cũ (> 15 phút) cho kênh
     $lock_dir = dirname(__DIR__) . '/locks';
     $lock_key = md5('uid_' . $chan_key);
@@ -296,50 +309,50 @@ foreach ($dispatch_list as $item) {
         $lock_age = time() - filemtime($lock_file);
         if ($lock_age > 900) {
             @unlink($lock_file);
-            echo "  ⚠ Đã dọn lock cũ ($lock_age giây) cho kênh #$chan_key trước khi spawn worker.\n";
+            echo "  ⚠ Đã dọn lock cũ ($lock_age giây) cho kênh #$chan_key.\n";
         }
     }
     
-    $dispatched = false;
-    if ($exec_enabled) {
-        if (!function_exists('get_php_cli_bin')) {
-            require_once __DIR__ . '/../includes/php_cli.php';
-        }
-        $php_bin = get_php_cli_bin();
-        $script_path = __DIR__ . DIRECTORY_SEPARATOR . 'publish_worker.php';
-        
-        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-            @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$chan_key\"", "r"));
-        } else {
-            @exec("nohup \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$chan_key\" > /dev/null 2>&1 &");
-        }
-        $dispatched = true;
-    }
-    
-    // Kích hoạt Web-Async cURL tới run_worker.php
-    if (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
-        $doc_root = $_SERVER['DOCUMENT_ROOT'] ?? '';
-        $root_web_path = rtrim(str_replace('\\', '/', str_replace($doc_root, '', dirname(__DIR__))), '/');
-        
-        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . $root_web_path . "/run_worker.php?type=publish&page_id=" . urlencode($page_ids_str) . "&user_id=" . urlencode($chan_key);
-
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500);
-        curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-        @curl_exec($ch);
-        @curl_close($ch);
-        $dispatched = true;
-    }
-
-    if ($dispatched) {
-        echo "  -> [CHIA ĐỀU] Đã kích hoạt Worker cho {$owner_id} (Kênh: $chan_key | PageID: $page_ids_str)\n";
-    } else {
-        echo "  -> THẤT BẠI: Không thể kích hoạt luồng cho {$owner_id} ($chan_key)\n";
-    }
+    // Push vào Hàng Đợi (Queue)
+    $queue->push($queue_name, ['chan_key' => $chan_key]);
+    echo "  [QUEUE] Đã đẩy luồng #$chan_key vào Hàng đợi.\n";
 }
 
-echo "Đã Dispatch hoàn tất.\n";
+// ── 3. Quản lý Daemon Workers (Trạm Thu Phí) ──
+// Thay vì sinh ra hàng chục tiến trình mỗi phút, ta chỉ duy trì 5 Daemon chạy ngầm
+$MAX_DAEMONS = 5;
+if (!function_exists('get_php_cli_bin')) {
+    require_once __DIR__ . '/../includes/php_cli.php';
+}
+$php_bin = get_php_cli_bin();
+$worker_script = __DIR__ . DIRECTORY_SEPARATOR . 'queue_worker.php';
+
+if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
+    // Đếm số lượng daemon đang chạy trên Linux
+    $running_daemons = 0;
+    exec("ps aux | grep queue_worker.php | grep -v grep | wc -l", $out, $ret);
+    if (isset($out[0])) {
+        $running_daemons = (int)$out[0];
+    }
+    
+    echo "  [DAEMON] Đang có $running_daemons/$MAX_DAEMONS worker daemons chạy ngầm.\n";
+    
+    // Bổ sung thêm Daemon nếu thiếu
+    $needed = $MAX_DAEMONS - $running_daemons;
+    if ($needed > 0 && count($dispatch_list) > 0) {
+        // Chỉ bật thêm daemon nếu có việc
+        $to_spawn = min($needed, count($dispatch_list)); // Không bật dư
+        echo "  [DAEMON] Kích hoạt thêm $to_spawn daemon worker...\n";
+        for ($i = 0; $i < $to_spawn; $i++) {
+            @exec("nohup \"$php_bin\" \"$worker_script\" > /dev/null 2>&1 &");
+        }
+    }
+} else {
+    // Trên Windows, tự động bật 1 CMD cửa sổ ẩn chạy nền
+    echo "  [WINDOWS] Đang chạy chế độ Local (Windows). Bật 1 Worker chạy ngầm...\n";
+    $cmd = "start /B \"\" \"$php_bin\" \"$worker_script\"";
+    @pclose(@popen($cmd, "r"));
+}
+
+echo "Hoàn thành quy trình Dispatch.\n";
+?>
