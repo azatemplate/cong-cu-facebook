@@ -2703,8 +2703,16 @@ foreach ($pending_posts as $post) {
     // 5. Call API
     set_time_limit(600); // Allow long upload for videos
     if (strpos($post_type, 'Story') === false) {
-        $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 600 : 30;
-        $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
+        if (($post_type === 'Video' || $post_type === 'Reel') && $has_media && file_exists($abs_media_path)) {
+            // Dùng hàm upload Resumable mới để trị dứt điểm lỗi Timeout 120s
+            $is_reel = ($post_type === 'Reel');
+            $v_title = $p_title ?? '';
+            $v_desc = $post_data['description'] ?? '';
+            $response = fb_upload_video_resumable($post['page_id'], $page_access_token, $abs_media_path, $v_title, $v_desc, $is_reel);
+        } else {
+            $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 600 : 30;
+            $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
+        }
     }
 
     handle_response:

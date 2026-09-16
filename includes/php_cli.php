@@ -5,9 +5,7 @@
  * Logic lấy từ diagnostics.php — dùng chung cho start_publish, start_comment, accounts...
  */
 function get_php_cli_bin() {
-    if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
-        return '/www/server/php/85/bin/php';
-    }
+    // Đã xóa hardcode php 85 để script tự động nhận diện PHP 7.4 của aaPanel
 
     // 2. Từ PHP_BINARY (nếu không phải fpm/cgi)
     if (defined('PHP_BINARY') && PHP_BINARY) {

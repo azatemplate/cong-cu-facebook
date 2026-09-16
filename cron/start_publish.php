@@ -173,40 +173,70 @@ if (empty($raw_pages)) {
     exit;
 }
 
-// ── Nhóm page theo user_id của FB, page_id của YouTube, account_id của TT, hoặc buffer_account_id của Buffer ──
-$pages_by_user = [];
+// ── 1. Nhóm tất cả Kênh đang chờ theo Tài khoản Chủ sở hữu (Owner Account) ──
+$owner_channels = [];
 foreach ($raw_pages as $row) {
+    // Phân loại theo chủ sở hữu (account_id của user trên hệ thống)
+    $owner_id = !empty($row['account_id']) ? ('acc_' . $row['account_id']) : (!empty($row['user_id']) ? ('usr_' . $row['user_id']) : 'system');
+
+    // Xác định định danh của Token/Kênh (Channel Key)
     if ($row['post_type'] === 'YouTube') {
         $yt_chan_id = !empty($row['page_id']) ? $row['page_id'] : $row['account_id'];
-        $uid = 'yt_chan_' . $yt_chan_id;
+        $chan_key = 'yt_chan_' . $yt_chan_id;
     } elseif (strpos($row['post_type'], 'Buffer') !== false) {
         $buf_acc_id = !empty($row['buffer_account_id']) ? $row['buffer_account_id'] : $row['account_id'];
-        $uid = 'buf_acc_' . $buf_acc_id;
+        $chan_key = 'buf_acc_' . $buf_acc_id;
     } elseif ($row['post_type'] === 'TikTok') {
-        $uid = 'tt_' . $row['account_id'];
+        $chan_key = 'tt_' . $row['account_id'];
     } elseif (strpos($row['post_type'], 'Instagram') !== false) {
-        $uid = 'ig_' . $row['page_id'];
+        $chan_key = 'ig_' . $row['page_id'];
     } else {
-        $uid = $row['user_id'] ?: ('noid_' . $row['page_id']);
+        $chan_key = $row['user_id'] ?: ('noid_' . $row['page_id']);
     }
-    if (!isset($pages_by_user[$uid])) {
-        $pages_by_user[$uid] = [];
+
+    if (!isset($owner_channels[$owner_id])) {
+        $owner_channels[$owner_id] = [];
     }
-    $pages_by_user[$uid][] = $row['page_id'];
+    if (!isset($owner_channels[$owner_id][$chan_key])) {
+        $owner_channels[$owner_id][$chan_key] = [];
+    }
+    if (!in_array($row['page_id'], $owner_channels[$owner_id][$chan_key])) {
+        $owner_channels[$owner_id][$chan_key][] = $row['page_id'];
+    }
 }
 
-// Round-Robin chọn user_id để đảm bảo công bằng
-$selected_users = [];
-$keep_going = true;
-$user_keys = array_keys($pages_by_user);
+// ── 2. Tuyệt đối KHÔNG chia nhỏ luồng của 1 Token, đảm bảo 1 Token = 1 luồng duy nhất ──
+$owner_chan_lists = [];
+foreach ($owner_channels as $oid => $chans) {
+    $owner_chan_lists[$oid] = [];
+    foreach ($chans as $ckey => $pids) {
+        // Gom TẤT CẢ các page thuộc cùng 1 Token vào ĐÚNG 1 Worker (1 slot)
+        // Worker này sẽ chạy vòng lặp và đăng tuần tự, có delay nghỉ ngơi, tránh bị kẹt API Facebook.
+        $owner_chan_lists[$oid][] = [
+            'chan_key' => $ckey, 
+            'page_id' => implode(',', $pids), 
+            'owner_id' => $oid
+        ];
+    }
+}
 
-while ($keep_going && count($selected_users) < $available_slots) {
-    $keep_going = false;
-    foreach ($user_keys as $uid) {
-        if (!in_array($uid, $selected_users)) {
-            $selected_users[] = $uid;
-            $keep_going = true;
-            if (count($selected_users) >= $available_slots) {
+// ── 3. Thuật toán chia đều Throttling công bằng cho tất cả Tài khoản (Equal Share Interleaving) ──
+// Lần lượt cấp 1 suất cho Account 1, 1 suất cho Account 2, ... theo các vòng xoay
+$dispatch_list = [];
+$owner_keys = array_keys($owner_channels);
+$owner_pointers = array_fill_keys($owner_keys, 0);
+
+$has_more = true;
+while ($has_more && count($dispatch_list) < $available_slots) {
+    $has_more = false;
+    foreach ($owner_keys as $oid) {
+        $ptr = $owner_pointers[$oid];
+        if (isset($owner_chan_lists[$oid][$ptr])) {
+            $dispatch_list[] = $owner_chan_lists[$oid][$ptr];
+            $owner_pointers[$oid]++;
+            $has_more = true;
+            
+            if (count($dispatch_list) >= $available_slots) {
                 break 2;
             }
         }
@@ -214,17 +244,18 @@ while ($keep_going && count($selected_users) < $available_slots) {
 }
 
 $total_pages = count($raw_pages);
-$total_users = count($selected_users);
-echo "Co {$total_pages} Fanpage/Kênh tren {$total_users} Tai khoan/Token dang cho. Moi nhom = 1 Worker doc lap...\n";
+$total_active_accounts = count($owner_channels);
+$total_dispatched = count($dispatch_list);
+echo "Phat hien {$total_pages} Fanpage thuoc {$total_active_accounts} Tai khoan khach hang. Dang cap phat cong bang thanh {$total_dispatched} Worker...\n";
 
 $is_web = isset($_SERVER['HTTP_HOST']);
 $disabled_funcs = array_map('trim', explode(',', strtolower(ini_get('disable_functions'))));
 $exec_enabled = function_exists('exec') && !in_array('exec', $disabled_funcs);
 
-foreach ($selected_users as $uid) {
-    $user_page_ids = $pages_by_user[$uid];
-    // Truyền danh sách page_ids cho worker, cách nhau bởi dấu phẩy
-    $page_ids_str = implode(',', $user_page_ids);
+foreach ($dispatch_list as $dispatch) {
+    $uid = $dispatch['chan_key']; // Token key (e.g. yt_chan_123, tt_123, or user_id)
+    $owner = $dispatch['owner_id']; // Tài khoản chủ sở hữu
+    $page_ids_str = $dispatch['page_id']; // Chuỗi các page_id thuộc Token này
 
     // Kiểm tra và giải phóng lock cũ trước khi spawn worker
     // Nếu lock > 15 phút → worker cũ đã crash hoặc account vừa được gia hạn
@@ -235,7 +266,7 @@ foreach ($selected_users as $uid) {
         $lock_age = time() - filemtime($lock_file);
         if ($lock_age > 900) { // > 15 phút
             @unlink($lock_file);
-            echo "  ⚠ Đã dọn lock cũ ($lock_age giây) cho user #$uid trước khi spawn worker.\n";
+            echo "  ⚠ Đã dọn lock cũ ($lock_age giây) cho token #$uid trước khi spawn worker.\n";
         }
     }
     

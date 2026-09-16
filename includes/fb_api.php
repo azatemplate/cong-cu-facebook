@@ -524,6 +524,83 @@ function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $
     }
 }
 
+/**
+ * Upload Video/Reel using Resumable API (Chunked Upload)
+ * Giúp tránh lỗi timeout 120s khi tải video nặng qua proxy bằng file_url.
+ */
+function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $title, $description, $is_reel = false) {
+    if (!file_exists($file_path)) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => 'File video không tồn tại trên máy chủ.']]];
+    }
+
+    $file_size = filesize($file_path);
+    $endpoint = $page_id . '/videos'; // Graph API dùng chung /videos cho cả Reel và Video thường, khác ở tham số POST
+
+    // ── Step 1: Start upload session ─────────────────────────────────
+    $start_params = [
+        'upload_phase' => 'start',
+        'file_size'    => $file_size,
+        'access_token' => $page_access_token
+    ];
+
+    $res1 = fb_api_request($endpoint, $start_params, 'POST');
+
+    if ($res1['status_code'] !== 200 || empty($res1['data']['video_id'])) {
+        return $res1;
+    }
+
+    $video_id = $res1['data']['video_id'];
+    $upload_session_id = $res1['data']['upload_session_id'];
+
+    // ── Step 2: Upload file bytes ────────────────────────────────────
+    $fp = fopen($file_path, 'rb');
+    if (!$fp) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể mở file video để đọc.']]];
+    }
+
+    // Đọc toàn bộ file vào bộ nhớ để CURLFile đẩy lên như form-data
+    $chunk_data = file_get_contents($file_path);
+    $safe_ext = pathinfo($file_path, PATHINFO_EXTENSION);
+    $safe_name = 'video_' . uniqid() . '.' . $safe_ext;
+
+    // Phải tạo file tạm để dùng CURLFile
+    $tmp_dir = sys_get_temp_dir();
+    $tmp_file = $tmp_dir . '/' . $safe_name;
+    file_put_contents($tmp_file, $chunk_data);
+
+    $chunk_params = [
+        'upload_phase' => 'transfer',
+        'upload_session_id' => $upload_session_id,
+        'start_offset' => '0',
+        'video_file_chunk' => new CURLFile($tmp_file, 'application/octet-stream', $safe_name),
+        'access_token' => $page_access_token
+    ];
+
+    $res2 = fb_api_request($endpoint, $chunk_params, 'POST', $chunk_params, 600); // 10 phút timeout
+    @unlink($tmp_file);
+
+    if ($res2['status_code'] !== 200) {
+        return $res2;
+    }
+
+    // ── Step 3: Finish upload ────────────────────────────────────────
+    $finish_params = [
+        'upload_phase' => 'finish',
+        'upload_session_id' => $upload_session_id,
+        'access_token' => $page_access_token,
+        'title' => $title,
+        'description' => $description
+    ];
+
+    // Cấu hình thêm nếu là Facebook Reels
+    if ($is_reel) {
+        $finish_params['post_video_as_reels'] = 'true';
+    }
+
+    $res3 = fb_api_request($endpoint, $finish_params, 'POST');
+    return $res3;
+}
+
 function fb_exchange_token($short_token, $app_id, $app_secret) {
     if (empty($app_id) || empty($app_secret)) return null;
     $res = fb_api_request('oauth/access_token', [
