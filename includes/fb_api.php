@@ -670,8 +670,8 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         fb_echo_log("   ✅ [Bước 2 Thành Công] Tải file video lên rupload thành công (HTTP 200).\n");
     }
 
-    // ── Phase 3: Check Video Processing Status ─────────────────────────
-    fb_echo_log("   → [Bước 3/4] Đang kiểm tra trạng thái xử lý video trên Facebook (GET /{$video_id}?fields=status)...\n");
+    // ── Phase 3: Check Video Processing Status (Tối đa 5 lần kiểm tra nhanh) ───
+    fb_echo_log("   → [Bước 3/4] Kiểm tra trạng thái video trên Facebook (GET /{$video_id}?fields=status)...\n");
     if ($sp_post_id > 0 && function_exists('update_post_progress')) {
         global $pdo;
         if (isset($pdo)) {
@@ -679,34 +679,33 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         }
     }
 
-    $max_status_checks = 30; // Chờ tối đa 60s (30 x 2s)
+    $max_status_checks = 5; // Kiểm tra tối đa 5 lần (mỗi lần 1s)
     $video_ready = false;
 
     for ($check_i = 1; $check_i <= $max_status_checks; $check_i++) {
         $status_res = fb_api_request($video_id, [
             'fields'       => 'status',
             'access_token' => $page_access_token
-        ], 'GET', [], 15);
+        ], 'GET', [], 10);
 
         $video_status    = $status_res['data']['status']['video_status'] ?? '';
         $uploading_state = $status_res['data']['status']['uploading_phase']['status'] ?? '';
         $processing_state= $status_res['data']['status']['processing_phase']['status'] ?? '';
 
-        if ($video_status === 'ready' || $video_status === 'complete' || $processing_state === 'complete' || $processing_state === 'success') {
+        fb_echo_log("   → [Bước 3 Lần $check_i/$max_status_checks] Status: video={$video_status}, upload={$uploading_state}, processing={$processing_state}\n");
+
+        if (in_array($video_status, ['ready', 'complete', 'upload_complete']) || in_array($processing_state, ['complete', 'success', 'completed']) || in_array($uploading_state, ['complete', 'completed'])) {
             $video_ready = true;
-            fb_echo_log("   ✅ [Bước 3 Thành Công] Video đã xử lý xong (Status: " . ($video_status ?: $processing_state) . ").\n");
+            fb_echo_log("   ✅ [Bước 3 Thành Công] Trạng thái video sẵn sàng xuất bản.\n");
             break;
         }
 
-        if ($video_status === 'error' || $processing_state === 'error') {
+        if ($video_status === 'error' || $processing_state === 'error' || $uploading_state === 'error') {
             fb_echo_log("   ⚠️ [Bước 3 Cảnh Báo] Video trả về trạng thái error - " . json_encode($status_res['data'] ?? []) . "\n");
             break;
         }
 
-        if ($check_i % 3 === 0 || $check_i === 1) {
-            fb_echo_log("   → [Bước 3 Lần $check_i/$max_status_checks] Trạng thái video: " . ($video_status ?: $processing_state ?: 'processing') . " (chờ 2s)...\n");
-        }
-        sleep(2);
+        sleep(1);
     }
 
     // ── Phase 4: Finish and Publish Reel ────────────────────────────────
