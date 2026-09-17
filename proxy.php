@@ -77,7 +77,8 @@ function auto_check_untested_proxies($pdo, $account_id) {
     } catch (Exception $e) {}
 }
 
-auto_check_untested_proxies($pdo, $account_id);
+// Note: Proxy checking is triggered asynchronously or via "Kiểm tra tất cả" button to ensure 0ms instant page loads
+
 
 // Fetch user's proxies with assigned user info
 $stmt = $pdo->prepare("
