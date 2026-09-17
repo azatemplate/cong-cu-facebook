@@ -466,8 +466,8 @@ require_once __DIR__ . '/fb_api.php';
                                 }
                             }).catch(() => {});
                         }
-                        pollBadge();
-                        setInterval(pollBadge, 15000);
+                        // Polling badge mỗi 45s (không làm nghẽn server)
+                        setInterval(pollBadge, 45000);
 
                         // Sidebar Toggle Logic
                         const menuToggle = document.querySelector('.menu-toggle');
