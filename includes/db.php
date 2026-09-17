@@ -32,14 +32,14 @@ function ensure_db_schema_ready($pdo) {
     static $already_checked = false;
     if ($already_checked) return;
 
-    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v14.done';
+    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v16.done';
     if (file_exists($flag_file)) {
         $already_checked = true;
         return;
     }
 
     try {
-        $chk = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'schema_init_v14_done'");
+        $chk = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'schema_init_v16_done'");
         if ($chk && $chk->fetchColumn() === '1') {
             @file_put_contents($flag_file, date('Y-m-d H:i:s'));
             $already_checked = true;
@@ -781,7 +781,7 @@ function ensure_db_schema_ready($pdo) {
         } catch (Exception $e) {}
 
         try {
-            $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('schema_init_v14_done', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
+            $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('schema_init_v16_done', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
         } catch (Exception $e) {}
         @file_put_contents($flag_file, date('Y-m-d H:i:s'));
         $already_checked = true;
