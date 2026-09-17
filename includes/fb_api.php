@@ -635,7 +635,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $file_bytes);
 
-        $last_printed_pct = -15;
+        $last_printed_pct = -10;
         curl_setopt($ch, CURLOPT_NOPROGRESS, false);
         curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct, $actual_bytes_len) {
             $args = func_get_args();
@@ -649,7 +649,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
 
             if ($total > 0 && $uploaded > 0) {
                 $pct = (int) floor(($uploaded / $total) * 100);
-                if ($pct >= $last_printed_pct + 15 || $pct === 100) {
+                if ($pct >= $last_printed_pct + 10 || $pct === 100) {
                     $last_printed_pct = $pct;
                     $up_mb = round($uploaded / 1024 / 1024, 2);
                     $tot_mb = round($total / 1024 / 1024, 2);
