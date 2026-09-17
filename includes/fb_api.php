@@ -111,7 +111,7 @@ function apply_proxy_to_curl($ch, $access_token = null) {
 }
 
 function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [], $timeout = 20) {
-    if (strpos($endpoint, 'videos') !== false || strpos($endpoint, 'video_stories') !== false) {
+    if (strpos($endpoint, 'videos') !== false || strpos($endpoint, 'video_stories') !== false || strpos($endpoint, 'video_reels') !== false) {
         $url = 'https://graph-video.facebook.com/' . FB_API_VERSION . '/' . $endpoint;
     } else {
         $url = FB_API_BASE . $endpoint;
