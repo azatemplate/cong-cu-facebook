@@ -2011,12 +2011,7 @@ do {
         } else {
             $err_msg = $create_res['message'] ?? ($res['errors'][0]['message'] ?? 'Lỗi không xác định từ Buffer API');
             marKAsFailed($pdo, $post['id'], "Buffer API error: " . $err_msg, $sys_max_retries, $sys_retry_interval);
-        }
-
-        if (isset($dest_path) && file_exists($dest_path)) {
-            @unlink($dest_path);
-        }
-
+        // File buf_drive_ / buf_tiktok_ giữ lại trong uploads/ 5 phút để Buffer API tải về, cron cleanup.php sẽ dọn dẹp sau
         // Xong luồng Buffer, bỏ qua phần Facebook bên dưới
         continue;
     }
