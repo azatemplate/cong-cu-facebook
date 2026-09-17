@@ -551,12 +551,15 @@ if (!function_exists('fb_echo_log')) {
  */
 function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = '', $description = '', $sp_post_id = 0) {
     @ob_implicit_flush(1);
-    if (!file_exists($file_path)) {
+
+    $is_remote_url = (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0);
+
+    if (!$is_remote_url && !file_exists($file_path)) {
         return ['status_code' => 0, 'data' => ['error' => ['message' => 'File video Reel không tồn tại trên máy chủ.']]];
     }
 
-    $file_size = filesize($file_path);
-    $mb_size = round($file_size / 1024 / 1024, 2);
+    $file_size = $is_remote_url ? 0 : filesize($file_path);
+    $mb_size = $is_remote_url ? 'URL' : round($file_size / 1024 / 1024, 2);
     fb_echo_log("   → Bat dau dang Reel (Meta 4-step Page Reel API - $mb_size MB)...\n");
 
     // ── Phase 1: Start upload session ───────────────────────────────────
@@ -579,7 +582,11 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     $phase2_success = false;
 
     // Try Method A: file_url header via CDN (Instantaneous transfer)
-    $cdn_url = function_exists('upload_file_to_hongdolab_cdn') ? upload_file_to_hongdolab_cdn($file_path) : false;
+    if ($is_remote_url) {
+        $cdn_url = $file_path;
+    } else {
+        $cdn_url = function_exists('upload_file_to_hongdolab_cdn') ? upload_file_to_hongdolab_cdn($file_path) : false;
+    }
 
     if ($cdn_url) {
         fb_echo_log("   → Truyền video qua CDN file_url: $cdn_url...\n");
@@ -608,7 +615,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     }
 
     // Method B Fallback: Binary payload transfer
-    if (!$phase2_success) {
+    if (!$phase2_success && !$is_remote_url) {
         $file_bytes = @file_get_contents($file_path);
         if ($file_bytes === false) {
             return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video để upload Reel.']]];
