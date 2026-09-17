@@ -59,17 +59,18 @@ define('ENCRYPTION_KEY', get_env_var('ENCRYPTION_KEY', ''));
 // Set to 'production' on live server to enable SSL verification etc.
 define('APP_ENV', get_env_var('APP_ENV', 'production'));
 
-if (session_status() === PHP_SESSION_NONE) {
+$is_cli_env = (php_sapi_name() === 'cli' || php_sapi_name() === 'cgi-fcgi' || empty($_SERVER['HTTP_HOST']));
+if (!$is_cli_env && session_status() === PHP_SESSION_NONE && !headers_sent()) {
     // These must be set BEFORE session_start() is called.
-    ini_set('session.cookie_httponly', '1');
-    ini_set('session.cookie_samesite', 'Lax');
-    ini_set('session.use_strict_mode', '1');
-    ini_set('session.use_only_cookies', '1');
+    @ini_set('session.cookie_httponly', '1');
+    @ini_set('session.cookie_samesite', 'Lax');
+    @ini_set('session.use_strict_mode', '1');
+    @ini_set('session.use_only_cookies', '1');
     // Enable secure cookie flag only in production with HTTPS
     if (get_env_var('APP_ENV', 'production') === 'production' && (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')) {
-        ini_set('session.cookie_secure', '1');
+        @ini_set('session.cookie_secure', '1');
     }
     // Session lifetime: 8 hours
-    ini_set('session.gc_maxlifetime', '28800');
-    ini_set('session.cookie_lifetime', '28800');
+    @ini_set('session.gc_maxlifetime', '28800');
+    @ini_set('session.cookie_lifetime', '28800');
 }
