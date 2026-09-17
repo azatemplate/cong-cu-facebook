@@ -547,65 +547,12 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
     $file_size = filesize($file_path);
     $endpoint = $page_id . '/videos';
 
-    // ── Step 1: Start upload session ─────────────────────────────────
-    echo "   → Resumable Upload Step 1: Khoi tao phiền (start) - File size: $file_size bytes...\n";
-    $start_params = [
-        'upload_phase' => 'start',
-        'file_size'    => $file_size,
-        'access_token' => $page_access_token
-    ];
-
-    $res1 = fb_api_request($endpoint, [], 'POST', $start_params);
-    echo "   → Resumable Upload Step 1 Code: " . ($res1['status_code'] ?? '0') . " - Data: " . json_encode($res1['data'] ?? []) . "\n";
-
-    if ($res1['status_code'] === 200 && !empty($res1['data']['video_id'])) {
-        $video_id = $res1['data']['video_id'];
-        $upload_session_id = $res1['data']['upload_session_id'];
-
-        // ── Step 2: Upload file bytes ────────────────────────────────────
-        $safe_ext = pathinfo($file_path, PATHINFO_EXTENSION);
-        $safe_name = 'video_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '.mp4');
-
-        echo "   → Resumable Upload Step 2: Gui file (transfer) - Session ID: $upload_session_id...\n";
-        $chunk_params = [
-            'upload_phase' => 'transfer',
-            'upload_session_id' => $upload_session_id,
-            'start_offset' => '0',
-            'video_file_chunk' => new CURLFile($file_path, 'application/octet-stream', $safe_name),
-            'access_token' => $page_access_token
-        ];
-
-        $res2 = fb_api_request($endpoint, [], 'POST', $chunk_params, 600);
-        echo "   → Resumable Upload Step 2 Code: " . ($res2['status_code'] ?? '0') . " - Data: " . json_encode($res2['data'] ?? []) . "\n";
-
-        if ($res2['status_code'] === 200) {
-            // ── Step 3: Finish upload ────────────────────────────────────────
-            echo "   → Resumable Upload Step 3: Hoan tat (finish)...\n";
-            $finish_params = [
-                'upload_phase' => 'finish',
-                'upload_session_id' => $upload_session_id,
-                'access_token' => $page_access_token,
-                'title' => $title,
-                'description' => $description
-            ];
-
-            if ($is_reel) {
-                $finish_params['post_video_as_reels'] = 'true';
-            }
-
-            $res3 = fb_api_request($endpoint, [], 'POST', $finish_params);
-            echo "   → Resumable Upload Step 3 Code: " . ($res3['status_code'] ?? '0') . " - Data: " . json_encode($res3['data'] ?? []) . "\n";
-            if ($res3['status_code'] === 200 && !empty($res3['data']['success'])) {
-                $res3['data']['id'] = $video_id;
-            }
-            return $res3;
-        }
-    }
-
-    // ── Fallback: Direct single-step upload ──────────────────────────
-    echo "   → Resumable Upload Fallback: Gui truc tiep 1 phien...\n";
     $safe_ext = pathinfo($file_path, PATHINFO_EXTENSION);
     $safe_name = 'video_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '.mp4');
+
+    $mb_size = round($file_size / 1024 / 1024, 2);
+    echo "   → Dang tai video len Facebook ($mb_size MB)...\n";
+
     $direct_params = [
         'title' => $title,
         'description' => $description,
@@ -615,7 +562,10 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
     if ($is_reel) {
         $direct_params['post_video_as_reels'] = 'true';
     }
-    return fb_api_request($endpoint, [], 'POST', $direct_params, 600);
+
+    $res = fb_api_request($endpoint, [], 'POST', $direct_params, 600);
+    echo "   → Ket qua dang video: Status " . ($res['status_code'] ?? '0') . " - Data: " . json_encode($res['data'] ?? []) . "\n";
+    return $res;
 }
 
 function fb_exchange_token($short_token, $app_id, $app_secret) {
