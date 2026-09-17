@@ -545,7 +545,7 @@ function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $
  * 2. POST {upload_url} with binary bytes (Header Authorization, offset, file_size) -> rupload.facebook.com
  * 3. POST /{page-id}/video_reels?upload_phase=finish&video_id=...&video_state=PUBLISHED&description=... -> Publishes Reel
  */
-function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = '', $description = '') {
+function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = '', $description = '', $sp_post_id = 0) {
     if (!file_exists($file_path)) {
         return ['status_code' => 0, 'data' => ['error' => ['message' => 'File video Reel không tồn tại trên máy chủ.']]];
     }
@@ -576,6 +576,8 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video để upload Reel.']]];
     }
 
+    $last_percent = -1;
+
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $upload_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -592,6 +594,29 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     curl_setopt($ch, CURLOPT_TIMEOUT, 600);
     curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
     curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
+
+    curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+    curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function($resource, $dltotal, $dlnow, $ultotal, $ulnow) use (&$last_percent, $sp_post_id) {
+        if ($ultotal > 0) {
+            $percent = (int)floor(($ulnow / $ultotal) * 100);
+            if ($percent % 20 === 0 && $percent !== $last_percent) {
+                $last_percent = $percent;
+                $mb_ul = round($ulnow / 1024 / 1024, 2);
+                $mb_tot = round($ultotal / 1024 / 1024, 2);
+                echo "   → Tiến trình upload Reel: {$percent}% ({$mb_ul} MB / {$mb_tot} MB)\n";
+                if ($sp_post_id > 0 && function_exists('update_post_progress')) {
+                    global $pdo;
+                    if (isset($pdo)) {
+                        update_post_progress($pdo, $sp_post_id, "🚀 Đang tải video lên Facebook ({$percent}%)...");
+                    }
+                }
+                if (function_exists('ob_flush')) @ob_flush();
+                @flush();
+            }
+        }
+        return 0;
+    });
+
     fb_curl_setssl($ch);
     apply_proxy_to_curl($ch, $page_access_token);
 
@@ -611,7 +636,13 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         return ['status_code' => $chunk_code, 'data' => ['error' => ['message' => $err_msg]]];
     }
 
-    echo "   → Phase 2 OK. Hoan tat va Xuat ban Reel...\n";
+    echo "   → Phase 2 OK (Upload 100%). Hoan tat va Xuat ban Reel...\n";
+    if ($sp_post_id > 0 && function_exists('update_post_progress')) {
+        global $pdo;
+        if (isset($pdo)) {
+            update_post_progress($pdo, $sp_post_id, "⚙️ Đang xử lý xuất bản Reel...");
+        }
+    }
 
     // ── Phase 3: Finish and Publish Reel ────────────────────────────────
     $finish_params = [
@@ -644,9 +675,9 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
  * Upload Video/Reel using Resumable API (Chunked Upload)
  * Giúp tránh lỗi timeout 120s khi tải video nặng qua proxy bằng file_url.
  */
-function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $title, $description, $is_reel = false) {
+function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $title, $description, $is_reel = false, $sp_post_id = 0) {
     if ($is_reel) {
-        return fb_upload_page_reel($page_id, $page_access_token, $file_path, $title, $description);
+        return fb_upload_page_reel($page_id, $page_access_token, $file_path, $title, $description, $sp_post_id);
     }
 
     if (!file_exists($file_path)) {

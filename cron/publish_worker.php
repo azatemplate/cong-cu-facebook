@@ -2801,7 +2801,7 @@ do {
             $is_reel = ($post_type === 'Reel');
             $v_title = $p_title ?? '';
             $v_desc = $post_data['description'] ?? '';
-            $response = fb_upload_video_resumable($post['page_id'], $page_access_token, $abs_media_path, $v_title, $v_desc, $is_reel);
+            $response = fb_upload_video_resumable($post['page_id'], $page_access_token, $abs_media_path, $v_title, $v_desc, $is_reel, $post['id']);
         } else {
             $timeout = ($post_type === 'Video' || $post_type === 'Reel') ? 600 : 30;
             $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
