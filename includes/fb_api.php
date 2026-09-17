@@ -635,6 +635,29 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $file_bytes);
 
+        $last_printed_pct = -15;
+        curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+        curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct, $actual_bytes_len) {
+            $args = func_get_args();
+            if (count($args) >= 5) {
+                $uploaded = $args[4];
+                $total = ($args[3] > 0) ? $args[3] : $actual_bytes_len;
+            } else {
+                $uploaded = $args[3] ?? 0;
+                $total = (($args[2] ?? 0) > 0) ? $args[2] : $actual_bytes_len;
+            }
+
+            if ($total > 0 && $uploaded > 0) {
+                $pct = (int) floor(($uploaded / $total) * 100);
+                if ($pct >= $last_printed_pct + 15 || $pct === 100) {
+                    $last_printed_pct = $pct;
+                    $up_mb = round($uploaded / 1024 / 1024, 2);
+                    $tot_mb = round($total / 1024 / 1024, 2);
+                    fb_echo_log("   → Tiến trình upload Reel: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
+                }
+            }
+        });
+
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "Authorization: OAuth {$page_access_token}",
             "Content-Type: application/octet-stream",
