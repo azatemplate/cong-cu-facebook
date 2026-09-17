@@ -570,53 +570,87 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
 
     echo "   → Phase 1 OK (Video ID: $video_id). Dang truyen file len Facebook rupload...\n";
 
-    // ── Phase 2: Transfer binary video file ──────────────────────────────
-    $file_bytes = @file_get_contents($file_path);
-    if ($file_bytes === false) {
-        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video để upload Reel.']]];
+    // ── Phase 2: Transfer video file ────────────────────────────────────
+    $phase2_success = false;
+
+    // Try Method A: file_url header via CDN (Instantaneous transfer)
+    $cdn_url = function_exists('upload_file_to_hongdolab_cdn') ? upload_file_to_hongdolab_cdn($file_path) : false;
+
+    if ($cdn_url) {
+        echo "   → Truyền video qua CDN file_url: $cdn_url...\n";
+        $ch_cdn = curl_init();
+        curl_setopt($ch_cdn, CURLOPT_URL, $upload_url);
+        curl_setopt($ch_cdn, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch_cdn, CURLOPT_POST, true);
+        curl_setopt($ch_cdn, CURLOPT_HTTPHEADER, [
+            "Authorization: OAuth {$page_access_token}",
+            "file_url: {$cdn_url}"
+        ]);
+        curl_setopt($ch_cdn, CURLOPT_TIMEOUT, 120);
+        fb_curl_setssl($ch_cdn);
+        apply_proxy_to_curl($ch_cdn, $page_access_token);
+
+        $cdn_resRaw = curl_exec($ch_cdn);
+        $cdn_code   = curl_getinfo($ch_cdn, CURLINFO_HTTP_CODE);
+        curl_close($ch_cdn);
+
+        if ($cdn_code === 200) {
+            $phase2_success = true;
+            echo "   → Phase 2 OK via CDN file_url!\n";
+        } else {
+            echo "   → CDN file_url trả về HTTP $cdn_code (" . substr(strip_tags($cdn_resRaw), 0, 150) . "). Thử lại bằng binary upload...\n";
+        }
     }
 
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $upload_url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 600);
-    curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
-    curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $file_bytes);
-
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "Authorization: OAuth {$page_access_token}",
-        "Content-Type: application/octet-stream",
-        "Content-Length: " . strlen($file_bytes),
-        "offset: 0",
-        "file_size: {$file_size}",
-        "Expect:"
-    ]);
-
-    fb_curl_setssl($ch);
-    apply_proxy_to_curl($ch, $page_access_token);
-
-    set_time_limit(600);
-    $chunk_resRaw = curl_exec($ch);
-    $chunk_code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curl_err     = curl_error($ch);
-    curl_close($ch);
-    unset($file_bytes);
-
-    if ($chunk_code !== 200) {
-        $err_msg = 'Upload phase 2 (transfer) failed';
-        if ($curl_err) $err_msg .= " (cURL: $curl_err)";
-        $parsed  = @json_decode($chunk_resRaw, true);
-        if ($parsed && isset($parsed['error']['message'])) {
-            $err_msg .= " - " . $parsed['error']['message'];
-        } elseif (!empty($chunk_resRaw)) {
-            $err_msg .= " - Body: " . substr(strip_tags($chunk_resRaw), 0, 300);
+    // Method B Fallback: Binary payload transfer
+    if (!$phase2_success) {
+        $file_bytes = @file_get_contents($file_path);
+        if ($file_bytes === false) {
+            return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video để upload Reel.']]];
         }
-        echo "   → Lỗi Phase 2 (Transfer Reel): HTTP $chunk_code - $err_msg\n";
-        return ['status_code' => $chunk_code, 'data' => ['error' => ['message' => $err_msg]]];
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $upload_url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 600);
+        curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
+        curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $file_bytes);
+
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: OAuth {$page_access_token}",
+            "Content-Type: application/octet-stream",
+            "Content-Length: " . strlen($file_bytes),
+            "offset: 0",
+            "file_size: {$file_size}",
+            "Expect:"
+        ]);
+
+        fb_curl_setssl($ch);
+        apply_proxy_to_curl($ch, $page_access_token);
+
+        set_time_limit(600);
+        $chunk_resRaw = curl_exec($ch);
+        $chunk_code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_err     = curl_error($ch);
+        curl_close($ch);
+        unset($file_bytes);
+
+        if ($chunk_code !== 200) {
+            $err_msg = 'Upload phase 2 (transfer) failed';
+            if ($curl_err) $err_msg .= " (cURL: $curl_err)";
+            $parsed  = @json_decode($chunk_resRaw, true);
+            if ($parsed && isset($parsed['error']['message'])) {
+                $err_msg .= " - " . $parsed['error']['message'];
+            } elseif (!empty($chunk_resRaw)) {
+                $err_msg .= " - Body: " . substr(strip_tags($chunk_resRaw), 0, 300);
+            }
+            echo "   → Lỗi Phase 2 (Transfer Reel): HTTP $chunk_code - $err_msg\n";
+            return ['status_code' => $chunk_code, 'data' => ['error' => ['message' => $err_msg]]];
+        }
     }
 
     echo "   → Phase 2 OK (Upload 100%). Hoan tat va Xuat ban Reel...\n";
