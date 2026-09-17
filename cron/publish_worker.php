@@ -813,9 +813,9 @@ if (!empty($user_id_lock)) {
 }
 
 if ($is_campaign_run && !empty($campaign_id)) {
-    // Reset any orphaned processing posts for this campaign back to pending so this worker thread can process them cleanly
+    // Reset any orphaned processing or failed (unpublished) posts for this campaign back to pending
     try {
-        $pdo->prepare("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = ? AND status = 'processing'")
+        $pdo->prepare("UPDATE scheduled_posts SET status = 'pending', retry_count = 0 WHERE campaign_id = ? AND status IN ('processing', 'failed') AND (fb_post_id IS NULL OR fb_post_id = '')")
             ->execute([$campaign_id]);
     } catch (Exception $e) {}
 }
@@ -2973,9 +2973,9 @@ echo "Hoan thanh phien quet cho Page ID #$target_page_id ({$elapsed}s).\n";
 echo "-------------------------------------------\n";
 
 // Giai phong va xoa lock file (tranh tich luy file rac)
-if ($lock_fp) {
-    flock($lock_fp, LOCK_UN);
-    fclose($lock_fp);
+if ($lock_fp && is_resource($lock_fp)) {
+    @flock($lock_fp, LOCK_UN);
+    @fclose($lock_fp);
 }
 @unlink($lock_file);
 // Cleanup DB chay rieng qua cron/cleanup.php (59 23 * * *).
