@@ -96,14 +96,13 @@ if (!$lock_got) {
     exit;
 }
 
-echo "Worker khởi động cho " . count($target_page_ids) . " Pages: " . implode(', ', $target_page_ids) . "\n";
-
-// Khong sleep Thundering Herd (moi worker la 1 process doc lap per-page, khong tranh chap)
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/drive_utils.php';
 require_once __DIR__ . '/../includes/ai_rewriter.php';
 require_once __DIR__ . '/../includes/telegram.php';
+
+echo "Worker khởi động cho " . count($target_page_ids) . " Pages: " . implode(', ', $target_page_ids) . "\n";
 
 if (!function_exists('update_post_progress')) {
     function update_post_progress($pdo, $post_id, $msg) {

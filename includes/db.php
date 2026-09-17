@@ -826,8 +826,8 @@ ensure_db_schema_ready($pdo);
 } catch (PDOException $e) {
     $err_msg = date('[Y-m-d H:i:s] ') . 'DB Connection Error: ' . $e->getMessage() . "\n";
     @file_put_contents(__DIR__ . '/../uploads/app_error.log', $err_msg, FILE_APPEND | LOCK_EX);
-    if (defined('APP_ENV') && APP_ENV === 'development') {
-        die("Lỗi kết nối CSDL: " . $e->getMessage());
+    if ((defined('APP_ENV') && APP_ENV === 'development') || php_sapi_name() === 'cli') {
+        die("Lỗi kết nối CSDL: " . $e->getMessage() . "\n");
     } else {
         die("Hệ thống tạm thời gặp sự cố. Vui lòng thử lại sau hoặc liên hệ Admin.");
     }

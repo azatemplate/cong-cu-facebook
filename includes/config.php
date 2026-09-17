@@ -62,7 +62,7 @@ define('ENCRYPTION_KEY', get_env_var('ENCRYPTION_KEY', ''));
 // Set to 'production' on live server to enable SSL verification etc.
 define('APP_ENV', get_env_var('APP_ENV', 'production'));
 
-if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+if (php_sapi_name() !== 'cli' && session_status() === PHP_SESSION_NONE && !headers_sent()) {
     // These must be set BEFORE session_start() is called.
     ini_set('session.cookie_httponly', '1');
     ini_set('session.cookie_samesite', 'Lax');
