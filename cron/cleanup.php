@@ -45,8 +45,7 @@ echo "\n[STEP 1] Dọn dẹp thư mục temp/ & uploads/tmp/ (Files cũ > 5 phú
 $root_dir = realpath(__DIR__ . '/../');
 $temp_dirs = [
     $root_dir . '/temp',
-    $root_dir . '/uploads/tmp',
-    sys_get_temp_dir()
+    $root_dir . '/uploads/tmp'
 ];
 
 $cutoff_5m = time() - 300; // 5 phút
@@ -62,6 +61,9 @@ foreach ($temp_dirs as $tdir) {
         $fname = basename($f);
         $mtime = filemtime($f);
 
+        // Bảo vệ tuyệt đối không đụng vào file socket hệ thống (.sock)
+        if (substr($fname, -5) === '.sock' || @is_link($f) || @filetype($f) === 'socket') continue;
+
         // Các định dạng file tạm lớn hoặc file cURL / Drive / Chunk
         $is_junk = preg_match('/\.(mp4|mov|avi|tmp|png|jpg|jpeg|webp|mkv)$/i', $fname) ||
                    strpos($fname, 'buf_chk_') === 0 ||
@@ -75,16 +77,14 @@ foreach ($temp_dirs as $tdir) {
             if (@unlink($f)) {
                 if (strpos($tdir, 'uploads/tmp') !== false) {
                     $stats['uploads_tmp']++;
-                } elseif (strpos($tdir, 'temp') !== false) {
-                    $stats['temp_files']++;
                 } else {
-                    $stats['sys_tmp_files']++;
+                    $stats['temp_files']++;
                 }
             }
         }
     }
 }
-echo "  -> Đã xóa: {$stats['temp_files']} files trong temp/, {$stats['uploads_tmp']} files trong uploads/tmp/, {$stats['sys_tmp_files']} files trong /tmp/\n";
+echo "  -> Đã xóa: {$stats['temp_files']} files trong temp/, {$stats['uploads_tmp']} files trong uploads/tmp/\n";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PHẦN 2: THU HẸP FILE LOG PHÌNH TO (> 10MB)
