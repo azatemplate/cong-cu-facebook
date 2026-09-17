@@ -33,11 +33,14 @@ $redis_insights_len = $rq->getQueueLength('fb_insights_queue');
 $redis_fb_msg_len = $rq->getQueueLength('fb_messaging_queue');
 $redis_zalo_msg_len = $rq->getQueueLength('zalo_messaging_queue');
 
-if (!$redis_active && isset($pdo)) {
+$db_publish_queue_len = 0;
+if (isset($pdo)) {
     try {
-        $redis_queue_len = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing') AND scheduled_time <= NOW()")->fetchColumn();
+        $db_publish_queue_len = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing') AND scheduled_time <= NOW()")->fetchColumn();
     } catch (Exception $e) {}
 }
+
+$display_publish_queue_len = ($redis_active && $redis_queue_len > 0) ? $redis_queue_len : $db_publish_queue_len;
 
 
 $now_php   = date('Y-m-d H:i:s');
@@ -961,7 +964,7 @@ code {
                     </div>
                     <div class="info-item">
                         <span class="info-label">Queue Đăng bài:</span>
-                        <span class="info-value mono" style="font-weight: 700; color: #a78bfa;"><?= number_format($redis_queue_len) ?> bài</span>
+                        <span class="info-value mono" style="font-weight: 700; color: #a78bfa;"><?= number_format($display_publish_queue_len) ?> bài</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Queue Comment (Theo giờ):</span>
