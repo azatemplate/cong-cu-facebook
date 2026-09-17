@@ -129,13 +129,16 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);    // trong 60s liên tục (chống cURL treo vô hạn)
     fb_curl_setssl($ch);
 
-    if (!empty($params['access_token'])) {
-        apply_proxy_to_curl($ch, $params['access_token']);
+    $token_for_proxy = $params['access_token'] ?? $post_data['access_token'] ?? null;
+    if (!empty($token_for_proxy)) {
+        apply_proxy_to_curl($ch, $token_for_proxy);
     }
 
     if (strtoupper($method) === 'POST') {
         curl_setopt($ch, CURLOPT_POST, true);
-        if (!empty($post_data)) {
+        if (empty($post_data)) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, '');
+        } else {
             if (is_array($post_data)) {
                 $has_file = false;
                 foreach ($post_data as $v) {
@@ -551,7 +554,7 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
         'access_token' => $page_access_token
     ];
 
-    $res1 = fb_api_request($endpoint, $start_params, 'POST');
+    $res1 = fb_api_request($endpoint, [], 'POST', $start_params);
 
     if ($res1['status_code'] === 200 && !empty($res1['data']['video_id'])) {
         $video_id = $res1['data']['video_id'];
@@ -569,7 +572,7 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
             'access_token' => $page_access_token
         ];
 
-        $res2 = fb_api_request($endpoint, $chunk_params, 'POST', $chunk_params, 600);
+        $res2 = fb_api_request($endpoint, [], 'POST', $chunk_params, 600);
 
         if ($res2['status_code'] === 200) {
             // ── Step 3: Finish upload ────────────────────────────────────────
@@ -585,7 +588,7 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
                 $finish_params['post_video_as_reels'] = 'true';
             }
 
-            $res3 = fb_api_request($endpoint, $finish_params, 'POST');
+            $res3 = fb_api_request($endpoint, [], 'POST', $finish_params);
             if ($res3['status_code'] === 200 && !empty($res3['data']['success'])) {
                 $res3['data']['id'] = $video_id;
             }
