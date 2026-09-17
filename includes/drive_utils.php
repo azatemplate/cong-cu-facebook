@@ -163,6 +163,10 @@ function download_drive_file_temp($access_token, $file_id) {
     $mime_type = $meta['mimeType'];
     $file_name = $meta['name'];
 
+    echo "   → Đang tải tệp '{$file_name}' từ Google Drive...\n";
+    if (ob_get_level() > 0) @ob_flush();
+    @flush();
+
     // Lấy extension từ tên file gốc (nếu có)
     $ext = pathinfo($file_name, PATHINFO_EXTENSION);
     if (!$ext || strtolower($ext) === 'tmp') {
@@ -232,6 +236,11 @@ function download_drive_file_temp($access_token, $file_id) {
         @unlink($temp_path_with_ext);
         return ['error' => 'Lỗi tải file từ Google Drive (HTTP ' . $http_code . ', CURL: ' . $curl_err . ').'];
     }
+
+    $d_mb = round(filesize($temp_path_with_ext) / 1024 / 1024, 2);
+    echo "   → Tải xong file '{$file_name}' ({$d_mb} MB) từ Google Drive.\n";
+    if (ob_get_level() > 0) @ob_flush();
+    @flush();
 
     return [
         'path' => $temp_path_with_ext,

@@ -106,6 +106,9 @@ echo "Worker khởi động cho " . count($target_page_ids) . " Pages: " . implo
 
 if (!function_exists('update_post_progress')) {
     function update_post_progress($pdo, $post_id, $msg) {
+        echo "   → {$msg}\n";
+        if (ob_get_level() > 0) @ob_flush();
+        @flush();
         try {
             if (function_exists('ensure_pdo_alive')) ensure_pdo_alive($pdo);
             $stmt = $pdo->prepare("UPDATE scheduled_posts SET error_msg = ? WHERE id = ? AND status = 'processing'");
