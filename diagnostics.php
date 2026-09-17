@@ -33,6 +33,12 @@ $redis_insights_len = $rq->getQueueLength('fb_insights_queue');
 $redis_fb_msg_len = $rq->getQueueLength('fb_messaging_queue');
 $redis_zalo_msg_len = $rq->getQueueLength('zalo_messaging_queue');
 
+if (!$redis_active && isset($pdo)) {
+    try {
+        $redis_queue_len = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing') AND scheduled_time <= NOW()")->fetchColumn();
+    } catch (Exception $e) {}
+}
+
 
 $now_php   = date('Y-m-d H:i:s');
 $now_mysql = $pdo->query("SELECT NOW()")->fetchColumn();
