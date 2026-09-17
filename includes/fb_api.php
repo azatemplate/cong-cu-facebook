@@ -105,7 +105,7 @@ function apply_proxy_to_curl($ch, $access_token = null) {
             curl_setopt($ch, CURLOPT_PROXYUSERPWD, $px['username'] . ':' . $px['password']);
         }
         if (strtolower($px['protocol'] ?? '') === 'socks5') {
-            curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
+            curl_setopt($ch, CURLOPT_PROXYTYPE, defined('CURLPROXY_SOCKS5_HOSTNAME') ? CURLPROXY_SOCKS5_HOSTNAME : CURLPROXY_SOCKS5);
         }
     }
 }
@@ -624,7 +624,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     });
 
     fb_curl_setssl($ch);
-    // Phase 2 binary transfer uses direct VPS connection for maximum speed (Phase 1 & Phase 3 still use Proxy via fb_api_request)
+    apply_proxy_to_curl($ch, $page_access_token);
 
     set_time_limit(600);
     $chunk_resRaw = curl_exec($ch);
