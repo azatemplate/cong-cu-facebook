@@ -15,6 +15,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 $action = isset($_GET['action']) ? trim($_GET['action']) : '';
+if (empty($action)) {
+    $action = isset($_POST['action']) ? trim($_POST['action']) : '';
+}
+if (empty($action) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $raw_body = @file_get_contents('php://input');
+    if (!empty($raw_body)) {
+        $json_body = @json_decode($raw_body, true);
+        if (!empty($json_body['action'])) {
+            $action = trim($json_body['action']);
+        }
+    }
+}
 
 // Thư mục lưu trữ công khai & tạm thời (Tự động nhận diện chuẩn đường dẫn uploads trên Linux/aaPanel)
 $base_dir   = dirname(__DIR__);
@@ -319,5 +331,14 @@ if ($action === 'complete') {
     exit;
 }
 
+if (empty($action)) {
+    echo json_encode([
+        'status'            => 'success',
+        'message'           => 'CDN Upload API is online.',
+        'supported_actions' => ['init', 'chunk', 'complete', 'image', 'cleanup', 'delete']
+    ]);
+    exit;
+}
+
 http_response_code(400);
-echo json_encode(['status' => 'error', 'message' => 'Action không hợp lệ.']);
+echo json_encode(['status' => 'error', 'message' => "Action '{$action}' không hợp lệ."]);
