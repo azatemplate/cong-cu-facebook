@@ -18,6 +18,11 @@ if (isset($_SESSION['account_id'])) {
     exit;
 }
 
+// Release session lock immediately for GET requests so browser asset loads/reloads never block
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    session_write_close();
+}
+
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Verify CSRF token
