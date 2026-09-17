@@ -11,6 +11,12 @@ function fb_curl_setssl($ch) {
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
     curl_setopt($ch, CURLOPT_DNS_CACHE_TIMEOUT, 3600);
     curl_setopt($ch, CURLOPT_ENCODING, '');
+    curl_setopt($ch, CURLOPT_TCP_NODELAY, 1); // Tắt Nagle algorithm để gửi packet ngay lập tức
+    curl_setopt($ch, CURLOPT_BUFFERSIZE, 524288); // Tăng buffer cURL lên 512KB để tối đa throughput mạng
+
+    if (defined('CURL_HTTP_VERSION_2_0')) {
+        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
+    }
 
     // Disable SSL verification only in development environment
     if (defined('APP_ENV') && APP_ENV === 'development') {
@@ -150,6 +156,8 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
         if (!empty($token_for_proxy)) {
             apply_proxy_to_curl($ch, $token_for_proxy);
         }
+    } else {
+        curl_setopt($ch, CURLOPT_BUFFERSIZE, 1048576); // 1MB buffer cho upload file binary siêu tốc
     }
 
     $headers = ['Expect:'];
