@@ -267,10 +267,7 @@ if (!function_exists('get_system_site_url')) {
 
 if (!function_exists('upload_file_to_hongdolab_cdn')) {
     function upload_file_to_hongdolab_cdn($file_path) {
-        if (!file_exists($file_path) || filesize($file_path) < 10) {
-            echo "   ⚠️ [CDN Upload] File không tồn tại hoặc rỗng (<10 bytes): {$file_path}\n";
-            return false;
-        }
+        if (!file_exists($file_path) || filesize($file_path) < 10) return false;
         @set_time_limit(0);
         
         $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
@@ -286,15 +283,11 @@ if (!function_exists('upload_file_to_hongdolab_cdn')) {
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_POST => true,
                 CURLOPT_POSTFIELDS => ['image' => $cfile],
-                CURLOPT_TIMEOUT => 120,
-                CURLOPT_PROXY => '',
-                CURLOPT_NOPROXY => '*',
-                CURLOPT_TCP_NODELAY => 1,
+                CURLOPT_TIMEOUT => 60,
                 CURLOPT_SSL_VERIFYPEER => false,
                 CURLOPT_SSL_VERIFYHOST => 0
             ]);
             $res = curl_exec($ch);
-            $err = curl_error($ch);
             curl_close($ch);
             if ($res) {
                 $json = json_decode($res, true);
@@ -302,7 +295,6 @@ if (!function_exists('upload_file_to_hongdolab_cdn')) {
                     return ensure_https_url($json['url']);
                 }
             }
-            echo "   ⚠️ [CDN Image Upload Error] {$err} - Response: {$res}\n";
         } else {
             $filename = basename($file_path);
             $filesize = filesize($file_path);
@@ -315,98 +307,80 @@ if (!function_exists('upload_file_to_hongdolab_cdn')) {
                 CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
                 CURLOPT_POSTFIELDS => json_encode(['filename' => $filename, 'filesize' => $filesize, 'mime' => $mime]),
                 CURLOPT_TIMEOUT => 60,
-                CURLOPT_PROXY => '',
-                CURLOPT_NOPROXY => '*',
-                CURLOPT_TCP_NODELAY => 1,
                 CURLOPT_SSL_VERIFYPEER => false,
                 CURLOPT_SSL_VERIFYHOST => 0
             ]);
             $res = curl_exec($ch);
-            $err = curl_error($ch);
             curl_close($ch);
             $init_json = $res ? json_decode($res, true) : null;
             
-            if (empty($init_json['upload_id'])) {
-                echo "   ⚠️ [CDN Init Error] {$err} - Response: {$res}\n";
-                return false;
-            }
-
-            $upload_id = $init_json['upload_id'];
-            $chunk_size = !empty($init_json['chunk_size']) ? (int)$init_json['chunk_size'] : (4 * 1024 * 1024);
-            
-            $fp = @fopen($file_path, 'rb');
-            if ($fp) {
-                $index = 0;
-                $ok = true;
-                while (!feof($fp)) {
-                    $chunk_data = fread($fp, $chunk_size);
-                    if ($chunk_data === false || strlen($chunk_data) === 0) break;
+            if (!empty($init_json['upload_id'])) {
+                $upload_id = $init_json['upload_id'];
+                $chunk_size = !empty($init_json['chunk_size']) ? (int)$init_json['chunk_size'] : (4 * 1024 * 1024);
+                
+                $fp = @fopen($file_path, 'rb');
+                if ($fp) {
+                    $index = 0;
+                    $ok = true;
+                    while (!feof($fp)) {
+                        $chunk_data = fread($fp, $chunk_size);
+                        if ($chunk_data === false || strlen($chunk_data) === 0) break;
+                        
+                        $tmp_chunk = tempnam($upload_tmp_dir, 'buf_chk_' . getmypid() . '_');
+                        file_put_contents($tmp_chunk, $chunk_data);
+                        
+                        $chunk_success = false;
+                        for ($retry = 0; $retry < 5 && !$chunk_success; $retry++) {
+                            $cfile = new CURLFile($tmp_chunk, 'application/octet-stream', $filename . '.part' . $index);
+                            $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=chunk');
+                            curl_setopt_array($ch, [
+                                CURLOPT_RETURNTRANSFER => true,
+                                CURLOPT_POST => true,
+                                CURLOPT_POSTFIELDS => [
+                                    'upload_id' => $upload_id,
+                                    'index' => (string)$index,
+                                    'chunk' => $cfile
+                                ],
+                                CURLOPT_TIMEOUT => 300,
+                                CURLOPT_SSL_VERIFYPEER => false,
+                                CURLOPT_SSL_VERIFYHOST => 0
+                            ]);
+                            $c_res = curl_exec($ch);
+                            curl_close($ch);
+                            $c_json = $c_res ? json_decode($c_res, true) : null;
+                            if ($c_res && isset($c_json['ok']) && $c_json['ok']) {
+                                $chunk_success = true;
+                            } else {
+                                sleep(1 + $retry);
+                            }
+                        }
+                        @unlink($tmp_chunk);
+                        
+                        if (!$chunk_success) {
+                            $ok = false;
+                            break;
+                        }
+                        $index++;
+                    }
+                    fclose($fp);
                     
-                    $tmp_chunk = tempnam($upload_tmp_dir, 'buf_chk_' . getmypid() . '_');
-                    file_put_contents($tmp_chunk, $chunk_data);
-                    
-                    $chunk_success = false;
-                    for ($retry = 0; $retry < 5 && !$chunk_success; $retry++) {
-                        $cfile = new CURLFile($tmp_chunk, 'application/octet-stream', $filename . '.part' . $index);
-                        $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=chunk');
+                    if ($ok) {
+                        $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=complete');
                         curl_setopt_array($ch, [
                             CURLOPT_RETURNTRANSFER => true,
                             CURLOPT_POST => true,
-                            CURLOPT_POSTFIELDS => [
-                                'upload_id' => $upload_id,
-                                'index' => (string)$index,
-                                'chunk' => $cfile
-                            ],
+                            CURLOPT_POSTFIELDS => ['upload_id' => $upload_id],
                             CURLOPT_TIMEOUT => 300,
-                            CURLOPT_PROXY => '',
-                            CURLOPT_NOPROXY => '*',
-                            CURLOPT_TCP_NODELAY => 1,
                             CURLOPT_SSL_VERIFYPEER => false,
                             CURLOPT_SSL_VERIFYHOST => 0
                         ]);
-                        $c_res = curl_exec($ch);
-                        $c_err = curl_error($ch);
+                        $comp_res = curl_exec($ch);
                         curl_close($ch);
-                        $c_json = $c_res ? json_decode($c_res, true) : null;
-                        if ($c_res && isset($c_json['ok']) && $c_json['ok']) {
-                            $chunk_success = true;
-                        } else {
-                            echo "   ⚠️ [CDN Chunk #{$index} Retry {$retry}] Error: {$c_err} - Resp: {$c_res}\n";
-                            sleep(1 + $retry);
+                        $comp_json = $comp_res ? json_decode($comp_res, true) : null;
+                        if (!empty($comp_json['url'])) {
+                            return ensure_https_url($comp_json['url']);
                         }
                     }
-                    @unlink($tmp_chunk);
-                    
-                    if (!$chunk_success) {
-                        $ok = false;
-                        break;
-                    }
-                    $index++;
-                }
-                fclose($fp);
-                
-                if ($ok) {
-                    $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=complete');
-                    curl_setopt_array($ch, [
-                        CURLOPT_RETURNTRANSFER => true,
-                        CURLOPT_POST => true,
-                        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-                        CURLOPT_POSTFIELDS => json_encode(['upload_id' => $upload_id, 'filename' => $filename]),
-                        CURLOPT_TIMEOUT => 300,
-                        CURLOPT_PROXY => '',
-                        CURLOPT_NOPROXY => '*',
-                        CURLOPT_TCP_NODELAY => 1,
-                        CURLOPT_SSL_VERIFYPEER => false,
-                        CURLOPT_SSL_VERIFYHOST => 0
-                    ]);
-                    $comp_res = curl_exec($ch);
-                    $comp_err = curl_error($ch);
-                    curl_close($ch);
-                    $comp_json = $comp_res ? json_decode($comp_res, true) : null;
-                    if (!empty($comp_json['url'])) {
-                        return ensure_https_url($comp_json['url']);
-                    }
-                    echo "   ⚠️ [CDN Complete Error] {$comp_err} - Response: {$comp_res}\n";
                 }
             }
         }
@@ -1459,6 +1433,128 @@ do {
             }
         }
 
+        if (!function_exists('upload_file_to_hongdolab_cdn')) {
+            function upload_file_to_hongdolab_cdn($file_path) {
+                if (!file_exists($file_path) || filesize($file_path) < 10) return false;
+                @set_time_limit(0);
+                
+                $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
+                $is_image = in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                $upload_tmp_dir = dirname($file_path) . '/';
+                if (!is_dir($upload_tmp_dir)) $upload_tmp_dir = __DIR__ . '/../uploads/';
+                
+                if ($is_image) {
+                    $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=image');
+                    $mime = function_exists('mime_content_type') ? mime_content_type($file_path) : 'image/jpeg';
+                    $cfile = new CURLFile($file_path, $mime, basename($file_path));
+                    curl_setopt_array($ch, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST => true,
+                        CURLOPT_POSTFIELDS => ['image' => $cfile],
+                        CURLOPT_TIMEOUT => 60,
+                        CURLOPT_SSL_VERIFYPEER => false,
+                        CURLOPT_SSL_VERIFYHOST => 0
+                    ]);
+                    $res = curl_exec($ch);
+                    curl_close($ch);
+                    if ($res) {
+                        $json = json_decode($res, true);
+                        if (!empty($json['url'])) {
+                            return ensure_https_url($json['url']);
+                        }
+                    }
+                } else {
+                    $filename = basename($file_path);
+                    $filesize = filesize($file_path);
+                    $mime = function_exists('mime_content_type') ? mime_content_type($file_path) : 'video/mp4';
+                    
+                    $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=init');
+                    curl_setopt_array($ch, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST => true,
+                        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                        CURLOPT_POSTFIELDS => json_encode(['filename' => $filename, 'filesize' => $filesize, 'mime' => $mime]),
+                        CURLOPT_TIMEOUT => 60,
+                        CURLOPT_SSL_VERIFYPEER => false,
+                        CURLOPT_SSL_VERIFYHOST => 0
+                    ]);
+                    $res = curl_exec($ch);
+                    curl_close($ch);
+                    $init_json = $res ? json_decode($res, true) : null;
+                    
+                    if (!empty($init_json['upload_id'])) {
+                        $upload_id = $init_json['upload_id'];
+                        $chunk_size = !empty($init_json['chunk_size']) ? (int)$init_json['chunk_size'] : (4 * 1024 * 1024);
+                        
+                        $fp = @fopen($file_path, 'rb');
+                        if ($fp) {
+                            $index = 0;
+                            $ok = true;
+                            while (!feof($fp)) {
+                                $chunk_data = fread($fp, $chunk_size);
+                                if ($chunk_data === false || strlen($chunk_data) === 0) break;
+                                
+                                $tmp_chunk = tempnam($upload_tmp_dir, 'buf_chk_' . getmypid() . '_');
+                                file_put_contents($tmp_chunk, $chunk_data);
+                                
+                                $chunk_success = false;
+                                for ($retry = 0; $retry < 5 && !$chunk_success; $retry++) {
+                                    $cfile = new CURLFile($tmp_chunk, 'application/octet-stream', $filename . '.part' . $index);
+                                    $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=chunk');
+                                    curl_setopt_array($ch, [
+                                        CURLOPT_RETURNTRANSFER => true,
+                                        CURLOPT_POST => true,
+                                        CURLOPT_POSTFIELDS => [
+                                            'upload_id' => $upload_id,
+                                            'index' => (string)$index,
+                                            'chunk' => $cfile
+                                        ],
+                                        CURLOPT_TIMEOUT => 300,
+                                        CURLOPT_SSL_VERIFYPEER => false,
+                                        CURLOPT_SSL_VERIFYHOST => 0
+                                    ]);
+                                    $c_res = curl_exec($ch);
+                                    curl_close($ch);
+                                    $c_json = $c_res ? json_decode($c_res, true) : null;
+                                    if ($c_res && isset($c_json['ok']) && $c_json['ok']) {
+                                        $chunk_success = true;
+                                    } else {
+                                        sleep(1 + $retry);
+                                    }
+                                }
+                                @unlink($tmp_chunk);
+                                
+                                if (!$chunk_success) {
+                                    $ok = false;
+                                    break;
+                                }
+                                $index++;
+                            }
+                            fclose($fp);
+                            
+                            if ($ok) {
+                                $ch = curl_init('https://data.hongdolab.com/api/upload_video.php?action=complete');
+                                curl_setopt_array($ch, [
+                                    CURLOPT_RETURNTRANSFER => true,
+                                    CURLOPT_POST => true,
+                                    CURLOPT_POSTFIELDS => ['upload_id' => $upload_id],
+                                    CURLOPT_TIMEOUT => 300,
+                                    CURLOPT_SSL_VERIFYPEER => false,
+                                    CURLOPT_SSL_VERIFYHOST => 0
+                                ]);
+                                $comp_res = curl_exec($ch);
+                                curl_close($ch);
+                                $comp_json = $comp_res ? json_decode($comp_res, true) : null;
+                                if (!empty($comp_json['url'])) {
+                                    return ensure_https_url($comp_json['url']);
+                                }
+                            }
+                        }
+                    }
+                }
+                return false;
+            }
+        }
 
         if (!function_exists('get_system_site_url')) {
             function get_system_site_url($pdo) {
@@ -1520,18 +1616,19 @@ do {
                 continue;
             }
 
-            $zp_cdn = false;
-            for ($cdn_retry = 0; $cdn_retry < 5 && !$zp_cdn; $cdn_retry++) {
-                $zp_cdn = upload_file_to_hongdolab_cdn($temp_res['path']);
-                if (!$zp_cdn) sleep(2 * ($cdn_retry + 1));
+            $ext = pathinfo($temp_res['name'] ?? 'media.mp4', PATHINFO_EXTENSION) ?: 'mp4';
+            $unique_id = $post['id'] . '_' . bin2hex(random_bytes(4));
+            $dest_filename = 'buf_drive_' . $unique_id . '.' . $ext;
+            $dest_path = $upload_dir . $dest_filename;
+            
+            if (!@copy($temp_res['path'], $dest_path)) {
+                $dest_path = $temp_res['path'];
             }
+            @unlink($temp_res['path']);
 
-            if ($zp_cdn) {
-                $public_media_url = $zp_cdn;
-            } else {
-                marKAsFailed($pdo, $post['id'], "Không thể upload tệp video từ Google Drive lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
-                continue;
-            }
+            $domain = get_system_site_url($pdo);
+            $rel_p = (strpos($dest_path, 'uploads/') !== false) ? ('uploads/' . basename($dest_path)) : ('uploads/tmp/' . basename($dest_path));
+            $public_media_url = ensure_https_url($domain . '/' . $rel_p);
             $t_title_override = pathinfo($temp_res['name'], PATHINFO_FILENAME);
         } elseif ($is_drive) {
             if (!empty($buf_media_cache[$raw_media])) {
@@ -1555,18 +1652,19 @@ do {
                     continue;
                 }
 
-                $zp_cdn = false;
-                for ($cdn_retry = 0; $cdn_retry < 5 && !$zp_cdn; $cdn_retry++) {
-                    $zp_cdn = upload_file_to_hongdolab_cdn($temp_res['path']);
-                    if (!$zp_cdn) sleep(2 * ($cdn_retry + 1));
+                $ext = pathinfo($temp_res['name'] ?? 'media.mp4', PATHINFO_EXTENSION) ?: 'mp4';
+                $unique_id = $post['id'] . '_' . bin2hex(random_bytes(4));
+                $dest_filename = 'buf_drive_' . $unique_id . '.' . $ext;
+                $dest_path = $upload_dir . $dest_filename;
+                
+                if (!@copy($temp_res['path'], $dest_path)) {
+                    $dest_path = $temp_res['path'];
                 }
+                @unlink($temp_res['path']);
 
-                if ($zp_cdn) {
-                    $public_media_url = $zp_cdn;
-                } else {
-                    marKAsFailed($pdo, $post['id'], "Không thể upload tệp video Google Drive lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
-                    continue;
-                }
+                $domain = get_system_site_url($pdo);
+                $rel_p = (strpos($dest_path, 'uploads/') !== false) ? ('uploads/' . basename($dest_path)) : ('uploads/tmp/' . basename($dest_path));
+                $public_media_url = ensure_https_url($domain . '/' . $rel_p);
                 $t_title_override = pathinfo($temp_res['name'], PATHINFO_FILENAME);
 
                 if ($public_media_url) {
@@ -1587,71 +1685,17 @@ do {
                 $file_content = @file_get_contents($tik_data['download_url']);
                 if ($file_content) {
                     file_put_contents($dest_path, $file_content);
-                    if (file_exists($dest_path) && filesize($dest_path) > 1000) {
-                        $zp_cdn = false;
-                        for ($cdn_retry = 0; $cdn_retry < 2 && !$zp_cdn; $cdn_retry++) {
-                            $zp_cdn = upload_file_to_hongdolab_cdn($dest_path);
-                            if (!$zp_cdn) sleep(1);
-                        }
-
-                        if ($zp_cdn) {
-                            $public_media_url = $zp_cdn;
-                        } else {
-                            @unlink($dest_path);
-                            marKAsFailed($pdo, $post['id'], "Không thể upload tệp video TikTok lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
-                            continue;
-                        }
-                    }
                 }
+                $domain = get_system_site_url($pdo);
+                $public_media_url = ensure_https_url($domain . '/uploads/' . $dest_filename);
             }
         } else {
             if (!empty($raw_media)) {
-                $local_file_to_upload = null;
-
                 if (strpos($raw_media, 'http') === 0) {
-                    // Nếu là URL http(s), kiểm tra xem có thuộc server local/fbweb không
-                    $domain = get_system_site_url($pdo);
-                    $domain_host = parse_url($domain, PHP_URL_HOST);
-                    $media_host = parse_url($raw_media, PHP_URL_HOST);
-
-                    if (empty($media_host) || $media_host === $domain_host || strpos($raw_media, '/uploads/') !== false) {
-                        // Tệp nằm trên server local => Tìm file local tương ứng để upload lên CDN data.hongdolab.com
-                        $parsed_path = parse_url($raw_media, PHP_URL_PATH);
-                        $relative_path = ltrim($parsed_path, '/');
-                        $candidate = __DIR__ . '/../' . $relative_path;
-                        if (file_exists($candidate)) {
-                            $local_file_to_upload = $candidate;
-                        }
-                    } else {
-                        // Là URL ngoài internet => giữ nguyên
-                        $public_media_url = ensure_https_url($raw_media);
-                    }
+                    $public_media_url = ensure_https_url($raw_media);
                 } else {
-                    // Là đường dẫn tương đối (ví dụ: uploads/buf_xxx.jpg)
-                    $clean_rel = ltrim($raw_media, '/');
-                    $candidate1 = __DIR__ . '/../' . $clean_rel;
-                    $candidate2 = $upload_dir . basename($clean_rel);
-                    if (file_exists($candidate1)) {
-                        $local_file_to_upload = $candidate1;
-                    } elseif (file_exists($candidate2)) {
-                        $local_file_to_upload = $candidate2;
-                    }
-                }
-
-                if ($local_file_to_upload && file_exists($local_file_to_upload)) {
-                    $zp_cdn = upload_file_to_hongdolab_cdn($local_file_to_upload);
-                    if ($zp_cdn) {
-                        $public_media_url = $zp_cdn;
-                    }
-                }
-
-                if (empty($public_media_url)) {
-                    if (strpos($raw_media, 'http') === 0) {
-                        $public_media_url = ensure_https_url($raw_media);
-                    } elseif (!empty(trim($raw_media))) {
-                        $domain = get_system_site_url($pdo);
-                        $public_media_url = ensure_https_url($domain . '/' . ltrim($raw_media, '/'));
-                    }
+                    $domain = get_system_site_url($pdo);
+                    $public_media_url = ensure_https_url($domain . '/' . ltrim($raw_media, '/'));
                 }
             }
         }
