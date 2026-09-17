@@ -130,7 +130,7 @@ try {
     }
 } catch (Exception $e) {}
 
-// --- TỰ ĐỘNG QUÉT SĐT TỪ TIN NHẮN CŨ (Chạy ngầm 200 khách hàng mỗi 5 phút) ---
+// --- TỰ ĐỘNG QUÉT SĐT TỪ TIN NHẮN CŨ (Giới hạn tối đa 3 tài khoản/lượt để bảo vệ CPU VPS) ---
 try {
     $stmt_scan_time = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'last_auto_phone_scan_time'");
     $last_auto_scan = $stmt_scan_time ? (int)$stmt_scan_time->fetchColumn() : 0;
@@ -139,8 +139,8 @@ try {
         $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('last_auto_phone_scan_time', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
             ->execute([time(), time()]);
             
-        // Lấy danh sách account_id hoạt động để quét
-        $stmt_accs = $pdo->query("SELECT DISTINCT u.account_id FROM pages p JOIN users u ON p.user_id = u.id");
+        // Lấy tối đa 3 account_id hoạt động để quét xoay vòng, không spawn hàng chục tiến trình cùng lúc
+        $stmt_accs = $pdo->query("SELECT DISTINCT u.account_id FROM pages p JOIN users u ON p.user_id = u.id ORDER BY RAND() LIMIT 3");
         $active_accs = $stmt_accs->fetchAll(PDO::FETCH_COLUMN);
         
         if (!empty($active_accs)) {
@@ -157,7 +157,7 @@ try {
                     exec("nohup \"$php_bin\" \"$script\" \"$aid\" > /dev/null 2>&1 &");
                 }
             }
-            echo "  [AUTO-SCAN] Da kich hoat tu dong quet SĐT ngam cho active accounts.\n";
+            echo "  [AUTO-SCAN] Da kich hoat tu dong quet SĐT ngam (max 3 accs).\n";
         }
     }
 } catch (Exception $e) {
@@ -170,10 +170,10 @@ try {
 } catch (Exception $e) {}
 
 // Cấu hình giới hạn luồng cho máy chủ (Throttling an toàn cho RAM & CPU)
-$MAX_WORKERS = 15;
+$MAX_WORKERS = 10;
 try {
     $res_limit = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_publish_workers'")->fetchColumn();
-    if ($res_limit) $MAX_WORKERS = min(25, max(5, (int)$res_limit));
+    if ($res_limit) $MAX_WORKERS = min(25, max(3, (int)$res_limit));
 } catch (Exception $e) {}
 
 // Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động
