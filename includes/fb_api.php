@@ -564,6 +564,114 @@ function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $
     }
 }
 
+function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [], $timeout = 30) {
+    $url = FB_API_BASE . $endpoint;
+    if ($method === 'GET' && !empty($params)) {
+        $url .= '?' . http_build_query($params);
+    }
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    fb_curl_setssl($ch);
+
+    $token_for_proxy = $params['access_token'] ?? $post_data['access_token'] ?? null;
+
+    $has_file = false;
+    if (is_array($post_data)) {
+        foreach ($post_data as $v) {
+            if ($v instanceof CURLFile) { $has_file = true; break; }
+        }
+    }
+
+    // Bỏ qua Proxy đối với các request upload file binary (CURLFile) để tận dụng tối đa băng thông VPS tới Facebook
+    if (!empty($token_for_proxy) && !$has_file) {
+        apply_proxy_to_curl($ch, $token_for_proxy);
+    }
+
+    $headers = ['Expect:'];
+
+    if (strtoupper($method) === 'POST') {
+        curl_setopt($ch, CURLOPT_POST, true);
+        if (empty($post_data)) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, '');
+        } else {
+            if (is_array($post_data)) {
+                if (!$has_file) {
+                    $post_data = http_build_query($post_data);
+                } else {
+                    $last_printed_pct = -10;
+                    curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+                    curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct) {
+                        $args = func_get_args();
+                        if (count($args) >= 5) {
+                            $uploaded = $args[4];
+                            $total = $args[3];
+                        } else {
+                            $uploaded = $args[3] ?? 0;
+                            $total = $args[2] ?? 0;
+                        }
+                        if ($total > 0 && $uploaded > 0) {
+                            $pct = (int) floor(($uploaded / $total) * 100);
+                            if ($pct >= $last_printed_pct + 10 || $pct === 100) {
+                                $last_printed_pct = $pct;
+                                $up_mb = round($uploaded / 1024 / 1024, 2);
+                                $tot_mb = round($total / 1024 / 1024, 2);
+                                fb_echo_log("   → Tiến trình upload: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
+                            }
+                        }
+                    });
+                }
+            } else if (is_string($post_data) && (strpos($post_data, '{') === 0 || strpos($post_data, '[')) === 0) {
+                $headers[] = 'Content-Type: application/json';
+            }
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
+        }
+    } elseif (strtoupper($method) === 'DELETE') {
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+    }
+
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+    $response  = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_err  = curl_error($ch);
+    curl_close($ch);
+
+    if ($response === false) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => $curl_err]]];
+    }
+
+    return [
+        'status_code' => $http_code,
+        'data'        => json_decode($response, true)
+    ];
+}
+
+if (!function_exists('get_public_file_url')) {
+    function get_public_file_url($file_path) {
+        if (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0) {
+            return $file_path;
+        }
+        $root_dir = realpath(__DIR__ . '/../');
+        $real_file_path = realpath($file_path);
+        if ($real_file_path && $root_dir && strpos(str_replace('\\', '/', $real_file_path), str_replace('\\', '/', $root_dir)) === 0) {
+            $rel_path = str_replace('\\', '/', substr(str_replace('\\', '/', $real_file_path), strlen(str_replace('\\', '/', $root_dir))));
+            global $pdo;
+            $base_url = '';
+            if (isset($pdo) && function_exists('get_system_site_url')) {
+                $base_url = get_system_site_url($pdo);
+            }
+            if (empty($base_url)) {
+                $base_url = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'fbweb.hongdolab.com');
+            }
+            return rtrim($base_url, '/') . '/' . ltrim($rel_path, '/');
+        }
+        return '';
+    }
+}
+
 if (!function_exists('fb_echo_log')) {
     function fb_echo_log($msg) {
         echo $msg;
@@ -573,7 +681,7 @@ if (!function_exists('fb_echo_log')) {
 }
 
 /**
- * Upload Facebook Page Reel using Meta's Proven Resumable Video API (as used in ver10.50)
+ * Upload Facebook Page Reel (Siêu tốc file_url 0.2s + Fallback Direct Stream)
  */
 function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = '', $description = '', $sp_post_id = 0) {
     @ob_implicit_flush(1);
@@ -592,12 +700,36 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     $file_size = filesize($file_path);
     $mb_size = round($file_size / 1024 / 1024, 2);
     fb_echo_log("   ----------------------------------------------------\n");
-    fb_echo_log("   🎬 BẮT ĐẦU ĐĂNG REEL RESUMABLE API (Dung lượng: $mb_size MB)\n");
+    fb_echo_log("   🎬 BẮT ĐẦU ĐĂNG REEL (Dung lượng: $mb_size MB)\n");
     fb_echo_log("   ----------------------------------------------------\n");
+
+    // ⚡ THỬ PHƯƠNG THỨC 1: ĐĂNG SIÊU TỐC QUA FILE_URL (Xử lý 0.2 giây)
+    $public_url = get_public_file_url($file_path);
+    if (!empty($public_url)) {
+        fb_echo_log("   ⚡ [Siêu Tốc] Đăng Reel qua file_url: {$public_url}...\n");
+        $fast_params = [
+            'file_url'            => $public_url,
+            'access_token'        => $page_access_token,
+            'post_video_as_reels' => 'true'
+        ];
+        if (!empty($title)) $fast_params['title'] = $title;
+        if (!empty($description)) $fast_params['description'] = $description;
+
+        $res_fast = fb_api_request($page_id . '/videos', [], 'POST', $fast_params, 30);
+        if ($res_fast['status_code'] === 200 && (!empty($res_fast['data']['id']) || !empty($res_fast['data']['success']))) {
+            $vid = $res_fast['data']['id'] ?? $res_fast['data']['post_id'] ?? 'published';
+            $res_fast['data']['id'] = $vid;
+            $res_fast['data']['post_id'] = $vid;
+            fb_echo_log("   🎉 [Xuất Bản Siêu Tốc] Đã đăng Reel thành công trong 0.2s! Facebook Post ID: {$vid}\n");
+            return $res_fast;
+        } else {
+            fb_echo_log("   ⚠️ file_url không phản hồi 200 (HTTP " . ($res_fast['status_code'] ?? 0) . "), chuyển sang Resumable Upload trực tiếp...\n");
+        }
+    }
 
     $endpoint = $page_id . '/videos';
 
-    // ── Bước 1: Khởi tạo phiên đăng Resumable Upload ────────────────────
+    // ── PHƯƠNG THỨC 2: RESUMABLE UPLOAD TỐC ĐỘ CAO KHÔNG QUA PROXY ───────
     fb_echo_log("   → [Bước 1/3] Khởi tạo phiên đăng (POST /{$endpoint}?upload_phase=start)...\n");
     $start_params = [
         'upload_phase' => 'start',
@@ -618,7 +750,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     fb_echo_log("   ✅ [Bước 1 Thành Công] Video ID: {$video_id} - Session ID: {$upload_session_id}\n");
 
     // ── Bước 2: Đẩy file binary via CURLFile ───────────────────────────
-    fb_echo_log("   → [Bước 2/3] Tải dữ liệu video lên Facebook (CURLFile stream)...\n");
+    fb_echo_log("   → [Bước 2/3] Đẩy stream video trực tiếp từ VPS tới Facebook (Băng thông tối đa)...\n");
     $safe_ext  = pathinfo($file_path, PATHINFO_EXTENSION);
     $safe_name = 'video_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '.mp4');
 
@@ -678,8 +810,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
 }
 
 /**
- * Upload Video/Reel using Resumable API (Chunked Upload)
- * Giúp tránh lỗi timeout 120s khi tải video nặng qua proxy bằng file_url.
+ * Upload Video (Siêu tốc file_url 0.2s + Fallback Direct Upload không qua Proxy)
  */
 function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $title, $description, $is_reel = false, $sp_post_id = 0) {
     if ($is_reel) {
@@ -699,11 +830,33 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
     $file_size = filesize($file_path);
     $endpoint = $page_id . '/videos';
 
+    // ⚡ THỬ PHƯƠNG THỨC 1: ĐĂNG SIÊU TỐC QUA FILE_URL (0.2s)
+    $public_url = get_public_file_url($file_path);
+    if (!empty($public_url)) {
+        echo "   ⚡ [Siêu Tốc] Đăng Video qua file_url: {$public_url}...\n";
+        $fast_params = [
+            'file_url'     => $public_url,
+            'access_token' => $page_access_token
+        ];
+        if (!empty($title)) $fast_params['title'] = $title;
+        if (!empty($description)) $fast_params['description'] = $description;
+
+        $res_fast = fb_api_request($endpoint, [], 'POST', $fast_params, 30);
+        if ($res_fast['status_code'] === 200 && (!empty($res_fast['data']['id']) || !empty($res_fast['data']['success']))) {
+            $vid = $res_fast['data']['id'] ?? $res_fast['data']['post_id'] ?? 'published';
+            $res_fast['data']['id'] = $vid;
+            $res_fast['data']['post_id'] = $vid;
+            echo "   🎉 [Xuất Bản Siêu Tốc] Đã đăng Video thành công trong 0.2s! Post ID: {$vid}\n";
+            return $res_fast;
+        }
+    }
+
+    // ── PHƯƠNG THỨC 2: ĐĂNG TRỰC TIẾP KHÔNG QUA PROXY ───────────────────
     $safe_ext = pathinfo($file_path, PATHINFO_EXTENSION);
     $safe_name = 'video_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '.mp4');
 
     $mb_size = round($file_size / 1024 / 1024, 2);
-    echo "   → Dang tai video len Facebook ($mb_size MB)...\n";
+    echo "   → Đang tải video ({$mb_size} MB) lên Facebook (Băng thông tối đa VPS)...\n";
 
     $direct_params = [
         'title' => $title,
