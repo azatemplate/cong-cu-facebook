@@ -121,9 +121,13 @@ try {
     }
 } catch (Exception $e) {}
 
-// --- TỰ ĐỘNG KHÔI PHỤC BÀI PENDING BỊ VƯỢT MAX RETRIES VỀ RETRY_COUNT = 0 ---
+// --- TỰ ĐỘNG KHÔI PHỤC BÀI PENDING BỊ VƯỢT MAX RETRIES VỀ RETRY_COUNT = 0 (Chạy 1 lần/ngày) ---
 try {
-    $pdo->exec("UPDATE scheduled_posts SET retry_count = 0 WHERE status = 'pending' AND retry_count >= 3");
+    $retry_reset_flag = sys_get_temp_dir() . '/fb_retry_reset_' . date('Y-m-d') . '.done';
+    if (!file_exists($retry_reset_flag)) {
+        $pdo->exec("UPDATE scheduled_posts SET retry_count = 0 WHERE status = 'pending' AND retry_count >= 3");
+        @file_put_contents($retry_reset_flag, date('Y-m-d H:i:s'));
+    }
 } catch (Exception $e) {}
 
 // --- TỰ ĐỘNG QUÉT SĐT TỪ TIN NHẮN CŨ (Chạy ngầm 200 khách hàng mỗi 5 phút) ---
