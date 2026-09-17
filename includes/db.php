@@ -433,6 +433,7 @@ function ensure_db_schema_ready($pdo) {
         $add_idx($pdo, 'scheduled_posts', 'idx_acc_sched', 'account_id, scheduled_time');
         $add_idx($pdo, 'scheduled_posts', 'idx_post_type_sched', 'post_type, scheduled_time');
         $add_idx($pdo, 'scheduled_posts', 'idx_updated_at', 'updated_at');
+        $add_idx($pdo, 'scheduled_posts', 'idx_status_retry', 'status, retry_count');
         $add_idx($pdo, 'pages', 'idx_user_id', 'user_id');
         $add_idx($pdo, 'pages', 'idx_page_id', 'page_id');
         $add_idx($pdo, 'users', 'idx_account_id', 'account_id');
