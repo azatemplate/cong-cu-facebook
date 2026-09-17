@@ -6,6 +6,9 @@
 // NEVER hardcode passwords or secrets here.
 // ============================================================
 
+// Đảm bảo tất cả file/thư mục được tạo ra (bởi CLI Cron root hay Web www) đều có quyền đọc/ghi 0777
+@umask(0);
+
 // Tắt hiển thị các cảnh báo Deprecated (như curl_close) và Notice trực tiếp ra màn hình để tránh làm hỏng JSON response
 error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED & ~E_NOTICE);
 ini_set('display_errors', '0');
