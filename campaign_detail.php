@@ -9,18 +9,23 @@ function trigger_campaign_publisher_worker($pdo, $campaign_id) {
         $disabled_funcs = array_map('trim', explode(',', strtolower(ini_get('disable_functions'))));
         $exec_enabled = function_exists('exec') && !in_array('exec', $disabled_funcs);
         
+        $camp_key = 'camp_' . (int)$campaign_id;
+
         if ($exec_enabled) {
             if (!function_exists('get_php_cli_bin')) @include_once __DIR__ . '/includes/php_cli.php';
             if (function_exists('get_php_cli_bin')) {
                 $php_bin = get_php_cli_bin();
-                $script = __DIR__ . '/cron/start_publish.php';
-                $cid_arg = (int)$campaign_id;
-                if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') @pclose(@popen("start /B \"\" \"$php_bin\" \"$script\" \"$cid_arg\"", "r"));
-                else @exec("nohup \"$php_bin\" \"$script\" \"$cid_arg\" > /dev/null 2>&1 &");
+                $script = __DIR__ . '/cron/publish_worker.php';
+                if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+                    @pclose(@popen("start /B \"\" \"$php_bin\" \"$script\" \"$camp_key\" \"1\"", "r"));
+                } else {
+                    @exec("nohup \"$php_bin\" \"$script\" \"$camp_key\" \"1\" > /dev/null 2>&1 &");
+                }
+                return;
             }
         }
 
-        // Local HTTP cURL fallback launcher
+        // Local HTTP cURL fallback launcher: 1 Campaign = 1 Worker ONLY (Sequential execution)
         $base_url = '';
         if (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
             $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
@@ -35,22 +40,15 @@ function trigger_campaign_publisher_worker($pdo, $campaign_id) {
         }
 
         if (!empty($base_url) && $campaign_id) {
-            $stmt_c = $pdo->prepare("SELECT DISTINCT page_id, post_type FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending', 'failed', 'processing')");
-            $stmt_c->execute([$campaign_id]);
-            $chans = $stmt_c->fetchAll(PDO::FETCH_ASSOC);
-            foreach ($chans as $ch_row) {
-                $p_id = $ch_row['page_id'];
-                $uid = (strpos($ch_row['post_type'], 'Instagram') !== false) ? 'ig_' . $p_id : $p_id;
-                $url = rtrim($base_url, '/') . "/run_worker.php?type=publish&page_id=" . urlencode($p_id) . "&user_id=" . urlencode($uid);
-                $ch = curl_init($url);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500);
-                curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                @curl_exec($ch);
-                @curl_close($ch);
-            }
+            $url = rtrim($base_url, '/') . "/run_worker.php?type=publish&page_id=" . urlencode($camp_key) . "&user_id=1";
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500);
+            curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            @curl_exec($ch);
+            @curl_close($ch);
         }
     } catch (Exception $e) {}
 }
