@@ -162,6 +162,8 @@ try {
     }
 } catch (Exception $e) {
     echo "Loi tu dong quet SĐT: " . $e->getMessage() . "\n";
+}
+
 // --- TỰ ĐỘNG RESET BÀI BỊ KẸT PROCESSING VỀ PENDING ---
 try {
     $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND (updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE) OR (fb_post_id IS NULL OR fb_post_id = ''))");
