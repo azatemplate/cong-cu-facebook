@@ -1584,8 +1584,12 @@ do {
             }
         }
 
-        $upload_dir = __DIR__ . '/../uploads/';
-        if (!is_dir($upload_dir)) @mkdir($upload_dir, 0777, true);
+        $upload_dir     = __DIR__ . '/../uploads/';
+        $upload_tmp_dir = __DIR__ . '/../uploads/tmp/';
+        if (!is_dir($upload_dir))     @mkdir($upload_dir, 0777, true);
+        if (!is_dir($upload_tmp_dir)) @mkdir($upload_tmp_dir, 0777, true);
+        @chmod($upload_dir, 0777);
+        @chmod($upload_tmp_dir, 0777);
 
         static $buf_media_cache = [];
 
@@ -1619,7 +1623,7 @@ do {
             $ext = pathinfo($temp_res['name'] ?? 'media.mp4', PATHINFO_EXTENSION) ?: 'mp4';
             $unique_id = $post['id'] . '_' . bin2hex(random_bytes(4));
             $dest_filename = 'buf_drive_' . $unique_id . '.' . $ext;
-            $dest_path = $upload_dir . $dest_filename;
+            $dest_path = $upload_tmp_dir . $dest_filename;
             
             if (!@copy($temp_res['path'], $dest_path)) {
                 $dest_path = $temp_res['path'];
@@ -1627,7 +1631,7 @@ do {
             @unlink($temp_res['path']);
 
             $domain = get_system_site_url($pdo);
-            $rel_p = (strpos($dest_path, 'uploads/') !== false) ? ('uploads/' . basename($dest_path)) : ('uploads/tmp/' . basename($dest_path));
+            $rel_p = (strpos($dest_path, 'uploads/tmp') !== false) ? ('uploads/tmp/' . basename($dest_path)) : ('uploads/' . basename($dest_path));
             $public_media_url = ensure_https_url($domain . '/' . $rel_p);
             $t_title_override = pathinfo($temp_res['name'], PATHINFO_FILENAME);
         } elseif ($is_drive) {
@@ -1655,7 +1659,7 @@ do {
                 $ext = pathinfo($temp_res['name'] ?? 'media.mp4', PATHINFO_EXTENSION) ?: 'mp4';
                 $unique_id = $post['id'] . '_' . bin2hex(random_bytes(4));
                 $dest_filename = 'buf_drive_' . $unique_id . '.' . $ext;
-                $dest_path = $upload_dir . $dest_filename;
+                $dest_path = $upload_tmp_dir . $dest_filename;
                 
                 if (!@copy($temp_res['path'], $dest_path)) {
                     $dest_path = $temp_res['path'];
@@ -1663,7 +1667,7 @@ do {
                 @unlink($temp_res['path']);
 
                 $domain = get_system_site_url($pdo);
-                $rel_p = (strpos($dest_path, 'uploads/') !== false) ? ('uploads/' . basename($dest_path)) : ('uploads/tmp/' . basename($dest_path));
+                $rel_p = (strpos($dest_path, 'uploads/tmp') !== false) ? ('uploads/tmp/' . basename($dest_path)) : ('uploads/' . basename($dest_path));
                 $public_media_url = ensure_https_url($domain . '/' . $rel_p);
                 $t_title_override = pathinfo($temp_res['name'], PATHINFO_FILENAME);
 
@@ -1680,14 +1684,14 @@ do {
             if ($tik_data && !empty($tik_data['download_url'])) {
                 $t_title_override = $tik_data['title'] ?? '';
                 $dest_filename = 'buf_tiktok_' . ($tik_data['video_id'] ?: uniqid()) . '.mp4';
-                $dest_path = $upload_dir . $dest_filename;
+                $dest_path = $upload_tmp_dir . $dest_filename;
 
                 $file_content = @file_get_contents($tik_data['download_url']);
                 if ($file_content) {
                     file_put_contents($dest_path, $file_content);
                 }
                 $domain = get_system_site_url($pdo);
-                $public_media_url = ensure_https_url($domain . '/uploads/' . $dest_filename);
+                $public_media_url = ensure_https_url($domain . '/uploads/tmp/' . $dest_filename);
             }
         } else {
             if (!empty($raw_media)) {
@@ -2011,7 +2015,9 @@ do {
         } else {
             $err_msg = $create_res['message'] ?? ($res['errors'][0]['message'] ?? 'Lỗi không xác định từ Buffer API');
             marKAsFailed($pdo, $post['id'], "Buffer API error: " . $err_msg, $sys_max_retries, $sys_retry_interval);
-        // File buf_drive_ / buf_tiktok_ giữ lại trong uploads/ 5 phút để Buffer API tải về, cron cleanup.php sẽ dọn dẹp sau
+        }
+
+        // File buf_drive_ / buf_tiktok_ trong uploads/tmp/ giữ lại 5 phút để Buffer API tải về, cron cleanup.php sẽ dọn dẹp sau 5 phút
         // Xong luồng Buffer, bỏ qua phần Facebook bên dưới
         continue;
     }
