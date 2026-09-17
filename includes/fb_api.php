@@ -587,83 +587,56 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     fb_echo_log("   ✅ [Bước 1 Thành Công] Video ID: {$video_id}\n");
     fb_echo_log("      Upload URL: {$upload_url}\n");
 
-    // ── Phase 2: Transfer video file (Resumable Chunked Upload) ─────────
+    // ── Phase 2: Transfer full video file in 1 direct cURL request ────────
     $real_size = filesize($file_path);
     $mb_size = round($real_size / 1024 / 1024, 2);
-    fb_echo_log("   → [Bước 2/3] Đang truyền video Reel ({$mb_size} MB) theo từng Chunk 4MB lên rupload.facebook.com...\n");
+    fb_echo_log("   → [Bước 2/3] Tải trực tiếp toàn bộ video Reel ({$mb_size} MB) lên rupload.facebook.com...\n");
 
-    $chunk_size = 4 * 1024 * 1024; // 4 MB chunks for fast speed & low RAM
-    $fp = @fopen($file_path, 'rb');
-    if (!$fp) {
+    $file_bytes = @file_get_contents($file_path);
+    if ($file_bytes === false) {
         return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video trên server.']]];
     }
 
-    $offset = 0;
-    $last_printed_pct = -10;
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $upload_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 600);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $file_bytes);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: OAuth {$page_access_token}",
+        "Content-Type: application/octet-stream",
+        "offset: 0",
+        "file_size: {$real_size}",
+        "Expect:"
+    ]);
 
-    while (!feof($fp) && $offset < $real_size) {
-        $chunk_data = fread($fp, $chunk_size);
-        $chunk_len = strlen($chunk_data);
-        if ($chunk_len === 0) break;
+    fb_curl_setssl($ch);
+    apply_proxy_to_curl($ch, $page_access_token);
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $upload_url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 300);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $chunk_data);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "Authorization: OAuth {$page_access_token}",
-            "Content-Type: application/octet-stream",
-            "offset: {$offset}",
-            "file_size: {$real_size}",
-            "Expect:"
-        ]);
+    set_time_limit(600);
+    $chunk_resRaw = curl_exec($ch);
+    $chunk_code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_err     = curl_error($ch);
+    curl_close($ch);
+    unset($file_bytes);
 
-        fb_curl_setssl($ch);
-        apply_proxy_to_curl($ch, $page_access_token);
-
-        set_time_limit(300);
-        $chunk_resRaw = curl_exec($ch);
-        $chunk_code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curl_err     = curl_error($ch);
-        curl_close($ch);
-        unset($chunk_data);
-
-        if ($chunk_code !== 200 && $chunk_code !== 206) {
-            fclose($fp);
-            $err_msg = "Upload phase 2 (chunk offset {$offset}) failed";
-            if ($curl_err) $err_msg .= " (cURL: $curl_err)";
-            $parsed = @json_decode($chunk_resRaw, true);
-            if ($parsed && isset($parsed['error']['message'])) {
-                $err_msg .= " - " . $parsed['error']['message'];
-            } elseif (!empty($chunk_resRaw)) {
-                $err_msg .= " - Body: " . substr(strip_tags($chunk_resRaw), 0, 300);
-            }
-            fb_echo_log("   ❌ [Bước 2 Thất Bại] HTTP $chunk_code - $err_msg\n");
-            return ['status_code' => $chunk_code, 'data' => ['error' => ['message' => $err_msg]]];
+    if ($chunk_code !== 200 && $chunk_code !== 206) {
+        $err_msg = 'Upload phase 2 (transfer) failed';
+        if ($curl_err) $err_msg .= " (cURL: $curl_err)";
+        $parsed = @json_decode($chunk_resRaw, true);
+        if ($parsed && isset($parsed['error']['message'])) {
+            $err_msg .= " - " . $parsed['error']['message'];
+        } elseif (!empty($chunk_resRaw)) {
+            $err_msg .= " - Body: " . substr(strip_tags($chunk_resRaw), 0, 300);
         }
-
-        $offset += $chunk_len;
-        $pct = min(100, (int) floor(($offset / $real_size) * 100));
-        if ($pct >= $last_printed_pct + 10 || $pct === 100) {
-            $last_printed_pct = $pct;
-            $up_mb = round($offset / 1024 / 1024, 2);
-            fb_echo_log("   → Tiến trình upload Reel: {$pct}% ({$up_mb} MB / {$mb_size} MB)\n");
-
-            if ($sp_post_id > 0 && function_exists('update_post_progress')) {
-                global $pdo;
-                if (isset($pdo)) {
-                    update_post_progress($pdo, $sp_post_id, "📤 Đang truyền video Reel ({$pct}% - {$up_mb}/{$mb_size} MB)");
-                }
-            }
-        }
+        fb_echo_log("   ❌ [Bước 2 Thất Bại] HTTP $chunk_code - $err_msg\n");
+        return ['status_code' => $chunk_code, 'data' => ['error' => ['message' => $err_msg]]];
     }
-    fclose($fp);
 
-    fb_echo_log("   ✅ [Bước 2 Thành Công] Tải toàn bộ video Reel lên rupload thành công (HTTP 200).\n");
+    fb_echo_log("   ✅ [Bước 2 Thành Công] Đã tải xong video Reel lên rupload.facebook.com (HTTP {$chunk_code}).\n");
 
     // ── Phase 3: Finish and Publish Reel ────────────────────────────────
     fb_echo_log("   → [Bước 3/3] Đang hoàn tất xuất bản Reel (upload_phase: finish, video_state: PUBLISHED)...\n");
