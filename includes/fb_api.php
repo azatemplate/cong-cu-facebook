@@ -588,17 +588,39 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     fb_echo_log("      Upload URL: {$upload_url}\n");
 
     // ── Phase 2: Transfer video file ────────────────────────────────────
-    fb_echo_log("   → [Bước 2/4] Đang truyền dữ liệu video lên rupload.facebook.com...\n");
+    fb_echo_log("   → [Bước 2/3] Đang truyền dữ liệu video lên rupload.facebook.com...\n");
 
+    $file_url_to_use = '';
     if ($is_remote_url) {
-        fb_echo_log("   → [Bước 2 Remote] Truyền video qua header file_url: {$file_path}...\n");
+        $file_url_to_use = $file_path;
+    } else {
+        $root_dir = realpath(__DIR__ . '/../');
+        $real_file_path = realpath($file_path);
+        if ($real_file_path && $root_dir && strpos(str_replace('\\', '/', $real_file_path), str_replace('\\', '/', $root_dir)) === 0) {
+            $rel_path = str_replace('\\', '/', substr(str_replace('\\', '/', $real_file_path), strlen(str_replace('\\', '/', $root_dir))));
+            global $pdo;
+            $base_url = '';
+            if (isset($pdo) && function_exists('get_system_site_url')) {
+                $base_url = get_system_site_url($pdo);
+            }
+            if (empty($base_url)) {
+                $base_url = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'fbweb.hongdolab.com');
+            }
+            $file_url_to_use = rtrim($base_url, '/') . '/' . ltrim($rel_path, '/');
+        }
+    }
+
+    $uploaded_via_file_url = false;
+
+    if (!empty($file_url_to_use)) {
+        fb_echo_log("   → [Bước 2 Remote] Đăng siêu tốc qua header file_url: {$file_url_to_use}...\n");
         $ch_cdn = curl_init();
         curl_setopt($ch_cdn, CURLOPT_URL, $upload_url);
         curl_setopt($ch_cdn, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch_cdn, CURLOPT_POST, true);
         curl_setopt($ch_cdn, CURLOPT_HTTPHEADER, [
             "Authorization: OAuth {$page_access_token}",
-            "file_url: {$file_path}"
+            "file_url: {$file_url_to_use}"
         ]);
         curl_setopt($ch_cdn, CURLOPT_TIMEOUT, 120);
         fb_curl_setssl($ch_cdn);
@@ -608,14 +630,15 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         $cdn_code   = curl_getinfo($ch_cdn, CURLINFO_HTTP_CODE);
         curl_close($ch_cdn);
 
-        if ($cdn_code !== 200) {
-            $parsed = @json_decode($cdn_resRaw, true);
-            $err_msg = $parsed['error']['message'] ?? substr(strip_tags($cdn_resRaw), 0, 300);
-            fb_echo_log("   ❌ [Bước 2 Thất Bại] HTTP $cdn_code - $err_msg\n");
-            return ['status_code' => $cdn_code, 'data' => ['error' => ['message' => $err_msg]]];
+        if ($cdn_code === 200) {
+            $uploaded_via_file_url = true;
+            fb_echo_log("   ✅ [Bước 2 Thành Công] Facebook đã tải video qua file_url thành công trong 1-2 giây! (HTTP 200)\n");
+        } else {
+            fb_echo_log("   ⚠️ [Bước 2 file_url Thất Bại] HTTP $cdn_code - Chuyển sang fallback upload binary...\n");
         }
-        fb_echo_log("   ✅ [Bước 2 Thành Công] Đã truyền video qua file_url thành công (HTTP 200).\n");
-    } else {
+    }
+
+    if (!$uploaded_via_file_url) {
         $real_size = filesize($file_path);
         fb_echo_log("   → [Bước 2 Binary] Upload file video binary trực tiếp (offset: 0, file_size: {$real_size} bytes)...\n");
         $file_bytes = @file_get_contents($file_path);
