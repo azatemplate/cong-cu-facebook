@@ -624,7 +624,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     });
 
     fb_curl_setssl($ch);
-    apply_proxy_to_curl($ch, $page_access_token);
+    // Phase 2 binary transfer uses direct VPS connection for maximum speed (Phase 1 & Phase 3 still use Proxy via fb_api_request)
 
     set_time_limit(600);
     $chunk_resRaw = curl_exec($ch);
