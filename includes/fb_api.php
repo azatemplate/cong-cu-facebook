@@ -510,6 +510,7 @@ function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $
         curl_setopt($ch, CURLOPT_INFILESIZE, $file_size);
         curl_setopt($ch, CURLOPT_TIMEOUT, 300);
         fb_curl_setssl($ch);
+        apply_proxy_to_curl($ch, $page_access_token);
 
         set_time_limit(600);
         $chunk_resRaw = curl_exec($ch);
@@ -536,10 +537,116 @@ function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $
 }
 
 /**
+ * Upload Facebook Page Reel using Meta's Official 3-Step Video Reels Publishing API
+ * Protocol:
+ * 1. POST /{page-id}/video_reels?upload_phase=start -> Returns video_id & upload_url
+ * 2. POST {upload_url} with binary bytes (Header Authorization, offset, file_size) -> rupload.facebook.com
+ * 3. POST /{page-id}/video_reels?upload_phase=finish&video_id=...&video_state=PUBLISHED&description=... -> Publishes Reel
+ */
+function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = '', $description = '') {
+    if (!file_exists($file_path)) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => 'File video Reel không tồn tại trên máy chủ.']]];
+    }
+
+    $file_size = filesize($file_path);
+    $mb_size = round($file_size / 1024 / 1024, 2);
+    echo "   → Bat dau dang Reel (Meta 3-step Page Reel API - $mb_size MB)...\n";
+
+    // ── Phase 1: Start upload session ───────────────────────────────────
+    $res1 = fb_api_request($page_id . '/video_reels', [
+        'upload_phase' => 'start',
+        'access_token' => $page_access_token
+    ], 'POST', [], 60);
+
+    if ($res1['status_code'] !== 200 || empty($res1['data']['video_id']) || empty($res1['data']['upload_url'])) {
+        echo "   → Lỗi Phase 1 (Start Reel): Status " . ($res1['status_code'] ?? 0) . " - " . json_encode($res1['data'] ?? []) . "\n";
+        return $res1;
+    }
+
+    $video_id   = $res1['data']['video_id'];
+    $upload_url = $res1['data']['upload_url'];
+
+    echo "   → Phase 1 OK (Video ID: $video_id). Dang truyen file len Facebook rupload...\n";
+
+    // ── Phase 2: Transfer binary video file ──────────────────────────────
+    $fp = fopen($file_path, 'rb');
+    if (!$fp) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể mở file video để upload Reel.']]];
+    }
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $upload_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: OAuth {$page_access_token}",
+        "Content-Type: application/octet-stream",
+        "offset: 0",
+        "file_size: {$file_size}"
+    ]);
+    curl_setopt($ch, CURLOPT_UPLOAD, true);
+    curl_setopt($ch, CURLOPT_INFILE, $fp);
+    curl_setopt($ch, CURLOPT_INFILESIZE, $file_size);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 600);
+    curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
+    curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
+    fb_curl_setssl($ch);
+    apply_proxy_to_curl($ch, $page_access_token);
+
+    set_time_limit(600);
+    $chunk_resRaw = curl_exec($ch);
+    $chunk_code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_err     = curl_error($ch);
+    curl_close($ch);
+    fclose($fp);
+
+    if ($chunk_code !== 200) {
+        $err_msg = 'Upload phase 2 (transfer) failed';
+        if ($curl_err) $err_msg .= " (cURL: $curl_err)";
+        $parsed  = @json_decode($chunk_resRaw, true);
+        if ($parsed && isset($parsed['error']['message'])) $err_msg = $parsed['error']['message'];
+        echo "   → Lỗi Phase 2 (Transfer Reel): HTTP $chunk_code - $err_msg\n";
+        return ['status_code' => $chunk_code, 'data' => ['error' => ['message' => $err_msg]]];
+    }
+
+    echo "   → Phase 2 OK. Hoan tat va Xuat ban Reel...\n";
+
+    // ── Phase 3: Finish and Publish Reel ────────────────────────────────
+    $finish_params = [
+        'upload_phase' => 'finish',
+        'video_id'     => $video_id,
+        'video_state'  => 'PUBLISHED',
+        'access_token' => $page_access_token
+    ];
+    if (!empty($description)) {
+        $finish_params['description'] = $description;
+    }
+    if (!empty($title)) {
+        $finish_params['title'] = $title;
+    }
+
+    $res3 = fb_api_request($page_id . '/video_reels', [], 'POST', $finish_params, 60);
+
+    echo "   → Ket qua dang Reel: Status " . ($res3['status_code'] ?? '0') . " - Data: " . json_encode($res3['data'] ?? []) . "\n";
+
+    if ($res3['status_code'] === 200) {
+        if (empty($res3['data']['id']) && empty($res3['data']['post_id'])) {
+            $res3['data']['id'] = !empty($res3['data']['video_id']) ? $res3['data']['video_id'] : $video_id;
+        }
+    }
+
+    return $res3;
+}
+
+/**
  * Upload Video/Reel using Resumable API (Chunked Upload)
  * Giúp tránh lỗi timeout 120s khi tải video nặng qua proxy bằng file_url.
  */
 function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $title, $description, $is_reel = false) {
+    if ($is_reel) {
+        return fb_upload_page_reel($page_id, $page_access_token, $file_path, $title, $description);
+    }
+
     if (!file_exists($file_path)) {
         return ['status_code' => 0, 'data' => ['error' => ['message' => 'File video không tồn tại trên máy chủ.']]];
     }
@@ -559,9 +666,6 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
         'source' => new CURLFile($file_path, 'application/octet-stream', $safe_name),
         'access_token' => $page_access_token
     ];
-    if ($is_reel) {
-        $direct_params['post_video_as_reels'] = 'true';
-    }
 
     $res = fb_api_request($endpoint, [], 'POST', $direct_params, 600);
     echo "   → Ket qua dang video: Status " . ($res['status_code'] ?? '0') . " - Data: " . json_encode($res['data'] ?? []) . "\n";

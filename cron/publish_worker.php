@@ -2637,7 +2637,17 @@ do {
         $tik_title = isset($tik_data['title']) ? $tik_data['title'] : '';
         $t_title_override = $tik_title;
 
-        $post_data['file_url'] = $tik_data['download_url'];
+        $file_content = @file_get_contents($tik_data['download_url']);
+        if (!$file_content) {
+            marKAsFailed($pdo, $post['id'], "Không thể tải trực tiếp file video TikTok.", $sys_max_retries, $sys_retry_interval);
+            continue;
+        }
+        $abs_media_path = sys_get_temp_dir() . '/' . uniqid('fb_tik_') . '.mp4';
+        file_put_contents($abs_media_path, $file_content);
+        $temp_drive_file = $abs_media_path;
+        $has_media = true;
+        $file_mime = 'video/mp4';
+        $file_name = 'tiktok_video.mp4';
     } else {
         $has_media = !empty($post['media_path']) && file_exists(__DIR__ . '/../' . $post['media_path']);
         if ($has_media) {
