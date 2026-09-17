@@ -390,7 +390,8 @@ if (!function_exists('upload_file_to_hongdolab_cdn')) {
                     curl_setopt_array($ch, [
                         CURLOPT_RETURNTRANSFER => true,
                         CURLOPT_POST => true,
-                        CURLOPT_POSTFIELDS => ['upload_id' => $upload_id],
+                        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                        CURLOPT_POSTFIELDS => json_encode(['upload_id' => $upload_id, 'filename' => $filename]),
                         CURLOPT_TIMEOUT => 300,
                         CURLOPT_PROXY => '',
                         CURLOPT_NOPROXY => '*',

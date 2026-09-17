@@ -35,6 +35,8 @@ $temp_dir   = is_dir($base_dir . '/uploads_tmp') ? ($base_dir . '/uploads_tmp/')
 
 if (!is_dir($upload_dir)) @mkdir($upload_dir, 0777, true);
 if (!is_dir($temp_dir))   @mkdir($temp_dir, 0777, true);
+@chmod($upload_dir, 0777);
+@chmod($temp_dir, 0777);
 
 // ── CƠ CHẾ TỰ ĐỘNG DỌN DẸP AN TOÀN CHO BUFFER & MẠNG XÃ HỘI (Garbage Collector) ───────────────
 // 1. Thư mục /uploads/ (File hoàn chỉnh): Giữ 2 TIẾNG (7200 giây)
