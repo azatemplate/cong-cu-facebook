@@ -620,30 +620,35 @@ if (!function_exists('fb_echo_log')) {
     }
 }
 
-function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = '', $description = '', $sp_post_id = 0) {
+/**
+ * Real Meta Resumable Chunked Uploader (Slices file into 20MB chunks, zero RAM overhead via fopen/fread, per-chunk retry)
+ */
+function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title = '', $description = '', $is_reel = false, $sp_post_id = 0, $chunk_size_mb = 20) {
     @ob_implicit_flush(1);
 
     $is_remote_url = (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0);
-
     if (!$is_remote_url) {
         if (!file_exists($file_path) && file_exists(__DIR__ . '/../' . ltrim($file_path, '/'))) {
             $file_path = __DIR__ . '/../' . ltrim($file_path, '/');
         }
         if (!file_exists($file_path)) {
-            return ['status_code' => 0, 'data' => ['error' => ['message' => "File video Reel không tồn tại trên máy chủ: {$file_path}"]]];
+            return ['status_code' => 0, 'data' => ['error' => ['message' => "File video không tồn tại trên máy chủ: {$file_path}"]]];
         }
     }
 
     $file_size = filesize($file_path);
-    $mb_size = round($file_size / 1024 / 1024, 2);
+    $total_mb = round($file_size / 1024 / 1024, 2);
+    $chunk_size_bytes = $chunk_size_mb * 1024 * 1024;
+
+    $type_name = $is_reel ? 'REEL' : 'VIDEO';
     fb_echo_log("   ----------------------------------------------------\n");
-    fb_echo_log("   🎬 BẮT ĐẦU ĐĂNG REEL BINARY (Dung lượng: $mb_size MB)\n");
+    fb_echo_log("   🚀 BẮT ĐẦU ĐĂNG {$type_name} CHUNKED ({$total_mb} MB - Chunk Size: {$chunk_size_mb} MB)\n");
     fb_echo_log("   ----------------------------------------------------\n");
 
     $endpoint = $page_id . '/videos';
 
-    // ── RESUMABLE BINARY UPLOAD TỐC ĐỘ CAO KHÔNG QUA PROXY ───────
-    fb_echo_log("   → [Bước 1/3] Khởi tạo phiên đăng (POST /{$endpoint}?upload_phase=start)...\n");
+    // ── BƯỚC 1: START UPLOAD SESSION ─────────────────────────────────
+    fb_echo_log("   → [Bước 1/3] Khởi tạo phiên upload (POST /{$endpoint}?upload_phase=start)...\n");
     $start_params = [
         'upload_phase' => 'start',
         'file_size'    => $file_size,
@@ -659,62 +664,127 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
 
     $video_id          = $res1['data']['video_id'];
     $upload_session_id = $res1['data']['upload_session_id'];
+    $start_offset      = (int)($res1['data']['start_offset'] ?? 0);
 
     fb_echo_log("   ✅ [Bước 1 Thành Công] Video ID: {$video_id} - Session ID: {$upload_session_id}\n");
 
-    // ── Bước 2: Đẩy file binary via CURLFile ───────────────────────────
-    fb_echo_log("   → [Bước 2/3] Đẩy stream binary trực tiếp từ VPS tới Facebook...\n");
-    $safe_ext  = pathinfo($file_path, PATHINFO_EXTENSION);
-    $safe_name = 'video_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '.mp4');
+    // ── BƯỚC 2: TRANSFER CHUNKS (Đọc file bằng fopen/fseek/fread - Tiết kiệm 100% RAM) ──
+    $handle = @fopen($file_path, 'rb');
+    if (!$handle) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể mở file video để đọc binary.']]];
+    }
 
-    $chunk_params = [
-        'upload_phase'      => 'transfer',
-        'upload_session_id' => $upload_session_id,
-        'start_offset'      => '0',
-        'video_file_chunk'  => new CURLFile($file_path, 'application/octet-stream', $safe_name),
-        'access_token'      => $page_access_token
-    ];
+    $temp_dir = __DIR__ . '/../uploads/tmp';
+    if (!is_dir($temp_dir)) @mkdir($temp_dir, 0777, true);
 
-    if ($sp_post_id > 0 && function_exists('update_post_progress')) {
-        global $pdo;
-        if (isset($pdo)) {
-            update_post_progress($pdo, $sp_post_id, "📤 Đang truyền binary video Reel ({$mb_size} MB)...");
+    $chunk_index = 0;
+    $total_chunks = (int)ceil($file_size / $chunk_size_bytes);
+    if ($total_chunks < 1) $total_chunks = 1;
+
+    while ($start_offset < $file_size) {
+        $chunk_index++;
+        fseek($handle, $start_offset);
+        $chunk_data = fread($handle, $chunk_size_bytes);
+        if ($chunk_data === false || strlen($chunk_data) === 0) break;
+
+        $current_chunk_len = strlen($chunk_data);
+        $chunk_file_path = $temp_dir . '/chunk_' . $upload_session_id . '_' . $start_offset . '.tmp';
+        file_put_contents($chunk_file_path, $chunk_data);
+        unset($chunk_data);
+
+        $chunk_mb = round($current_chunk_len / 1024 / 1024, 2);
+        $up_mb    = round($start_offset / 1024 / 1024, 2);
+        $pct      = (int)floor(($start_offset / $file_size) * 100);
+
+        fb_echo_log("   → [Bước 2/Chunk {$chunk_index}/{$total_chunks}] Uploading {$chunk_mb} MB ({$pct}% - {$up_mb}/{$total_mb} MB) từ offset {$start_offset}...\n");
+
+        if ($sp_post_id > 0 && function_exists('update_post_progress')) {
+            global $pdo;
+            if (isset($pdo)) {
+                update_post_progress($pdo, $sp_post_id, "📤 Đang upload Chunk {$chunk_index}/{$total_chunks} ({$pct}%)...");
+            }
+        }
+
+        $safe_ext  = pathinfo($file_path, PATHINFO_EXTENSION);
+        $safe_name = 'chunk_' . $chunk_index . ($safe_ext ? '.' . $safe_ext : '.mp4');
+
+        $chunk_params = [
+            'upload_phase'      => 'transfer',
+            'upload_session_id' => $upload_session_id,
+            'start_offset'      => (string)$start_offset,
+            'video_file_chunk'  => new CURLFile($chunk_file_path, 'application/octet-stream', $safe_name),
+            'access_token'      => $page_access_token
+        ];
+
+        $retry_count = 0;
+        $chunk_success = false;
+
+        $t_start = microtime(true);
+        while ($retry_count < 3 && !$chunk_success) {
+            $retry_count++;
+            $res2 = fb_api_request($endpoint, [], 'POST', $chunk_params, 300);
+            
+            if ($res2['status_code'] === 200 || $res2['status_code'] === 206) {
+                $chunk_success = true;
+                $t_elapsed = round(microtime(true) - $t_start, 2);
+                $speed_mbs = ($t_elapsed > 0) ? round($chunk_mb / $t_elapsed, 2) : $chunk_mb;
+                fb_echo_log("   ✅ [Chunk {$chunk_index}/{$total_chunks} Thành Công] HTTP {$res2['status_code']} trong {$t_elapsed}s (Tốc độ: {$speed_mbs} MB/s)\n");
+
+                if (isset($res2['data']['start_offset'])) {
+                    $next_offset = (int)$res2['data']['start_offset'];
+                    if ($next_offset > $start_offset) {
+                        $start_offset = $next_offset;
+                    } else {
+                        $start_offset += $current_chunk_len;
+                    }
+                } else {
+                    $start_offset += $current_chunk_len;
+                }
+            } else {
+                fb_echo_log("   ⚠️ [Chunk {$chunk_index} Lỗi - Thử lại {$retry_count}/3] HTTP " . ($res2['status_code'] ?? 0) . " - " . json_encode($res2['data'] ?? []) . "\n");
+                sleep(2);
+            }
+        }
+
+        @unlink($chunk_file_path);
+
+        if (!$chunk_success) {
+            fclose($handle);
+            fb_echo_log("   ❌ [Đăng Thất Bại] Chunk {$chunk_index} bị lỗi sau 3 lần thử lại.\n");
+            return $res2;
         }
     }
 
-    $res2 = fb_api_request($endpoint, [], 'POST', $chunk_params, 600);
+    fclose($handle);
+    fb_echo_log("   ✅ [Bước 2 Thành Công] Đã truyền xong toàn bộ các chunk ({$total_mb} MB) lên Facebook.\n");
 
-    if ($res2['status_code'] !== 200) {
-        fb_echo_log("   ❌ [Bước 2 Thất Bại] HTTP " . ($res2['status_code'] ?? 0) . " - " . json_encode($res2['data'] ?? []) . "\n");
-        return $res2;
-    }
-
-    fb_echo_log("   ✅ [Bước 2 Thành Công] Đã truyền binary video lên Facebook thành công (HTTP 200).\n");
-
-    // ── Bước 3: Hoàn tất & Đăng dưới dạng Reel ──────────────────────────
-    fb_echo_log("   → [Bước 3/3] Đang hoàn tất xuất bản Reel (post_video_as_reels=true)...\n");
+    // ── BƯỚC 3: FINISH UPLOAD SESSION ─────────────────────────────────
+    fb_echo_log("   → [Bước 3/3] Đang hoàn tất xuất bản ({$type_name})...\n");
     if ($sp_post_id > 0 && function_exists('update_post_progress')) {
         global $pdo;
         if (isset($pdo)) {
-            update_post_progress($pdo, $sp_post_id, "⚙️ Đang hoàn tất xuất bản Reel (Bước 3)...");
+            update_post_progress($pdo, $sp_post_id, "⚙️ Đang hoàn tất xuất bản {$type_name}...");
         }
     }
 
     $finish_params = [
-        'upload_phase'        => 'finish',
-        'upload_session_id'   => $upload_session_id,
-        'access_token'        => $page_access_token,
-        'title'               => $title,
-        'description'         => $description,
-        'post_video_as_reels' => 'true'
+        'upload_phase'      => 'finish',
+        'upload_session_id' => $upload_session_id,
+        'access_token'      => $page_access_token,
+        'title'             => $title,
+        'description'       => $description
     ];
 
-    $res3 = fb_api_request($endpoint, [], 'POST', $finish_params, 60);
+    if ($is_reel) {
+        $finish_params['post_video_as_reels'] = 'true';
+    }
+
+    $res3 = fb_api_request($endpoint, [], 'POST', $finish_params, 120);
 
     if ($res3['status_code'] === 200 && (!empty($res3['data']['success']) || !empty($res3['data']['id']))) {
         $res3['data']['id']      = $video_id;
         $res3['data']['post_id'] = $video_id;
-        fb_echo_log("   🎉 [Bước 3 Thành Công] Đã xuất bản Reel thành công! Facebook Post ID: {$video_id}\n");
+        fb_echo_log("   🎉 [Bước 3 Thành Công] Đã xuất bản {$type_name} thành công! Facebook Post ID: {$video_id}\n");
     } else {
         fb_echo_log("   ❌ [Bước 3 Thất Bại] HTTP " . ($res3['status_code'] ?? 0) . " - " . json_encode($res3['data'] ?? []) . "\n");
     }
@@ -722,46 +792,12 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     return $res3;
 }
 
-/**
- * Upload Video Binary (Đăng binary trực tiếp không qua URL)
- */
+function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = '', $description = '', $sp_post_id = 0) {
+    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, true, $sp_post_id, 20);
+}
+
 function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $title, $description, $is_reel = false, $sp_post_id = 0) {
-    if ($is_reel) {
-        return fb_upload_page_reel($page_id, $page_access_token, $file_path, $title, $description, $sp_post_id);
-    }
-
-    $is_remote_url = (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0);
-    if (!$is_remote_url) {
-        if (!file_exists($file_path) && file_exists(__DIR__ . '/../' . ltrim($file_path, '/'))) {
-            $file_path = __DIR__ . '/../' . ltrim($file_path, '/');
-        }
-        if (!file_exists($file_path)) {
-            return ['status_code' => 0, 'data' => ['error' => ['message' => "File video không tồn tại trên máy chủ: {$file_path}"]]];
-        }
-    }
-
-    $file_size = filesize($file_path);
-    $endpoint = $page_id . '/videos';
-
-    // ── ĐĂNG VIDEO BINARY TRỰC TIẾP KHÔNG QUA PROXY ───────────────────
-    $safe_ext = pathinfo($file_path, PATHINFO_EXTENSION);
-    $safe_name = 'video_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '.mp4');
-
-    $mb_size = round($file_size / 1024 / 1024, 2);
-    echo "   ----------------------------------------------------\n";
-    echo "   🎬 BẮT ĐẦU ĐĂNG VIDEO BINARY ({$mb_size} MB)...\n";
-    echo "   ----------------------------------------------------\n";
-
-    $direct_params = [
-        'title' => $title,
-        'description' => $description,
-        'source' => new CURLFile($file_path, 'application/octet-stream', $safe_name),
-        'access_token' => $page_access_token
-    ];
-
-    $res = fb_api_request($endpoint, [], 'POST', $direct_params, 600);
-    echo "   → Ket qua dang video binary: Status " . ($res['status_code'] ?? '0') . " - Data: " . json_encode($res['data'] ?? []) . "\n";
-    return $res;
+    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, $is_reel, $sp_post_id, 20);
 }
 
 function fb_exchange_token($short_token, $app_id, $app_secret) {
