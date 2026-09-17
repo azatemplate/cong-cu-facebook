@@ -164,19 +164,25 @@ try {
     echo "Loi tu dong quet SĐT: " . $e->getMessage() . "\n";
 }
 
-// Cấu hình giới hạn luồng cho máy chủ (Throttling)
-$MAX_WORKERS = 30;
+// Cấu hình giới hạn luồng cho máy chủ (Throttling an toàn cho RAM & CPU)
+$MAX_WORKERS = 10;
 try {
     $res_limit = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_publish_workers'")->fetchColumn();
-    if ($res_limit) $MAX_WORKERS = (int)$res_limit;
+    if ($res_limit) $MAX_WORKERS = min(12, max(3, (int)$res_limit));
 } catch (Exception $e) {}
 
-// Đếm số luồng đang chạy (processing)
-$active_workers = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+// Đếm số luồng thực tế đang chạy qua file lock và DB processing
+$lock_dir = dirname(__DIR__) . '/locks';
+$active_locks = 0;
+if (is_dir($lock_dir)) {
+    $active_locks = count(glob($lock_dir . '/publish_user_*.lock'));
+}
+$active_db_processing = (int)$pdo->query("SELECT COUNT(DISTINCT campaign_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+$active_workers = max($active_locks, $active_db_processing);
 
-echo "  [THROTTLE] Hien dang co $active_workers luong dang xu ly.\n";
+echo "  [THROTTLE] Hien dang co $active_workers luong dang xu ly (Max: $MAX_WORKERS).\n";
 
-$available_slots = $MAX_WORKERS - $active_workers;
+$available_slots = max(0, $MAX_WORKERS - $active_workers);
 if ($available_slots <= 0) {
     echo "He thong dang dat gioi han MAX_WORKERS ($MAX_WORKERS). Cho luot cron ke tiep...\n";
     $rq_pub->releaseLock('lock:cron:start_publish');
