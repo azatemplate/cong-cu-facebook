@@ -111,7 +111,22 @@ function apply_proxy_to_curl($ch, $access_token = null) {
 }
 
 function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [], $timeout = 20) {
-    if (strpos($endpoint, 'videos') !== false || strpos($endpoint, 'video_stories') !== false || strpos($endpoint, 'video_reels') !== false) {
+    $has_file = false;
+    if (is_array($post_data)) {
+        foreach ($post_data as $v) {
+            if ($v instanceof CURLFile) { $has_file = true; break; }
+        }
+    }
+    if (!$has_file && is_array($params)) {
+        foreach ($params as $v) {
+            if ($v instanceof CURLFile) { $has_file = true; break; }
+        }
+    }
+
+    $is_file_url = (is_array($post_data) && isset($post_data['file_url'])) || (is_array($params) && isset($params['file_url']));
+
+    // Binary uploads use graph-video.facebook.com, but file_url requests MUST use standard graph.facebook.com
+    if (!$is_file_url && (strpos($endpoint, 'videos') !== false || strpos($endpoint, 'video_stories') !== false || strpos($endpoint, 'video_reels') !== false)) {
         $url = 'https://graph-video.facebook.com/' . FB_API_VERSION . '/' . $endpoint;
     } else {
         $url = FB_API_BASE . $endpoint;
@@ -129,9 +144,12 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);    // trong 60s liên tục (chống cURL treo vô hạn)
     fb_curl_setssl($ch);
 
-    $token_for_proxy = $params['access_token'] ?? $post_data['access_token'] ?? null;
-    if (!empty($token_for_proxy)) {
-        apply_proxy_to_curl($ch, $token_for_proxy);
+    // Dùng proxy cho API thường, nhưng BỎ PROXY khi upload file binary (CURLFile) để tận dụng 100% băng thông VPS
+    if (!$has_file) {
+        $token_for_proxy = (is_array($params) ? ($params['access_token'] ?? null) : null) ?? (is_array($post_data) ? ($post_data['access_token'] ?? null) : null);
+        if (!empty($token_for_proxy)) {
+            apply_proxy_to_curl($ch, $token_for_proxy);
+        }
     }
 
     $headers = ['Expect:'];
@@ -142,10 +160,6 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
             curl_setopt($ch, CURLOPT_POSTFIELDS, '');
         } else {
             if (is_array($post_data)) {
-                $has_file = false;
-                foreach ($post_data as $v) {
-                    if ($v instanceof CURLFile) { $has_file = true; break; }
-                }
                 if (!$has_file) {
                     $post_data = http_build_query($post_data);
                 } else {
