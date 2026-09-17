@@ -145,14 +145,19 @@ function download_drive_file_temp($access_token, $file_id) {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
+    curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
     curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    if (function_exists('apply_proxy_to_curl')) {
+        apply_proxy_to_curl($ch, $access_token);
+    }
     $meta_response = curl_exec($ch);
     curl_close($ch);
 
     $meta = json_decode($meta_response, true);
     if (!isset($meta['name'])) {
-        return ['error' => 'Không thể lấy thông tin file từ Google Drive.'];
+        return ['error' => 'Không thể lấy thông tin file từ Google Drive. (Vui lòng kiểm tra quyền truy cập hoặc Refresh Token)'];
     }
 
     $mime_type = $meta['mimeType'];
@@ -210,8 +215,13 @@ function download_drive_file_temp($access_token, $file_id) {
     curl_setopt($ch2, CURLOPT_FILE, $fp);
     curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch2, CURLOPT_TIMEOUT, 600);
+    curl_setopt($ch2, CURLOPT_LOW_SPEED_LIMIT, 1024); // Tự động hủy nếu tốc độ < 1KB/s trong 60s
+    curl_setopt($ch2, CURLOPT_LOW_SPEED_TIME, 60);
     curl_setopt($ch2, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
+    if (function_exists('apply_proxy_to_curl')) {
+        apply_proxy_to_curl($ch2, $access_token);
+    }
     $success = curl_exec($ch2);
     $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
     $curl_err = curl_error($ch2); // Lấy lỗi trước khi close
@@ -305,6 +315,13 @@ function list_drive_files_in_folder($access_token, $folder_id) {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
         curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
+        curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        if (function_exists('apply_proxy_to_curl')) {
+            apply_proxy_to_curl($ch, $access_token);
+        }
         $response = curl_exec($ch);
         $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
