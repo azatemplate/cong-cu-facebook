@@ -9,6 +9,8 @@ try {
         DB_PASS
     );
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     $pdo->exec("SET NAMES '" . DB_CHARSET . "'");
     // Timezone: wrapped separately — some MariaDB servers lack tz tables
     try { $pdo->exec("SET time_zone = '+07:00'"); } catch (Exception $e) {}
@@ -30,11 +32,20 @@ function ensure_db_schema_ready($pdo) {
     static $already_checked = false;
     if ($already_checked) return;
 
-    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v13.done';
+    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v14.done';
     if (file_exists($flag_file)) {
         $already_checked = true;
         return;
     }
+
+    try {
+        $chk = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'schema_init_v14_done'");
+        if ($chk && $chk->fetchColumn() === '1') {
+            @file_put_contents($flag_file, date('Y-m-d H:i:s'));
+            $already_checked = true;
+            return;
+        }
+    } catch (Exception $e) {}
 
     try {
         // ── Core Tables (created once) ──────────────────────────
@@ -249,7 +260,9 @@ function ensure_db_schema_ready($pdo) {
         ");
 
         // Seed default settings silently
-        $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1'), ('max_retries', '3'), ('cleanup_retain_days', '7')");
+        $pdo->exec("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1'), ('max_retries', '3'), ('cleanup_retain_days', '3')");
+        $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('cleanup_retain_days', '3') ON DUPLICATE KEY UPDATE setting_value = '3'");
+
 
         $pdo->exec("
             CREATE TABLE IF NOT EXISTS data_deletion_requests (
@@ -414,6 +427,12 @@ function ensure_db_schema_ready($pdo) {
         $add_idx($pdo, 'scheduled_posts', 'idx_acc_page_status', 'account_id, page_id, status');
         $add_idx($pdo, 'scheduled_posts', 'idx_camp_sched_id', 'campaign_id, scheduled_time, id');
         $add_idx($pdo, 'scheduled_posts', 'idx_camp_type_page', 'campaign_id, post_type, page_id');
+        $add_idx($pdo, 'scheduled_posts', 'idx_sched_status_acc', 'scheduled_time, status, account_id');
+        $add_idx($pdo, 'scheduled_posts', 'idx_acc_status_sched', 'account_id, status, scheduled_time');
+        $add_idx($pdo, 'scheduled_posts', 'idx_status_sched', 'status, scheduled_time');
+        $add_idx($pdo, 'scheduled_posts', 'idx_acc_sched', 'account_id, scheduled_time');
+        $add_idx($pdo, 'scheduled_posts', 'idx_post_type_sched', 'post_type, scheduled_time');
+        $add_idx($pdo, 'scheduled_posts', 'idx_updated_at', 'updated_at');
         $add_idx($pdo, 'pages', 'idx_user_id', 'user_id');
         $add_idx($pdo, 'pages', 'idx_page_id', 'page_id');
         $add_idx($pdo, 'users', 'idx_account_id', 'account_id');
@@ -760,6 +779,9 @@ function ensure_db_schema_ready($pdo) {
             }
         } catch (Exception $e) {}
 
+        try {
+            $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('schema_init_v14_done', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
+        } catch (Exception $e) {}
         @file_put_contents($flag_file, date('Y-m-d H:i:s'));
         $already_checked = true;
     } catch (Exception $e) {}

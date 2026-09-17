@@ -1,0 +1,701 @@
+/* TikTok Pro Tools - v11 */
+:root {
+  --tpt-bg: rgba(255,255,255,0.95);
+  --tpt-bd: rgba(0,0,0,0.1);
+  --tpt-tx: #333;
+  --tpt-hdr-bg: rgba(0,0,0,0.03);
+  --tpt-logo: #333;
+  --tpt-sec-bd: rgba(0,0,0,0.05);
+  --tpt-sub: #666;
+  --tpt-sw-bg: #e4e6eb;
+  --tpt-sw-k: #fff;
+  --tpt-sw-br: rgba(0,0,0,0.1);
+  --tpt-ps-bg: #f0f2f5;
+  --tpt-ps-tx: #555;
+  --tpt-ps-bd: rgba(0,0,0,0.05);
+  --tpt-btn-bg: #f0f2f5;
+  --tpt-btn-tx: #333;
+  --tpt-btn-bd: rgba(0,0,0,0.1);
+  --tpt-input-bg: #fff;
+  --tpt-input-tx: #333;
+}
+
+/* Comment sticker enhancement */
+.tpt-comment-sticker { display:inline-flex;gap:8px;align-items:flex-end;margin:4px 6px 4px 0;vertical-align:middle; }
+.tpt-sticker-item { position:relative;display:inline-flex;width:92px;min-height:72px;align-items:center;justify-content:center;border-radius:12px;background:rgba(255,255,255,.06); }
+.tpt-sticker-item img { display:block;max-width:92px;max-height:92px;object-fit:contain;border-radius:10px; }
+.tpt-sticker-actions { position:absolute;right:4px;bottom:4px;display:flex;gap:4px;opacity:0;transform:translateY(4px);transition:opacity .16s ease,transform .16s ease; }
+.tpt-sticker-item:hover .tpt-sticker-actions,.tpt-sticker-item:focus-within .tpt-sticker-actions { opacity:1;transform:none; }
+.tpt-sticker-action { border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;background:rgba(8,9,13,.88);color:#fff;font:700 9px/1 ui-sans-serif,system-ui;cursor:pointer; }
+.tpt-sticker-action:focus-visible { outline:2px solid #25f4ee;outline-offset:2px; }
+
+#tpt-anon-story-badge {
+  position:fixed;top:74px;left:50%;z-index:2147483644;transform:translateX(-50%);
+  padding:7px 12px;border:1px solid rgba(255,190,82,.38);border-radius:999px;
+  background:rgba(16,13,7,.9);color:#ffd06a;box-shadow:0 8px 24px rgba(0,0,0,.35);
+  backdrop-filter:blur(14px);font:750 11px/1.2 ui-sans-serif,system-ui;pointer-events:none;
+}
+
+/* Theme tokens only affect extension-owned page overlays. */
+:root[data-tpt-theme="cute"] {
+  --tpt-accent:#ff4f8f;--tpt-accent2:#ff91bd;--tpt-bg:rgba(35,13,29,.97);
+  --tpt-bd:rgba(255,145,189,.16);--tpt-tx:#fff1f7;--tpt-btn-bg:rgba(255,79,143,.11);--tpt-btn-bd:rgba(255,145,189,.18);
+}
+:root[data-tpt-theme="ocean"] {
+  --tpt-accent:#3f8cff;--tpt-accent2:#25d8ff;--tpt-bg:rgba(7,25,39,.97);
+  --tpt-bd:rgba(37,216,255,.16);--tpt-tx:#edfaff;--tpt-btn-bg:rgba(37,216,255,.09);--tpt-btn-bd:rgba(37,216,255,.18);
+}
+:root[data-tpt-theme="sunny"] {
+  --tpt-accent:#ff9b24;--tpt-accent2:#ffc83d;--tpt-bg:rgba(35,26,8,.97);
+  --tpt-bd:rgba(255,200,61,.18);--tpt-tx:#fff8df;--tpt-btn-bg:rgba(255,200,61,.1);--tpt-btn-bd:rgba(255,200,61,.2);
+}
+:root[data-tpt-theme]:not([data-tpt-theme="default"]) #tpt-fab::before {
+  background:conic-gradient(from 0deg,var(--tpt-accent2) 0 18%,transparent 25% 48%,var(--tpt-accent) 56% 78%,transparent 85% 100%);
+}
+:root[data-tpt-theme]:not([data-tpt-theme="default"]) .tpt-product-pill-icon { background:linear-gradient(145deg,var(--tpt-accent),var(--tpt-accent2)); }
+:root[data-tpt-theme]:not([data-tpt-theme="default"]) .tpt-product-panel,
+:root[data-tpt-theme]:not([data-tpt-theme="default"]) #tpt-limit-warning > div {
+  border-color:var(--tpt-bd) !important;
+  background:var(--tpt-bg) !important;
+  color:var(--tpt-tx) !important;
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .tpt-sticker-actions { transition:none; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tpt-bg: rgba(8,8,12,0.97);
+    --tpt-bd: rgba(255,255,255,0.09);
+    --tpt-tx: #ccc;
+    --tpt-hdr-bg: transparent;
+    --tpt-logo: #fff;
+    --tpt-sec-bd: rgba(255,255,255,0.048);
+    --tpt-sub: #aaa;
+    --tpt-sw-bg: #1e1e1e;
+    --tpt-sw-k: #484848;
+    --tpt-sw-br: rgba(255,255,255,.06);
+    --tpt-ps-bg: rgba(255,255,255,.04);
+    --tpt-ps-tx: #888;
+    --tpt-ps-bd: rgba(255,255,255,.07);
+    --tpt-btn-bg: rgba(255,255,255,.05);
+    --tpt-btn-tx: #ccc;
+    --tpt-btn-bd: rgba(255,255,255,.1);
+    --tpt-input-bg: rgba(255,255,255,.05);
+    --tpt-input-tx: #ccc;
+  }
+}
+
+#tpt-panel {
+  position: fixed; top: 80px; right: 14px; z-index: 2147483647; width: 300px;
+  background: var(--tpt-bg); border: 1px solid var(--tpt-bd);
+  border-radius: 16px; backdrop-filter: blur(28px) saturate(170%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  box-shadow: 0 24px 64px rgba(0,0,0,.15), 0 4px 12px rgba(0,0,0,.08);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; font-size: 12.5px; color: var(--tpt-tx); user-select: none;
+}
+@media (prefers-color-scheme: dark) {
+  #tpt-panel { box-shadow: 0 24px 64px rgba(0,0,0,.72), 0 4px 12px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,0.07); }
+}
+
+/* Header */
+.tpt-hdr { display:flex; align-items:center; justify-content:space-between; padding:10px 13px 9px; border-bottom:1px solid var(--tpt-bd); cursor:grab; border-radius:16px 16px 0 0; background: var(--tpt-hdr-bg); }
+.tpt-hdr:active { cursor:grabbing; }
+.tpt-logo { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:var(--tpt-logo); letter-spacing:-.2px; }
+#tpt-min { background:var(--tpt-btn-bg); border:1px solid var(--tpt-btn-bd); border-radius:6px; color:var(--tpt-tx); width:24px; height:20px; display:flex; align-items:center; justify-content:center; font-size:12px; cursor:pointer; transition:background .15s,color .15s; }
+#tpt-min:hover { background:rgba(128,128,128,0.2); }
+
+/* Body */
+#tpt-body { padding:1px 0 5px; }
+.tpt-sec { padding:9px 13px; border-bottom:1px solid var(--tpt-sec-bd); }
+.tpt-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:2px; }
+.tpt-row-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.tpt-lbl { display:flex; align-items:center; gap:6px; font-weight:500; color:var(--tpt-tx); }
+.tpt-lbl>span:first-child { font-size:12px; }
+.tpt-sub { font-size:10px; color:var(--tpt-sub); margin-top:2px; line-height:1.4; }
+
+/* Toggle */
+.tpt-sw { cursor:pointer; }
+.tpt-sw input { display:none; }
+.sw-t { display:block; width:36px; height:20px; background:var(--tpt-sw-bg); border-radius:20px; position:relative; transition:background .2s; border:1px solid var(--tpt-sw-br); }
+.sw-k { position:absolute; top:2px; left:3px; width:14px; height:14px; background:var(--tpt-sw-k); border-radius:50%; transition:transform .2s,background .2s; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+.tpt-sw input:checked + .sw-t { background:rgba(254,44,85,.75); border-color:transparent; }
+.tpt-sw input:checked + .sw-t .sw-k { transform:translateX(16px); background:#fff; }
+
+/* Sliders */
+.tpt-bigval { font-size:22px; font-weight:700; letter-spacing:-1px; line-height:1; }
+.tpt-red  { color:#fe2c55; text-shadow:0 0 18px rgba(254,44,85,.25); }
+@media (prefers-color-scheme: dark) { .tpt-red { text-shadow:0 0 18px rgba(254,44,85,.45); } }
+.tpt-cyan { color:#25f4ee; text-shadow:0 0 14px rgba(37,244,238,.35); }
+.tpt-slwrap { margin-bottom:10px; }
+.tpt-slider {
+  -webkit-appearance:none; width:100%; height:6px; border-radius:6px; outline:none; cursor:pointer;
+  background:linear-gradient(to right, var(--clr) 0%, var(--clr) var(--fill,0%), rgba(128,128,128,.2) var(--fill,0%), rgba(128,128,128,.2) 100%);
+}
+.tpt-slider::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 0 0 3px var(--clr),0 2px 8px rgba(0,0,0,.35); cursor:grab; transition:transform .1s; }
+@media (prefers-color-scheme: dark) { .tpt-slider::-webkit-slider-thumb { box-shadow:0 0 0 3px var(--clr),0 2px 8px rgba(0,0,0,.55); } }
+.tpt-slider::-webkit-slider-thumb:active { cursor:grabbing; transform:scale(1.22); }
+.tpt-slider::-webkit-slider-thumb:hover  { transform:scale(1.1); }
+.tpt-ps-row { display:flex; gap:4px; }
+.tpt-ps { flex:1; background:var(--tpt-ps-bg); border:1px solid var(--tpt-ps-bd); border-radius:6px; color:var(--tpt-ps-tx); font-size:10.5px; font-weight:600; padding:5px 0; cursor:pointer; font-family:inherit; transition:all .12s; }
+.tpt-ps:hover { background:rgba(254,44,85,.11); border-color:rgba(254,44,85,.28); color:#fe2c55; }
+.tpt-ps.on    { background:rgba(254,44,85,.18); border-color:rgba(254,44,85,.5);  color:#fe2c55; }
+
+/* Capture button */
+.tpt-capture-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:6px; padding:8px 0; background:var(--tpt-btn-bg); border:1px solid var(--tpt-btn-bd); border-radius:9px; color:var(--tpt-tx); font-size:11.5px; font-weight:600; cursor:pointer; font-family:inherit; transition:all .15s; }
+.tpt-capture-btn:hover { background:rgba(128,128,128,0.1); border-color:rgba(128,128,128,0.2); }
+
+/* Download section */
+.tpt-dl-sec { padding-bottom:10px; }
+.tpt-sec-title { font-size:10.5px; font-weight:600; color:var(--tpt-sub); letter-spacing:.5px; text-transform:uppercase; margin-bottom:8px; }
+.tpt-url-row { display:flex; gap:5px; margin-bottom:7px; }
+.tpt-url-input { flex:1; background:var(--tpt-input-bg); border:1px solid var(--tpt-btn-bd); border-radius:8px; color:var(--tpt-input-tx); font-size:11px; padding:7px 10px; outline:none; font-family:inherit; transition:border-color .15s; }
+.tpt-url-input:focus { border-color:rgba(37,244,238,.6); background:rgba(37,244,238,.05); }
+.tpt-url-go { background:rgba(254,44,85,.12); border:1px solid rgba(254,44,85,.28); border-radius:8px; color:#fe2c55; font-size:15px; width:34px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; flex-shrink:0; }
+.tpt-url-go:hover { background:rgba(254,44,85,.22); border-color:rgba(254,44,85,.5); }
+.tpt-url-go:disabled { opacity:.4; cursor:default; }
+.tpt-dl-bar { display:flex; align-items:center; justify-content:space-between; min-height:16px; margin-bottom:5px; }
+.tpt-dl-status { font-size:10.5px; flex:1; line-height:1.4; color:var(--tpt-sub); }
+.tpt-dl-status.ok      { color:#4caf50; }
+.tpt-dl-status.error   { color:#ff5252; }
+.tpt-dl-status.loading { color:var(--tpt-sub); }
+.tpt-clear-btn { background:transparent; border:1px solid var(--tpt-bd); border-radius:5px; color:var(--tpt-tx); font-size:10px; padding:2px 7px; cursor:pointer; font-family:inherit; transition:all .15s; flex-shrink:0; }
+.tpt-clear-btn:hover { background:rgba(255,80,80,.12); border-color:rgba(255,80,80,.25); color:#ff5252; }
+#tpt-dl-result { display:flex; flex-direction:column; gap:4px; }
+.dl-meta { font-size:10px; color:var(--tpt-sub); margin-bottom:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dl-link { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; background:var(--tpt-btn-bg); border:1px solid var(--tpt-btn-bd); border-radius:8px; color:var(--tpt-tx); font-size:11.5px; font-weight:500; text-decoration:none; transition:all .14s; gap:8px; }
+.dl-link:hover { background:rgba(37,244,238,.09); border-color:rgba(37,244,238,.28); color:#00aba3; }
+@media (prefers-color-scheme: dark) { .dl-link:hover { color:#25f4ee; } }
+.dl-label { flex:1; }
+.dl-sz { font-size:10px; color:var(--tpt-sub); white-space:nowrap; flex-shrink:0; }
+
+/* Toast */
+#tpt-toast { position:absolute; bottom:-44px; left:50%; transform:translateX(-50%) translateY(6px); background:rgba(0,0,0,.85); border:1px solid rgba(255,255,255,.1); border-radius:20px; padding:6px 16px; font-size:11.5px; color:#fff; white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .22s,transform .22s; backdrop-filter:blur(10px); }
+@media (prefers-color-scheme: dark) { #tpt-toast { background:rgba(16,16,24,.97); color:#ccc; } }
+#tpt-toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* In-feed download action */
+/* Injected download button in TikTok's action rail */
+.tpt-dl-injected {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  margin-top:4px;
+}
+
+/* Legacy floating button (kept for backward compat, hidden by default) */
+.tpt-feed-download-action {
+  position:fixed;
+  z-index:2147483646;
+  display:none;
+  width:48px;
+  height:48px;
+}
+
+.tpt-feed-download-btn {
+  width:48px;
+  height:48px;
+  border:0;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#fff;
+  background:rgba(37,37,45,.92);
+  box-shadow:0 2px 10px rgba(0,0,0,.18);
+  cursor:pointer;
+  padding:0;
+  pointer-events:auto;
+  transition:transform .12s ease, background .12s ease, color .12s ease, box-shadow .12s ease;
+}
+
+.tpt-feed-download-btn svg {
+  width:25px;
+  height:25px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:2;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.tpt-feed-download-btn:hover {
+  background:rgba(254,44,85,.96);
+  box-shadow:0 4px 16px rgba(254,44,85,.35);
+  transform:scale(1.04);
+}
+
+.tpt-feed-download-btn:active {
+  transform:scale(.96);
+}
+
+.tpt-feed-download-btn.is-loading {
+  color:#25f4ee;
+  background:rgba(37,37,45,.98);
+  pointer-events:none;
+}
+
+.tpt-feed-download-btn.is-loading svg {
+  animation:tpt-feed-download-pulse .72s ease-in-out infinite alternate;
+}
+
+@keyframes tpt-feed-download-pulse {
+  from { opacity:.42; transform:translateY(-1px); }
+  to { opacity:1; transform:translateY(2px); }
+}
+
+/* TikTok Shop insight overlay */
+#tpt-shop-insight {
+  position:fixed;
+  z-index:2147483646;
+  width:calc(100vw - 16px);
+  opacity:0;
+  pointer-events:none;
+  transform:translateY(6px);
+  transition:opacity .18s ease, transform .18s ease;
+  font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  color:#fff;
+}
+
+#tpt-shop-insight.is-visible {
+  opacity:1;
+  pointer-events:auto;
+  transform:translateY(0);
+}
+
+#tpt-shop-insight .tpt-shop-main {
+  width:100%;
+  min-height:74px;
+  display:grid;
+  grid-template-columns:52px minmax(0,1fr);
+  gap:10px;
+  align-items:center;
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:8px;
+  padding:9px 34px 9px 9px;
+  color:inherit;
+  background:linear-gradient(135deg, rgba(18,18,24,.88), rgba(11,12,18,.72));
+  box-shadow:0 12px 34px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.08);
+  -webkit-backdrop-filter:blur(18px) saturate(150%);
+  backdrop-filter:blur(18px) saturate(150%);
+  cursor:pointer;
+  text-align:left;
+}
+
+#tpt-shop-insight .tpt-shop-main:hover {
+  border-color:rgba(37,244,238,.38);
+  box-shadow:0 14px 38px rgba(0,0,0,.38), 0 0 0 1px rgba(37,244,238,.08) inset;
+}
+
+#tpt-shop-insight .tpt-shop-thumb-wrap {
+  width:52px;
+  height:52px;
+  border-radius:8px;
+  overflow:hidden;
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.12);
+}
+
+#tpt-shop-insight .tpt-shop-thumb {
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:cover;
+}
+
+#tpt-shop-insight .tpt-shop-copy {
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+}
+
+#tpt-shop-insight .tpt-shop-top {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  min-width:0;
+}
+
+#tpt-shop-insight .tpt-shop-badge {
+  flex-shrink:0;
+  padding:2px 6px;
+  border-radius:6px;
+  background:rgba(37,244,238,.14);
+  color:#25f4ee;
+  font-size:10px;
+  font-weight:800;
+  line-height:1.25;
+}
+
+#tpt-shop-insight .tpt-shop-price {
+  min-width:0;
+  color:#ffec70;
+  font-size:14px;
+  font-weight:900;
+  line-height:1.15;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+#tpt-shop-insight .tpt-shop-title {
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+  color:#fff;
+  font-size:12px;
+  font-weight:800;
+  line-height:1.25;
+}
+
+#tpt-shop-insight .tpt-shop-meta {
+  display:block;
+  min-width:0;
+  color:rgba(255,255,255,.72);
+  font-size:10.5px;
+  font-weight:650;
+  line-height:1.25;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+#tpt-shop-insight .tpt-shop-close {
+  position:absolute;
+  top:6px;
+  right:6px;
+  width:22px;
+  height:22px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:0;
+  border-radius:50%;
+  color:rgba(255,255,255,.78);
+  background:rgba(255,255,255,.08);
+  cursor:pointer;
+  font-size:16px;
+  line-height:1;
+}
+
+#tpt-shop-insight .tpt-shop-close:hover {
+  color:#fff;
+  background:rgba(254,44,85,.78);
+}
+
+#tpt-shop-insight .tpt-shop-download {
+  position:absolute;
+  right:6px;
+  bottom:6px;
+  width:24px;
+  height:24px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:0;
+  border-radius:50%;
+  color:#081018;
+  background:#25f4ee;
+  cursor:pointer;
+  box-shadow:0 6px 16px rgba(37,244,238,.2);
+}
+
+#tpt-shop-insight .tpt-shop-download svg {
+  width:15px;
+  height:15px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:2.2;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+#tpt-shop-insight .tpt-shop-download:hover {
+  background:#ffec70;
+}
+
+#tpt-shop-insight .tpt-shop-download.is-loading svg {
+  animation:tpt-feed-download-pulse .72s ease-in-out infinite alternate;
+}
+
+@media (max-width: 640px) {
+  #tpt-shop-insight .tpt-shop-main {
+    min-height:68px;
+    grid-template-columns:46px minmax(0,1fr);
+    gap:8px;
+    padding:8px 32px 8px 8px;
+  }
+
+  #tpt-shop-insight .tpt-shop-thumb-wrap {
+    width:46px;
+    height:46px;
+  }
+
+  #tpt-shop-insight .tpt-shop-price {
+    font-size:13px;
+  }
+}
+
+/* Always-visible TikTok Shop product card */
+.tpt-product-btn {
+  border:1px solid rgba(255,255,255,.22);
+  background:
+    radial-gradient(circle at 12% 0%,rgba(255,255,255,.08),transparent 42%),
+    rgba(13,14,18,.9);
+  box-shadow:0 18px 44px rgba(0,0,0,.48),inset 0 1px 0 rgba(255,255,255,.12);
+  -webkit-backdrop-filter:blur(20px) saturate(135%);
+  backdrop-filter:blur(20px) saturate(135%);
+  font:700 13px/1.2 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  transition:transform .22s cubic-bezier(.2,.8,.2,1),border-color .22s ease,box-shadow .22s ease,background .22s ease;
+}
+.tpt-product-btn:hover {
+  transform:translateY(-4px);
+  border-color:rgba(37,244,238,.42);
+  background:
+    radial-gradient(circle at 12% 0%,rgba(37,244,238,.1),transparent 44%),
+    rgba(16,17,22,.94);
+  box-shadow:0 22px 48px rgba(0,0,0,.52),0 0 0 1px rgba(37,244,238,.08),inset 0 1px 0 rgba(255,255,255,.14);
+}
+.tpt-product-btn:active { transform:translateY(-1px) scale(.985); }
+.tpt-product-btn:focus-visible { outline:3px solid rgba(37,244,238,.72); outline-offset:3px; }
+.tpt-product-pill-icon {
+  width:58px;height:58px;display:flex;align-items:center;justify-content:center;
+  overflow:hidden;
+  border-radius:12px;background:#e93d5d;
+  box-shadow:0 9px 22px rgba(233,61,93,.3),inset 0 1px 0 rgba(255,255,255,.24);
+}
+.tpt-product-pill-thumb {
+  width:100%;height:100%;display:block;object-fit:cover;background:#111;
+}
+.tpt-product-pill-thumb[hidden] { display:none; }
+.tpt-product-pill-copy { min-width:0;display:flex;flex-direction:column;gap:3px; }
+.tpt-product-pill-kicker {
+  display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:rgba(255,255,255,.58);font-size:9.5px;font-weight:760;
+  letter-spacing:.075em;text-transform:uppercase;
+}
+.tpt-product-pill-name {
+  display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+  color:#fff;font-size:13px;font-weight:760;letter-spacing:-.012em;line-height:1.25;
+}
+.tpt-product-pill-price {
+  display:block;color:#ffdf64;font-size:14px;font-weight:850;line-height:1.05;
+  font-variant-numeric:tabular-nums;text-shadow:0 1px 12px rgba(255,223,100,.18);
+}
+.tpt-product-pill-price[data-tpt-price-status="loading"] {
+  color:rgba(255,255,255,.68);font-size:11px;font-weight:700;text-shadow:none;
+}
+.tpt-product-pill-price[data-tpt-price-status="unavailable"] {
+  color:#ffdf64;font-size:11px;font-weight:780;text-shadow:none;
+}
+.tpt-product-pill-price[hidden] { display:none; }
+.tpt-product-panel { transform-origin:left bottom; }
+
+.tpt-product-gallery-main {
+  width:100%;
+  max-height:300px;
+  object-fit:contain;
+  border-radius:12px;
+  display:block;
+  background:#0a0a0a;
+}
+.tpt-product-gallery-thumbs {
+  display:flex;
+  gap:7px;
+  margin-top:8px;
+  padding:2px 1px 5px;
+  overflow-x:auto;
+  scrollbar-width:thin;
+}
+.tpt-product-gallery-thumb {
+  flex:0 0 58px;
+  width:58px;
+  height:58px;
+  padding:2px;
+  overflow:hidden;
+  border:2px solid transparent;
+  border-radius:10px;
+  background:rgba(255,255,255,.08);
+  cursor:pointer;
+  transition:border-color .16s ease,transform .16s ease,background .16s ease;
+}
+.tpt-product-gallery-thumb:hover { transform:translateY(-2px);background:rgba(255,255,255,.13); }
+.tpt-product-gallery-thumb.is-active { border-color:#25f4ee;background:rgba(37,244,238,.13); }
+.tpt-product-gallery-thumb:focus-visible { outline:2px solid #25f4ee;outline-offset:2px; }
+.tpt-product-gallery-thumb img { width:100%;height:100%;display:block;object-fit:cover;border-radius:6px; }
+.tpt-product-download-images {
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  margin-top:14px;
+  padding:11px 12px;
+  border:1px solid rgba(37,244,238,.38);
+  border-radius:12px;
+  background:rgba(37,244,238,.12);
+  color:#eaffff;
+  font:800 13.5px/1.2 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  cursor:pointer;
+  transition:background .16s ease,border-color .16s ease,transform .16s ease;
+}
+.tpt-product-download-images:hover { background:rgba(37,244,238,.2);border-color:rgba(37,244,238,.62);transform:translateY(-1px); }
+.tpt-product-download-images:focus-visible { outline:2px solid #25f4ee;outline-offset:2px; }
+.tpt-product-download-images:disabled { opacity:.68;cursor:progress;transform:none; }
+
+.tpt-product-qr-wrap {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 14px;
+  background: rgba(255,255,255,.055);
+}
+.tpt-product-qr {
+  display: block;
+  width: 84px;
+  height: 84px;
+  border-radius: 8px;
+  background: #fff;
+}
+.tpt-product-qr-wrap strong,
+.tpt-product-qr-wrap span { display: block; }
+.tpt-product-qr-wrap strong { color: #fff; font-size: 12.5px; line-height: 1.35; }
+.tpt-product-qr-wrap span { margin-top: 4px; color: rgba(255,255,255,.58); font-size: 10.5px; line-height: 1.45; }
+.tpt-product-close:focus-visible,.tpt-product-reload:focus-visible { outline:2px solid #25f4ee;outline-offset:2px; }
+@media (max-width:640px) {
+  .tpt-product-btn { left:12px!important;bottom:78px!important;max-width:calc(100% - 84px)!important; }
+}
+/* ─── Floating launcher (quick-open side panel) ─────────────────────────── */
+#tpt-fab {
+  position:fixed;
+  right:20px;
+  bottom:20px;
+  z-index:2147483645;
+  isolation:isolate;
+  width:56px;
+  height:56px;
+  border:0;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:3px;
+  overflow:visible;
+  cursor:pointer;
+  background:#09090d;
+  box-shadow:0 12px 30px rgba(0,0,0,.48),0 0 22px rgba(254,44,85,.28),0 0 30px rgba(37,244,238,.16);
+  transition:transform .22s cubic-bezier(.2,.85,.2,1),box-shadow .22s ease,filter .22s ease;
+  -webkit-appearance:none;
+  appearance:none;
+}
+#tpt-fab::before {
+  content:"";
+  position:absolute;
+  inset:-4px;
+  z-index:-1;
+  border-radius:inherit;
+  background:conic-gradient(from 0deg,#25f4ee 0 16%,transparent 24% 46%,#fe2c55 56% 76%,transparent 84% 100%);
+  filter:drop-shadow(0 0 7px rgba(37,244,238,.42));
+  animation:tpt-fab-orbit 4.8s linear infinite;
+}
+#tpt-fab::after {
+  content:"";
+  position:absolute;
+  left:50%;top:50%;
+  width:7px;height:7px;
+  margin:-3.5px;
+  border-radius:50%;
+  background:#fff;
+  box-shadow:0 0 7px #fff,0 0 13px #25f4ee;
+  animation:tpt-fab-spark 3.2s linear infinite;
+  pointer-events:none;
+}
+#tpt-fab:hover {
+  transform:translateY(-4px) scale(1.08) rotate(-2deg);
+  box-shadow:0 18px 38px rgba(0,0,0,.52),0 0 30px rgba(254,44,85,.45),0 0 38px rgba(37,244,238,.24);
+  filter:saturate(1.14);
+}
+#tpt-fab:active { transform:translateY(-1px) scale(.93); }
+#tpt-fab:focus-visible { outline:3px solid rgba(37,244,238,.82);outline-offset:6px; }
+#tpt-fab.is-hiding { pointer-events:none;animation:tpt-fab-exit .18s ease-in forwards; }
+#tpt-fab img {
+  position:relative;
+  z-index:1;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+  border-radius:50%;
+  pointer-events:none;
+  user-select:none;
+  -webkit-user-drag:none;
+  animation:tpt-fab-breathe 2.8s ease-in-out infinite;
+}
+@keyframes tpt-fab-orbit { to { transform:rotate(360deg); } }
+@keyframes tpt-fab-spark {
+  0% { transform:rotate(0deg) translateX(35px) scale(.65);opacity:.35; }
+  22% { opacity:1; }
+  55% { transform:rotate(200deg) translateX(35px) scale(1);opacity:.9; }
+  100% { transform:rotate(360deg) translateX(35px) scale(.65);opacity:.35; }
+}
+@keyframes tpt-fab-breathe {
+  0%,100% { transform:scale(.96) rotate(0deg);filter:brightness(.95); }
+  50% { transform:scale(1.035) rotate(1.5deg);filter:brightness(1.12); }
+}
+@keyframes tpt-fab-exit { to { opacity:0;transform:translateY(10px) scale(.72) rotate(12deg);filter:blur(3px); } }
+@media (prefers-reduced-motion:reduce) {
+  #tpt-fab::before,#tpt-fab::after,#tpt-fab img { animation:none; }
+  #tpt-fab { transition:opacity .15s ease; }
+}
+@media (max-width:640px) {
+  #tpt-fab { right:14px;bottom:84px;width:50px;height:50px; }
+}
+/* TikTok profile/search grid sorter. Kept page-local and prefix-scoped so
+   TikTok's own generic select/button rules cannot leak into the toolbar. */
+.tpt-sorter-toolbar {
+  position:relative;z-index:30;grid-column:1 / -1;display:flex;align-items:center;
+  flex-wrap:wrap;gap:8px;width:100%;margin:0 0 12px;padding:10px 12px;
+  border:1px solid rgba(0,229,255,.24);border-radius:12px;
+  background:rgba(13,18,29,.94);box-shadow:0 8px 26px rgba(0,0,0,.22);
+  color:#f2f7ff;font:600 12px/1.35 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  backdrop-filter:blur(14px);
+}
+.tpt-sorter-toolbar[hidden] { display:none !important; }
+.tpt-sorter-select,.tpt-sorter-button {
+  min-height:34px;padding:7px 10px;border:1px solid rgba(255,255,255,.14);
+  border-radius:9px;background:rgba(255,255,255,.07);color:inherit;font:inherit;
+}
+.tpt-sorter-select { cursor:pointer; }
+.tpt-sorter-select option { background:#151b29;color:#f2f7ff; }
+.tpt-sorter-button { cursor:pointer;transition:border-color .18s ease,background .18s ease,transform .18s ease; }
+.tpt-sorter-button:hover { border-color:rgba(0,229,255,.44);background:rgba(0,229,255,.11); }
+.tpt-sorter-button:active { transform:translateY(1px); }
+.tpt-sorter-select:disabled { cursor:not-allowed;opacity:.56; }
+.tpt-sorter-button[aria-pressed="true"] { border-color:rgba(0,229,255,.58);background:rgba(0,229,255,.16); }
+.tpt-sorter-select:focus-visible,.tpt-sorter-button:focus-visible { outline:2px solid #00e5ff;outline-offset:2px; }
+.tpt-sorter-status { margin-left:auto;color:#9fb1c7;font-variant-numeric:tabular-nums; }
+html:not([data-theme="dark"]):not([data-tux-color-scheme="dark"]) .tpt-sorter-toolbar {
+  border-color:rgba(0,118,148,.22);background:rgba(250,253,255,.96);color:#142033;
+  box-shadow:0 8px 24px rgba(20,50,80,.12);
+}
+html:not([data-theme="dark"]):not([data-tux-color-scheme="dark"]) .tpt-sorter-select,
+html:not([data-theme="dark"]):not([data-tux-color-scheme="dark"]) .tpt-sorter-button {
+  border-color:rgba(15,40,60,.14);background:rgba(10,25,40,.05);
+}
+html:not([data-theme="dark"]):not([data-tux-color-scheme="dark"]) .tpt-sorter-select option { background:#fff;color:#142033; }
+@media (max-width:640px) {
+  .tpt-sorter-toolbar { gap:6px;padding:8px; }
+  .tpt-sorter-select,.tpt-sorter-button { flex:1 1 42%;min-width:0; }
+  .tpt-sorter-status { flex:1 1 100%;margin-left:0;text-align:center; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .tpt-sorter-button { transition:none; }
+}

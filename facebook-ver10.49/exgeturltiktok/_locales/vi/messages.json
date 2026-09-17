@@ -1,0 +1,1658 @@
+{
+  "action": {
+    "message": "Hành động",
+    "description": "User-interface message: action. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "actionDetail": {
+    "message": "Hành động: {action}",
+    "description": "User-interface message: actionDetail. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "actionTitle": {
+    "message": "Mở Trợ thủ TopTop",
+    "description": "Chrome extension metadata shown by the browser and Chrome Web Store."
+  },
+  "activeTab": {
+    "message": "Tab hiện tại",
+    "description": "User-interface message: activeTab. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "activeTracked": {
+    "message": "{active} đang tải / {total} được theo dõi",
+    "description": "User-interface message: activeTracked. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "add": {
+    "message": "Thêm",
+    "description": "User-interface message: add. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "addKeyword": {
+    "message": "Thêm từ khóa hoặc #tag",
+    "description": "User-interface message: addKeyword. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "advanced": {
+    "message": "Nâng cao",
+    "description": "User-interface message: advanced. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "advancedRules": {
+    "message": "Luật nâng cao",
+    "description": "User-interface message: advancedRules. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "advancedRulesDesc": {
+    "message": "chứa từ, hashtag chính xác, tác giả, âm thanh, regex an toàn",
+    "description": "User-interface message: advancedRulesDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "advancedRulesDiag": {
+    "message": "Luật nâng cao",
+    "description": "User-interface message: advancedRulesDiag. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "allCollections": {
+    "message": "Tất cả bộ sưu tập",
+    "description": "User-interface message: allCollections. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "allProfiles": {
+    "message": "Tất cả hồ sơ",
+    "description": "User-interface message: allProfiles. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "analyticsCsv": {
+    "message": "CSV phân tích",
+    "description": "User-interface message: analyticsCsv. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "analyticsExported": {
+    "message": "Đã xuất CSV phân tích",
+    "description": "User-interface message: analyticsExported. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "angle": {
+    "message": "Góc triển khai",
+    "description": "User-interface message: angle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "anonymousActive": {
+    "message": "Đang hoạt động ở chế độ Experimental. Không bảo đảm ẩn danh tuyệt đối.",
+    "description": "User-interface message: anonymousActive. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "anonymousNotWorking": {
+    "message": "Không hoạt động: {error}",
+    "description": "User-interface message: anonymousNotWorking. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "anonymousOff": {
+    "message": "Đang tắt. Chỉ bật khi bạn chấp nhận giới hạn của chế độ Experimental.",
+    "description": "User-interface message: anonymousOff. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "apiError": {
+    "message": "Lỗi API",
+    "description": "User-interface message: apiError. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "apply": {
+    "message": "Áp dụng",
+    "description": "User-interface message: apply. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "audio360": {
+    "message": "Âm thanh 360",
+    "description": "User-interface message: audio360. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "author": {
+    "message": "Tác giả",
+    "description": "User-interface message: author. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "autoDetected": {
+    "message": "Tự phát hiện",
+    "description": "User-interface message: autoDetected. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "autoLanguage": {
+    "message": "Tự động",
+    "description": "User-interface message: autoLanguage. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "autoPause": {
+    "message": "Tự tạm dừng",
+    "description": "User-interface message: autoPause. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "autoPauseDesc": {
+    "message": "Khi tab khác có âm thanh",
+    "description": "User-interface message: autoPauseDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "autoPauseState": {
+    "message": "Tự tạm dừng",
+    "description": "User-interface message: autoPauseState. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "autoScroll": {
+    "message": "Tự cuộn",
+    "description": "User-interface message: autoScroll. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "autoScrollDesc": {
+    "message": "Qua video tiếp theo",
+    "description": "User-interface message: autoScrollDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "autoScrollDetail": {
+    "message": "Trễ, giới hạn, video đã xem",
+    "description": "User-interface message: autoScrollDetail. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "background": {
+    "message": "Nền",
+    "description": "User-interface message: background. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "backgroundDesc": {
+    "message": "Phát khi đổi tab",
+    "description": "User-interface message: backgroundDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "backup": {
+    "message": "Sao lưu",
+    "description": "User-interface message: backup. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "backupExported": {
+    "message": "Đã xuất sao lưu",
+    "description": "User-interface message: backupExported. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "backupRestored": {
+    "message": "Đã khôi phục sao lưu",
+    "description": "User-interface message: backupRestored. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "backupTooNew": {
+    "message": "File sao lưu từ phiên bản mới hơn (v{version}, bản này hỗ trợ v{supported}). Hãy cập nhật extension rồi thử lại.",
+    "description": "User-interface message: backupTooNew. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bass": {
+    "message": "Bass",
+    "description": "User-interface message: bass. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bassBoost": {
+    "message": "Tăng bass",
+    "description": "User-interface message: bassBoost. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "batchDownload": {
+    "message": "Tải hàng loạt",
+    "description": "User-interface message: batchDownload. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "batchReady": {
+    "message": "{ready}/{total} URL sẵn sàng",
+    "description": "User-interface message: batchReady. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "blockedUntilTomorrow": {
+    "message": "Video bị chặn đến ngày mai. Bạn có thể đóng TikTok hoặc bỏ chặn riêng hôm nay.",
+    "description": "User-interface message: blockedUntilTomorrow. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "blur": {
+    "message": "Làm mờ",
+    "description": "User-interface message: blur. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bookmarkCurrent": {
+    "message": "Lưu video hiện tại (B)",
+    "description": "User-interface message: bookmarkCurrent. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bookmarkNotes": {
+    "message": "Ghi chú bookmark",
+    "description": "User-interface message: bookmarkNotes. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bookmarkRemoved": {
+    "message": "Đã xóa bookmark",
+    "description": "User-interface message: bookmarkRemoved. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bookmarks": {
+    "message": "Bookmark",
+    "description": "User-interface message: bookmarks. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bookmarkSaved": {
+    "message": "Đã lưu bookmark",
+    "description": "User-interface message: bookmarkSaved. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bookmarkVideo": {
+    "message": "Lưu video",
+    "description": "User-interface message: bookmarkVideo. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "builtBy": {
+    "message": "Phát triển bởi",
+    "description": "User-interface message: builtBy. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bulkEmpty": {
+    "message": "Không tìm thấy video nào",
+    "description": "User-interface message: bulkEmpty. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bulkFound": {
+    "message": "Tìm thấy {count} video",
+    "description": "User-interface message: bulkFound. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bulkNoneSelected": {
+    "message": "Chưa chọn video nào",
+    "description": "User-interface message: bulkNoneSelected. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bulkPause": {
+    "message": "Tạm dừng",
+    "description": "User-interface message: bulkPause. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bulkProgress": {
+    "message": "Đã tải {done}/{total} (lỗi {failed})",
+    "description": "User-interface message: bulkProgress. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bulkResume": {
+    "message": "Tiếp tục",
+    "description": "User-interface message: bulkResume. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bulkScanFail": {
+    "message": "Quét thất bại",
+    "description": "User-interface message: bulkScanFail. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bulkScanning": {
+    "message": "Đang quét video kênh...",
+    "description": "User-interface message: bulkScanning. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bulkStarted": {
+    "message": "Bắt đầu tải {count} video",
+    "description": "User-interface message: bulkStarted. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "bypassToday": {
+    "message": "Bỏ chặn hôm nay",
+    "description": "User-interface message: bypassToday. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "cafeButton": {
+    "message": "Tham Gia Cộng Đồng Marketing",
+    "description": "User-interface message: cafeButton. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "cannotInject": {
+    "message": "Không thể nạp content script",
+    "description": "User-interface message: cannotInject. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "cap": {
+    "message": "Cap",
+    "description": "User-interface message: cap. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "capture": {
+    "message": "Ghi lại",
+    "description": "User-interface message: capture. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "captureFrame": {
+    "message": "Chụp khung hình",
+    "description": "User-interface message: captureFrame. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "capturingFrame": {
+    "message": "Đang chụp khung hình...",
+    "description": "User-interface message: capturingFrame. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "chooseSubtitleLanguage": {
+    "message": "Chọn ngôn ngữ (.srt)",
+    "description": "User-interface message: chooseSubtitleLanguage. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "clean": {
+    "message": "Gọn màn hình",
+    "description": "User-interface message: clean. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "cleanDesc": {
+    "message": "Ẩn lớp phủ",
+    "description": "User-interface message: cleanDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "cleanMode": {
+    "message": "Ẩn giao diện",
+    "description": "User-interface message: cleanMode. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "clear": {
+    "message": "Xóa",
+    "description": "User-interface message: clear. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "clearDone": {
+    "message": "Xóa xong",
+    "description": "User-interface message: clearDone. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "clearWatched": {
+    "message": "Xóa đã xem",
+    "description": "User-interface message: clearWatched. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "close": {
+    "message": "Đóng",
+    "description": "User-interface message: close. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "closeTikTok": {
+    "message": "Đóng TikTok",
+    "description": "User-interface message: closeTikTok. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "collection": {
+    "message": "Bộ sưu tập",
+    "description": "User-interface message: collection. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "collectionReady": {
+    "message": "Bộ sưu tập sẵn sàng: {name}",
+    "description": "User-interface message: collectionReady. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "com": {
+    "message": "Bình luận",
+    "description": "User-interface message: com. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "comments": {
+    "message": "Bình luận",
+    "description": "User-interface message: comments. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "competitor": {
+    "message": "Đối thủ",
+    "description": "User-interface message: competitor. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "connection": {
+    "message": "Kết nối",
+    "description": "User-interface message: connection. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "connectionError": {
+    "message": "Lỗi kết nối",
+    "description": "User-interface message: connectionError. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "connectionTimeout": {
+    "message": "Kết nối quá lâu",
+    "description": "User-interface message: connectionTimeout. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "contains": {
+    "message": "Chứa từ",
+    "description": "User-interface message: contains. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "contentConnected": {
+    "message": "Content script đã kết nối",
+    "description": "User-interface message: contentConnected. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "contentError": {
+    "message": "Lỗi content",
+    "description": "User-interface message: contentError. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "contentScript": {
+    "message": "Content script",
+    "description": "User-interface message: contentScript. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "contentTimeout": {
+    "message": "Content quá lâu",
+    "description": "User-interface message: contentTimeout. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "copiedKind": {
+    "message": "Đã sao chép {kind}",
+    "description": "User-interface message: copiedKind. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "copy": {
+    "message": "Copy",
+    "description": "User-interface message: copy. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "copyCurrent": {
+    "message": "Sao chép link hiện tại",
+    "description": "User-interface message: copyCurrent. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "copyFailed": {
+    "message": "Sao chép thất bại",
+    "description": "User-interface message: copyFailed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "copyReport": {
+    "message": "Copy báo cáo",
+    "description": "User-interface message: copyReport. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "copySticker": {
+    "message": "Sao chép sticker",
+    "description": "User-interface message: copySticker. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "currentVideo": {
+    "message": "Video hiện tại",
+    "description": "User-interface message: currentVideo. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "currentVideoDiag": {
+    "message": "Video hiện tại",
+    "description": "User-interface message: currentVideoDiag. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "custom": {
+    "message": "Tùy chỉnh",
+    "description": "User-interface message: custom. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "customProfileSaved": {
+    "message": "Đã lưu hồ sơ tùy chỉnh",
+    "description": "User-interface message: customProfileSaved. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "customWorkflow": {
+    "message": "Workflow tùy chỉnh",
+    "description": "User-interface message: customWorkflow. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "decreaseSpeed": {
+    "message": "Giảm tốc độ",
+    "description": "User-interface message: decreaseSpeed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "dedupe": {
+    "message": "Gộp trùng",
+    "description": "User-interface message: dedupe. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "delay": {
+    "message": "Trễ",
+    "description": "User-interface message: delay. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "diagnosticsRefreshed": {
+    "message": "Đã làm mới chẩn đoán",
+    "description": "User-interface message: diagnosticsRefreshed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "disableShortcut": {
+    "message": "Tắt phím tắt: {action}",
+    "description": "User-interface message: disableShortcut. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "dismissWarning": {
+    "message": "Đóng",
+    "description": "User-interface message: dismissWarning. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "docTitle": {
+    "message": "HONGDOLABS - Trợ thủ TopTop",
+    "description": "User-interface message: docTitle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "domChecking": {
+    "message": "Đang phân tích",
+    "description": "User-interface message: domChecking. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "done": {
+    "message": "Xong",
+    "description": "User-interface message: done. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadAll": {
+    "message": "Tải tất cả",
+    "description": "User-interface message: downloadAll. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadAllProductImages": {
+    "message": "Tải tất cả {count} ảnh",
+    "description": "User-interface message: downloadAllProductImages. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadBatch": {
+    "message": "Tải hàng loạt",
+    "description": "User-interface message: downloadBatch. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadBatchCount": {
+    "message": "Tải hàng loạt ({count})",
+    "description": "User-interface message: downloadBatchCount. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadCurrent": {
+    "message": "Tải video hiện tại",
+    "description": "User-interface message: downloadCurrent. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadedFile": {
+    "message": "File đã tải",
+    "description": "User-interface message: downloadedFile. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadFailed": {
+    "message": "Tải thất bại",
+    "description": "User-interface message: downloadFailed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloading": {
+    "message": "Đang tải",
+    "description": "User-interface message: downloading. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadingSubtitle": {
+    "message": "Đang tải phụ đề…",
+    "description": "User-interface message: downloadingSubtitle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadJobs": {
+    "message": "Tiến trình tải",
+    "description": "User-interface message: downloadJobs. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadMedia": {
+    "message": "Tải video/âm thanh",
+    "description": "User-interface message: downloadMedia. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadProductImages": {
+    "message": "Tải ảnh sản phẩm",
+    "description": "User-interface message: downloadProductImages. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadProgress": {
+    "message": "Tiến trình tải",
+    "description": "User-interface message: downloadProgress. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadStarted": {
+    "message": "Đã bắt đầu tải",
+    "description": "User-interface message: downloadStarted. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadSubtitle": {
+    "message": "Tải phụ đề (.srt)",
+    "description": "User-interface message: downloadSubtitle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "downloadVideo": {
+    "message": "Tải video",
+    "description": "User-interface message: downloadVideo. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "duplicateGroups": {
+    "message": "{count} nhóm trùng lặp",
+    "description": "User-interface message: duplicateGroups. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "email": {
+    "message": "Email",
+    "description": "User-interface message: email. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "emptySubtitle": {
+    "message": "Phụ đề rỗng",
+    "description": "User-interface message: emptySubtitle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "enterRule": {
+    "message": "Nhập giá trị luật trước",
+    "description": "User-interface message: enterRule. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "enterWhitelist": {
+    "message": "Nhập giá trị whitelist trước",
+    "description": "User-interface message: enterWhitelist. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "eqMode": {
+    "message": "Chế độ EQ",
+    "description": "User-interface message: eqMode. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "errorPrefix": {
+    "message": "Lỗi: {message}",
+    "description": "User-interface message: errorPrefix. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "exactHashtag": {
+    "message": "Hashtag chính xác",
+    "description": "User-interface message: exactHashtag. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "exportCsv": {
+    "message": "Xuất CSV",
+    "description": "User-interface message: exportCsv. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "exportedFormat": {
+    "message": "Đã xuất {format}",
+    "description": "User-interface message: exportedFormat. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "exportJson": {
+    "message": "Xuất JSON",
+    "description": "User-interface message: exportJson. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "extensionContextError": {
+    "message": "Lỗi ngữ cảnh extension",
+    "description": "Chrome extension metadata shown by the browser and Chrome Web Store."
+  },
+  "extensionDescription": {
+    "message": "Bộ công cụ TikTok: tự cuộn, phát nền, âm thanh, bộ lọc, tải video, phụ đề, ảnh sản phẩm và tạo prompt AI.",
+    "description": "Chrome extension metadata shown by the browser and Chrome Web Store."
+  },
+  "extensionName": {
+    "message": "Cào URL TikTok",
+    "description": "Chrome extension metadata shown by the browser and Chrome Web Store."
+  },
+  "failed": {
+    "message": "Lỗi",
+    "description": "User-interface message: failed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "failedFetchVideo": {
+    "message": "Không lấy được video",
+    "description": "User-interface message: failedFetchVideo. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "fallbackEnriched": {
+    "message": "Trực tiếp",
+    "description": "User-interface message: fallbackEnriched. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "fetchAge": {
+    "message": "Tuổi dữ liệu",
+    "description": "User-interface message: fetchAge. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "fetching": {
+    "message": "Đang lấy...",
+    "description": "User-interface message: fetching. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "fetchingProduct": {
+    "message": "Đang lấy thông tin sản phẩm…",
+    "description": "User-interface message: fetchingProduct. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "filesReady": {
+    "message": "{count} file sẵn sàng",
+    "description": "User-interface message: filesReady. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "friendlyReminder": {
+    "message": "Nhắc nhở nhẹ nhàng",
+    "description": "User-interface message: friendlyReminder. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "go": {
+    "message": "Lấy",
+    "description": "User-interface message: go. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "guideTitle": {
+    "message": "Hướng dẫn",
+    "description": "User-interface message: guideTitle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "headerTitle": {
+    "message": "Trợ thủ TopTop",
+    "description": "User-interface message: headerTitle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "health": {
+    "message": "Sức khỏe",
+    "description": "User-interface message: health. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "hide": {
+    "message": "Ẩn",
+    "description": "User-interface message: hide. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "historyCleared": {
+    "message": "Đã xóa lịch sử",
+    "description": "User-interface message: historyCleared. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "historyLinkCopied": {
+    "message": "Đã sao chép link lịch sử",
+    "description": "User-interface message: historyLinkCopied. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "hook": {
+    "message": "Hook",
+    "description": "User-interface message: hook. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "idle": {
+    "message": "Rảnh",
+    "description": "User-interface message: idle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "importedBookmarks": {
+    "message": "Đã nhập {added} bookmark mới ({dupes} trùng lặp bị bỏ qua)",
+    "description": "User-interface message: importedBookmarks. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "importFailed": {
+    "message": "Nhập thất bại - JSON không hợp lệ",
+    "description": "User-interface message: importFailed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "importJson": {
+    "message": "Nhập JSON",
+    "description": "User-interface message: importJson. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "increaseSpeed": {
+    "message": "Tăng tốc độ",
+    "description": "User-interface message: increaseSpeed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "infoLoadFailed": {
+    "message": "Không tải được thông tin",
+    "description": "User-interface message: infoLoadFailed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "insight": {
+    "message": "Phân tích",
+    "description": "User-interface message: insight. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "invalidBackup": {
+    "message": "File sao lưu không hợp lệ",
+    "description": "User-interface message: invalidBackup. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "invalidSubtitle": {
+    "message": "Track phụ đề không hợp lệ",
+    "description": "User-interface message: invalidSubtitle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "invalidTikTokUrl": {
+    "message": "Không phát hiện được URL video TikTok hợp lệ",
+    "description": "User-interface message: invalidTikTokUrl. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "jobsCleared": {
+    "message": "Đã xóa tiến trình tải",
+    "description": "User-interface message: jobsCleared. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "keyboardShortcuts": {
+    "message": "Phím tắt",
+    "description": "User-interface message: keyboardShortcuts. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "keywords": {
+    "message": "Từ khóa",
+    "description": "User-interface message: keywords. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "keywordsDesc": {
+    "message": "Enter để thêm",
+    "description": "User-interface message: keywordsDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "language": {
+    "message": "Ngôn ngữ",
+    "description": "User-interface message: language. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "lastFetch": {
+    "message": "Lần lấy cuối",
+    "description": "User-interface message: lastFetch. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "lastProvider": {
+    "message": "Nguồn cuối",
+    "description": "User-interface message: lastProvider. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "latency": {
+    "message": "Độ trễ",
+    "description": "User-interface message: latency. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "likes": {
+    "message": "Thích",
+    "description": "User-interface message: likes. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "linkCopied": {
+    "message": "Đã sao chép link",
+    "description": "User-interface message: linkCopied. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "loadingInfo": {
+    "message": "Đang tải thông tin…",
+    "description": "User-interface message: loadingInfo. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "loadingOptions": {
+    "message": "Đang tải tùy chọn…",
+    "description": "User-interface message: loadingOptions. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "local": {
+    "message": "Cục bộ",
+    "description": "User-interface message: local. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "localAnalytics": {
+    "message": "Phân tích local",
+    "description": "User-interface message: localAnalytics. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "maxWatch": {
+    "message": "Xem tối đa",
+    "description": "User-interface message: maxWatch. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "menuAnalyzeImage": {
+    "message": "Phân tích ảnh → Prompt",
+    "description": "User-interface message: menuAnalyzeImage. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "menuSaveImage": {
+    "message": "Lưu ảnh thành…",
+    "description": "User-interface message: menuSaveImage. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "menuSelectRegion": {
+    "message": "Chọn vùng → Prompt",
+    "description": "User-interface message: menuSelectRegion. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "mid": {
+    "message": "Mid",
+    "description": "User-interface message: mid. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "more": {
+    "message": "Thêm (+{count})",
+    "description": "User-interface message: more. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "mute": {
+    "message": "Tắt tiếng",
+    "description": "User-interface message: mute. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "muteToggle": {
+    "message": "Tắt/bật tiếng",
+    "description": "User-interface message: muteToggle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "navigateTikTok": {
+    "message": "Mở TikTok",
+    "description": "User-interface message: navigateTikTok. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "never": {
+    "message": "Chưa bao giờ",
+    "description": "User-interface message: never. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "newCollection": {
+    "message": "Bộ sưu tập mới",
+    "description": "User-interface message: newCollection. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "newest": {
+    "message": "Mới nhất",
+    "description": "User-interface message: newest. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noActiveDownloads": {
+    "message": "Không có lượt tải đang chạy",
+    "description": "User-interface message: noActiveDownloads. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noActiveTikTokTab": {
+    "message": "TikTok",
+    "description": "User-interface message: noActiveTikTokTab. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noAdvancedRules": {
+    "message": "Chưa có luật nâng cao",
+    "description": "User-interface message: noAdvancedRules. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noBatchFiles": {
+    "message": "Chưa quét file hàng loạt",
+    "description": "User-interface message: noBatchFiles. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noBookmarksInFile": {
+    "message": "Không tìm thấy bookmark trong file",
+    "description": "User-interface message: noBookmarksInFile. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noBookmarksYet": {
+    "message": "Chưa có bookmark",
+    "description": "User-interface message: noBookmarksYet. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noCaption": {
+    "message": "Chưa phát hiện caption.",
+    "description": "User-interface message: noCaption. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noCaptionText": {
+    "message": "(không có caption)",
+    "description": "User-interface message: noCaptionText. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noData": {
+    "message": "Chưa có dữ liệu",
+    "description": "User-interface message: noData. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noDownloadable": {
+    "message": "Không tìm thấy file có thể tải",
+    "description": "User-interface message: noDownloadable. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noDownloadFiles": {
+    "message": "Không có tệp có thể tải",
+    "description": "User-interface message: noDownloadFiles. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noDownloadsTracked": {
+    "message": "Chưa theo dõi lượt tải",
+    "description": "User-interface message: noDownloadsTracked. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noDownloadsYet": {
+    "message": "Chưa có lượt tải",
+    "description": "User-interface message: noDownloadsYet. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noDuplicates": {
+    "message": "Không có trùng lặp",
+    "description": "User-interface message: noDuplicates. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noDuplicatesDetected": {
+    "message": "Chưa phát hiện trùng lặp",
+    "description": "User-interface message: noDuplicatesDetected. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noDuplicatesFound": {
+    "message": "Không tìm thấy trùng lặp",
+    "description": "User-interface message: noDuplicatesFound. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noFetchYet": {
+    "message": "Chưa lấy",
+    "description": "User-interface message: noFetchYet. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noHashtags": {
+    "message": "Không có hashtag",
+    "description": "User-interface message: noHashtags. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noKindToCopy": {
+    "message": "Không có {kind} để sao chép",
+    "description": "User-interface message: noKindToCopy. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noLive": {
+    "message": "Không Live",
+    "description": "User-interface message: noLive. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "none": {
+    "message": "Không có",
+    "description": "User-interface message: none. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noProductInfo": {
+    "message": "Không có thông tin sản phẩm cho video này.",
+    "description": "User-interface message: noProductInfo. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noProductsFound": {
+    "message": "Chưa tìm thấy sản phẩm.",
+    "description": "User-interface message: noProductsFound. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noProfileData": {
+    "message": "Chưa có dữ liệu profile.",
+    "description": "User-interface message: noProfileData. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noPublicVideos": {
+    "message": "Profile không có video công khai.",
+    "description": "User-interface message: noPublicVideos. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "normal": {
+    "message": "Bình thường",
+    "description": "User-interface message: normal. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noShop": {
+    "message": "Không Shop",
+    "description": "User-interface message: noShop. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noSubtitles": {
+    "message": "Video này không có phụ đề",
+    "description": "User-interface message: noSubtitles. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "notDetected": {
+    "message": "Chưa phát hiện",
+    "description": "User-interface message: notDetected. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "note": {
+    "message": "Ghi chú",
+    "description": "User-interface message: note. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "notePlaceholder": {
+    "message": "Ý tưởng, ngách, kết quả test...",
+    "description": "User-interface message: notePlaceholder. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noteSaved": {
+    "message": "Đã lưu ghi chú",
+    "description": "User-interface message: noteSaved. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noTikTokConnection": {
+    "message": "Chưa kết nối TikTok",
+    "description": "User-interface message: noTikTokConnection. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noTikTokUrl": {
+    "message": "Không nhận diện được URL video TikTok",
+    "description": "User-interface message: noTikTokUrl. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "notTikTok": {
+    "message": "Không phải TikTok",
+    "description": "User-interface message: notTikTok. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noVideoDetected": {
+    "message": "Chưa có video",
+    "description": "User-interface message: noVideoDetected. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noWatchedData": {
+    "message": "Chưa có dữ liệu đã xem",
+    "description": "User-interface message: noWatchedData. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noWatchedVideosYet": {
+    "message": "Chưa có video đã xem",
+    "description": "User-interface message: noWatchedVideosYet. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "noWhitelist": {
+    "message": "Chưa có whitelist",
+    "description": "User-interface message: noWhitelist. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "off": {
+    "message": "Tắt",
+    "description": "User-interface message: off. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "ok": {
+    "message": "OK",
+    "description": "User-interface message: ok. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "oldest": {
+    "message": "Cũ nhất",
+    "description": "User-interface message: oldest. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "open": {
+    "message": "Mở",
+    "description": "User-interface message: open. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "openProductImage": {
+    "message": "Mở ảnh sản phẩm {index}",
+    "description": "User-interface message: openProductImage. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "openTikTokShop": {
+    "message": "Mở trên TikTok Shop",
+    "description": "User-interface message: openTikTokShop. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "openToolkit": {
+    "message": "Mở Trợ thủ TopTop",
+    "description": "User-interface message: openToolkit. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "openVideoInsight": {
+    "message": "Mở video TikTok để xem phân tích.",
+    "description": "User-interface message: openVideoInsight. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "other": {
+    "message": "Khác",
+    "description": "User-interface message: other. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "pageStatsOnly": {
+    "message": "Đã đồng bộ",
+    "description": "User-interface message: pageStatsOnly. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "pasteAtLeastOne": {
+    "message": "Dán ít nhất một URL TikTok",
+    "description": "User-interface message: pasteAtLeastOne. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "pasteLinkFirst": {
+    "message": "Dán link TikTok trước",
+    "description": "User-interface message: pasteLinkFirst. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "pasteOneUrl": {
+    "message": "Dán mỗi dòng một URL TikTok",
+    "description": "User-interface message: pasteOneUrl. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "pasteTikTokUrl": {
+    "message": "Dán URL TikTok",
+    "description": "User-interface message: pasteTikTokUrl. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "pauseComments": {
+    "message": "Dừng khi đọc bình luận",
+    "description": "User-interface message: pauseComments. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "pausedByOtherAudio": {
+    "message": "Dừng vì âm thanh khác",
+    "description": "User-interface message: pausedByOtherAudio. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "pauseHover": {
+    "message": "Dừng khi hover",
+    "description": "User-interface message: pauseHover. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "pip": {
+    "message": "PiP",
+    "description": "User-interface message: pip. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "pipDesc": {
+    "message": "Trình phát nhỏ",
+    "description": "User-interface message: pipDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "playback": {
+    "message": "Phát lại",
+    "description": "User-interface message: playback. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "privateProfile": {
+    "message": "Profile này đang ở chế độ riêng tư.",
+    "description": "User-interface message: privateProfile. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "product": {
+    "message": "Sản phẩm",
+    "description": "User-interface message: product. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "productDownloadedFolder": {
+    "message": "Đã tải {count} ảnh vào thư mục {folder}",
+    "description": "User-interface message: productDownloadedFolder. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "productDownloadedPartial": {
+    "message": "Đã tải {done}/{total} ảnh sản phẩm",
+    "description": "User-interface message: productDownloadedPartial. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "productDownloadingProgress": {
+    "message": "Đang tải {current}/{total}…",
+    "description": "User-interface message: productDownloadingProgress. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "productFallback": {
+    "message": "Sản phẩm {id}",
+    "description": "User-interface message: productFallback. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "productImageAlt": {
+    "message": "Ảnh sản phẩm {index}",
+    "description": "User-interface message: productImageAlt. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "productImageCount": {
+    "message": "{count} ảnh",
+    "description": "User-interface message: productImageCount. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "productImagesLabel": {
+    "message": "Ảnh sản phẩm",
+    "description": "User-interface message: productImagesLabel. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "productInfo": {
+    "message": "Thông tin sản phẩm",
+    "description": "User-interface message: productInfo. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "productQrLabel": {
+    "message": "QR mở sản phẩm TikTok Shop",
+    "description": "User-interface message: productQrLabel. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "profile": {
+    "message": "Hồ sơ",
+    "description": "User-interface message: profile. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "promoDesc": {
+    "message": "Công cụ AI & Kiếm tiền Online",
+    "description": "User-interface message: promoDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "providers": {
+    "message": "Nguồn tải",
+    "description": "User-interface message: providers. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "providersStatus": {
+    "message": "Trạng thái TikWM",
+    "description": "User-interface message: providersStatus. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "qrPrivacy": {
+    "message": "QR được tạo ngay trên thiết bị, không gửi link ra ngoài.",
+    "description": "User-interface message: qrPrivacy. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "quick": {
+    "message": "Nhanh",
+    "description": "User-interface message: quick. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "quickTools": {
+    "message": "Công cụ nhanh",
+    "description": "User-interface message: quickTools. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "readingCurrent": {
+    "message": "Đang đồng bộ",
+    "description": "User-interface message: readingCurrent. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "recentDownloads": {
+    "message": "Lượt tải gần đây",
+    "description": "User-interface message: recentDownloads. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "recentDownloadsDiag": {
+    "message": "Lượt tải gần đây",
+    "description": "User-interface message: recentDownloadsDiag. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "refresh": {
+    "message": "Làm mới",
+    "description": "User-interface message: refresh. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "regexLong": {
+    "message": "Regex quá dài",
+    "description": "User-interface message: regexLong. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "relax": {
+    "message": "Thư giãn",
+    "description": "User-interface message: relax. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "reloadButton": {
+    "message": "Tải lại tab",
+    "description": "User-interface message: reloadButton. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "reloadProduct": {
+    "message": "Tải lại thông tin sản phẩm",
+    "description": "User-interface message: reloadProduct. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "reloadWarning": {
+    "message": "Tải lại tab TikTok để kết nối lại extension.",
+    "description": "User-interface message: reloadWarning. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "removedDuplicates": {
+    "message": "Đã xóa {count} mục trùng",
+    "description": "User-interface message: removedDuplicates. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "removeKeyword": {
+    "message": "Xóa {keyword}",
+    "description": "User-interface message: removeKeyword. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "removeRule": {
+    "message": "Xóa luật {rule}",
+    "description": "User-interface message: removeRule. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "removeWatermark": {
+    "message": "Xóa watermark",
+    "description": "User-interface message: removeWatermark. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "research": {
+    "message": "Nghiên cứu",
+    "description": "User-interface message: research. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "reset1x": {
+    "message": "Về 1x",
+    "description": "User-interface message: reset1x. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "resolveBatch": {
+    "message": "Quét hàng loạt",
+    "description": "User-interface message: resolveBatch. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "resolving": {
+    "message": "Đang quét {current}/{total}...",
+    "description": "User-interface message: resolving. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "resolvingMedia": {
+    "message": "Đang quét media...",
+    "description": "User-interface message: resolvingMedia. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "restore": {
+    "message": "Khôi phục",
+    "description": "User-interface message: restore. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "restoreFailed": {
+    "message": "Khôi phục thất bại",
+    "description": "User-interface message: restoreFailed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "reviewsLabel": {
+    "message": "đánh giá",
+    "description": "User-interface message: reviewsLabel. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "rulesWhitelist": {
+    "message": "Luật / whitelist",
+    "description": "User-interface message: rulesWhitelist. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "ruleValue": {
+    "message": "Giá trị luật",
+    "description": "User-interface message: ruleValue. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "safeRegex": {
+    "message": "Regex an toàn",
+    "description": "User-interface message: safeRegex. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "savedCount": {
+    "message": "{count} đã lưu",
+    "description": "User-interface message: savedCount. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "savedLocally": {
+    "message": "Lưu trên máy",
+    "description": "User-interface message: savedLocally. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "saveNote": {
+    "message": "Lưu ghi chú",
+    "description": "User-interface message: saveNote. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "saveSticker": {
+    "message": "Lưu sticker",
+    "description": "User-interface message: saveSticker. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "saveTo": {
+    "message": "Lưu vào",
+    "description": "User-interface message: saveTo. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "scanImages": {
+    "message": "Quét ảnh",
+    "description": "User-interface message: scanImages. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "scannedVideos": {
+    "message": "{count} video đã quét",
+    "description": "User-interface message: scannedVideos. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "scanningImages": {
+    "message": "Đang quét…",
+    "description": "User-interface message: scanningImages. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "scanProductQr": {
+    "message": "Quét để mở sản phẩm",
+    "description": "User-interface message: scanProductQr. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "screenshot": {
+    "message": "Chụp khung hình",
+    "description": "User-interface message: screenshot. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "searchLibrary": {
+    "message": "Tìm trong video đã xem hoặc đã lưu",
+    "description": "User-interface message: searchLibrary. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "seeLess": {
+    "message": "Thu gọn",
+    "description": "User-interface message: seeLess. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "seeMore": {
+    "message": "Xem thêm",
+    "description": "User-interface message: seeMore. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "selectBookmark": {
+    "message": "Chọn một bookmark",
+    "description": "User-interface message: selectBookmark. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "selectCompare": {
+    "message": "Chọn 2–4 video để so sánh",
+    "description": "User-interface message: selectCompare. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "selectedCount": {
+    "message": "{count} đã chọn",
+    "description": "User-interface message: selectedCount. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "shares": {
+    "message": "Chia sẻ",
+    "description": "User-interface message: shares. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "shop": {
+    "message": "Shop",
+    "description": "User-interface message: shop. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "shopDesc": {
+    "message": "Mở khóa + giá",
+    "description": "User-interface message: shopDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "shortcutListening": {
+    "message": "Gõ phím…",
+    "description": "User-interface message: shortcutListening. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "shortcutWaiting": {
+    "message": "đang chờ phím mới",
+    "description": "User-interface message: shortcutWaiting. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "skip": {
+    "message": "Bỏ qua",
+    "description": "User-interface message: skip. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "skipSeen": {
+    "message": "Bỏ video đã xem",
+    "description": "User-interface message: skipSeen. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "skipTodayLabel": {
+    "message": "Không hiện lại trong hôm nay",
+    "description": "User-interface message: skipTodayLabel. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "smartDuplicates": {
+    "message": "Trùng lặp thông minh",
+    "description": "User-interface message: smartDuplicates. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "soldLabel": {
+    "message": "đã bán",
+    "description": "User-interface message: soldLabel. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sort": {
+    "message": "Sắp xếp",
+    "description": "User-interface message: sort. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterAscending": {
+    "message": "Tăng dần",
+    "description": "User-interface message: sorterAscending. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterBackToTop": {
+    "message": "Về đầu trang",
+    "description": "User-interface message: sorterBackToTop. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterDefaults": {
+    "message": "Thiết lập sắp xếp",
+    "description": "User-interface message: sorterDefaults. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterDesc": {
+    "message": "Sắp xếp các lưới video đã tải",
+    "description": "User-interface message: sorterDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterDescending": {
+    "message": "Giảm dần",
+    "description": "User-interface message: sorterDescending. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterDisabled": {
+    "message": "Tắt sắp xếp",
+    "description": "User-interface message: sorterDisabled. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterLoadDelay": {
+    "message": "Độ trễ nạp thêm",
+    "description": "User-interface message: sorterLoadDelay. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterLoading": {
+    "message": "Đang nạp",
+    "description": "User-interface message: sorterLoading. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterLoadMore": {
+    "message": "Nạp thêm",
+    "description": "User-interface message: sorterLoadMore. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterNote": {
+    "message": "Thanh công cụ trên trang sắp xếp card đã tải và có thể cuộn riêng để nạp thêm.",
+    "description": "User-interface message: sorterNote. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterOrder": {
+    "message": "Thứ tự",
+    "description": "User-interface message: sorterOrder. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterPages": {
+    "message": "Hồ sơ, tìm kiếm, hashtag, âm nhạc và Khám phá",
+    "description": "User-interface message: sorterPages. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterReadyStatus": {
+    "message": "$1 card sẵn sàng",
+    "description": "User-interface message: sorterReadyStatus. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterSaves": {
+    "message": "Lượt lưu",
+    "description": "User-interface message: sorterSaves. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterSortBy": {
+    "message": "Sắp xếp theo",
+    "description": "User-interface message: sorterSortBy. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterStatus": {
+    "message": "$1 đã sắp xếp · $2 thiếu dữ liệu",
+    "description": "User-interface message: sorterStatus. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterStopLoading": {
+    "message": "Dừng nạp",
+    "description": "User-interface message: sorterStopLoading. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterTitle": {
+    "message": "Sắp xếp TikTok",
+    "description": "User-interface message: sorterTitle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterToolbar": {
+    "message": "Thanh sắp xếp TikTok",
+    "description": "User-interface message: sorterToolbar. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sorterUploadDate": {
+    "message": "Ngày đăng",
+    "description": "User-interface message: sorterUploadDate. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "sound": {
+    "message": "Âm thanh",
+    "description": "User-interface message: sound. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "speed": {
+    "message": "Tốc độ",
+    "description": "User-interface message: speed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "started": {
+    "message": "Đã bắt đầu",
+    "description": "User-interface message: started. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "startedDownloads": {
+    "message": "Đã bắt đầu {count} lượt tải",
+    "description": "User-interface message: startedDownloads. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "startedDownloadsPartial": {
+    "message": "Đã bắt đầu {ok}/{total} lượt tải",
+    "description": "User-interface message: startedDownloadsPartial. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "statsFromPage": {
+    "message": "Đã đồng bộ",
+    "description": "User-interface message: statsFromPage. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "statusLinked": {
+    "message": "Đã kết nối TikTok",
+    "description": "User-interface message: statusLinked. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "statusScanning": {
+    "message": "Đang quét...",
+    "description": "User-interface message: statusScanning. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "statusTikTokOnly": {
+    "message": "TikTok",
+    "description": "User-interface message: statusTikTokOnly. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "stickerAlt": {
+    "message": "Sticker bình luận TikTok",
+    "description": "User-interface message: stickerAlt. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "stickerCopied": {
+    "message": "Đã sao chép sticker",
+    "description": "User-interface message: stickerCopied. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "stickerCopyFailed": {
+    "message": "Không thể sao chép sticker",
+    "description": "User-interface message: stickerCopyFailed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "stickerLinkCopied": {
+    "message": "Đã sao chép liên kết sticker",
+    "description": "User-interface message: stickerLinkCopied. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "stickerSaveFailed": {
+    "message": "Không thể lưu sticker",
+    "description": "User-interface message: stickerSaveFailed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "stickerSaving": {
+    "message": "Đang lưu sticker",
+    "description": "User-interface message: stickerSaving. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "storage": {
+    "message": "Lưu trữ",
+    "description": "User-interface message: storage. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "storageDesc": {
+    "message": "Thư viện local và luật lọc",
+    "description": "User-interface message: storageDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "study": {
+    "message": "Học tập",
+    "description": "User-interface message: study. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "subtitleCopied": {
+    "message": "Đã sao chép transcript",
+    "description": "User-interface message: subtitleCopied. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "subtitleDownloadFailed": {
+    "message": "Tải phụ đề thất bại",
+    "description": "User-interface message: subtitleDownloadFailed. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "subtitleError": {
+    "message": "Không tải được phụ đề",
+    "description": "User-interface message: subtitleError. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "subtitleFetching": {
+    "message": "Đang tải phụ đề...",
+    "description": "User-interface message: subtitleFetching. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "subtitleLoading": {
+    "message": "Đang tìm phụ đề...",
+    "description": "User-interface message: subtitleLoading. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "subtitleNone": {
+    "message": "Video này không có phụ đề",
+    "description": "User-interface message: subtitleNone. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "subtitleReady": {
+    "message": "Tìm thấy {count} phụ đề",
+    "description": "User-interface message: subtitleReady. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "subtitleSaved": {
+    "message": "Đã lưu phụ đề",
+    "description": "User-interface message: subtitleSaved. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "tabAudio": {
+    "message": "Âm thanh",
+    "description": "User-interface message: tabAudio. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "tabDiagnostics": {
+    "message": "Chẩn đoán",
+    "description": "User-interface message: tabDiagnostics. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "tabDownload": {
+    "message": "Tải về",
+    "description": "User-interface message: tabDownload. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "tabGuide": {
+    "message": "Hướng dẫn",
+    "description": "User-interface message: tabGuide. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "tabLibrary": {
+    "message": "Thư viện",
+    "description": "User-interface message: tabLibrary. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "tabQuick": {
+    "message": "Nhanh",
+    "description": "User-interface message: tabQuick. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "tabReloaded": {
+    "message": "Đã tải lại tab",
+    "description": "User-interface message: tabReloaded. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "takeBreak": {
+    "message": "Được rồi, tôi sẽ nghỉ một chút",
+    "description": "User-interface message: takeBreak. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "themeToggle": {
+    "message": "Đổi giao diện sáng/tối",
+    "description": "User-interface message: themeToggle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "tikwmCached": {
+    "message": "Trực tiếp",
+    "description": "User-interface message: tikwmCached. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "tikwmEnriched": {
+    "message": "Trực tiếp",
+    "description": "User-interface message: tikwmEnriched. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "timeUp": {
+    "message": "Hết thời gian!",
+    "description": "User-interface message: timeUp. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "toolkitTitle": {
+    "message": "Trợ thủ TopTop",
+    "description": "User-interface message: toolkitTitle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "tools": {
+    "message": "Công cụ",
+    "description": "User-interface message: tools. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "topAuthors": {
+    "message": "Tác giả nổi bật",
+    "description": "User-interface message: topAuthors. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "topHashtags": {
+    "message": "Hashtag nổi bật",
+    "description": "User-interface message: topHashtags. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "tracked": {
+    "message": "được theo dõi",
+    "description": "User-interface message: tracked. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "trackedCount": {
+    "message": "{count} được theo dõi",
+    "description": "User-interface message: trackedCount. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "treble": {
+    "message": "Treble",
+    "description": "User-interface message: treble. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "trebleBoost": {
+    "message": "Tăng treble",
+    "description": "User-interface message: trebleBoost. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "unableProduct": {
+    "message": "Không thể lấy thông tin sản phẩm.",
+    "description": "User-interface message: unableProduct. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "unknown": {
+    "message": "không rõ",
+    "description": "User-interface message: unknown. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "updateButton": {
+    "message": "Cập nhật",
+    "description": "User-interface message: updateButton. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "updateDefaultDesc": {
+    "message": "Cập nhật để trải nghiệm tốt hơn.",
+    "description": "User-interface message: updateDefaultDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "updateNewVersion": {
+    "message": "Phiên bản {version} đã có!",
+    "description": "User-interface message: updateNewVersion. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "updateTitle": {
+    "message": "Có bản cập nhật mới!",
+    "description": "User-interface message: updateTitle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "videoReady": {
+    "message": "Video đã sẵn sàng để tải!",
+    "description": "User-interface message: videoReady. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "videosCount": {
+    "message": "{count} video",
+    "description": "User-interface message: videosCount. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "videosReady": {
+    "message": "Video sẵn sàng",
+    "description": "User-interface message: videosReady. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "videosToday": {
+    "message": "{count} video hôm nay",
+    "description": "User-interface message: videosToday. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "viewProductImage": {
+    "message": "Xem ảnh {index}",
+    "description": "User-interface message: viewProductImage. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "views": {
+    "message": "Lượt xem",
+    "description": "User-interface message: views. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "vocalBoost": {
+    "message": "Tăng giọng",
+    "description": "User-interface message: vocalBoost. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "volume": {
+    "message": "Âm lượng",
+    "description": "User-interface message: volume. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "volumeDesc": {
+    "message": "Cân bằng âm thanh",
+    "description": "User-interface message: volumeDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "waitingScan": {
+    "message": "Đang chờ quét",
+    "description": "User-interface message: waitingScan. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "warningMessage": {
+    "message": "Extension chỉ hoạt động khi đang ở TikTok. Hãy mở hoặc chuyển sang tab TikTok.",
+    "description": "User-interface message: warningMessage. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "warningTitle": {
+    "message": "Bạn chưa ở trang TikTok",
+    "description": "User-interface message: warningTitle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "watched": {
+    "message": "Đã xem",
+    "description": "User-interface message: watched. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "watchedByDay": {
+    "message": "Đã xem theo ngày",
+    "description": "User-interface message: watchedByDay. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "watchedCleared": {
+    "message": "Đã xóa lịch sử xem",
+    "description": "User-interface message: watchedCleared. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "website": {
+    "message": "Website",
+    "description": "User-interface message: website. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "welcomeCta": {
+    "message": "Mở TikTok",
+    "description": "User-interface message: welcomeCta. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "welcomeDismiss": {
+    "message": "Để sau",
+    "description": "User-interface message: welcomeDismiss. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "welcomeMessage": {
+    "message": "Chào mừng bạn quay lại! Mở tab TikTok để bắt đầu sử dụng các công cụ.",
+    "description": "User-interface message: welcomeMessage. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "welcomeTitle": {
+    "message": "HONGDOLABS - Trợ thủ TopTop",
+    "description": "User-interface message: welcomeTitle. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "whitelist": {
+    "message": "Danh sách tin cậy",
+    "description": "User-interface message: whitelist. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "whitelistDesc": {
+    "message": "Không lọc tác giả, hashtag hoặc âm thanh tin cậy",
+    "description": "User-interface message: whitelistDesc. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "whitelistDiag": {
+    "message": "Whitelist",
+    "description": "User-interface message: whitelistDiag. Curly-brace tokens are replaced by the extension at runtime."
+  },
+  "whitelistPlaceholder": {
+    "message": "@creator, #tag hoặc âm thanh",
+    "description": "User-interface message: whitelistPlaceholder. Curly-brace tokens are replaced by the extension at runtime."
+  }
+}

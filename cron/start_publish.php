@@ -1,20 +1,43 @@
 <?php
 // cron/start_publish.php
-// Dispatcher: Quet xem co bao nhieu User co bai can dang, sau do kich hoat bay nhieu luong rieng biet.
+// Dispatcher: Quét xem có bao nhiêu User có bài cần đăng, sau đó kích hoạt bấy nhiêu luồng riêng biệt.
 
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/redis_queue.php';
 
-// Include Scraper Cron Logic (Chạy tự động cùng luồng Dispatcher Publlish)
-echo "--- KHOI DONG SCRAPER WORKER ---\n";
-@include_once __DIR__ . '/start_scraper.php';
-echo "--------------------------------\n\n";
+$rq_pub = RedisQueue::getInstance();
+if (!$rq_pub->acquireLock('lock:cron:start_publish', 15)) {
+    echo "[" . date('H:i:s') . "] Dispatcher start_publish.php đang chạy ở tiến trình khác. Bỏ qua.\n";
+    exit;
+}
 
-// Include Auto-Request Info Cron Logic (Chạy tự động cùng luồng Dispatcher Publish)
-echo "--- KHOI DONG AUTO-REQUEST INFO WORKER ---\n";
-@include_once __DIR__ . '/auto_request_phone.php';
-echo "------------------------------------------\n\n";
+if (!function_exists('get_php_cli_bin')) {
+    require_once __DIR__ . '/../includes/php_cli.php';
+}
+$php_bin = get_php_cli_bin();
+$is_win = (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN');
 
-// --- ĐẢM BẢO BÁO CÁO HÀNG NGÀY CHẠY ĐÚNG ---
+// Kích hoạt Scraper ngầm (không block start_publish)
+try {
+    $script_scraper = __DIR__ . '/start_scraper.php';
+    if ($is_win) {
+        @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_scraper\"", "r"));
+    } else {
+        @exec("nohup \"$php_bin\" \"$script_scraper\" > /dev/null 2>&1 &");
+    }
+} catch (Exception $e) {}
+
+// Kích hoạt Auto Request Phone ngầm (không block start_publish)
+try {
+    $script_auto_phone = __DIR__ . '/auto_request_phone.php';
+    if ($is_win) {
+        @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_auto_phone\"", "r"));
+    } else {
+        @exec("nohup \"$php_bin\" \"$script_auto_phone\" > /dev/null 2>&1 &");
+    }
+} catch (Exception $e) {}
+
+// --- ĐẢM BẢO BÁO CÁO HÀNG NGÀY & CLEANUP CHẠY ĐÚNG ---
 try {
     $today = date('Y-m-d');
     $stmt_rep = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'last_daily_report_date'");
@@ -29,8 +52,12 @@ try {
         require_once __DIR__ . '/../includes/telegram.php';
         send_telegram_daily_report($pdo);
         
-        // Chạy kèm dọn dẹp hệ thống 1 lần/ngày
-        require_once __DIR__ . '/cleanup.php';
+        $script_clean = __DIR__ . '/cleanup.php';
+        if ($is_win) {
+            @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_clean\"", "r"));
+        } else {
+            @exec("nohup \"$php_bin\" \"$script_clean\" > /dev/null 2>&1 &");
+        }
     }
 } catch (Exception $e) {}
 
@@ -55,18 +82,28 @@ try {
             $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('last_snapshot_time', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
                 ->execute([$snap_key, $snap_key]);
             
-            // Tự động lấy snapshot (Followers, Reach, Views) cho toàn bộ user và lưu vào db
-            require_once __DIR__ . '/daily_snapshot.php';
+            $script_snap = __DIR__ . '/daily_snapshot.php';
+            if ($is_win) {
+                @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_snap\"", "r"));
+            } else {
+                @exec("nohup \"$php_bin\" \"$script_snap\" > /dev/null 2>&1 &");
+            }
         }
     }
 } catch (Exception $e) {}
 
-
-
 try {
-    $stuck_count = $pdo->exec("UPDATE scheduled_posts SET status='pending', retry_count=0 WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE)");
-    if ($stuck_count > 0) {
-        echo "  [RESET] Da reset $stuck_count bai bi stuck 'processing' => 'pending'.\n";
+    $stuck_stmt = $pdo->query("SELECT id FROM scheduled_posts WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    if ($stuck_stmt) {
+        $stuck_ids = $stuck_stmt->fetchAll(PDO::FETCH_COLUMN);
+        if (!empty($stuck_ids)) {
+            $pdo->exec("UPDATE scheduled_posts SET status='pending', retry_count=0 WHERE id IN (" . implode(',', array_map('intval', $stuck_ids)) . ")");
+            echo "  [RESET] Da reset " . count($stuck_ids) . " bai bi stuck 'processing' => 'pending'.\n";
+            $rq_clean_stuck = RedisQueue::getInstance();
+            foreach ($stuck_ids as $sid) {
+                $rq_clean_stuck->releaseLock("lock:post:" . $sid);
+            }
+        }
     }
 } catch (Exception $e) {
     echo "Loi reset stuck posts: " . $e->getMessage() . "\n";
@@ -138,6 +175,7 @@ echo "  [THROTTLE] Hien dang co $active_workers luong dang xu ly.\n";
 $available_slots = $MAX_WORKERS - $active_workers;
 if ($available_slots <= 0) {
     echo "He thong dang dat gioi han MAX_WORKERS ($MAX_WORKERS). Cho luot cron ke tiep...\n";
+    $rq_pub->releaseLock('lock:cron:start_publish');
     exit;
 }
 
@@ -160,16 +198,21 @@ $sql = "
 ";
 $stmt = $pdo->prepare($sql);
 if (!$stmt) {
-    echo "Loi prepare SQL"; exit;
+    echo "Loi prepare SQL";
+    $rq_pub->releaseLock('lock:cron:start_publish');
+    exit;
 }
 if (!$stmt->execute()) {
-    echo "Loi execute SQL"; exit;
+    echo "Loi execute SQL";
+    $rq_pub->releaseLock('lock:cron:start_publish');
+    exit;
 }
 
 $raw_pages = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 if (empty($raw_pages)) {
     echo "Khong co Fanpage nao can dang tai.\n";
+    $rq_pub->releaseLock('lock:cron:start_publish');
     exit;
 }
 
@@ -203,11 +246,6 @@ foreach ($raw_pages as $row) {
         $owner_channels[$owner_id][$chan_key] = [];
     }
     
-    // Vì ta gom theo campaign, không cần lưu từng page_id vào mảng nữa. 
-    // Ta chỉ cần 1 cờ để báo hiệu Campaign này cần 1 worker.
-    // Tuy nhiên, để tương thích với mảng cũ, ta cứ lưu chan_key vào.
-    // Vì ta gom theo campaign, không cần lưu từng page_id vào mảng nữa. 
-    // Tuy nhiên, đối với bài viết cũ/không có campaign, ta VẪN CẦN LƯU page_id thực sự để tương thích với query cũ.
     $page_val = !empty($row['campaign_id']) ? $chan_key : $row['page_id'];
     if (!in_array($page_val, $owner_channels[$owner_id][$chan_key])) {
         $owner_channels[$owner_id][$chan_key][] = $page_val;
@@ -228,7 +266,6 @@ foreach ($owner_channels as $oid => $chans) {
 }
 
 // ── 3. Thuật toán chia đều Throttling công bằng cho tất cả Tài khoản (Equal Share Interleaving) ──
-// Lần lượt cấp 1 suất cho Account 1, 1 suất cho Account 2, ... theo các vòng xoay
 $dispatch_list = [];
 $owner_keys = array_keys($owner_channels);
 $owner_pointers = array_fill_keys($owner_keys, 0);
@@ -277,7 +314,7 @@ foreach ($dispatch_list as $dispatch) {
         }
     }
     
-    // Kích hoạt song song luồng CLI và Web-Async cURL để chống cản trở bởi open_basedir / aaPanel
+    // Kích hoạt luồng CLI hoặc Web-Async cURL (Ưu tiên CLI, chỉ fallback Web nếu không có exec)
     $dispatched = false;
     if ($exec_enabled) {
         if (!function_exists('get_php_cli_bin')) {
@@ -292,9 +329,7 @@ foreach ($dispatch_list as $dispatch) {
             @exec("nohup \"$php_bin\" \"$script_path\" \"$page_ids_str\" \"$uid\" > /dev/null 2>&1 &");
         }
         $dispatched = true;
-    }
-    
-    if (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
+    } elseif (isset($_SERVER['HTTP_HOST']) && !empty($_SERVER['HTTP_HOST'])) {
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
         $doc_root = $_SERVER['DOCUMENT_ROOT'] ?? '';
         $root_web_path = rtrim(str_replace('\\', '/', str_replace($doc_root, '', dirname(__DIR__))), '/');
@@ -313,10 +348,12 @@ foreach ($dispatch_list as $dispatch) {
     }
 
     if ($dispatched) {
-        echo "  -> Da kích hoạt luong ngam cho nhom #$uid (" . count($user_page_ids) . " pages: $page_ids_str)\n";
+        $p_cnt = !empty($page_ids_str) ? count(explode(',', $page_ids_str)) : 1;
+        echo "  -> Da kích hoạt luong ngam cho nhom #$uid ($p_cnt pages: $page_ids_str)\n";
     } else {
         echo "  -> THAT BAI: Khong the kích hoat luong cho nhom #$uid\n";
     }
 }
 
 echo "Da Dispatch hoan tat.\n";
+$rq_pub->releaseLock('lock:cron:start_publish');

@@ -1,0 +1,638 @@
+<?php
+// ── Actions MUST be before ANY output (before header.php) ─────────────────
+require_once __DIR__ . '/includes/db.php';
+if (session_status() === PHP_SESSION_NONE) @session_start();
+$_s_account_id = $_SESSION['account_id'] ?? 0;
+$_s_is_admin   = ($_SESSION['role'] ?? '') === 'admin';
+session_write_close();
+
+
+// POST: bulk delete
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'], $_POST['post_ids'])) {
+    $action   = $_POST['bulk_action'];
+    $post_ids = array_map('intval', (array)$_POST['post_ids']);
+    if ($action === 'delete' && count($post_ids) > 0) {
+        $in     = str_repeat('?,', count($post_ids) - 1) . '?';
+        $params = $post_ids;
+        $auth   = ' AND account_id = ?';
+        $params[] = $_s_account_id;
+        try {
+            // Free up local files before deleting
+            $stmt = $pdo->prepare("SELECT media_path FROM scheduled_posts WHERE id IN ($in) AND status IN ('pending','failed') $auth");
+            $stmt->execute($params);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($row['media_path']) && strpos($row['media_path'], 'uploads/') !== false) {
+                    $decoded = @json_decode($row['media_path'], true);
+                    $paths = is_array($decoded) ? $decoded : [$row['media_path']];
+                    foreach ($paths as $p) {
+                        $p = trim($p);
+                        if (strpos($p, 'uploads/') !== false) {
+                            $full = __DIR__ . '/../' . $p;
+                            if (file_exists($full)) @unlink($full);
+                        }
+                    }
+                }
+            }
+            $pdo->prepare("DELETE FROM scheduled_posts WHERE id IN ($in) AND status IN ('pending','failed') $auth")->execute($params);
+        } catch (PDOException $e) {}
+    }
+    header('Location: manage_posts.php');
+    exit;
+}
+
+// GET: delete_campaign / retry_campaign / clean_empty
+if (isset($_GET['action'])) {
+    $act  = $_GET['action'];
+    $id   = intval($_GET['id'] ?? 0);
+    $auth = ' AND account_id = ?';
+    try {
+        if ($act === 'clean_empty') {
+            $pdo->prepare("
+                DELETE FROM post_campaigns 
+                WHERE account_id = ? 
+                  AND id NOT IN (
+                      SELECT DISTINCT campaign_id FROM scheduled_posts WHERE campaign_id IS NOT NULL
+                  )
+            ")->execute([$_s_account_id]);
+        } elseif ($act === 'delete_campaign' && $id > 0) {
+            $p = [$id, $_s_account_id];
+            
+            // Free up local files for the campaign's pending posts before deleting
+            $stmt = $pdo->prepare("SELECT media_path FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed','checkpoint') $auth");
+            $stmt->execute($p);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($row['media_path']) && strpos($row['media_path'], 'uploads/') !== false) {
+                    $decoded = @json_decode($row['media_path'], true);
+                    $paths = is_array($decoded) ? $decoded : [$row['media_path']];
+                    foreach ($paths as $path) {
+                        $path = trim($path);
+                        if (strpos($path, 'uploads/') !== false) {
+                            $full = __DIR__ . '/../' . $path;
+                            if (file_exists($full)) @unlink($full);
+                        }
+                    }
+                }
+            }
+            
+            $pdo->prepare("DELETE FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed','checkpoint') $auth")->execute($p);
+            $pdo->prepare("DELETE FROM post_campaigns WHERE id = ? AND account_id = ?")->execute([$id, $_s_account_id]);
+        } elseif ($act === 'retry_campaign' && $id > 0) {
+            $p = [$id, $_s_account_id];
+            $pdo->prepare("UPDATE scheduled_posts SET status='pending', retry_count=0, error_msg=NULL WHERE campaign_id = ? AND status IN ('failed', 'checkpoint') $auth")->execute($p);
+        }
+    } catch (PDOException $e) {}
+    header('Location: manage_posts.php');
+    exit;
+}
+
+// ── Now output the page ────────────────────────────────────────────────────
+$current_page = 'manage_posts';
+require_once __DIR__ . '/includes/header.php';
+
+$account_id = $_SESSION['account_id'];
+$is_admin   = ($_SESSION['role'] === 'admin');
+
+
+// ── Fetch Campaigns (fault-tolerant) ─────────────────────────────────────
+$search  = trim(html_entity_decode($_GET['search'] ?? '', ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+$page    = max(1, intval($_GET['page'] ?? 1));
+$limit   = 20;
+$offset  = ($page - 1) * $limit;
+
+$total_campaigns = 0;
+$total_pages_nav = 1;
+$campaigns       = [];
+$legacy_count    = 0;
+
+$search_where  = "";
+$search_params = [];
+
+if ($search !== '') {
+    $search_like = '%' . $search . '%';
+    $matched_cids = [];
+
+    try {
+        $found_pids = [];
+        $st1 = $pdo->prepare("SELECT p.page_id FROM pages p LEFT JOIN users u ON p.user_id = u.id WHERE u.name LIKE ? OR p.name LIKE ? OR p.page_name LIKE ?");
+        $st1->execute([$search_like, $search_like, $search_like]);
+        while ($r = $st1->fetch(PDO::FETCH_COLUMN)) { if ($r) $found_pids[] = $r; }
+
+        $st2 = $pdo->prepare("SELECT channel_id FROM youtube_channels WHERE channel_title LIKE ?");
+        $st2->execute([$search_like]);
+        while ($r = $st2->fetch(PDO::FETCH_COLUMN)) { if ($r) $found_pids[] = $r; }
+
+        $st3 = $pdo->prepare("SELECT channel_id FROM buffer_channels WHERE channel_name LIKE ?");
+        $st3->execute([$search_like]);
+        while ($r = $st3->fetch(PDO::FETCH_COLUMN)) { if ($r) $found_pids[] = $r; }
+
+        $st4 = $pdo->prepare("SELECT id FROM tiktok_accounts WHERE display_name LIKE ?");
+        $st4->execute([$search_like]);
+        while ($r = $st4->fetch(PDO::FETCH_COLUMN)) { if ($r) $found_pids[] = (string)$r; }
+
+        if (!empty($found_pids)) {
+            $unique_pids = array_values(array_unique($found_pids));
+            $in_pids = implode(',', array_fill(0, count($unique_pids), '?'));
+            $st_sp = $pdo->prepare("SELECT DISTINCT campaign_id FROM scheduled_posts WHERE account_id = ? AND page_id IN ($in_pids) AND campaign_id IS NOT NULL");
+            $st_sp->execute(array_merge([$account_id], $unique_pids));
+            $matched_cids = $st_sp->fetchAll(PDO::FETCH_COLUMN);
+        }
+    } catch (Exception $e) {}
+
+    if (!empty($matched_cids)) {
+        $in_cids = implode(',', array_map('intval', $matched_cids));
+        $search_where = " AND (c.name LIKE ? OR c.id IN ($in_cids))";
+        $search_params = [$search_like];
+    } else {
+        $search_where = " AND c.name LIKE ?";
+        $search_params = [$search_like];
+    }
+}
+
+try {
+    $count_stmt = $pdo->prepare("SELECT COUNT(*) FROM post_campaigns c WHERE c.account_id = ?" . $search_where);
+    $count_stmt->execute(array_merge([$account_id], $search_params));
+    $total_campaigns = (int)$count_stmt->fetchColumn();
+    $total_pages_nav = max(1, ceil($total_campaigns / $limit));
+
+    // Giai đoạn 1: Lấy danh sách 20 chiến dịch
+    $sub_stmt = $pdo->prepare("SELECT c.id, c.name, c.post_type, c.total_posts, c.scheduled_time, c.created_at FROM post_campaigns c WHERE c.account_id = ?" . $search_where . " ORDER BY c.created_at DESC LIMIT $limit OFFSET $offset");
+    $sub_stmt->execute(array_merge([$account_id], $search_params));
+    $page_camps = $sub_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (!empty($page_camps)) {
+        $c_ids = array_column($page_camps, 'id');
+        $in_ids = implode(',', array_map('intval', $c_ids));
+
+        // Giai đoạn 2: Thống kê số lượng bài đăng
+        $stats_map = [];
+        try {
+            $stats_stmt = $pdo->query("
+                SELECT
+                    campaign_id,
+                    SUM(CASE WHEN status='published'  THEN 1 ELSE 0 END) AS cnt_published,
+                    SUM(CASE WHEN status='pending'    THEN 1 ELSE 0 END) AS cnt_pending,
+                    SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS cnt_processing,
+                    SUM(CASE WHEN status='failed'     THEN 1 ELSE 0 END) AS cnt_failed,
+                    SUM(CASE WHEN status='checkpoint' THEN 1 ELSE 0 END) AS cnt_checkpoint,
+                    SUM(CASE WHEN comment_done=1      THEN 1 ELSE 0 END) AS cnt_cmt_done,
+                    SUM(CASE WHEN comment_done=0      THEN 1 ELSE 0 END) AS cnt_cmt_pending,
+                    SUM(CASE WHEN comment_done=2      THEN 1 ELSE 0 END) AS cnt_cmt_processing,
+                    COUNT(id) AS cnt_total
+                FROM scheduled_posts
+                WHERE campaign_id IN ($in_ids)
+                GROUP BY campaign_id
+            ");
+            if ($stats_stmt) {
+                while ($row = $stats_stmt->fetch(PDO::FETCH_ASSOC)) {
+                    $stats_map[$row['campaign_id']] = $row;
+                }
+            }
+        } catch (Exception $e) {}
+
+        // Giai đoạn 3: Lấy tên kênh/trang (Xử lý trong bộ nhớ PHP siêu nhanh, tránh SQL Join nặng)
+        $users_map = [];
+        try {
+            $sub_rows = $pdo->query("SELECT DISTINCT campaign_id, post_type, page_id FROM scheduled_posts WHERE campaign_id IN ($in_ids)")->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($sub_rows)) {
+                $fb_pids = [];
+                $yt_pids = [];
+                $buf_pids = [];
+                $tt_pids = [];
+                foreach ($sub_rows as $sr) {
+                    $pid = $sr['page_id'];
+                    if (empty($pid)) continue;
+                    $pt = $sr['post_type'] ?? '';
+                    if ($pt === 'YouTube') {
+                        $yt_pids[] = $pid;
+                    } elseif (strpos($pt, 'Buffer') === 0) {
+                        $buf_pids[] = $pid;
+                    } elseif ($pt === 'TikTok') {
+                        $tt_pids[] = $pid;
+                    } else {
+                        $fb_pids[] = $pid;
+                    }
+                }
+
+                $names_cache = [];
+                if (!empty($fb_pids)) {
+                    $unique_fb = array_values(array_unique($fb_pids));
+                    $in_fb = implode(',', array_fill(0, count($unique_fb), '?'));
+                    $st_fb = $pdo->prepare("SELECT p.page_id, COALESCE(u.name, p.name) as name FROM pages p LEFT JOIN users u ON p.user_id = u.id WHERE p.page_id IN ($in_fb)");
+                    $st_fb->execute($unique_fb);
+                    while ($r = $st_fb->fetch(PDO::FETCH_ASSOC)) {
+                        $names_cache['fb_' . $r['page_id']] = $r['name'];
+                    }
+                }
+                if (!empty($yt_pids)) {
+                    $unique_yt = array_values(array_unique($yt_pids));
+                    $in_yt = implode(',', array_fill(0, count($unique_yt), '?'));
+                    $st_yt = $pdo->prepare("SELECT channel_id, id, channel_title FROM youtube_channels WHERE channel_id IN ($in_yt) OR id IN ($in_yt)");
+                    $st_yt->execute(array_merge($unique_yt, $unique_yt));
+                    while ($r = $st_yt->fetch(PDO::FETCH_ASSOC)) {
+                        if (!empty($r['channel_id'])) $names_cache['yt_' . $r['channel_id']] = $r['channel_title'];
+                        if (!empty($r['id'])) $names_cache['yt_' . $r['id']] = $r['channel_title'];
+                    }
+                }
+                if (!empty($buf_pids)) {
+                    $unique_buf = array_values(array_unique($buf_pids));
+                    $in_buf = implode(',', array_fill(0, count($unique_buf), '?'));
+                    $st_buf = $pdo->prepare("SELECT channel_id, channel_name FROM buffer_channels WHERE channel_id IN ($in_buf)");
+                    $st_buf->execute($unique_buf);
+                    while ($r = $st_buf->fetch(PDO::FETCH_ASSOC)) {
+                        $names_cache['buf_' . $r['channel_id']] = $r['channel_name'];
+                    }
+                }
+                if (!empty($tt_pids)) {
+                    $unique_tt = array_values(array_unique($tt_pids));
+                    $in_tt = implode(',', array_fill(0, count($unique_tt), '?'));
+                    $st_tt = $pdo->prepare("SELECT id, open_id, display_name FROM tiktok_accounts WHERE id IN ($in_tt) OR open_id IN ($in_tt)");
+                    $st_tt->execute(array_merge($unique_tt, $unique_tt));
+                    while ($r = $st_tt->fetch(PDO::FETCH_ASSOC)) {
+                        if (!empty($r['id'])) $names_cache['tt_' . $r['id']] = $r['display_name'];
+                        if (!empty($r['open_id'])) $names_cache['tt_' . $r['open_id']] = $r['display_name'];
+                    }
+                }
+
+                $camp_names_acc = [];
+                foreach ($sub_rows as $sr) {
+                    $cid = $sr['campaign_id'];
+                    $pid = $sr['page_id'];
+                    $pt = $sr['post_type'] ?? '';
+                    $name = '';
+                    if ($pt === 'YouTube') {
+                        $name = $names_cache['yt_' . $pid] ?? '';
+                    } elseif (strpos($pt, 'Buffer') === 0) {
+                        $name = $names_cache['buf_' . $pid] ?? '';
+                    } elseif ($pt === 'TikTok') {
+                        $name = $names_cache['tt_' . $pid] ?? '';
+                    } else {
+                        $name = $names_cache['fb_' . $pid] ?? '';
+                    }
+                    if (!empty($name)) {
+                        $camp_names_acc[$cid][$name] = true;
+                    }
+                }
+                foreach ($camp_names_acc as $cid => $arr) {
+                    $users_map[$cid] = implode(', ', array_keys($arr));
+                }
+            }
+        } catch (Exception $e) {}
+
+        foreach ($page_camps as $c) {
+            $cid = $c['id'];
+            $st = $stats_map[$cid] ?? [];
+            $c['cnt_published']      = $st['cnt_published'] ?? 0;
+            $c['cnt_pending']        = $st['cnt_pending'] ?? 0;
+            $c['cnt_processing']     = $st['cnt_processing'] ?? 0;
+            $c['cnt_failed']         = $st['cnt_failed'] ?? 0;
+            $c['cnt_checkpoint']     = $st['cnt_checkpoint'] ?? 0;
+            $c['cnt_cmt_done']       = $st['cnt_cmt_done'] ?? 0;
+            $c['cnt_cmt_pending']    = $st['cnt_cmt_pending'] ?? 0;
+            $c['cnt_cmt_processing'] = $st['cnt_cmt_processing'] ?? 0;
+            $c['cnt_total']          = $st['cnt_total'] ?? 0;
+            $c['fb_users']           = $users_map[$cid] ?? '';
+            $campaigns[] = $c;
+        }
+    }
+} catch (PDOException $e) {
+    // Fallback
+}
+
+try {
+    $legacy_stmt = $pdo->prepare(
+        "SELECT COUNT(*) FROM scheduled_posts WHERE campaign_id IS NULL AND account_id = ?"
+    );
+    $legacy_stmt->execute([$account_id]);
+    $legacy_count = (int)$legacy_stmt->fetchColumn();
+} catch (PDOException $e) {
+    // campaign_id column may not exist yet
+}
+?>
+
+<div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+        <h3 style="margin:0;">Danh sách chiến dịch đăng bài</h3>
+        
+        <form method="GET" action="manage_posts.php" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-left:auto;">
+            <div style="position:relative; min-width:260px;">
+                <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" placeholder="🔍 Tìm Kênh/Fanpage hoặc Chiến dịch..." style="width:100%; padding:8px 12px 8px 34px; border:1px solid var(--border-color); border-radius:6px; font-size:13px; background:var(--card-bg); color:var(--text-main); box-sizing:border-box;">
+                <svg style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--text-muted);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+            <button type="submit" style="padding:8px 14px; background:var(--primary-color); color:white; border:none; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">Tìm kiếm</button>
+            <?php if ($search !== ''): ?>
+            <a href="manage_posts.php" style="padding:8px 12px; background:#f3f4f6; color:#374151; border:1px solid #d1d5db; border-radius:6px; font-size:13px; text-decoration:none;">Xóa tìm</a>
+            <?php endif; ?>
+        </form>
+
+        <div style="display:flex; gap:10px; align-items:center;">
+            <?php if ($is_admin): ?>
+            <button id="cronBtn" onclick="runCronJob()" style="background:var(--primary-color);color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:bold;display:flex;align-items:center;gap:6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Quét Hàng Đợi
+            </button>
+            <?php endif; ?>
+            <?php if ($legacy_count > 0): ?>
+            <a href="manage_legacy.php" style="padding:8px 14px;border:1px solid var(--border-color);border-radius:6px;text-decoration:none;color:var(--text-main);font-size:13px;">
+                Bài cũ (<?php echo $legacy_count; ?>)
+            </a>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <?php if ($search !== ''): ?>
+    <div style="margin-bottom:16px; padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; font-size:13px; color:#0369a1;">
+        🔎 Kết quả tìm kiếm cho từ khóa: <strong>"<?php echo htmlspecialchars($search); ?>"</strong> (Tìm thấy <?php echo $total_campaigns; ?> chiến dịch)
+    </div>
+    <?php endif; ?>
+
+    <?php if (count($campaigns) === 0): ?>
+    <div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+        <div style="font-size:48px;margin-bottom:16px;">📭</div>
+        <div style="font-size:16px;font-weight:500;">Chưa có chiến dịch nào</div>
+        <div style="font-size:13px;margin-top:8px;">Tạo bài đăng từ <a href="posts.php" style="color:var(--primary-color);">Posts</a>, <a href="videos.php" style="color:var(--primary-color);">Videos</a> hoặc <a href="reels.php" style="color:var(--primary-color);">Reels</a>.</div>
+    </div>
+    <?php else: ?>
+
+    <div style="display:grid; gap:14px;">
+    <?php foreach ($campaigns as $c):
+        $total_real = (int)$c['cnt_total'];            // actual count (may be 0)
+        $total      = max(1, $total_real);             // clamped for division only
+
+        $is_seeding_cmt = ($c['post_type'] === 'Seeding Comment');
+        if ($is_seeding_cmt) {
+            $pub   = (int)($c['cnt_cmt_done'] ?? 0);
+            $pend  = (int)($c['cnt_cmt_pending'] ?? 0);
+            $proc  = (int)($c['cnt_cmt_processing'] ?? 0);
+            $fail  = (int)$c['cnt_failed'];
+            $check = isset($c['cnt_checkpoint']) ? (int)$c['cnt_checkpoint'] : 0;
+            $unit_verb = 'cmt';
+        } else {
+            $pub   = (int)$c['cnt_published'];
+            $pend  = (int)$c['cnt_pending'];
+            $proc  = (int)$c['cnt_processing'];
+            $fail  = (int)$c['cnt_failed'];
+            $check = isset($c['cnt_checkpoint']) ? (int)$c['cnt_checkpoint'] : 0;
+            $unit_verb = 'đăng';
+        }
+
+        $progress   = round($pub / $total * 100);
+
+        // Badge — priority: checkpoint > processing > pending > failed > done > empty
+        if ($check > 0) {
+            $badge_color = '#fee2e2'; $badge_text_color = '#991b1b'; $badge_label = "🚫 Tài khoản bị checkpoint";
+        } elseif ($proc > 0) {
+            $badge_color = '#e0f2fe'; $badge_text_color = '#0369a1'; $badge_label = "🔄 Đang {$unit_verb}";
+        } elseif ($pend > 0) {
+            $badge_color = '#fef3c7'; $badge_text_color = '#d97706'; $badge_label = "⏳ $pend chờ {$unit_verb}";
+        } elseif ($fail > 0) {
+            $badge_color = '#fee2e2'; $badge_text_color = '#dc2626'; $badge_label = "⚠️ $fail lỗi";
+        } elseif ($pub >= $total && $total_real > 0) {
+            $badge_color = '#d1fae5'; $badge_text_color = '#065f46'; $badge_label = "✅ Hoàn tất";
+        } elseif ($total_real === 0) {
+            $badge_color = '#f3f4f6'; $badge_text_color = '#6b7280'; $badge_label = "📭 Trống";
+        } else {
+            $badge_color = '#f3f4f6'; $badge_text_color = '#6b7280'; $badge_label = "—";
+        }
+    ?>
+    <div style="border:1px solid var(--border-color);border-radius:10px;padding:18px 20px;background:var(--card-bg);transition:box-shadow 0.2s;" onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)'" onmouseout="this.style.boxShadow='none'">
+        <div class="campaign-row">
+            <div class="campaign-info">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+                    <span style="font-weight:600;font-size:15px;color:var(--text-main);"><?php echo htmlspecialchars($c['name']); ?></span>
+                    <span style="background:<?php echo $badge_color; ?>;color:<?php echo $badge_text_color; ?>;font-size:12px;padding:2px 10px;border-radius:20px;font-weight:500;white-space:nowrap;"><?php echo $badge_label; ?></span>
+                    <span style="background:#f3f4f6;color:#374151;font-size:11px;padding:2px 8px;border-radius:4px;"><?php echo htmlspecialchars($c['post_type']); ?></span>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+                    Tạo lúc: <?php echo date('d/m/Y H:i', strtotime($c['created_at'])); ?>
+                    <?php if ($c['scheduled_time']): ?>
+                    &nbsp;·&nbsp; Hẹn giờ: <?php echo date('d/m/Y H:i', strtotime($c['scheduled_time'])); ?>
+                    <?php endif; ?>
+                    <?php if (!empty($c['fb_users'])): ?>
+                    <?php 
+                        $users_arr = array_values(array_filter(array_map('trim', explode(',', $c['fb_users']))));
+                        $u_count = count($users_arr);
+                        $is_channel = ($c['post_type'] === 'YouTube' || $c['post_type'] === 'TikTok' || strpos($c['post_type'], 'Buffer') !== false);
+                        $unit_label = $is_channel ? 'kênh' : 'trang';
+                        $icon_label = ($c['post_type'] === 'TikTok') ? '🎵' : '👤';
+                        
+                        if ($u_count > 1) {
+                            $display_users = htmlspecialchars($users_arr[0]) . ' và ' . ($u_count - 1) . ' ' . $unit_label . ' khác';
+                        } else {
+                            $display_users = htmlspecialchars($c['fb_users']);
+                        }
+                    ?>
+                    &nbsp;·&nbsp; <span style="color:var(--primary-color);font-weight:500;" title="<?php echo htmlspecialchars($c['fb_users']); ?>"><?php echo $icon_label; ?> <?php echo $display_users; ?></span>
+                    <?php endif; ?>
+                </div>
+                <!-- Progress Bar -->
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="flex:1;height:8px;background:#f3f4f6;border-radius:99px;overflow:hidden;">
+                        <div style="height:100%;width:<?php echo $progress; ?>%;background:<?php echo $pub===$total && $total>0 ? '#10b981' : 'var(--primary-color)'; ?>;border-radius:99px;transition:width 0.3s;"></div>
+                    </div>
+                    <span style="font-size:12px;color:var(--text-muted);white-space:nowrap;"><?php echo $pub; ?>/<?php echo $total; ?> đã <?php echo $unit_verb; ?></span>
+                </div>
+                <!-- Counters -->
+                <div style="display:flex;gap:14px;margin-top:8px;font-size:12px;">
+                    <?php if ($pend > 0): ?><span style="color:#d97706;">⏳ <?php echo $pend; ?> chờ <?php echo $unit_verb; ?></span><?php endif; ?>
+                    <?php if ($proc > 0): ?><span style="color:#0369a1;">🔄 <?php echo $proc; ?> đang <?php echo $unit_verb; ?></span><?php endif; ?>
+                    <?php if ($fail > 0): ?><span style="color:#dc2626;">❌ <?php echo $fail; ?> lỗi</span><?php endif; ?>
+                    <?php if ($check > 0): ?><span style="color:#991b1b;">🚫 Bị checkpoint, dừng lại (còn <?php echo $check; ?> bài chưa chạy)</span><?php endif; ?>
+                    <?php if ($pub > 0): ?><span style="color:#10b981;">✅ <?php echo $pub; ?> đã <?php echo $unit_verb; ?></span><?php endif; ?>
+                </div>
+            </div>
+            <!-- Actions -->
+            <div class="campaign-actions">
+                <?php if ($fail > 0 || $check > 0): ?>
+                <button onclick="showConfirmModal('retry', <?php echo $c['id']; ?>, 'Thử lại tất cả bài lỗi trong chiến dịch này?')" style="padding:7px 12px;background:#d1fae5;color:#065f46;border-radius:6px;border:none;cursor:pointer;font-size:13px;">
+                    Retry
+                </button>
+                <?php endif; ?>
+                <?php if ($pend > 0 || $fail > 0 || $check > 0): ?>
+                <button onclick="showConfirmModal('delete', <?php echo $c['id']; ?>, 'Xóa toàn bộ bài chưa hoàn tất trong chiến dịch này?')" style="padding:7px 12px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;">
+                    Xóa
+                </button>
+                <?php endif; ?>
+                <?php if ($total_real === 0): ?>
+                <button onclick="showConfirmModal('delete', <?php echo $c['id']; ?>, 'Xóa chiến dịch trống này?')" style="padding:7px 12px;background:#fee2e2;color:#dc2626;border-radius:6px;border:none;cursor:pointer;font-size:13px;">
+                    🗑 Xóa
+                </button>
+                <?php endif; ?>
+                <a href="campaign_detail.php?id=<?php echo $c['id']; ?>" style="padding:7px 14px;background:var(--primary-color);color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;" class="btn-detail">
+                    Xem chi tiết →
+                </a>
+            </div>
+        </div>
+    </div>
+    <?php endforeach; ?>
+    </div>
+
+    <!-- Pagination -->
+    <?php if ($total_pages_nav > 1): ?>
+    <div style="display:flex;justify-content:center;gap:8px;margin-top:24px;">
+        <?php 
+            $search_param = !empty($search) ? '&search=' . urlencode($search) : '';
+            for ($i = 1; $i <= $total_pages_nav; $i++): 
+        ?>
+            <a href="?page=<?php echo $i . $search_param; ?>" style="padding:6px 12px;border:1px solid <?php echo $i==$page?'var(--primary-color)':'var(--border-color)'; ?>;border-radius:4px;text-decoration:none;color:<?php echo $i==$page?'var(--primary-color)':'var(--text-main)'; ?>;font-weight:<?php echo $i==$page?'bold':'normal'; ?>;"><?php echo $i; ?></a>
+        <?php endfor; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php endif; ?>
+</div>
+
+<!-- Custom Confirm Modal -->
+<div id="confirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;padding:28px 32px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.2);text-align:center;">
+        <div style="font-size:40px;margin-bottom:12px;" id="modalIcon">⚠️</div>
+        <h3 id="modalTitle" style="margin:0 0 10px;font-size:17px;color:#111;"></h3>
+        <p id="modalMessage" style="margin:0 0 24px;font-size:14px;color:#555;"></p>
+        <div style="display:flex;gap:12px;justify-content:center;">
+            <button id="modalCancelBtn" onclick="hideConfirmModal()" style="padding:9px 24px;border:1px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;cursor:pointer;font-size:14px;">Huỷ</button>
+            <button id="modalOkBtn" onclick="doConfirmAction()" style="padding:9px 24px;border:none;border-radius:8px;background:#ef4444;color:#fff;cursor:pointer;font-size:14px;font-weight:600;">Xác nhận</button>
+        </div>
+    </div>
+</div>
+
+<!-- Cron Result Modal -->
+<div id="cronModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;padding:28px 32px;max-width:500px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+        <h3 style="margin:0 0 14px;font-size:16px;color:#111;">⚙️ Kết quả Quét Hàng Đợi</h3>
+        <pre id="cronResult" style="background:#f8f9fa;border:1px solid #e5e7eb;border-radius:8px;padding:14px;font-size:13px;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;"></pre>
+        <div style="text-align:right;margin-top:16px;">
+            <button onclick="hideCronModal()" style="padding:9px 24px;border:none;border-radius:8px;background:var(--primary-color);color:#fff;cursor:pointer;font-size:14px;font-weight:600;">Đóng & Tải lại</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let _confirmAction = null;
+let _confirmId = null;
+
+function showConfirmModal(action, id, message) {
+    _confirmAction = action;
+    _confirmId = id;
+    const isDelete = action === 'delete' || action === 'clean_empty';
+    document.getElementById('modalIcon').textContent = action === 'clean_empty' ? '🧹' : (isDelete ? '🗑️' : '🔄');
+    document.getElementById('modalTitle').textContent = action === 'clean_empty' ? 'Xóa chiến dịch trống' : (isDelete ? 'Xác nhận xóa' : 'Xác nhận thử lại');
+    document.getElementById('modalMessage').textContent = message;
+    document.getElementById('modalOkBtn').style.background = isDelete ? '#ef4444' : '#10b981';
+    const modal = document.getElementById('confirmModal');
+    modal.style.display = 'flex';
+}
+
+function hideConfirmModal() {
+    document.getElementById('confirmModal').style.display = 'none';
+    _confirmAction = null;
+    _confirmId = null;
+}
+
+function doConfirmAction() {
+    if (!_confirmAction) return;
+    if (_confirmAction === 'clean_empty') {
+        window.location.href = 'manage_posts.php?action=clean_empty';
+    } else if (_confirmId) {
+        window.location.href = 'manage_posts.php?action=' + _confirmAction + '_campaign&id=' + _confirmId;
+    }
+}
+
+function runCronJob() {
+    const btn = document.getElementById('cronBtn');
+    btn.innerHTML = '<span class="loader" style="width:12px;height:12px;border:2px solid #fff;border-bottom-color:transparent;border-radius:50%;display:inline-block;animation:rotation 1s linear infinite;"></span> Đang chạy...';
+    btn.disabled = true;
+    fetch('diagnostics.php?run=publish&ajax=1')
+    .then(r => r.text())
+    .then(text => {
+        document.getElementById('cronResult').textContent = text;
+        document.getElementById('cronModal').style.display = 'flex';
+        btn.innerHTML = '⚙️ Quét Hàng Đợi';
+        btn.disabled = false;
+    })
+    .catch(err => {
+        document.getElementById('cronResult').textContent = 'Lỗi: ' + err;
+        document.getElementById('cronModal').style.display = 'flex';
+        btn.innerHTML = '⚙️ Quét Hàng Đợi';
+        btn.disabled = false;
+    });
+}
+
+function hideCronModal() {
+    document.getElementById('cronModal').style.display = 'none';
+    window.location.reload();
+}
+
+// Close modals on backdrop click
+document.getElementById('confirmModal').addEventListener('click', function(e) {
+    if (e.target === this) hideConfirmModal();
+});
+document.getElementById('cronModal').addEventListener('click', function(e) {
+    if (e.target === this) hideCronModal();
+});
+
+// Keep scroll position on reload
+document.addEventListener("DOMContentLoaded", function() { 
+    const key = 'scrollpos_' + window.location.search;
+    if (sessionStorage.getItem(key)) window.scrollTo(0, sessionStorage.getItem(key));
+});
+window.addEventListener("beforeunload", function() {
+    sessionStorage.setItem('scrollpos_' + window.location.search, window.scrollY);
+});
+
+// Auto-refresh if any campaign has pending/processing
+document.addEventListener('DOMContentLoaded', function() {
+    const hasPending = document.querySelector('[style*="#fef3c7"]') || document.querySelector('[style*="#e0f2fe"]');
+    if (hasPending) setTimeout(() => window.location.reload(), 20000);
+});
+</script>
+<style>
+@keyframes rotation{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+
+.campaign-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+.campaign-info {
+    flex: 1;
+    min-width: 0;
+}
+.campaign-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-shrink: 0;
+}
+.campaign-actions a.btn-detail {
+    margin-left: auto;
+}
+
+@media (max-width: 768px) {
+    .campaign-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+    .campaign-actions {
+        width: 100%;
+        border-top: 1px solid #f3f4f6;
+        padding-top: 12px;
+        margin-top: 4px;
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+    }
+    .campaign-actions button, .campaign-actions a.btn-detail {
+        flex: 1;
+        text-align: center;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 9px 12px !important;
+        font-size: 13px;
+        margin-left: 0 !important;
+    }
+}
+</style>
+
+<?php include 'includes/footer.php'; ?>

@@ -111,7 +111,11 @@ function apply_proxy_to_curl($ch, $access_token = null) {
 }
 
 function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [], $timeout = 20) {
-    $url = FB_API_BASE . $endpoint;
+    if (strpos($endpoint, 'videos') !== false || strpos($endpoint, 'video_stories') !== false) {
+        $url = 'https://graph-video.facebook.com/' . FB_API_VERSION . '/' . $endpoint;
+    } else {
+        $url = FB_API_BASE . $endpoint;
+    }
 
     if (!empty($params)) {
         $url .= (strpos($url, '?') !== false ? '&' : '?') . http_build_query($params);
@@ -121,6 +125,8 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024); // Ngắt nếu tốc độ truyền tải < 1KB/s
+    curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);    // trong 60s liên tục (chống cURL treo vô hạn)
     fb_curl_setssl($ch);
 
     if (!empty($params['access_token'])) {
@@ -496,16 +502,18 @@ function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $
             "offset: 0",
             "file_size: {$file_size}"
         ]);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, file_get_contents($file_path));
+        curl_setopt($ch, CURLOPT_UPLOAD, true);
+        curl_setopt($ch, CURLOPT_INFILE, $fp);
+        curl_setopt($ch, CURLOPT_INFILESIZE, $file_size);
         curl_setopt($ch, CURLOPT_TIMEOUT, 300);
         fb_curl_setssl($ch);
-        fclose($fp);
 
         set_time_limit(600);
         $chunk_resRaw = curl_exec($ch);
         $chunk_code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curl_err     = curl_error($ch);
         curl_close($ch);
+        fclose($fp);
 
         if ($chunk_code !== 200) {
             $err_msg = 'Upload phase failed';
@@ -534,7 +542,7 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
     }
 
     $file_size = filesize($file_path);
-    $endpoint = $page_id . '/videos'; // Graph API dùng chung /videos cho cả Reel và Video thường, khác ở tham số POST
+    $endpoint = $page_id . '/videos';
 
     // ── Step 1: Start upload session ─────────────────────────────────
     $start_params = [
@@ -545,63 +553,59 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
 
     $res1 = fb_api_request($endpoint, $start_params, 'POST');
 
-    if ($res1['status_code'] !== 200 || empty($res1['data']['video_id'])) {
-        return $res1;
+    if ($res1['status_code'] === 200 && !empty($res1['data']['video_id'])) {
+        $video_id = $res1['data']['video_id'];
+        $upload_session_id = $res1['data']['upload_session_id'];
+
+        // ── Step 2: Upload file bytes ────────────────────────────────────
+        $safe_ext = pathinfo($file_path, PATHINFO_EXTENSION);
+        $safe_name = 'video_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '.mp4');
+
+        $chunk_params = [
+            'upload_phase' => 'transfer',
+            'upload_session_id' => $upload_session_id,
+            'start_offset' => '0',
+            'video_file_chunk' => new CURLFile($file_path, 'application/octet-stream', $safe_name),
+            'access_token' => $page_access_token
+        ];
+
+        $res2 = fb_api_request($endpoint, $chunk_params, 'POST', $chunk_params, 600);
+
+        if ($res2['status_code'] === 200) {
+            // ── Step 3: Finish upload ────────────────────────────────────────
+            $finish_params = [
+                'upload_phase' => 'finish',
+                'upload_session_id' => $upload_session_id,
+                'access_token' => $page_access_token,
+                'title' => $title,
+                'description' => $description
+            ];
+
+            if ($is_reel) {
+                $finish_params['post_video_as_reels'] = 'true';
+            }
+
+            $res3 = fb_api_request($endpoint, $finish_params, 'POST');
+            if ($res3['status_code'] === 200 && !empty($res3['data']['success'])) {
+                $res3['data']['id'] = $video_id;
+            }
+            return $res3;
+        }
     }
 
-    $video_id = $res1['data']['video_id'];
-    $upload_session_id = $res1['data']['upload_session_id'];
-
-    // ── Step 2: Upload file bytes ────────────────────────────────────
-    $fp = fopen($file_path, 'rb');
-    if (!$fp) {
-        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể mở file video để đọc.']]];
-    }
-
-    // Đọc toàn bộ file vào bộ nhớ để CURLFile đẩy lên như form-data
-    $chunk_data = file_get_contents($file_path);
+    // ── Fallback: Direct single-step upload ──────────────────────────
     $safe_ext = pathinfo($file_path, PATHINFO_EXTENSION);
-    $safe_name = 'video_' . uniqid() . '.' . $safe_ext;
-
-    // Phải tạo file tạm để dùng CURLFile
-    $tmp_dir = sys_get_temp_dir();
-    $tmp_file = $tmp_dir . '/' . $safe_name;
-    file_put_contents($tmp_file, $chunk_data);
-
-    $chunk_params = [
-        'upload_phase' => 'transfer',
-        'upload_session_id' => $upload_session_id,
-        'start_offset' => '0',
-        'video_file_chunk' => new CURLFile($tmp_file, 'application/octet-stream', $safe_name),
+    $safe_name = 'video_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '.mp4');
+    $direct_params = [
+        'title' => $title,
+        'description' => $description,
+        'source' => new CURLFile($file_path, 'application/octet-stream', $safe_name),
         'access_token' => $page_access_token
     ];
-
-    $res2 = fb_api_request($endpoint, $chunk_params, 'POST', $chunk_params, 600); // 10 phút timeout
-    @unlink($tmp_file);
-
-    if ($res2['status_code'] !== 200) {
-        return $res2;
-    }
-
-    // ── Step 3: Finish upload ────────────────────────────────────────
-    $finish_params = [
-        'upload_phase' => 'finish',
-        'upload_session_id' => $upload_session_id,
-        'access_token' => $page_access_token,
-        'title' => $title,
-        'description' => $description
-    ];
-
-    // Cấu hình thêm nếu là Facebook Reels
     if ($is_reel) {
-        $finish_params['post_video_as_reels'] = 'true';
+        $direct_params['post_video_as_reels'] = 'true';
     }
-
-    $res3 = fb_api_request($endpoint, $finish_params, 'POST');
-    if ($res3['status_code'] === 200 && !empty($res3['data']['success'])) {
-        $res3['data']['id'] = $video_id;
-    }
-    return $res3;
+    return fb_api_request($endpoint, [], 'POST', $direct_params, 600);
 }
 
 function fb_exchange_token($short_token, $app_id, $app_secret) {
