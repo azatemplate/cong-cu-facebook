@@ -45,10 +45,11 @@ echo "\n[STEP 1] Dọn dẹp thư mục temp/ & uploads/tmp/ (Files cũ > 5 phú
 $root_dir = realpath(__DIR__ . '/../');
 $temp_dirs = [
     $root_dir . '/temp',
-    $root_dir . '/uploads/tmp'
+    $root_dir . '/uploads/tmp',
+    $root_dir . '/uploads'
 ];
 
-$cutoff_5m = time() - 300; // 5 phút
+$cutoff_5m = time() - 300; // 5 phút (300 giây)
 
 foreach ($temp_dirs as $tdir) {
     if (!is_dir($tdir)) continue;
@@ -64,9 +65,21 @@ foreach ($temp_dirs as $tdir) {
         // Bảo vệ tuyệt đối không đụng vào file socket hệ thống (.sock)
         if (substr($fname, -5) === '.sock' || @is_link($f) || @filetype($f) === 'socket') continue;
 
-        // Các định dạng file tạm lớn hoặc file cURL / Drive / Chunk
+        // Đối với thư mục /uploads/, CHỈ xóa các file tạm có tiền tố buf_, gdrive_, yt_tik_ khi đã tạo > 5 PHÚT
+        if ($tdir === $root_dir . '/uploads') {
+            $is_buf_junk = (strpos($fname, 'buf_') === 0 || strpos($fname, 'gdrive_') === 0 || strpos($fname, 'yt_tik_') === 0);
+            if ($is_buf_junk && $mtime < $cutoff_5m) {
+                if (@unlink($f)) {
+                    $stats['uploads_tmp']++;
+                }
+            }
+            continue;
+        }
+
+        // Các định dạng file tạm lớn hoặc file cURL / Drive / Chunk trong /temp và /uploads/tmp/
         $is_junk = preg_match('/\.(mp4|mov|avi|tmp|png|jpg|jpeg|webp|mkv)$/i', $fname) ||
                    strpos($fname, 'buf_chk_') === 0 ||
+                   strpos($fname, 'buf_') === 0 ||
                    strpos($fname, 'gdrive_') === 0 ||
                    strpos($fname, 'curl_') === 0 ||
                    strpos($fname, 'yt_tik_') === 0 ||
@@ -84,7 +97,7 @@ foreach ($temp_dirs as $tdir) {
         }
     }
 }
-echo "  -> Đã xóa: {$stats['temp_files']} files trong temp/, {$stats['uploads_tmp']} files trong uploads/tmp/\n";
+echo "  -> Đã xóa: {$stats['temp_files']} files trong temp/, {$stats['uploads_tmp']} files trong uploads/tmp/ & uploads/ (đã tạo > 5 phút)\n";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PHẦN 2: THU HẸP FILE LOG PHÌNH TO (> 10MB)
