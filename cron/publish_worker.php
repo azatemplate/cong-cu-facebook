@@ -956,6 +956,8 @@ do {
     }
     $post_index++;
     echo "Đang xử lý bài đăng ID: {$post['id']} - Loại: {$post['post_type']}\n";
+    if (ob_get_level() > 0) @ob_flush();
+    @flush();
 
     // Lưu account_id cho hàm marKAsFailed có thể gửi Telegram
     $GLOBALS['_current_account_id'] = $post['account_id'] ?? 0;

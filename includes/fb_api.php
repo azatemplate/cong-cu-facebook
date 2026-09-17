@@ -538,21 +538,26 @@ function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $
     }
 }
 
+if (!function_exists('fb_echo_log')) {
+    function fb_echo_log($msg) {
+        echo $msg;
+        if (ob_get_level() > 0) @ob_flush();
+        @flush();
+    }
+}
+
 /**
- * Upload Facebook Page Reel using Meta's Official 3-Step Video Reels Publishing API
- * Protocol:
- * 1. POST /{page-id}/video_reels?upload_phase=start -> Returns video_id & upload_url
- * 2. POST {upload_url} with binary bytes (Header Authorization, offset, file_size) -> rupload.facebook.com
- * 3. POST /{page-id}/video_reels?upload_phase=finish&video_id=...&video_state=PUBLISHED&description=... -> Publishes Reel
+ * Upload Facebook Page Reel using Meta's Official 4-Step Video Reels Publishing API
  */
 function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = '', $description = '', $sp_post_id = 0) {
+    @ob_implicit_flush(1);
     if (!file_exists($file_path)) {
         return ['status_code' => 0, 'data' => ['error' => ['message' => 'File video Reel không tồn tại trên máy chủ.']]];
     }
 
     $file_size = filesize($file_path);
     $mb_size = round($file_size / 1024 / 1024, 2);
-    echo "   → Bat dau dang Reel (Meta 3-step Page Reel API - $mb_size MB)...\n";
+    fb_echo_log("   → Bat dau dang Reel (Meta 4-step Page Reel API - $mb_size MB)...\n");
 
     // ── Phase 1: Start upload session ───────────────────────────────────
     $res1 = fb_api_request($page_id . '/video_reels', [
@@ -561,14 +566,14 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     ], 'POST', [], 60);
 
     if ($res1['status_code'] !== 200 || empty($res1['data']['video_id']) || empty($res1['data']['upload_url'])) {
-        echo "   → Lỗi Phase 1 (Start Reel): Status " . ($res1['status_code'] ?? 0) . " - " . json_encode($res1['data'] ?? []) . "\n";
+        fb_echo_log("   → Lỗi Phase 1 (Start Reel): Status " . ($res1['status_code'] ?? 0) . " - " . json_encode($res1['data'] ?? []) . "\n");
         return $res1;
     }
 
     $video_id   = $res1['data']['video_id'];
     $upload_url = $res1['data']['upload_url'];
 
-    echo "   → Phase 1 OK (Video ID: $video_id). Dang truyen file len Facebook rupload...\n";
+    fb_echo_log("   → Phase 1 OK (Video ID: $video_id). Dang truyen file len Facebook rupload...\n");
 
     // ── Phase 2: Transfer video file ────────────────────────────────────
     $phase2_success = false;
@@ -577,7 +582,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     $cdn_url = function_exists('upload_file_to_hongdolab_cdn') ? upload_file_to_hongdolab_cdn($file_path) : false;
 
     if ($cdn_url) {
-        echo "   → Truyền video qua CDN file_url: $cdn_url...\n";
+        fb_echo_log("   → Truyền video qua CDN file_url: $cdn_url...\n");
         $ch_cdn = curl_init();
         curl_setopt($ch_cdn, CURLOPT_URL, $upload_url);
         curl_setopt($ch_cdn, CURLOPT_RETURNTRANSFER, true);
@@ -596,9 +601,9 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
 
         if ($cdn_code === 200) {
             $phase2_success = true;
-            echo "   → Phase 2 OK via CDN file_url!\n";
+            fb_echo_log("   → Phase 2 OK via CDN file_url!\n");
         } else {
-            echo "   → CDN file_url trả về HTTP $cdn_code (" . substr(strip_tags($cdn_resRaw), 0, 150) . "). Thử lại bằng binary upload...\n";
+            fb_echo_log("   → CDN file_url trả về HTTP $cdn_code (" . substr(strip_tags($cdn_resRaw), 0, 150) . "). Thử lại bằng binary upload...\n");
         }
     }
 
@@ -648,12 +653,12 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
             } elseif (!empty($chunk_resRaw)) {
                 $err_msg .= " - Body: " . substr(strip_tags($chunk_resRaw), 0, 300);
             }
-            echo "   → Lỗi Phase 2 (Transfer Reel): HTTP $chunk_code - $err_msg\n";
+            fb_echo_log("   → Lỗi Phase 2 (Transfer Reel): HTTP $chunk_code - $err_msg\n");
             return ['status_code' => $chunk_code, 'data' => ['error' => ['message' => $err_msg]]];
         }
     }
 
-    echo "   → Phase 2 OK (Upload 100%). Dang kiem tra trang thai xu ly video (Step 3)...\n";
+    fb_echo_log("   → Phase 2 OK (Upload 100%). Dang kiem tra trang thai xu ly video (Step 3)...\n");
     if ($sp_post_id > 0 && function_exists('update_post_progress')) {
         global $pdo;
         if (isset($pdo)) {
@@ -677,17 +682,17 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
 
         if ($video_status === 'ready' || $video_status === 'complete' || $processing_state === 'complete' || $processing_state === 'success') {
             $video_ready = true;
-            echo "   → Step 3 OK: Video da xu ly xong (Status: " . ($video_status ?: $processing_state) . ").\n";
+            fb_echo_log("   → Step 3 OK: Video da xu ly xong (Status: " . ($video_status ?: $processing_state) . ").\n");
             break;
         }
 
         if ($video_status === 'error' || $processing_state === 'error') {
-            echo "   → Step 3 Warning: Xử lý video trả về lỗi - " . json_encode($status_res['data'] ?? []) . "\n";
+            fb_echo_log("   → Step 3 Warning: Xử lý video trả về lỗi - " . json_encode($status_res['data'] ?? []) . "\n");
             break;
         }
 
         if ($check_i % 3 === 0 || $check_i === 1) {
-            echo "   → Step 3: Dang cho Facebook xu ly video (Check $check_i/$max_status_checks, Status: " . ($video_status ?: $processing_state ?: 'processing') . ")...\n";
+            fb_echo_log("   → Step 3: Dang cho Facebook xu ly video (Check $check_i/$max_status_checks, Status: " . ($video_status ?: $processing_state ?: 'processing') . ")...\n");
         }
         sleep(2);
     }
@@ -718,7 +723,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         'access_token' => $page_access_token
     ], 'POST', $finish_params, 60);
 
-    echo "   → Ket qua dang Reel: Status " . ($res3['status_code'] ?? '0') . " - Data: " . json_encode($res3['data'] ?? []) . "\n";
+    fb_echo_log("   → Ket qua dang Reel: Status " . ($res3['status_code'] ?? '0') . " - Data: " . json_encode($res3['data'] ?? []) . "\n");
 
     if ($res3['status_code'] === 200) {
         if (empty($res3['data']['id']) && empty($res3['data']['post_id'])) {
