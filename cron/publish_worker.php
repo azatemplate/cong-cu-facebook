@@ -2665,14 +2665,33 @@ do {
         $file_mime = 'video/mp4';
         $file_name = 'tiktok_video.mp4';
     } else {
-        $has_media = !empty($post['media_path']) && file_exists(__DIR__ . '/../' . $post['media_path']);
-        if ($has_media) {
-            $abs_media_path = __DIR__ . '/../' . $post['media_path'];
-            $file_mime = mime_content_type($abs_media_path);
-            if (!$file_mime)
-                $file_mime = 'application/octet-stream';
-            $file_name = basename($abs_media_path);
+        $raw_media_path = $post['media_path'] ?? '';
+        $is_remote_media = (strpos($raw_media_path, 'http://') === 0 || strpos($raw_media_path, 'https://') === 0);
+        if ($is_remote_media) {
+            $has_media = true;
+            $abs_media_path = $raw_media_path;
+            $file_mime = 'video/mp4';
+            $file_name = basename(parse_url($raw_media_path, PHP_URL_PATH) ?: 'video.mp4');
             $t_title_override = pathinfo($file_name, PATHINFO_FILENAME);
+        } else {
+            $test_p1 = __DIR__ . '/../' . $raw_media_path;
+            $test_p2 = $raw_media_path;
+            if (!empty($raw_media_path) && file_exists($test_p1)) {
+                $has_media = true;
+                $abs_media_path = $test_p1;
+            } elseif (!empty($raw_media_path) && file_exists($test_p2)) {
+                $has_media = true;
+                $abs_media_path = $test_p2;
+            } else {
+                $has_media = false;
+            }
+            if ($has_media) {
+                $file_mime = mime_content_type($abs_media_path);
+                if (!$file_mime)
+                    $file_mime = 'application/octet-stream';
+                $file_name = basename($abs_media_path);
+                $t_title_override = pathinfo($file_name, PATHINFO_FILENAME);
+            }
         }
     }
 
@@ -2988,6 +3007,9 @@ if ($lock_fp && is_resource($lock_fp)) {
 
 function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $has_error_msg = true, $has_retry_count = true)
 {
+    echo "   → Lỗi xử lý bài ID {$id}: {$msg}\n";
+    if (ob_get_level() > 0) @ob_flush();
+    @flush();
     if (function_exists('ensure_pdo_alive')) ensure_pdo_alive($pdo);
     // Cắt và chuẩn hóa thông báo lỗi Quota YouTube API 429
     if (stripos($msg, 'Quota exceeded') !== false || stripos($msg, 'rateLimitExceeded') !== false || stripos($msg, 'RESOURCE_EXHAUSTED') !== false || stripos($msg, 'defaultVideoInsertPerDayPerProject') !== false) {

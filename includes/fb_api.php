@@ -554,8 +554,13 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
 
     $is_remote_url = (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0);
 
-    if (!$is_remote_url && !file_exists($file_path)) {
-        return ['status_code' => 0, 'data' => ['error' => ['message' => 'File video Reel không tồn tại trên máy chủ.']]];
+    if (!$is_remote_url) {
+        if (!file_exists($file_path) && file_exists(__DIR__ . '/../' . ltrim($file_path, '/'))) {
+            $file_path = __DIR__ . '/../' . ltrim($file_path, '/');
+        }
+        if (!file_exists($file_path)) {
+            return ['status_code' => 0, 'data' => ['error' => ['message' => "File video Reel không tồn tại trên máy chủ: {$file_path}"]]];
+        }
     }
 
     $file_size = $is_remote_url ? 0 : filesize($file_path);
@@ -750,8 +755,14 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
         return fb_upload_page_reel($page_id, $page_access_token, $file_path, $title, $description, $sp_post_id);
     }
 
-    if (!file_exists($file_path)) {
-        return ['status_code' => 0, 'data' => ['error' => ['message' => 'File video không tồn tại trên máy chủ.']]];
+    $is_remote_url = (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0);
+    if (!$is_remote_url) {
+        if (!file_exists($file_path) && file_exists(__DIR__ . '/../' . ltrim($file_path, '/'))) {
+            $file_path = __DIR__ . '/../' . ltrim($file_path, '/');
+        }
+        if (!file_exists($file_path)) {
+            return ['status_code' => 0, 'data' => ['error' => ['message' => "File video không tồn tại trên máy chủ: {$file_path}"]]];
+        }
     }
 
     $file_size = filesize($file_path);
