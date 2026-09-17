@@ -571,12 +571,10 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     echo "   → Phase 1 OK (Video ID: $video_id). Dang truyen file len Facebook rupload...\n";
 
     // ── Phase 2: Transfer binary video file ──────────────────────────────
-    $fp = fopen($file_path, 'rb');
-    if (!$fp) {
-        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể mở file video để upload Reel.']]];
+    $file_bytes = @file_get_contents($file_path);
+    if ($file_bytes === false) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video để upload Reel.']]];
     }
-
-    $last_percent = -1;
 
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $upload_url);
@@ -586,42 +584,17 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
     curl_setopt($ch, CURLOPT_TIMEOUT, 600);
     curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
-    curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 30);
-    curl_setopt($ch, CURLOPT_INFILE, $fp);
-    curl_setopt($ch, CURLOPT_INFILESIZE, $file_size);
-    curl_setopt($ch, CURLOPT_READFUNCTION, function($ch_res, $fd, $length) use ($fp) {
-        return fread($fp, $length);
-    });
+    curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $file_bytes);
 
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         "Authorization: OAuth {$page_access_token}",
         "Content-Type: application/octet-stream",
+        "Content-Length: " . strlen($file_bytes),
         "offset: 0",
         "file_size: {$file_size}",
         "Expect:"
     ]);
-
-    curl_setopt($ch, CURLOPT_NOPROGRESS, false);
-    curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function($resource, $dltotal, $dlnow, $ultotal, $ulnow) use (&$last_percent, $sp_post_id) {
-        if ($ultotal > 0) {
-            $percent = (int)floor(($ulnow / $ultotal) * 100);
-            if ($percent % 10 === 0 && $percent !== $last_percent) {
-                $last_percent = $percent;
-                $mb_ul = round($ulnow / 1024 / 1024, 2);
-                $mb_tot = round($ultotal / 1024 / 1024, 2);
-                echo "   → Tiến trình upload Reel: {$percent}% ({$mb_ul} MB / {$mb_tot} MB)\n";
-                if ($sp_post_id > 0 && function_exists('update_post_progress')) {
-                    global $pdo;
-                    if (isset($pdo)) {
-                        update_post_progress($pdo, $sp_post_id, "🚀 Đang tải video lên Facebook ({$percent}%)...");
-                    }
-                }
-                if (function_exists('ob_flush')) @ob_flush();
-                @flush();
-            }
-        }
-        return 0;
-    });
 
     fb_curl_setssl($ch);
     apply_proxy_to_curl($ch, $page_access_token);
@@ -631,13 +604,17 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     $chunk_code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curl_err     = curl_error($ch);
     curl_close($ch);
-    fclose($fp);
+    unset($file_bytes);
 
     if ($chunk_code !== 200) {
         $err_msg = 'Upload phase 2 (transfer) failed';
         if ($curl_err) $err_msg .= " (cURL: $curl_err)";
         $parsed  = @json_decode($chunk_resRaw, true);
-        if ($parsed && isset($parsed['error']['message'])) $err_msg = $parsed['error']['message'];
+        if ($parsed && isset($parsed['error']['message'])) {
+            $err_msg .= " - " . $parsed['error']['message'];
+        } elseif (!empty($chunk_resRaw)) {
+            $err_msg .= " - Body: " . substr(strip_tags($chunk_resRaw), 0, 300);
+        }
         echo "   → Lỗi Phase 2 (Transfer Reel): HTTP $chunk_code - $err_msg\n";
         return ['status_code' => $chunk_code, 'data' => ['error' => ['message' => $err_msg]]];
     }
