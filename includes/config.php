@@ -15,33 +15,45 @@ ini_set('display_errors', '0');
 
 // ── Load .env file (if exists) ───────────────────────────────────────────────
 (function () {
-    $envFile = __DIR__ . '/../.env';
-    if (file_exists($envFile)) {
-        $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '' || $line[0] === '#') continue;
-            if (strpos($line, '=') === false) continue;
-            list($key, $value) = explode('=', $line, 2);
-            $key   = trim($key);
-            $value = trim($value);
-            // Remove surrounding quotes
-            if (preg_match('/^["\'](.*)["\']$/', $value, $m)) {
-                $value = $m[1];
-            }
-            if (!isset($_ENV[$key])) {
-                if (function_exists('putenv')) {
-                    @putenv("$key=$value");
+    $envCandidates = [
+        __DIR__ . '/../.env',
+        __DIR__ . '/../../.env',
+        dirname(__DIR__) . '/.env',
+        dirname(dirname(__DIR__)) . '/.env'
+    ];
+    foreach ($envCandidates as $envFile) {
+        if (file_exists($envFile)) {
+            $lines = @file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if (!empty($lines)) {
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if ($line === '' || $line[0] === '#') continue;
+                    if (strpos($line, '=') === false) continue;
+                    list($key, $value) = explode('=', $line, 2);
+                    $key   = trim($key);
+                    $value = trim($value);
+                    if (preg_match('/^["\'](.*)["\']$/', $value, $m)) {
+                        $value = $m[1];
+                    }
+                    if (!isset($_ENV[$key]) || $_ENV[$key] === '') {
+                        if (function_exists('putenv')) {
+                            @putenv("$key=$value");
+                        }
+                        $_ENV[$key] = $value;
+                        $_SERVER[$key] = $value;
+                    }
                 }
-                $_ENV[$key] = $value;
-                $_SERVER[$key] = $value;
             }
         }
     }
 })();
 
 function get_env_var($key, $default = '') {
-    return $_ENV[$key] ?? (function_exists('getenv') ? getenv($key) : null) ?? $_SERVER[$key] ?? $default;
+    $val = $_ENV[$key] ?? (function_exists('getenv') ? getenv($key) : null) ?? $_SERVER[$key] ?? null;
+    if ($val === null || $val === false || trim((string)$val) === '') {
+        return $default;
+    }
+    return $val;
 }
 
 // --- Database ---
