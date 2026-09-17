@@ -15,6 +15,30 @@ try {
     // Timezone: wrapped separately — some MariaDB servers lack tz tables
     try { $pdo->exec("SET time_zone = '+07:00'"); } catch (Exception $e) {}
 
+if (!function_exists('ensure_pdo_alive')) {
+    function ensure_pdo_alive(&$pdo) {
+        try {
+            if ($pdo) {
+                @$pdo->query("SELECT 1");
+                return $pdo;
+            }
+        } catch (Throwable $e) {}
+        try {
+            $pdo = new PDO(
+                "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET,
+                DB_USER,
+                DB_PASS
+            );
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+            $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            $pdo->exec("SET NAMES '" . DB_CHARSET . "'");
+            try { $pdo->exec("SET time_zone = '+07:00'"); } catch (Exception $ex) {}
+        } catch (Throwable $ex2) {}
+        return $pdo;
+    }
+}
+
     // Auto-save base_site_url when domain changes (avoid database write transaction on every HTTP request)
     if (!empty($_SERVER['HTTP_HOST'])) {
         static $url_checked = false;

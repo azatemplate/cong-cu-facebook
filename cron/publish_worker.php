@@ -104,6 +104,7 @@ require_once __DIR__ . '/../includes/telegram.php';
 if (!function_exists('update_post_progress')) {
     function update_post_progress($pdo, $post_id, $msg) {
         try {
+            if (function_exists('ensure_pdo_alive')) ensure_pdo_alive($pdo);
             $stmt = $pdo->prepare("UPDATE scheduled_posts SET error_msg = ? WHERE id = ? AND status = 'processing'");
             $stmt->execute([$msg, $post_id]);
         } catch (Exception $e) {}
@@ -2798,6 +2799,7 @@ do {
     }
 
     handle_response:
+    if (function_exists('ensure_pdo_alive')) ensure_pdo_alive($pdo);
     $post_id = $response['data']['id'] ?? $response['data']['post_id'] ?? null;
     $is_success = ($response['status_code'] === 200) && ($post_id || (isset($response['data']['success']) && $response['data']['success']));
 
@@ -2955,6 +2957,7 @@ if ($lock_fp) {
 
 function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $has_error_msg = true, $has_retry_count = true)
 {
+    if (function_exists('ensure_pdo_alive')) ensure_pdo_alive($pdo);
     // Cắt và chuẩn hóa thông báo lỗi Quota YouTube API 429
     if (stripos($msg, 'Quota exceeded') !== false || stripos($msg, 'rateLimitExceeded') !== false || stripos($msg, 'RESOURCE_EXHAUSTED') !== false || stripos($msg, 'defaultVideoInsertPerDayPerProject') !== false) {
         $msg = "Lỗi YouTube API: Đã đạt giới hạn Quota/ngày";
