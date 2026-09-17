@@ -101,6 +101,15 @@ require_once __DIR__ . '/../includes/drive_utils.php';
 require_once __DIR__ . '/../includes/ai_rewriter.php';
 require_once __DIR__ . '/../includes/telegram.php';
 
+if (!function_exists('update_post_progress')) {
+    function update_post_progress($pdo, $post_id, $msg) {
+        try {
+            $stmt = $pdo->prepare("UPDATE scheduled_posts SET error_msg = ? WHERE id = ? AND status = 'processing'");
+            $stmt->execute([$msg, $post_id]);
+        } catch (Exception $e) {}
+    }
+}
+
 /**
  * Resolves a file ID from a folder ID
  * Returns array of [id, name, mimeType]
@@ -972,7 +981,7 @@ do {
 
     // 2. Mark as processing to prevent duplicate cron runs from picking it up
     // We only update if status is still pending or failed. If 0 rows affected, another worker took it.
-    $update_processing = $pdo->prepare("UPDATE scheduled_posts SET status = 'processing' WHERE id = ? AND status IN ('pending', 'failed')");
+    $update_processing = $pdo->prepare("UPDATE scheduled_posts SET status = 'processing', error_msg = '⚙️ Đang xử lý...' WHERE id = ? AND status IN ('pending', 'failed')");
     $update_processing->execute([$post['id']]);
     if ($update_processing->rowCount() === 0) {
         echo "   → Bài ID {$post['id']} đã được tiến trình khác xử lý. Bỏ qua.\n";
@@ -2558,6 +2567,7 @@ do {
         
         $c_data = json_decode($post['content'] ?? '', true);
         $is_anti_dup = !empty($c_data['delete_drive_file']);
+        update_post_progress($pdo, $post['id'], '📥 Đang quét & tải file từ Drive...');
         $resolved_file_info = resolve_drive_folder_file($pdo, $drive_token, $folder_id, $mime_filter, $is_anti_dup);
         if (isset($resolved_file_info['error'])) {
             marKAsFailed($pdo, $post['id'], "Lỗi quét thư mục Drive: " . $resolved_file_info['error'], $sys_max_retries, $sys_retry_interval);
@@ -2657,6 +2667,7 @@ do {
             $use_ai = isset($parsed_content['use_ai']) && $parsed_content['use_ai'];
 
             if ($use_ai && !empty($p_desc)) {
+                update_post_progress($pdo, $post['id'], '🤖 Đang viết bài bằng AI...');
                 $ai_original = $p_desc;
                 $p_desc = rewrite_content_with_ai($p_desc, $post['account_id'], false, $fanpage_name);
                 if ($p_desc === $ai_original) {
@@ -2709,6 +2720,7 @@ do {
                         $ai_input = $p_desc;
                     }
                     if (!empty($ai_input)) {
+                        update_post_progress($pdo, $post['id'], '🤖 Đang viết bài bằng AI...');
                         $ai_original = $ai_input;
                         $p_desc = rewrite_content_with_ai($ai_input, $post['account_id'], false, $fanpage_name);
                         // Nếu AI trả về nguyên bản (nghĩa là lỗi API), thử lại 1 lần sau 3 giây
@@ -2771,6 +2783,7 @@ do {
 
     // 5. Call API
     set_time_limit(600); // Allow long upload for videos
+    update_post_progress($pdo, $post['id'], '🚀 Đang tải lên Facebook...');
     if (strpos($post_type, 'Story') === false) {
         if (($post_type === 'Video' || $post_type === 'Reel') && $has_media && file_exists($abs_media_path)) {
             // Dùng hàm upload Resumable mới để trị dứt điểm lỗi Timeout 120s

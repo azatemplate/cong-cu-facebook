@@ -14,8 +14,9 @@ function trigger_campaign_publisher_worker($pdo, $campaign_id) {
             if (function_exists('get_php_cli_bin')) {
                 $php_bin = get_php_cli_bin();
                 $script = __DIR__ . '/cron/start_publish.php';
-                if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') @pclose(@popen("start /B \"\" \"$php_bin\" \"$script\"", "r"));
-                else @exec("nohup \"$php_bin\" \"$script\" > /dev/null 2>&1 &");
+                $cid_arg = (int)$campaign_id;
+                if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') @pclose(@popen("start /B \"\" \"$php_bin\" \"$script\" \"$cid_arg\"", "r"));
+                else @exec("nohup \"$php_bin\" \"$script\" \"$cid_arg\" > /dev/null 2>&1 &");
             }
         }
 
@@ -442,9 +443,29 @@ function status_label($s) {
                 <td style="padding:10px 16px;"><span style="background:#f3f4f6;color:#374151;font-size:12px;padding:2px 8px;border-radius:4px;"><?php echo htmlspecialchars($post['post_type']); ?></span></td>
                 <td style="padding:10px 16px;font-size:12px;color:var(--text-muted);white-space:nowrap;"><?php echo date('H:i d/m/Y', strtotime($post['scheduled_time'])); ?></td>
                 <td style="padding:10px 16px;">
-                    <span style="background:<?php echo status_bg($s); ?>;color:<?php echo status_tc($s); ?>;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:500;"><?php echo status_label($s); ?></span>
-                    <?php if (!empty($post['retry_count'])): ?>
-                    <span style="font-size:11px;color:#9ca3af;"> ×<?php echo (int)$post['retry_count']; ?></span>
+                    <?php if ($s === 'processing'): ?>
+                        <span style="background:#e0f2fe;color:#0369a1;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:600;display:inline-flex;align-items:center;gap:4px;">
+                            🔄 Đang đăng
+                        </span>
+                        <?php if (!empty($post['error_msg'])): ?>
+                            <div style="font-size:11px;color:#0284c7;margin-top:4px;font-weight:500;background:#f0f9ff;padding:3px 8px;border-radius:4px;border:1px solid #bae6fd;display:block;max-width:240px;">
+                                ⚡ <?php echo htmlspecialchars($post['error_msg']); ?>
+                            </div>
+                        <?php endif; ?>
+                    <?php elseif ($s === 'published'): ?>
+                        <span style="background:#d1fae5;color:#065f46;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:500;">✅ Đã đăng</span>
+                    <?php elseif ($s === 'pending'): ?>
+                        <span style="background:#fef3c7;color:#d97706;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:500;">⏳ Chờ</span>
+                    <?php else: ?>
+                        <span style="background:<?php echo status_bg($s); ?>;color:<?php echo status_tc($s); ?>;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:500;"><?php echo status_label($s); ?></span>
+                        <?php if (!empty($post['retry_count'])): ?>
+                            <span style="font-size:11px;color:#9ca3af;"> ×<?php echo (int)$post['retry_count']; ?></span>
+                        <?php endif; ?>
+                        <?php if (!empty($post['error_msg'])): ?>
+                            <div style="font-size:11px;color:#dc2626;margin-top:4px;max-width:240px;word-break:break-word;" title="<?php echo htmlspecialchars($post['error_msg']); ?>">
+                                ⚠️ <?php echo htmlspecialchars(mb_strimwidth($post['error_msg'], 0, 80, '...')); ?>
+                            </div>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </td>
                 <?php if ($has_comment_status_col):

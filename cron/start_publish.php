@@ -179,6 +179,21 @@ if ($available_slots <= 0) {
     exit;
 }
 
+// Support triggering for a single campaign specified via CLI arg or GET param
+$target_camp_id = 0;
+if (isset($argv[1]) && is_numeric($argv[1])) {
+    $target_camp_id = (int)$argv[1];
+} elseif (isset($_GET['campaign_id']) && is_numeric($_GET['campaign_id'])) {
+    $target_camp_id = (int)$_GET['campaign_id'];
+}
+
+$camp_filter = "";
+$params_sp = [];
+if ($target_camp_id > 0) {
+    $camp_filter = " AND sp.campaign_id = ? ";
+    $params_sp[] = $target_camp_id;
+}
+
 // Tìm các bài cần đăng và nhóm theo Campaign ID (1 Campaign = 1 Worker độc lập, chạy tuần tự tất cả nền tảng)
 $sql = "
     SELECT DISTINCT sp.page_id, sp.account_id, sp.post_type, sp.campaign_id,
@@ -195,6 +210,7 @@ $sql = "
       AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
       AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3))
       AND sp.status IN ('pending', 'failed')
+      $camp_filter
 ";
 $stmt = $pdo->prepare($sql);
 if (!$stmt) {
@@ -202,7 +218,7 @@ if (!$stmt) {
     $rq_pub->releaseLock('lock:cron:start_publish');
     exit;
 }
-if (!$stmt->execute()) {
+if (!$stmt->execute($params_sp)) {
     echo "Loi execute SQL";
     $rq_pub->releaseLock('lock:cron:start_publish');
     exit;
