@@ -565,25 +565,30 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
 
     $file_size = $is_remote_url ? 0 : filesize($file_path);
     $mb_size = $is_remote_url ? 'URL' : round($file_size / 1024 / 1024, 2);
-    fb_echo_log("   → Bat dau dang Reel (Meta 4-step Page Reel API - $mb_size MB)...\n");
+    fb_echo_log("   ----------------------------------------------------\n");
+    fb_echo_log("   🎬 BẮT ĐẦU ĐĂNG REEL META 4 BƯỚC (Dung lượng: $mb_size MB)\n");
+    fb_echo_log("   ----------------------------------------------------\n");
 
     // ── Phase 1: Start upload session ───────────────────────────────────
+    fb_echo_log("   → [Bước 1/4] Khởi tạo phiên đăng Reel (POST /{page_id}/video_reels?upload_phase=start)...\n");
     $res1 = fb_api_request($page_id . '/video_reels', [
         'upload_phase' => 'start',
         'access_token' => $page_access_token
     ], 'POST', [], 60);
 
     if ($res1['status_code'] !== 200 || empty($res1['data']['video_id']) || empty($res1['data']['upload_url'])) {
-        fb_echo_log("   → Lỗi Phase 1 (Start Reel): Status " . ($res1['status_code'] ?? 0) . " - " . json_encode($res1['data'] ?? []) . "\n");
+        fb_echo_log("   ❌ [Bước 1 Thất Bại] HTTP " . ($res1['status_code'] ?? 0) . " - " . json_encode($res1['data'] ?? []) . "\n");
         return $res1;
     }
 
     $video_id   = $res1['data']['video_id'];
     $upload_url = $res1['data']['upload_url'];
 
-    fb_echo_log("   → Phase 1 OK (Video ID: $video_id). Dang truyen file len Facebook rupload...\n");
+    fb_echo_log("   ✅ [Bước 1 Thành Công] Video ID: {$video_id}\n");
+    fb_echo_log("      Upload URL: {$upload_url}\n");
 
     // ── Phase 2: Transfer video file ────────────────────────────────────
+    fb_echo_log("   → [Bước 2/4] Đang truyền dữ liệu video lên rupload.facebook.com...\n");
     $phase2_success = false;
 
     // Try Method A: file_url header via CDN (Instantaneous transfer)
@@ -594,7 +599,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     }
 
     if ($cdn_url) {
-        fb_echo_log("   → Truyền video qua CDN file_url: $cdn_url...\n");
+        fb_echo_log("   → [Bước 2A] Truyền video siêu tốc qua CDN file_url: {$cdn_url}...\n");
         $ch_cdn = curl_init();
         curl_setopt($ch_cdn, CURLOPT_URL, $upload_url);
         curl_setopt($ch_cdn, CURLOPT_RETURNTRANSFER, true);
@@ -613,14 +618,15 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
 
         if ($cdn_code === 200) {
             $phase2_success = true;
-            fb_echo_log("   → Phase 2 OK via CDN file_url!\n");
+            fb_echo_log("   ✅ [Bước 2 Thành Công] Đã truyền video qua CDN file_url (HTTP 200)!\n");
         } else {
-            fb_echo_log("   → CDN file_url trả về HTTP $cdn_code (" . substr(strip_tags($cdn_resRaw), 0, 150) . "). Thử lại bằng binary upload...\n");
+            fb_echo_log("   ⚠️ [Bước 2A CDN HTTP $cdn_code]. Chuyển sang Bước 2B (Binary Upload)... \n");
         }
     }
 
     // Method B Fallback: Binary payload transfer
     if (!$phase2_success && !$is_remote_url) {
+        fb_echo_log("   → [Bước 2B] Upload file video binary (offset: 0, file_size: {$file_size} bytes)...\n");
         $file_bytes = @file_get_contents($file_path);
         if ($file_bytes === false) {
             return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video để upload Reel.']]];
@@ -665,20 +671,22 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
             } elseif (!empty($chunk_resRaw)) {
                 $err_msg .= " - Body: " . substr(strip_tags($chunk_resRaw), 0, 300);
             }
-            fb_echo_log("   → Lỗi Phase 2 (Transfer Reel): HTTP $chunk_code - $err_msg\n");
+            fb_echo_log("   ❌ [Bước 2 Thất Bại] HTTP $chunk_code - $err_msg\n");
             return ['status_code' => $chunk_code, 'data' => ['error' => ['message' => $err_msg]]];
         }
-    }
 
-    fb_echo_log("   → Phase 2 OK (Upload 100%). Dang kiem tra trang thai xu ly video (Step 3)...\n");
-    if ($sp_post_id > 0 && function_exists('update_post_progress')) {
-        global $pdo;
-        if (isset($pdo)) {
-            update_post_progress($pdo, $sp_post_id, "⚙️ Đang kiểm tra trạng thái xử lý video (Step 3)...");
-        }
+        fb_echo_log("   ✅ [Bước 2 Thành Công] Tải file video lên rupload thành công (HTTP 200).\n");
     }
 
     // ── Phase 3: Check Video Processing Status ─────────────────────────
+    fb_echo_log("   → [Bước 3/4] Đang kiểm tra trạng thái xử lý video trên Facebook (GET /{$video_id}?fields=status)...\n");
+    if ($sp_post_id > 0 && function_exists('update_post_progress')) {
+        global $pdo;
+        if (isset($pdo)) {
+            update_post_progress($pdo, $sp_post_id, "⚙️ Đang kiểm tra trạng thái xử lý video (Bước 3)...");
+        }
+    }
+
     $max_status_checks = 30; // Chờ tối đa 60s (30 x 2s)
     $video_ready = false;
 
@@ -694,26 +702,27 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
 
         if ($video_status === 'ready' || $video_status === 'complete' || $processing_state === 'complete' || $processing_state === 'success') {
             $video_ready = true;
-            fb_echo_log("   → Step 3 OK: Video da xu ly xong (Status: " . ($video_status ?: $processing_state) . ").\n");
+            fb_echo_log("   ✅ [Bước 3 Thành Công] Video đã xử lý xong (Status: " . ($video_status ?: $processing_state) . ").\n");
             break;
         }
 
         if ($video_status === 'error' || $processing_state === 'error') {
-            fb_echo_log("   → Step 3 Warning: Xử lý video trả về lỗi - " . json_encode($status_res['data'] ?? []) . "\n");
+            fb_echo_log("   ⚠️ [Bước 3 Cảnh Báo] Video trả về trạng thái error - " . json_encode($status_res['data'] ?? []) . "\n");
             break;
         }
 
         if ($check_i % 3 === 0 || $check_i === 1) {
-            fb_echo_log("   → Step 3: Dang cho Facebook xu ly video (Check $check_i/$max_status_checks, Status: " . ($video_status ?: $processing_state ?: 'processing') . ")...\n");
+            fb_echo_log("   → [Bước 3 Lần $check_i/$max_status_checks] Trạng thái video: " . ($video_status ?: $processing_state ?: 'processing') . " (chờ 2s)...\n");
         }
         sleep(2);
     }
 
     // ── Phase 4: Finish and Publish Reel ────────────────────────────────
+    fb_echo_log("   → [Bước 4/4] Đang xuất bản Reel (upload_phase: finish, video_state: PUBLISHED)...\n");
     if ($sp_post_id > 0 && function_exists('update_post_progress')) {
         global $pdo;
         if (isset($pdo)) {
-            update_post_progress($pdo, $sp_post_id, "⚙️ Đang hoàn tất xuất bản Reel (Step 4)...");
+            update_post_progress($pdo, $sp_post_id, "⚙️ Đang hoàn tất xuất bản Reel (Bước 4)...");
         }
     }
 
@@ -735,12 +744,15 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         'access_token' => $page_access_token
     ], 'POST', $finish_params, 60);
 
-    fb_echo_log("   → Ket qua dang Reel: Status " . ($res3['status_code'] ?? '0') . " - Data: " . json_encode($res3['data'] ?? []) . "\n");
+    $pub_reel_id = $res3['data']['id'] ?? $res3['data']['post_id'] ?? $video_id;
 
     if ($res3['status_code'] === 200) {
+        fb_echo_log("   🎉 [Bước 4 Thành Công] Đã xuất bản Reel thành công! Facebook Post ID: {$pub_reel_id}\n");
         if (empty($res3['data']['id']) && empty($res3['data']['post_id'])) {
-            $res3['data']['id'] = !empty($res3['data']['video_id']) ? $res3['data']['video_id'] : $video_id;
+            $res3['data']['id'] = $video_id;
         }
+    } else {
+        fb_echo_log("   ❌ [Bước 4 Thất Bại] HTTP " . ($res3['status_code'] ?? 0) . " - " . json_encode($res3['data'] ?? []) . "\n");
     }
 
     return $res3;

@@ -2842,13 +2842,9 @@ do {
             $is_reel = ($post_type === 'Reel');
             $v_title = $p_title ?? '';
             $v_desc = $post_data['description'] ?? '';
-            $video_src = ($has_media && file_exists($abs_media_path)) ? $abs_media_path : (!empty($public_media_url) ? $public_media_url : ($post['media_path'] ?? ''));
+            $video_src = !empty($abs_media_path) ? $abs_media_path : (!empty($public_media_url) ? $public_media_url : ($post['media_path'] ?? ''));
 
-            if (!empty($video_src)) {
-                $response = fb_upload_video_resumable($post['page_id'], $page_access_token, $video_src, $v_title, $v_desc, $is_reel, $post['id']);
-            } else {
-                $response = fb_api_request($endpoint, $params, 'POST', $post_data, 600);
-            }
+            $response = fb_upload_video_resumable($post['page_id'], $page_access_token, $video_src, $v_title, $v_desc, $is_reel, $post['id']);
         } else {
             $timeout = 30;
             $response = fb_api_request($endpoint, $params, 'POST', $post_data, $timeout);
