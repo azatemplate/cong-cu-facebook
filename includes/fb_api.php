@@ -590,131 +590,80 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     // ── Phase 2: Transfer video file ────────────────────────────────────
     fb_echo_log("   → [Bước 2/3] Đang truyền dữ liệu video lên rupload.facebook.com...\n");
 
-    $file_url_to_use = '';
-    if ($is_remote_url) {
-        $file_url_to_use = $file_path;
-    } else {
-        $root_dir = realpath(__DIR__ . '/../');
-        $real_file_path = realpath($file_path);
-        if ($real_file_path && $root_dir && strpos(str_replace('\\', '/', $real_file_path), str_replace('\\', '/', $root_dir)) === 0) {
-            $rel_path = str_replace('\\', '/', substr(str_replace('\\', '/', $real_file_path), strlen(str_replace('\\', '/', $root_dir))));
-            global $pdo;
-            $base_url = '';
-            if (isset($pdo) && function_exists('get_system_site_url')) {
-                $base_url = get_system_site_url($pdo);
-            }
-            if (empty($base_url)) {
-                $base_url = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'fbweb.hongdolab.com');
-            }
-            $file_url_to_use = rtrim($base_url, '/') . '/' . ltrim($rel_path, '/');
-        }
+    $real_size = filesize($file_path);
+    fb_echo_log("   → [Bước 2 Binary] Upload file video binary trực tiếp (offset: 0, file_size: {$real_size} bytes)...\n");
+    $file_bytes = @file_get_contents($file_path);
+    if ($file_bytes === false) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video trên server.']]];
     }
 
-    $uploaded_via_file_url = false;
+    $actual_bytes_len = strlen($file_bytes);
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $upload_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 600);
+    curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
+    curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $file_bytes);
 
-    if (!empty($file_url_to_use)) {
-        fb_echo_log("   → [Bước 2 Remote] Đăng siêu tốc qua header file_url: {$file_url_to_use}...\n");
-        $ch_cdn = curl_init();
-        curl_setopt($ch_cdn, CURLOPT_URL, $upload_url);
-        curl_setopt($ch_cdn, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch_cdn, CURLOPT_POST, true);
-        curl_setopt($ch_cdn, CURLOPT_HTTPHEADER, [
-            "Authorization: OAuth {$page_access_token}",
-            "file_url: {$file_url_to_use}"
-        ]);
-        curl_setopt($ch_cdn, CURLOPT_TIMEOUT, 120);
-        fb_curl_setssl($ch_cdn);
-        apply_proxy_to_curl($ch_cdn, $page_access_token);
-
-        $cdn_resRaw = curl_exec($ch_cdn);
-        $cdn_code   = curl_getinfo($ch_cdn, CURLINFO_HTTP_CODE);
-        curl_close($ch_cdn);
-
-        if ($cdn_code === 200) {
-            $uploaded_via_file_url = true;
-            fb_echo_log("   ✅ [Bước 2 Thành Công] Facebook đã tải video qua file_url thành công trong 1-2 giây! (HTTP 200)\n");
+    $last_printed_pct = -10;
+    curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+    curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct, $actual_bytes_len) {
+        $args = func_get_args();
+        if (count($args) >= 5) {
+            $uploaded = $args[4];
+            $total = ($args[3] > 0) ? $args[3] : $actual_bytes_len;
         } else {
-            fb_echo_log("   ⚠️ [Bước 2 file_url Thất Bại] HTTP $cdn_code - Chuyển sang fallback upload binary...\n");
+            $uploaded = $args[3] ?? 0;
+            $total = (($args[2] ?? 0) > 0) ? $args[2] : $actual_bytes_len;
         }
+
+        if ($total > 0 && $uploaded > 0) {
+            $pct = (int) floor(($uploaded / $total) * 100);
+            if ($pct >= $last_printed_pct + 10 || $pct === 100) {
+                $last_printed_pct = $pct;
+                $up_mb = round($uploaded / 1024 / 1024, 2);
+                $tot_mb = round($total / 1024 / 1024, 2);
+                fb_echo_log("   → Tiến trình upload Reel: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
+            }
+        }
+    });
+
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: OAuth {$page_access_token}",
+        "Content-Type: application/octet-stream",
+        "offset: 0",
+        "file_size: " . $actual_bytes_len,
+        "Expect:"
+    ]);
+
+    fb_curl_setssl($ch);
+    apply_proxy_to_curl($ch, $page_access_token);
+
+    set_time_limit(600);
+    $chunk_resRaw = curl_exec($ch);
+    $chunk_code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_err     = curl_error($ch);
+    curl_close($ch);
+    unset($file_bytes);
+
+    if ($chunk_code !== 200) {
+        $err_msg = 'Upload phase 2 (transfer) failed';
+        if ($curl_err) $err_msg .= " (cURL: $curl_err)";
+        $parsed  = @json_decode($chunk_resRaw, true);
+        if ($parsed && isset($parsed['error']['message'])) {
+            $err_msg .= " - " . $parsed['error']['message'];
+        } elseif (!empty($chunk_resRaw)) {
+            $err_msg .= " - Body: " . substr(strip_tags($chunk_resRaw), 0, 300);
+        }
+        fb_echo_log("   ❌ [Bước 2 Thất Bại] HTTP $chunk_code - $err_msg\n");
+        return ['status_code' => $chunk_code, 'data' => ['error' => ['message' => $err_msg]]];
     }
 
-    if (!$uploaded_via_file_url) {
-        $real_size = filesize($file_path);
-        fb_echo_log("   → [Bước 2 Binary] Upload file video binary trực tiếp (offset: 0, file_size: {$real_size} bytes)...\n");
-        $file_bytes = @file_get_contents($file_path);
-        if ($file_bytes === false) {
-            return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video trên server.']]];
-        }
-
-        $actual_bytes_len = strlen($file_bytes);
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $upload_url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 600);
-        curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
-        curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $file_bytes);
-
-        $last_printed_pct = -10;
-        curl_setopt($ch, CURLOPT_NOPROGRESS, false);
-        curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct, $actual_bytes_len) {
-            $args = func_get_args();
-            if (count($args) >= 5) {
-                $uploaded = $args[4];
-                $total = ($args[3] > 0) ? $args[3] : $actual_bytes_len;
-            } else {
-                $uploaded = $args[3] ?? 0;
-                $total = (($args[2] ?? 0) > 0) ? $args[2] : $actual_bytes_len;
-            }
-
-            if ($total > 0 && $uploaded > 0) {
-                $pct = (int) floor(($uploaded / $total) * 100);
-                if ($pct >= $last_printed_pct + 10 || $pct === 100) {
-                    $last_printed_pct = $pct;
-                    $up_mb = round($uploaded / 1024 / 1024, 2);
-                    $tot_mb = round($total / 1024 / 1024, 2);
-                    fb_echo_log("   → Tiến trình upload Reel: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
-                }
-            }
-        });
-
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "Authorization: OAuth {$page_access_token}",
-            "Content-Type: application/octet-stream",
-            "Content-Length: " . $actual_bytes_len,
-            "offset: 0",
-            "file_size: " . $actual_bytes_len,
-            "Expect:"
-        ]);
-
-        fb_curl_setssl($ch);
-        apply_proxy_to_curl($ch, $page_access_token);
-
-        set_time_limit(600);
-        $chunk_resRaw = curl_exec($ch);
-        $chunk_code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curl_err     = curl_error($ch);
-        curl_close($ch);
-        unset($file_bytes);
-
-        if ($chunk_code !== 200) {
-            $err_msg = 'Upload phase 2 (transfer) failed';
-            if ($curl_err) $err_msg .= " (cURL: $curl_err)";
-            $parsed  = @json_decode($chunk_resRaw, true);
-            if ($parsed && isset($parsed['error']['message'])) {
-                $err_msg .= " - " . $parsed['error']['message'];
-            } elseif (!empty($chunk_resRaw)) {
-                $err_msg .= " - Body: " . substr(strip_tags($chunk_resRaw), 0, 300);
-            }
-            fb_echo_log("   ❌ [Bước 2 Thất Bại] HTTP $chunk_code - $err_msg\n");
-            return ['status_code' => $chunk_code, 'data' => ['error' => ['message' => $err_msg]]];
-        }
-
-        fb_echo_log("   ✅ [Bước 2 Thành Công] Tải file video lên rupload thành công (HTTP 200).\n");
-    }
+    fb_echo_log("   ✅ [Bước 2 Thành Công] Tải file video lên rupload thành công (HTTP 200).\n");
 
     // ── Phase 3: Finish and Publish Reel ────────────────────────────────
     fb_echo_log("   → [Bước 3/3] Đang hoàn tất xuất bản Reel (upload_phase: finish, video_state: PUBLISHED)...\n");
