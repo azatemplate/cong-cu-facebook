@@ -26,6 +26,14 @@ session_write_close();
 
 // Đăng ký dọn lock file khi kết thúc/lỗi/timeout
 $lock_file = __DIR__ . '/../locks/scan_' . intval($account_id) . '.lock';
+
+// Tránh chạy trùng lặp nhiều luồng quét SĐT cùng lúc cho 1 account
+if (file_exists($lock_file) && (time() - filemtime($lock_file) < 900)) {
+    echo json_encode(['status' => 'busy', 'msg' => 'Quét SĐT đang chạy ở tiến trình khác.']);
+    exit;
+}
+@file_put_contents($lock_file, time());
+
 register_shutdown_function(function() use ($lock_file) {
     if (file_exists($lock_file)) {
         @unlink($lock_file);
@@ -33,10 +41,14 @@ register_shutdown_function(function() use ($lock_file) {
 });
 
 try {
-    // Tự động migration thêm cột phone_scanned_at nếu chưa có
-    try {
-        $pdo->exec("ALTER TABLE fb_customers ADD COLUMN phone_scanned_at DATETIME DEFAULT NULL");
-    } catch (Exception $e) {}
+    // Tự động migration thêm cột phone_scanned_at nếu chưa có (Chạy 1 lần duy nhất)
+    $scan_mig_flag = sys_get_temp_dir() . '/fb_scan_phones_mig.done';
+    if (!file_exists($scan_mig_flag)) {
+        try {
+            $pdo->exec("ALTER TABLE fb_customers ADD COLUMN phone_scanned_at DATETIME DEFAULT NULL");
+        } catch (Exception $e) {}
+        @file_put_contents($scan_mig_flag, date('Y-m-d H:i:s'));
+    }
 
     // Lấy tất cả hội thoại của tài khoản hiện tại mà khách hàng CHƯA có số điện thoại
     // Ưu tiên hội thoại mới nhất và bỏ qua các khách hàng đã quét trong vòng 24 giờ qua bằng cột phone_scanned_at

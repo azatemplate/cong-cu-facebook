@@ -418,26 +418,26 @@ if (!function_exists('call_buffer_worker_graphql')) {
 
 
 
-// Auto-migrate newly required columns
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");
-} catch (Exception $e) {}
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN retry_interval_minutes INT DEFAULT 1");
-} catch (Exception $e) {}
-try {
-    $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
-} catch (Exception $e) {}
-
-// Auto-migrate updated_at for scheduled_posts (stuck detection)
-try {
-    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
-} catch (Exception $e) {}
-
-// Auto-migrate status column from ENUM to VARCHAR to support 'checkpoint'
-try {
-    $pdo->exec("ALTER TABLE scheduled_posts MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
-} catch (Exception $e) {}
+// Auto-migrate newly required columns (Run at most once)
+$worker_mig_flag = sys_get_temp_dir() . '/fb_pub_worker_mig.done';
+if (!file_exists($worker_mig_flag)) {
+    try {
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN post_delay_seconds INT DEFAULT 15");
+    } catch (Exception $e) {}
+    try {
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN retry_interval_minutes INT DEFAULT 1");
+    } catch (Exception $e) {}
+    try {
+        $pdo->exec("ALTER TABLE system_accounts ADD COLUMN max_retries INT DEFAULT 3");
+    } catch (Exception $e) {}
+    try {
+        $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+    } catch (Exception $e) {}
+    try {
+        $pdo->exec("ALTER TABLE scheduled_posts MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+    } catch (Exception $e) {}
+    @file_put_contents($worker_mig_flag, date('Y-m-d H:i:s'));
+}
 
 $start_time = microtime(true);
 echo "-------------------------------------------\n";
