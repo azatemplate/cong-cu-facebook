@@ -134,6 +134,8 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
         apply_proxy_to_curl($ch, $token_for_proxy);
     }
 
+    $headers = ['Expect:'];
+
     if (strtoupper($method) === 'POST') {
         curl_setopt($ch, CURLOPT_POST, true);
         if (empty($post_data)) {
@@ -146,15 +148,39 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
                 }
                 if (!$has_file) {
                     $post_data = http_build_query($post_data);
+                } else {
+                    $last_printed_pct = -10;
+                    curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+                    curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct) {
+                        $args = func_get_args();
+                        if (count($args) >= 5) {
+                            $uploaded = $args[4];
+                            $total = $args[3];
+                        } else {
+                            $uploaded = $args[3] ?? 0;
+                            $total = $args[2] ?? 0;
+                        }
+                        if ($total > 0 && $uploaded > 0) {
+                            $pct = (int) floor(($uploaded / $total) * 100);
+                            if ($pct >= $last_printed_pct + 10 || $pct === 100) {
+                                $last_printed_pct = $pct;
+                                $up_mb = round($uploaded / 1024 / 1024, 2);
+                                $tot_mb = round($total / 1024 / 1024, 2);
+                                fb_echo_log("   → Tiến trình upload: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
+                            }
+                        }
+                    });
                 }
             } else if (is_string($post_data) && (strpos($post_data, '{') === 0 || strpos($post_data, '[') === 0)) {
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+                $headers[] = 'Content-Type: application/json';
             }
             curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
         }
     } elseif (strtoupper($method) === 'DELETE') {
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
     }
+
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 
     $response  = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
