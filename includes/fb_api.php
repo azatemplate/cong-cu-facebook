@@ -612,9 +612,6 @@ if (!function_exists('fb_echo_log')) {
     }
 }
 
-/**
- * Upload Facebook Page Reel (Siêu tốc file_url 0.2s + Fallback Direct Stream)
- */
 function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = '', $description = '', $sp_post_id = 0) {
     @ob_implicit_flush(1);
 
@@ -632,37 +629,12 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     $file_size = filesize($file_path);
     $mb_size = round($file_size / 1024 / 1024, 2);
     fb_echo_log("   ----------------------------------------------------\n");
-    fb_echo_log("   🎬 BẮT ĐẦU ĐĂNG REEL (Dung lượng: $mb_size MB)\n");
+    fb_echo_log("   🎬 BẮT ĐẦU ĐĂNG REEL BINARY (Dung lượng: $mb_size MB)\n");
     fb_echo_log("   ----------------------------------------------------\n");
-
-    // ⚡ THỬ PHƯƠNG THỨC 1: ĐĂNG SIÊU TỐC QUA FILE_URL (Xử lý 0.2 giây)
-    $public_url = get_public_file_url($file_path);
-    if (!empty($public_url)) {
-        fb_echo_log("   ⚡ [Siêu Tốc] Đăng Reel qua file_url: {$public_url}...\n");
-        $fast_params = [
-            'file_url'            => $public_url,
-            'access_token'        => $page_access_token,
-            'post_video_as_reels' => 'true'
-        ];
-        if (!empty($title)) $fast_params['title'] = $title;
-        if (!empty($description)) $fast_params['description'] = $description;
-
-        $res_fast = fb_api_request($page_id . '/videos', $fast_params, 'POST', [], 30);
-        if ($res_fast['status_code'] === 200 && (!empty($res_fast['data']['id']) || !empty($res_fast['data']['success']))) {
-            $vid = $res_fast['data']['id'] ?? $res_fast['data']['post_id'] ?? 'published';
-            $res_fast['data']['id'] = $vid;
-            $res_fast['data']['post_id'] = $vid;
-            fb_echo_log("   🎉 [Xuất Bản Siêu Tốc] Đã đăng Reel thành công trong 0.2s! Facebook Post ID: {$vid}\n");
-            return $res_fast;
-        } else {
-            $err_desc = json_encode($res_fast['data'] ?? []);
-            fb_echo_log("   ⚠️ file_url không phản hồi 200 (HTTP " . ($res_fast['status_code'] ?? 0) . " - {$err_desc}), chuyển sang Resumable Upload trực tiếp...\n");
-        }
-    }
 
     $endpoint = $page_id . '/videos';
 
-    // ── PHƯƠNG THỨC 2: RESUMABLE UPLOAD TỐC ĐỘ CAO KHÔNG QUA PROXY ───────
+    // ── RESUMABLE BINARY UPLOAD TỐC ĐỘ CAO KHÔNG QUA PROXY ───────
     fb_echo_log("   → [Bước 1/3] Khởi tạo phiên đăng (POST /{$endpoint}?upload_phase=start)...\n");
     $start_params = [
         'upload_phase' => 'start',
@@ -683,7 +655,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     fb_echo_log("   ✅ [Bước 1 Thành Công] Video ID: {$video_id} - Session ID: {$upload_session_id}\n");
 
     // ── Bước 2: Đẩy file binary via CURLFile ───────────────────────────
-    fb_echo_log("   → [Bước 2/3] Đẩy stream video trực tiếp từ VPS tới Facebook (Băng thông tối đa)...\n");
+    fb_echo_log("   → [Bước 2/3] Đẩy stream binary trực tiếp từ VPS tới Facebook...\n");
     $safe_ext  = pathinfo($file_path, PATHINFO_EXTENSION);
     $safe_name = 'video_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '.mp4');
 
@@ -698,7 +670,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     if ($sp_post_id > 0 && function_exists('update_post_progress')) {
         global $pdo;
         if (isset($pdo)) {
-            update_post_progress($pdo, $sp_post_id, "📤 Đang truyền video Reel ({$mb_size} MB)...");
+            update_post_progress($pdo, $sp_post_id, "📤 Đang truyền binary video Reel ({$mb_size} MB)...");
         }
     }
 
@@ -709,7 +681,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         return $res2;
     }
 
-    fb_echo_log("   ✅ [Bước 2 Thành Công] Đã truyền file video lên Facebook thành công (HTTP 200).\n");
+    fb_echo_log("   ✅ [Bước 2 Thành Công] Đã truyền binary video lên Facebook thành công (HTTP 200).\n");
 
     // ── Bước 3: Hoàn tất & Đăng dưới dạng Reel ──────────────────────────
     fb_echo_log("   → [Bước 3/3] Đang hoàn tất xuất bản Reel (post_video_as_reels=true)...\n");
@@ -743,7 +715,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
 }
 
 /**
- * Upload Video (Siêu tốc file_url 0.2s + Fallback Direct Upload không qua Proxy)
+ * Upload Video Binary (Đăng binary trực tiếp không qua URL)
  */
 function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $title, $description, $is_reel = false, $sp_post_id = 0) {
     if ($is_reel) {
@@ -763,36 +735,14 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
     $file_size = filesize($file_path);
     $endpoint = $page_id . '/videos';
 
-    // ⚡ THỬ PHƯƠNG THỨC 1: ĐĂNG SIÊU TỐC QUA FILE_URL (0.2s)
-    $public_url = get_public_file_url($file_path);
-    if (!empty($public_url)) {
-        echo "   ⚡ [Siêu Tốc] Đăng Video qua file_url: {$public_url}...\n";
-        $fast_params = [
-            'file_url'     => $public_url,
-            'access_token' => $page_access_token
-        ];
-        if (!empty($title)) $fast_params['title'] = $title;
-        if (!empty($description)) $fast_params['description'] = $description;
-
-        $res_fast = fb_api_request($endpoint, $fast_params, 'POST', [], 30);
-        if ($res_fast['status_code'] === 200 && (!empty($res_fast['data']['id']) || !empty($res_fast['data']['success']))) {
-            $vid = $res_fast['data']['id'] ?? $res_fast['data']['post_id'] ?? 'published';
-            $res_fast['data']['id'] = $vid;
-            $res_fast['data']['post_id'] = $vid;
-            echo "   🎉 [Xuất Bản Siêu Tốc] Đã đăng Video thành công trong 0.2s! Post ID: {$vid}\n";
-            return $res_fast;
-        } else {
-            $err_desc = json_encode($res_fast['data'] ?? []);
-            echo "   ⚠️ file_url không phản hồi 200 (HTTP " . ($res_fast['status_code'] ?? 0) . " - {$err_desc}), chuyển sang đăng binary trực tiếp...\n";
-        }
-    }
-
-    // ── PHƯƠNG THỨC 2: ĐĂNG TRỰC TIẾP KHÔNG QUA PROXY ───────────────────
+    // ── ĐĂNG VIDEO BINARY TRỰC TIẾP KHÔNG QUA PROXY ───────────────────
     $safe_ext = pathinfo($file_path, PATHINFO_EXTENSION);
     $safe_name = 'video_' . uniqid() . ($safe_ext ? '.' . $safe_ext : '.mp4');
 
     $mb_size = round($file_size / 1024 / 1024, 2);
-    echo "   → Đang tải video ({$mb_size} MB) lên Facebook (Băng thông tối đa VPS)...\n";
+    echo "   ----------------------------------------------------\n";
+    echo "   🎬 BẮT ĐẦU ĐĂNG VIDEO BINARY ({$mb_size} MB)...\n";
+    echo "   ----------------------------------------------------\n";
 
     $direct_params = [
         'title' => $title,
@@ -802,7 +752,7 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
     ];
 
     $res = fb_api_request($endpoint, [], 'POST', $direct_params, 600);
-    echo "   → Ket qua dang video: Status " . ($res['status_code'] ?? '0') . " - Data: " . json_encode($res['data'] ?? []) . "\n";
+    echo "   → Ket qua dang video binary: Status " . ($res['status_code'] ?? '0') . " - Data: " . json_encode($res['data'] ?? []) . "\n";
     return $res;
 }
 
