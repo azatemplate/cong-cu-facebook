@@ -162,23 +162,25 @@ try {
     }
 } catch (Exception $e) {
     echo "Loi tu dong quet SĐT: " . $e->getMessage() . "\n";
-}
-
-// Cấu hình giới hạn luồng cho máy chủ (Throttling an toàn cho RAM & CPU)
-$MAX_WORKERS = 10;
+// --- TỰ ĐỘNG RESET BÀI BỊ KẸT PROCESSING VỀ PENDING ---
 try {
-    $res_limit = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_publish_workers'")->fetchColumn();
-    if ($res_limit) $MAX_WORKERS = min(12, max(3, (int)$res_limit));
+    $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND (updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE) OR (fb_post_id IS NULL OR fb_post_id = ''))");
 } catch (Exception $e) {}
 
-// Đếm số luồng thực tế đang chạy qua file lock và DB processing
+// Cấu hình giới hạn luồng cho máy chủ (Throttling an toàn cho RAM & CPU)
+$MAX_WORKERS = 15;
+try {
+    $res_limit = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_publish_workers'")->fetchColumn();
+    if ($res_limit) $MAX_WORKERS = min(25, max(5, (int)$res_limit));
+} catch (Exception $e) {}
+
+// Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động
 $lock_dir = dirname(__DIR__) . '/locks';
 $active_locks = 0;
 if (is_dir($lock_dir)) {
     $active_locks = count(glob($lock_dir . '/publish_user_*.lock'));
 }
-$active_db_processing = (int)$pdo->query("SELECT COUNT(DISTINCT campaign_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
-$active_workers = max($active_locks, $active_db_processing);
+$active_workers = $active_locks;
 
 echo "  [THROTTLE] Hien dang co $active_workers luong dang xu ly (Max: $MAX_WORKERS).\n";
 
