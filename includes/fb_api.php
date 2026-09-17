@@ -613,6 +613,36 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         "Expect:"
     ]);
 
+    $last_printed_pct = -10;
+    curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+    curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct, $real_size, $sp_post_id) {
+        $args = func_get_args();
+        if (count($args) >= 5) {
+            $uploaded = $args[4];
+            $total = ($args[3] > 0) ? $args[3] : $real_size;
+        } else {
+            $uploaded = $args[3] ?? 0;
+            $total = (($args[2] ?? 0) > 0) ? $args[2] : $real_size;
+        }
+
+        if ($total > 0 && $uploaded > 0) {
+            $pct = (int) floor(($uploaded / $total) * 100);
+            if ($pct >= $last_printed_pct + 10 || $pct === 100) {
+                $last_printed_pct = $pct;
+                $up_mb = round($uploaded / 1024 / 1024, 2);
+                $tot_mb = round($total / 1024 / 1024, 2);
+                fb_echo_log("   → Tiến trình upload Reel: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
+
+                if ($sp_post_id > 0 && function_exists('update_post_progress')) {
+                    global $pdo;
+                    if (isset($pdo)) {
+                        update_post_progress($pdo, $sp_post_id, "📤 Đang truyền video Reel ({$pct}% - {$up_mb}/{$tot_mb} MB)");
+                    }
+                }
+            }
+        }
+    });
+
     fb_curl_setssl($ch);
     apply_proxy_to_curl($ch, $page_access_token);
 
