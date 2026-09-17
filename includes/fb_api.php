@@ -181,6 +181,9 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
                                 $up_mb = round($uploaded / 1024 / 1024, 2);
                                 $tot_mb = round($total / 1024 / 1024, 2);
                                 fb_echo_log("   → Tiến trình upload: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
+                                if ($pct === 100) {
+                                    fb_echo_log("   ⏳ Đã truyền xong 100% dữ liệu sang Facebook, đang chờ Facebook xác nhận...\n");
+                                }
                             }
                         }
                     });
@@ -644,7 +647,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         if (!empty($title)) $fast_params['title'] = $title;
         if (!empty($description)) $fast_params['description'] = $description;
 
-        $res_fast = fb_api_request($page_id . '/videos', [], 'POST', $fast_params, 30);
+        $res_fast = fb_api_request($page_id . '/videos', $fast_params, 'POST', [], 30);
         if ($res_fast['status_code'] === 200 && (!empty($res_fast['data']['id']) || !empty($res_fast['data']['success']))) {
             $vid = $res_fast['data']['id'] ?? $res_fast['data']['post_id'] ?? 'published';
             $res_fast['data']['id'] = $vid;
@@ -652,7 +655,8 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
             fb_echo_log("   🎉 [Xuất Bản Siêu Tốc] Đã đăng Reel thành công trong 0.2s! Facebook Post ID: {$vid}\n");
             return $res_fast;
         } else {
-            fb_echo_log("   ⚠️ file_url không phản hồi 200 (HTTP " . ($res_fast['status_code'] ?? 0) . "), chuyển sang Resumable Upload trực tiếp...\n");
+            $err_desc = json_encode($res_fast['data'] ?? []);
+            fb_echo_log("   ⚠️ file_url không phản hồi 200 (HTTP " . ($res_fast['status_code'] ?? 0) . " - {$err_desc}), chuyển sang Resumable Upload trực tiếp...\n");
         }
     }
 
@@ -770,13 +774,16 @@ function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $ti
         if (!empty($title)) $fast_params['title'] = $title;
         if (!empty($description)) $fast_params['description'] = $description;
 
-        $res_fast = fb_api_request($endpoint, [], 'POST', $fast_params, 30);
+        $res_fast = fb_api_request($endpoint, $fast_params, 'POST', [], 30);
         if ($res_fast['status_code'] === 200 && (!empty($res_fast['data']['id']) || !empty($res_fast['data']['success']))) {
             $vid = $res_fast['data']['id'] ?? $res_fast['data']['post_id'] ?? 'published';
             $res_fast['data']['id'] = $vid;
             $res_fast['data']['post_id'] = $vid;
             echo "   🎉 [Xuất Bản Siêu Tốc] Đã đăng Video thành công trong 0.2s! Post ID: {$vid}\n";
             return $res_fast;
+        } else {
+            $err_desc = json_encode($res_fast['data'] ?? []);
+            echo "   ⚠️ file_url không phản hồi 200 (HTTP " . ($res_fast['status_code'] ?? 0) . " - {$err_desc}), chuyển sang đăng binary trực tiếp...\n";
         }
     }
 
