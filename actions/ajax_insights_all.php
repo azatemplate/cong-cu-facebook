@@ -106,6 +106,7 @@ uasort($all_page_insights, function($a, $b) {
 // Cache 30 phút vào Redis và Session
 $rq->setCache($cache_key_all, 1800, $all_page_insights);
 $_SESSION[$cache_key_all] = ['data' => $all_page_insights, 'expires' => time() + 1800];
+session_write_close(); // 解放 session lock — cho phép các HTTP request khác chạy song song không bị treo
 
 // ── GỬI RESPONSE VỀ BROWSER NGAY ─────────────────────────────────────────────
 $json_out = json_encode(['status' => 'success', 'data' => $all_page_insights]);

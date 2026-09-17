@@ -20,13 +20,14 @@ session_write_close();
 
 // Check Redis Cache (30 seconds TTL) for instant load <1ms
 $cache_key = "dashboard:overview:" . ($is_admin ? "admin" : $account_id);
-$rq = RedisQueue::getInstance();
-$cached_data = $rq->getCache($cache_key);
-
-if ($cached_data !== false && is_array($cached_data)) {
-    echo json_encode($cached_data);
-    exit;
-}
+try {
+    $rq = RedisQueue::getInstance();
+    $cached_data = $rq->getCache($cache_key);
+    if ($cached_data !== false && is_array($cached_data)) {
+        echo json_encode($cached_data);
+        exit;
+    }
+} catch (Throwable $e) {}
 
 $today_start = date('Y-m-d 00:00:00');
 $today_end = date('Y-m-d 23:59:59');
@@ -178,6 +179,10 @@ $result = [
 ];
 
 // Save to Redis Cache (30s TTL)
-$rq->setCache($cache_key, 30, $result);
+try {
+    if (isset($rq)) {
+        $rq->setCache($cache_key, 30, $result);
+    }
+} catch (Throwable $e) {}
 
 echo json_encode($result);
