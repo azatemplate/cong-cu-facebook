@@ -434,7 +434,7 @@ function status_label($s) {
                             </div>
                         </div>
                     </div>
-                    <?php if ($s !== 'published' && !empty($post['error_msg'])): ?>
+                    <?php if (in_array($s, ['failed', 'checkpoint']) && !empty($post['error_msg'])): ?>
                     <div style="font-size:11px;color:#dc2626;margin-top:6px;background:#fee2e2;padding:6px 8px;border-radius:4px;word-break:break-all;line-height:1.4;">
                         <strong>Log lỗi:</strong> <?php echo htmlspecialchars($post['error_msg']); ?>
                     </div>
