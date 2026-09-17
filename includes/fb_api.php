@@ -632,7 +632,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         curl_close($ch);
         unset($chunk_data);
 
-        if ($chunk_code !== 200) {
+        if ($chunk_code !== 200 && $chunk_code !== 206) {
             fclose($fp);
             $err_msg = "Upload phase 2 (chunk offset {$offset}) failed";
             if ($curl_err) $err_msg .= " (cURL: $curl_err)";
