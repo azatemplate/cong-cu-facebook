@@ -233,19 +233,8 @@ try {
     echo "  [LỖI] History cleanup: " . $e->getMessage() . "\n";
 }
 
-// ── OPTIMIZE TABLE để thu hồi dung lượng ổ đĩa
-echo "\n[STEP 7] Tối ưu hóa tables DB...\n";
-$total_deleted = array_sum([$stats['scheduled_posts'], $stats['posts_history']]);
-if ($total_deleted > 50) {
-    try {
-        $pdo->exec("OPTIMIZE TABLE scheduled_posts");
-        echo "  -> OPTIMIZE TABLE scheduled_posts hoàn tất\n";
-    } catch (Exception $e) {}
-    try {
-        $pdo->exec("OPTIMIZE TABLE posts_history");
-        echo "  -> OPTIMIZE TABLE posts_history hoàn tất\n";
-    } catch (Exception $e) {}
-}
+// ── OPTIMIZE TABLE disabled in automated cron to prevent InnoDB table locking
+echo "\n[STEP 7] Bỏ qua OPTIMIZE TABLE tự động (tránh làm khóa bảng DB)...\n";
 
 // Đánh dấu đã dọn DB hôm nay
 @file_put_contents($flag_file, date('Y-m-d H:i:s'));
