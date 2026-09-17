@@ -589,24 +589,16 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
 
     // ── Phase 2: Transfer video file ────────────────────────────────────
     fb_echo_log("   → [Bước 2/4] Đang truyền dữ liệu video lên rupload.facebook.com...\n");
-    $phase2_success = false;
 
-    // Try Method A: file_url header via CDN (Instantaneous transfer)
     if ($is_remote_url) {
-        $cdn_url = $file_path;
-    } else {
-        $cdn_url = function_exists('upload_file_to_hongdolab_cdn') ? upload_file_to_hongdolab_cdn($file_path) : false;
-    }
-
-    if ($cdn_url) {
-        fb_echo_log("   → [Bước 2A] Truyền video siêu tốc qua CDN file_url: {$cdn_url}...\n");
+        fb_echo_log("   → [Bước 2 Remote] Truyền video qua header file_url: {$file_path}...\n");
         $ch_cdn = curl_init();
         curl_setopt($ch_cdn, CURLOPT_URL, $upload_url);
         curl_setopt($ch_cdn, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch_cdn, CURLOPT_POST, true);
         curl_setopt($ch_cdn, CURLOPT_HTTPHEADER, [
             "Authorization: OAuth {$page_access_token}",
-            "file_url: {$cdn_url}"
+            "file_url: {$file_path}"
         ]);
         curl_setopt($ch_cdn, CURLOPT_TIMEOUT, 120);
         fb_curl_setssl($ch_cdn);
@@ -616,22 +608,22 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         $cdn_code   = curl_getinfo($ch_cdn, CURLINFO_HTTP_CODE);
         curl_close($ch_cdn);
 
-        if ($cdn_code === 200) {
-            $phase2_success = true;
-            fb_echo_log("   ✅ [Bước 2 Thành Công] Đã truyền video qua CDN file_url (HTTP 200)!\n");
-        } else {
-            fb_echo_log("   ⚠️ [Bước 2A CDN HTTP $cdn_code]. Chuyển sang Bước 2B (Binary Upload)... \n");
+        if ($cdn_code !== 200) {
+            $parsed = @json_decode($cdn_resRaw, true);
+            $err_msg = $parsed['error']['message'] ?? substr(strip_tags($cdn_resRaw), 0, 300);
+            fb_echo_log("   ❌ [Bước 2 Thất Bại] HTTP $cdn_code - $err_msg\n");
+            return ['status_code' => $cdn_code, 'data' => ['error' => ['message' => $err_msg]]];
         }
-    }
-
-    // Method B Fallback: Binary payload transfer
-    if (!$phase2_success && !$is_remote_url) {
-        fb_echo_log("   → [Bước 2B] Upload file video binary (offset: 0, file_size: {$file_size} bytes)...\n");
+        fb_echo_log("   ✅ [Bước 2 Thành Công] Đã truyền video qua file_url thành công (HTTP 200).\n");
+    } else {
+        $real_size = filesize($file_path);
+        fb_echo_log("   → [Bước 2 Binary] Upload file video binary trực tiếp (offset: 0, file_size: {$real_size} bytes)...\n");
         $file_bytes = @file_get_contents($file_path);
         if ($file_bytes === false) {
-            return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video để upload Reel.']]];
+            return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video trên server.']]];
         }
 
+        $actual_bytes_len = strlen($file_bytes);
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $upload_url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -646,9 +638,9 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "Authorization: OAuth {$page_access_token}",
             "Content-Type: application/octet-stream",
-            "Content-Length: " . strlen($file_bytes),
+            "Content-Length: " . $actual_bytes_len,
             "offset: 0",
-            "file_size: {$file_size}",
+            "file_size: " . $actual_bytes_len,
             "Expect:"
         ]);
 
