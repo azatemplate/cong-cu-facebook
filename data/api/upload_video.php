@@ -25,10 +25,10 @@ if (!is_dir($upload_dir)) @mkdir($upload_dir, 0777, true);
 if (!is_dir($temp_dir))   @mkdir($temp_dir, 0777, true);
 
 // ── CƠ CHẾ TỰ ĐỘNG DỌN DẸP AN TOÀN CHO BUFFER & MẠNG XÃ HỘI (Garbage Collector) ───────────────
-// 1. Thư mục /uploads/ (File hoàn chỉnh): Giữ 5 PHÚT (300 giây)
-//    Đảm bảo Buffer/Instagram/TikTok/Pinterest có đủ thời gian tải và xử lý video.
-// 2. Thư mục /uploads_tmp/ (File tạm dở dang): Giữ 5 PHÚT (300 giây).
-function cleanup_old_files($upload_dir, $temp_dir, $upload_max_age = 300, $tmp_max_age = 300) {
+// 1. Thư mục /uploads/ (File hoàn chỉnh): Giữ 2 TIẾNG (7200 giây)
+//    Đảm bảo Facebook/Instagram/TikTok/Pinterest có đủ thời gian tải và xử lý video.
+// 2. Thư mục /uploads_tmp/ (File tạm dở dang): Giữ 1 TIẾNG (3600 giây).
+function cleanup_old_files($upload_dir, $temp_dir, $upload_max_age = 7200, $tmp_max_age = 3600) {
     $now = time();
     $real_upload = realpath($upload_dir);
     $upload_dir  = $real_upload ? (rtrim($real_upload, '/') . '/') : (rtrim($upload_dir, '/') . '/');
@@ -36,7 +36,7 @@ function cleanup_old_files($upload_dir, $temp_dir, $upload_max_age = 300, $tmp_m
     $temp_dir    = $real_temp ? (rtrim($real_temp, '/') . '/') : (rtrim($temp_dir, '/') . '/');
     $log = [];
 
-    // 1. Quét và xóa file ảnh/video trong /uploads/ nếu đã quá 5 PHÚT (300s)
+    // 1. Quét và xóa file ảnh/video trong /uploads/ nếu đã quá 2 TIẾNG (7200s)
     if (is_dir($upload_dir)) {
         $files = @scandir($upload_dir);
         if (is_array($files)) {
@@ -58,7 +58,7 @@ function cleanup_old_files($upload_dir, $temp_dir, $upload_max_age = 300, $tmp_m
         }
     }
 
-    // 2. Quét và xóa các file tạm dở dang trong /uploads_tmp/ nếu quá 5 PHÚT (300s)
+    // 2. Quét và xóa các file tạm dở dang trong /uploads_tmp/ nếu quá 1 TIẾNG (3600s)
     if (is_dir($temp_dir)) {
         $items = @scandir($temp_dir);
         if (is_array($items)) {
@@ -92,11 +92,11 @@ function cleanup_old_files($upload_dir, $temp_dir, $upload_max_age = 300, $tmp_m
     return $log;
 }
 
-// Kích hoạt dọn dẹp an toàn: CHẠY TỰ ĐỘNG MỖI 5 PHÚT (300s) ĐỂ KHÔNG TỐN CPU DƯ THỪA
+// Kích hoạt dọn dẹp an toàn: CHẠY TỰ ĐỘNG MỖI 10 PHÚT (600s) ĐỂ KHÔNG TỐN CPU DƯ THỪA
 $last_cleanup_file = $temp_dir . 'last_cleanup.txt';
-if ($action === 'cleanup' || !file_exists($last_cleanup_file) || (time() - @filemtime($last_cleanup_file)) > 300) {
+if ($action === 'cleanup' || !file_exists($last_cleanup_file) || (time() - @filemtime($last_cleanup_file)) > 600) {
     @touch($last_cleanup_file);
-    $cleanup_log = cleanup_old_files($upload_dir, $temp_dir, 300, 300);
+    $cleanup_log = cleanup_old_files($upload_dir, $temp_dir, 7200, 3600);
     if ($action === 'cleanup') {
         echo json_encode(['status' => 'success', 'server_time' => date('Y-m-d H:i:s'), 'scanned_dir' => $upload_dir, 'details' => $cleanup_log]);
         exit;
