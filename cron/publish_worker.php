@@ -64,8 +64,12 @@ if (!is_dir($lock_dir)) {
     @mkdir($lock_dir, 0777, true);
 }
 
-// Lock theo Token User ID (thay vì page_ids) để ngăn 2 worker cùng user chạy đồng thời
-$lock_key = !empty($user_id_lock) ? md5('uid_' . $user_id_lock) : md5($raw_page_input);
+// Lock theo Campaign ID (nếu là campaign run) hoặc Token User ID để ngăn 2 worker cùng campaign/user chạy đồng thời
+if ($is_campaign_run && !empty($campaign_id)) {
+    $lock_key = md5('camp_' . $campaign_id);
+} else {
+    $lock_key = !empty($user_id_lock) ? md5('uid_' . $user_id_lock) : md5($raw_page_input);
+}
 $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
 
 $lock_fp = @fopen($lock_file, 'c');
@@ -981,6 +985,17 @@ do {
     }
 
     // 2. Mark as processing to prevent duplicate cron runs from picking it up
+    // BẢO VỆ TUẦN TỰ CHIẾN DỊCH: Đảm bảo 1 chiến dịch chỉ có DUY NHẤT 1 bài ở trạng thái processing tại một thời điểm
+    if ($is_campaign_run && !empty($campaign_id)) {
+        $check_active_proc = $pdo->prepare("SELECT id FROM scheduled_posts WHERE campaign_id = ? AND status = 'processing' AND id != ? AND updated_at >= DATE_SUB(NOW(), INTERVAL 10 MINUTE) LIMIT 1");
+        $check_active_proc->execute([$campaign_id, $post['id']]);
+        $active_proc_id = $check_active_proc->fetchColumn();
+        if ($active_proc_id) {
+            echo "   → Chiến dịch #{$campaign_id} đang có bài ID {$active_proc_id} ở trạng thái 'Đang đăng'. Chờ bài đó đăng xong...\n";
+            continue;
+        }
+    }
+
     // We only update if status is still pending or failed. If 0 rows affected, another worker took it.
     $update_processing = $pdo->prepare("UPDATE scheduled_posts SET status = 'processing', error_msg = '⚙️ Đang xử lý...' WHERE id = ? AND status IN ('pending', 'failed')");
     $update_processing->execute([$post['id']]);
