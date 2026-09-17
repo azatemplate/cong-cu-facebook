@@ -25,7 +25,9 @@ function get_drive_access_token($pdo, $account_id, $page_id = null) {
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post_fields));
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
         $token_response_raw = curl_exec($ch);
         curl_close($ch);
 
@@ -310,6 +312,10 @@ function delete_drive_file($access_token, $file_id) {
  * Sắp xếp theo thời gian tạo tăng dần (cũ nhất trước)
  */
 function list_drive_files_in_folder($access_token, $folder_id) {
+    echo "   → Đang kết nối Google Drive quét thư mục: {$folder_id}...\n";
+    if (ob_get_level() > 0) @ob_flush();
+    @flush();
+
     $files = [];
     $pageToken = null;
     $q = "'" . str_replace("'", "\\'", $folder_id) . "' in parents and trashed = false";

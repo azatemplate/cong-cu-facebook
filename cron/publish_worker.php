@@ -2456,6 +2456,10 @@ do {
     $temp_drive_file = null;
     $t_title_override = null;
 
+    echo "   → Bắt đầu xử lý media (Path: {$raw_media})...\n";
+    if (ob_get_level() > 0) @ob_flush();
+    @flush();
+
     // ── Multi-image post: upload each photo as unpublished, then create feed post ──
     if ($multi_image_paths !== null && ($post['post_type'] === 'Image' || $post['post_type'] === 'Status')) {
         $parsed_content = @json_decode($post['content'], true);
