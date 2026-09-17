@@ -18,6 +18,9 @@ if (isset($_SESSION['account_id'])) {
     exit;
 }
 
+// Generate CSRF token BEFORE closing session write so it's persisted to session store
+csrf_token();
+
 // Release session lock immediately for GET requests so browser asset loads/reloads never block
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     session_write_close();
