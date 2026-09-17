@@ -200,8 +200,8 @@ function download_drive_file_temp($access_token, $file_id) {
     // 2. Download nội dung file
     $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media";
     
-    // Tạo file tạm trên thư mục của project để tránh đầy ổ /tmp trên Linux
-    $temp_dir = __DIR__ . '/../temp';
+    // Tạo file tạm trên thư mục uploads/tmp công khai để Nginx và Facebook Bot đọc được qua Web (file_url)
+    $temp_dir = __DIR__ . '/../uploads/tmp';
     if (!is_dir($temp_dir)) {
         @mkdir($temp_dir, 0777, true);
     }
@@ -210,6 +210,7 @@ function download_drive_file_temp($access_token, $file_id) {
     // Thêm đuôi file để CURLFile của Facebook nhận diện đúng định dạng
     $temp_path_with_ext = $temp_path . '.' . $ext;
     rename($temp_path, $temp_path_with_ext);
+    @chmod($temp_path_with_ext, 0644);
 
     $fp = fopen($temp_path_with_ext, 'w+');
     if ($fp === false) {
@@ -233,6 +234,7 @@ function download_drive_file_temp($access_token, $file_id) {
     $curl_err = curl_error($ch2); // Lấy lỗi trước khi close
     curl_close($ch2);
     fclose($fp);
+    @chmod($temp_path_with_ext, 0644);
 
     if (!$success || $http_code !== 200) {
         @unlink($temp_path_with_ext);
