@@ -758,13 +758,10 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         'access_token' => $page_access_token
     ], 'POST', $finish_params, 60);
 
-    $pub_reel_id = $res3['data']['id'] ?? $res3['data']['post_id'] ?? $video_id;
-
     if ($res3['status_code'] === 200) {
-        fb_echo_log("   🎉 [Bước 4 Thành Công] Đã xuất bản Reel thành công! Facebook Post ID: {$pub_reel_id}\n");
-        if (empty($res3['data']['id']) && empty($res3['data']['post_id'])) {
-            $res3['data']['id'] = $video_id;
-        }
+        $res3['data']['id'] = $video_id;
+        $res3['data']['post_id'] = $video_id;
+        fb_echo_log("   🎉 [Bước 4 Thành Công] Đã xuất bản Reel thành công! Facebook Post ID: {$video_id}\n");
     } else {
         fb_echo_log("   ❌ [Bước 4 Thất Bại] HTTP " . ($res3['status_code'] ?? 0) . " - " . json_encode($res3['data'] ?? []) . "\n");
     }
