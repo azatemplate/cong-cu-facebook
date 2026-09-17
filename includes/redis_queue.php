@@ -29,7 +29,7 @@ class RedisQueue {
         try {
             if (class_exists('Redis')) {
                 $this->redis = new Redis();
-                $ok = @$this->redis->connect($this->host, $this->port, 1.5);
+                $ok = @$this->redis->connect($this->host, $this->port, 0.2);
                 if ($ok) {
                     if ($this->auth) {
                         @$this->redis->auth($this->auth);
@@ -44,7 +44,7 @@ class RedisQueue {
 
         // Socket fallback if extension is not installed or connect failed
         try {
-            $fp = @fsockopen($this->host, $this->port, $errno, $errstr, 1.5);
+            $fp = @fsockopen($this->host, $this->port, $errno, $errstr, 0.2);
             if ($fp) {
                 fclose($fp);
                 $this->connected = false; // Require extension for full features
