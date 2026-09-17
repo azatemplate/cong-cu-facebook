@@ -490,25 +490,27 @@ function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $
         $upload_url = $res1['data']['upload_url'];
 
         // ── Step 2: Upload file bytes ────────────────────────────────────
-        $fp = fopen($file_path, 'rb');
-        if (!$fp) {
-            return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể mở file video để upload.']]];
+        $file_bytes = @file_get_contents($file_path);
+        if ($file_bytes === false) {
+            return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video để upload.']]];
         }
 
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $upload_url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $file_bytes);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "Authorization: OAuth {$page_access_token}",
             "Content-Type: application/octet-stream",
             "offset: 0",
-            "file_size: {$file_size}"
+            "file_size: {$file_size}",
+            "Expect:"
         ]);
-        curl_setopt($ch, CURLOPT_UPLOAD, true);
-        curl_setopt($ch, CURLOPT_INFILE, $fp);
-        curl_setopt($ch, CURLOPT_INFILESIZE, $file_size);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 600);
+        curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
+        curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
         fb_curl_setssl($ch);
         apply_proxy_to_curl($ch, $page_access_token);
 
@@ -517,7 +519,7 @@ function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $
         $chunk_code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curl_err     = curl_error($ch);
         curl_close($ch);
-        fclose($fp);
+        unset($file_bytes);
 
         if ($chunk_code !== 200) {
             $err_msg = 'Upload phase failed';
@@ -569,24 +571,24 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     echo "   → Phase 1 OK (Video ID: $video_id). Dang truyen file len Facebook rupload...\n";
 
     // ── Phase 2: Transfer binary video file ──────────────────────────────
-    $fp = fopen($file_path, 'rb');
-    if (!$fp) {
-        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể mở file video để upload Reel.']]];
+    $file_bytes = @file_get_contents($file_path);
+    if ($file_bytes === false) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Không thể đọc file video để upload Reel.']]];
     }
 
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $upload_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $file_bytes);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         "Authorization: OAuth {$page_access_token}",
         "Content-Type: application/octet-stream",
         "offset: 0",
-        "file_size: {$file_size}"
+        "file_size: {$file_size}",
+        "Expect:"
     ]);
-    curl_setopt($ch, CURLOPT_UPLOAD, true);
-    curl_setopt($ch, CURLOPT_INFILE, $fp);
-    curl_setopt($ch, CURLOPT_INFILESIZE, $file_size);
     curl_setopt($ch, CURLOPT_TIMEOUT, 600);
     curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
     curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
@@ -598,7 +600,7 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
     $chunk_code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curl_err     = curl_error($ch);
     curl_close($ch);
-    fclose($fp);
+    unset($file_bytes);
 
     if ($chunk_code !== 200) {
         $err_msg = 'Upload phase 2 (transfer) failed';
