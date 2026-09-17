@@ -653,15 +653,53 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         }
     }
 
-    echo "   → Phase 2 OK (Upload 100%). Hoan tat va Xuat ban Reel...\n";
+    echo "   → Phase 2 OK (Upload 100%). Dang kiem tra trang thai xu ly video (Step 3)...\n";
     if ($sp_post_id > 0 && function_exists('update_post_progress')) {
         global $pdo;
         if (isset($pdo)) {
-            update_post_progress($pdo, $sp_post_id, "⚙️ Đang xử lý xuất bản Reel...");
+            update_post_progress($pdo, $sp_post_id, "⚙️ Đang kiểm tra trạng thái xử lý video (Step 3)...");
         }
     }
 
-    // ── Phase 3: Finish and Publish Reel ────────────────────────────────
+    // ── Phase 3: Check Video Processing Status ─────────────────────────
+    $max_status_checks = 30; // Chờ tối đa 60s (30 x 2s)
+    $video_ready = false;
+
+    for ($check_i = 1; $check_i <= $max_status_checks; $check_i++) {
+        $status_res = fb_api_request($video_id, [
+            'fields'       => 'status',
+            'access_token' => $page_access_token
+        ], 'GET', [], 15);
+
+        $video_status    = $status_res['data']['status']['video_status'] ?? '';
+        $uploading_state = $status_res['data']['status']['uploading_phase']['status'] ?? '';
+        $processing_state= $status_res['data']['status']['processing_phase']['status'] ?? '';
+
+        if ($video_status === 'ready' || $video_status === 'complete' || $processing_state === 'complete' || $processing_state === 'success') {
+            $video_ready = true;
+            echo "   → Step 3 OK: Video da xu ly xong (Status: " . ($video_status ?: $processing_state) . ").\n";
+            break;
+        }
+
+        if ($video_status === 'error' || $processing_state === 'error') {
+            echo "   → Step 3 Warning: Xử lý video trả về lỗi - " . json_encode($status_res['data'] ?? []) . "\n";
+            break;
+        }
+
+        if ($check_i % 3 === 0 || $check_i === 1) {
+            echo "   → Step 3: Dang cho Facebook xu ly video (Check $check_i/$max_status_checks, Status: " . ($video_status ?: $processing_state ?: 'processing') . ")...\n";
+        }
+        sleep(2);
+    }
+
+    // ── Phase 4: Finish and Publish Reel ────────────────────────────────
+    if ($sp_post_id > 0 && function_exists('update_post_progress')) {
+        global $pdo;
+        if (isset($pdo)) {
+            update_post_progress($pdo, $sp_post_id, "⚙️ Đang hoàn tất xuất bản Reel (Step 4)...");
+        }
+    }
+
     $finish_params = [
         'upload_phase' => 'finish',
         'video_id'     => $video_id,
@@ -675,7 +713,10 @@ function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = 
         $finish_params['title'] = $title;
     }
 
-    $res3 = fb_api_request($page_id . '/video_reels', [], 'POST', $finish_params, 60);
+    $res3 = fb_api_request($page_id . '/video_reels', [
+        'upload_phase' => 'finish',
+        'access_token' => $page_access_token
+    ], 'POST', $finish_params, 60);
 
     echo "   → Ket qua dang Reel: Status " . ($res3['status_code'] ?? '0') . " - Data: " . json_encode($res3['data'] ?? []) . "\n";
 
