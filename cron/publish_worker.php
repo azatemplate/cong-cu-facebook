@@ -1519,23 +1519,15 @@ do {
                 continue;
             }
 
-            $ext = pathinfo($temp_res['name'] ?? 'media.mp4', PATHINFO_EXTENSION) ?: 'mp4';
-            $unique_id = $post['id'] . '_' . bin2hex(random_bytes(4));
-            $dest_filename = 'buf_drive_' . $unique_id . '.' . $ext;
-            $dest_path = $upload_dir . $dest_filename;
-            @copy($temp_res['path'], $dest_path);
-            @unlink($temp_res['path']);
-
             $zp_cdn = false;
             for ($cdn_retry = 0; $cdn_retry < 5 && !$zp_cdn; $cdn_retry++) {
-                $zp_cdn = upload_file_to_hongdolab_cdn($dest_path);
+                $zp_cdn = upload_file_to_hongdolab_cdn($temp_res['path']);
                 if (!$zp_cdn) sleep(2 * ($cdn_retry + 1));
             }
 
             if ($zp_cdn) {
                 $public_media_url = $zp_cdn;
             } else {
-                @unlink($dest_path);
                 marKAsFailed($pdo, $post['id'], "Không thể upload tệp video từ Google Drive lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
                 continue;
             }
@@ -1562,23 +1554,15 @@ do {
                     continue;
                 }
 
-                $ext = pathinfo($temp_res['name'] ?? 'media.mp4', PATHINFO_EXTENSION) ?: 'mp4';
-                $unique_id = $post['id'] . '_' . bin2hex(random_bytes(4));
-                $dest_filename = 'buf_drive_' . $unique_id . '.' . $ext;
-                $dest_path = $upload_dir . $dest_filename;
-                @copy($temp_res['path'], $dest_path);
-                @unlink($temp_res['path']);
-
                 $zp_cdn = false;
                 for ($cdn_retry = 0; $cdn_retry < 5 && !$zp_cdn; $cdn_retry++) {
-                    $zp_cdn = upload_file_to_hongdolab_cdn($dest_path);
+                    $zp_cdn = upload_file_to_hongdolab_cdn($temp_res['path']);
                     if (!$zp_cdn) sleep(2 * ($cdn_retry + 1));
                 }
 
                 if ($zp_cdn) {
                     $public_media_url = $zp_cdn;
                 } else {
-                    @unlink($dest_path);
                     marKAsFailed($pdo, $post['id'], "Không thể upload tệp video Google Drive lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
                     continue;
                 }
