@@ -164,9 +164,9 @@ try {
     echo "Loi tu dong quet SĐT: " . $e->getMessage() . "\n";
 }
 
-// --- TỰ ĐỘNG RESET BÀI BỊ KẸT PROCESSING VỀ PENDING ---
+// --- TỰ ĐỘNG RESET BÀI BỊ KẸT PROCESSING VỀ PENDING (>15 PHÚT) ---
 try {
-    $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND (updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE) OR (fb_post_id IS NULL OR fb_post_id = ''))");
+    $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
 } catch (Exception $e) {}
 
 // Cấu hình giới hạn luồng cho máy chủ (Throttling an toàn cho RAM & CPU)
