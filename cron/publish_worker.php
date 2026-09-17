@@ -989,22 +989,12 @@ do {
     }
 
     // 2. Mark as processing to prevent duplicate cron runs from picking it up
-    // BẢO VỆ TUẦN TỰ CHIẾN DỊCH: Đảm bảo 1 chiến dịch chỉ có DUY NHẤT 1 bài ở trạng thái processing tại một thời điểm
-    if ($is_campaign_run && !empty($campaign_id)) {
-        $check_active_proc = $pdo->prepare("SELECT id FROM scheduled_posts WHERE campaign_id = ? AND status = 'processing' AND id != ? AND updated_at >= DATE_SUB(NOW(), INTERVAL 10 MINUTE) LIMIT 1");
-        $check_active_proc->execute([$campaign_id, $post['id']]);
-        $active_proc_id = $check_active_proc->fetchColumn();
-        if ($active_proc_id) {
-            echo "   → Chiến dịch #{$campaign_id} đang có bài ID {$active_proc_id} ở trạng thái 'Đang đăng'. Chờ bài đó đăng xong...\n";
-            continue;
-        }
-    }
-
-    // We only update if status is still pending or failed. If 0 rows affected, another worker took it.
-    $update_processing = $pdo->prepare("UPDATE scheduled_posts SET status = 'processing', error_msg = '⚙️ Đang xử lý...' WHERE id = ? AND status IN ('pending', 'failed')");
+    $update_processing = $pdo->prepare("UPDATE scheduled_posts SET status = 'processing', error_msg = '⚙️ Đang xử lý...' WHERE id = ? AND status IN ('pending', 'failed', 'processing')");
     $update_processing->execute([$post['id']]);
     if ($update_processing->rowCount() === 0) {
-        echo "   → Bài ID {$post['id']} đã được tiến trình khác xử lý. Bỏ qua.\n";
+        echo "   → Bài ID {$post['id']} không ở trạng thái có thể xử lý. Bỏ qua.\n";
+        if (ob_get_level() > 0) @ob_flush();
+        @flush();
         continue;
     }
 
