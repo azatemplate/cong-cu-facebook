@@ -137,23 +137,43 @@ function get_drive_file_name($access_token, $file_id) {
 }
 
 /**
- * Tải file từ Google Drive về thư mục tạm (Temp Temp)
- * Trả về mảng chứa đường dẫn file tạm và mimeType
+ * Tải file từ Google Drive về thư mục tạm (Cache 2h, Tải trực tiếp Google CDN không qua Proxy)
  */
 function download_drive_file_temp($access_token, $file_id) {
-    // 1. Lấy thông tin metadata của file (name, mimeType)
+    $temp_dir = __DIR__ . '/../uploads/tmp';
+    if (!is_dir($temp_dir)) {
+        @mkdir($temp_dir, 0777, true);
+    }
+
+    // ⚡ 1. KIỂM TRA FILE CACHE TRÊN VPS (Nếu đã tải file này trong 2h -> Tái sử dụng ngay lập tức)
+    $cached_files = glob($temp_dir . '/gdrive_' . md5($file_id) . '.*');
+    if (!empty($cached_files)) {
+        foreach ($cached_files as $cf) {
+            if (file_exists($cf) && filesize($cf) > 0 && (time() - filemtime($cf)) < 7200) {
+                $c_mb = round(filesize($cf) / 1024 / 1024, 2);
+                $c_name = basename($cf);
+                echo "   ⚡ Sử dụng file Google Drive đã cache trên VPS ({$c_mb} MB) - Tốc độ 0.001s!\n";
+                if (ob_get_level() > 0) @ob_flush();
+                @flush();
+                return [
+                    'path' => $cf,
+                    'name' => $c_name,
+                    'mime_type' => 'video/mp4'
+                ];
+            }
+        }
+    }
+
+    // 2. Lấy thông tin metadata của file (name, mimeType) - Kết nối trực tiếp Google CDN
     $meta_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=name,mimeType";
     $ch = curl_init($meta_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token", "Expect:"]);
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
     curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
     curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    if (function_exists('apply_proxy_to_curl')) {
-        apply_proxy_to_curl($ch, $access_token);
-    }
     $meta_response = curl_exec($ch);
     curl_close($ch);
 
@@ -165,7 +185,7 @@ function download_drive_file_temp($access_token, $file_id) {
     $mime_type = $meta['mimeType'];
     $file_name = $meta['name'];
 
-    echo "   → Đang tải tệp '{$file_name}' từ Google Drive...\n";
+    echo "   → Đang tải tệp '{$file_name}' trực tiếp từ Google CDN...\n";
     if (ob_get_level() > 0) @ob_flush();
     @flush();
 
@@ -185,32 +205,15 @@ function download_drive_file_temp($access_token, $file_id) {
             'image/gif' => 'gif',
             'image/webp' => 'webp'
         ];
-        if (isset($map[$mime_type])) {
-            $ext = $map[$mime_type];
-        } else {
-            $ext = 'tmp';
-        }
-        
-        // Append extension to file name if it doesn't have it
-        if ($ext !== 'tmp') {
+        $ext = $map[$mime_type] ?? 'mp4';
+        if ($ext !== 'tmp' && strpos($file_name, '.') === false) {
             $file_name = rtrim($file_name, '.') . '.' . $ext;
         }
     }
 
-    // 2. Download nội dung file
+    // 3. Download nội dung file trực tiếp từ Google CDN (không qua Proxy)
     $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media";
-    
-    // Tạo file tạm trên thư mục uploads/tmp công khai để Nginx và Facebook Bot đọc được qua Web (file_url)
-    $temp_dir = __DIR__ . '/../uploads/tmp';
-    if (!is_dir($temp_dir)) {
-        @mkdir($temp_dir, 0777, true);
-    }
-    $temp_path = tempnam($temp_dir, 'gdrive_');
-    
-    // Thêm đuôi file để CURLFile của Facebook nhận diện đúng định dạng
-    $temp_path_with_ext = $temp_path . '.' . $ext;
-    rename($temp_path, $temp_path_with_ext);
-    @chmod($temp_path_with_ext, 0644);
+    $temp_path_with_ext = $temp_dir . '/gdrive_' . md5($file_id) . '.' . $ext;
 
     $fp = fopen($temp_path_with_ext, 'w+');
     if ($fp === false) {
@@ -218,20 +221,42 @@ function download_drive_file_temp($access_token, $file_id) {
     }
 
     $ch2 = curl_init($download_url);
-    curl_setopt($ch2, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
+    curl_setopt($ch2, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token", "Expect:"]);
     curl_setopt($ch2, CURLOPT_FILE, $fp);
     curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch2, CURLOPT_TIMEOUT, 600);
-    curl_setopt($ch2, CURLOPT_LOW_SPEED_LIMIT, 1024); // Tự động hủy nếu tốc độ < 1KB/s trong 60s
+    curl_setopt($ch2, CURLOPT_LOW_SPEED_LIMIT, 1024);
     curl_setopt($ch2, CURLOPT_LOW_SPEED_TIME, 60);
     curl_setopt($ch2, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
-    if (function_exists('apply_proxy_to_curl')) {
-        apply_proxy_to_curl($ch2, $access_token);
-    }
+
+    $last_printed_pct = -20;
+    curl_setopt($ch2, CURLOPT_NOPROGRESS, false);
+    curl_setopt($ch2, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct) {
+        $args = func_get_args();
+        if (count($args) >= 5) {
+            $downloaded = $args[2];
+            $total = $args[1];
+        } else {
+            $downloaded = $args[1] ?? 0;
+            $total = $args[0] ?? 0;
+        }
+        if ($total > 0 && $downloaded > 0) {
+            $pct = (int) floor(($downloaded / $total) * 100);
+            if ($pct >= $last_printed_pct + 20 || $pct === 100) {
+                $last_printed_pct = $pct;
+                $dl_mb = round($downloaded / 1024 / 1024, 2);
+                $tot_mb = round($total / 1024 / 1024, 2);
+                echo "   → Tiến trình tải từ Drive: {$pct}% ({$dl_mb} MB / {$tot_mb} MB)\n";
+                if (ob_get_level() > 0) @ob_flush();
+                @flush();
+            }
+        }
+    });
+
     $success = curl_exec($ch2);
     $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
-    $curl_err = curl_error($ch2); // Lấy lỗi trước khi close
+    $curl_err = curl_error($ch2);
     curl_close($ch2);
     fclose($fp);
     @chmod($temp_path_with_ext, 0644);
@@ -248,8 +273,8 @@ function download_drive_file_temp($access_token, $file_id) {
 
     return [
         'path' => $temp_path_with_ext,
-        'mime' => $mime_type,
-        'name' => $file_name
+        'name' => $file_name,
+        'mime_type' => $mime_type
     ];
 }
 
