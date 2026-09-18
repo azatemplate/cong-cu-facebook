@@ -329,7 +329,7 @@ $has_credentials = !empty($cfg['client_key']) && !empty($cfg['client_secret']);
         <div class="form-group" style="background: #f9fafb; padding: 15px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 20px;">
             <label style="color: var(--primary-color); font-weight: 600;">4. Lên lịch tự động hàng loạt (Tùy chọn)</label>
             <p style="font-size: 13px; color: var(--text-muted); margin-top: 5px; margin-bottom: 15px;">
-                Chọn khoảng ngày và các khung giờ. Hệ thống sẽ rải đều tất cả các video bạn cung cấp (từ file máy, link TikTok, Drive) theo các khung giờ này. Nếu bỏ trống, bài sẽ được đăng ngay lập tức.
+                Chọn khoảng ngày và các khung giờ, tối đa hẹn giờ 3 tháng một chiến dịch.
             </p>
             <div style="display: flex; gap: 15px; margin-bottom: 10px; flex-wrap: wrap;">
                 <div style="flex: 1; min-width: 180px;">
@@ -528,6 +528,31 @@ $has_credentials = !empty($cfg['client_key']) && !empty($cfg['client_secret']);
             alert('Lỗi kết nối: ' + err.message);
         });
     }
+
+document.addEventListener('DOMContentLoaded', function() {
+    const startDateInput = document.getElementById('start_date');
+    const endDateInput = document.getElementById('end_date');
+    if (startDateInput && endDateInput) {
+        startDateInput.addEventListener('change', function() {
+            if (this.value) {
+                const startDate = new Date(this.value);
+                const maxDate = new Date(startDate);
+                maxDate.setDate(maxDate.getDate() + 90);
+                
+                const maxStr = maxDate.toISOString().split('T')[0];
+                endDateInput.min = this.value;
+                endDateInput.max = maxStr;
+                
+                if (endDateInput.value && (endDateInput.value < this.value || endDateInput.value > maxStr)) {
+                    endDateInput.value = maxStr;
+                }
+            } else {
+                endDateInput.removeAttribute('min');
+                endDateInput.removeAttribute('max');
+            }
+        });
+    }
+});
 </script>
 
 <?php include 'includes/drive_browser.php'; ?>

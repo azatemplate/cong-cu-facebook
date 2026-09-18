@@ -670,7 +670,7 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
                 <div style="flex:1; min-width:300px; background: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid var(--border-color);">
                     <label style="color: var(--primary-color); font-weight:600;">5. Lên lịch tự động hàng loạt (Tùy chọn)</label>
                     <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px; margin-bottom: 12px;">
-                        Nếu không nhập lịch, hệ thống sẽ đưa bài vào hàng đợi đăng ngay lập tức.
+                        Chọn khoảng ngày và các khung giờ, tối đa hẹn giờ 3 tháng một chiến dịch.
                     </p>
                     <div style="display: flex; gap: 12px; margin-bottom: 10px;">
                         <div style="flex: 1;">
@@ -1103,6 +1103,29 @@ document.getElementById('igPublishForm')?.addEventListener('submit', function(e)
         btn.disabled = false;
         btn.textContent = '🚀 Xác Nhận / Lên Lịch Đăng Bài Instagram';
     });
+document.addEventListener('DOMContentLoaded', function() {
+    const startDateInput = document.getElementById('start_date');
+    const endDateInput = document.getElementById('end_date');
+    if (startDateInput && endDateInput) {
+        startDateInput.addEventListener('change', function() {
+            if (this.value) {
+                const startDate = new Date(this.value);
+                const maxDate = new Date(startDate);
+                maxDate.setDate(maxDate.getDate() + 90);
+                
+                const maxStr = maxDate.toISOString().split('T')[0];
+                endDateInput.min = this.value;
+                endDateInput.max = maxStr;
+                
+                if (endDateInput.value && (endDateInput.value < this.value || endDateInput.value > maxStr)) {
+                    endDateInput.value = maxStr;
+                }
+            } else {
+                endDateInput.removeAttribute('min');
+                endDateInput.removeAttribute('max');
+            }
+        });
+    }
 });
 </script>
 

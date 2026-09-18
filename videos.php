@@ -158,7 +158,7 @@ $pages_json = json_encode($pages);
         <div class="form-group" style="flex:1; min-width:300px; background: #f9fafb; padding: 15px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom:0;">
             <label style="color: var(--primary-color);">6. Lên lịch tự động hàng loạt (Tùy chọn)</label>
             <p style="font-size: 13px; color: var(--text-muted); margin-top: 5px; margin-bottom: 15px;">
-                Chọn khoảng ngày và các khung giờ. Hệ thống sẽ trộn ngẫu nhiên tất cả các video bạn cung cấp (từ file, link tiktok, drive) và xếp lịch rải đều. Nếu bạn không nhập lịch, tất cả sẽ được đăng / push lên hàng đợi ngay lập tức (cách nhau 5 phút mặc định).
+                Chọn khoảng ngày và các khung giờ, tối đa hẹn giờ 3 tháng một chiến dịch.
             </p>
             <div style="display: flex; gap: 15px; margin-bottom: 10px;">
                 <div style="flex: 1;">
@@ -418,6 +418,55 @@ $pages_json = json_encode($pages);
             localStatus.innerText = '';
         }
     }
+
+    // Limit End Date to max 90 days (3 months) from Start Date
+    document.addEventListener('DOMContentLoaded', function() {
+        const startDateEl = document.getElementById('start_date');
+        const endDateEl = document.getElementById('end_date');
+        if (startDateEl && endDateEl) {
+            function updateDateLimits() {
+                if (startDateEl.value) {
+                    endDateEl.min = startDateEl.value;
+                    const start = new Date(startDateEl.value + 'T00:00:00');
+                    const maxEnd = new Date(start);
+                    maxEnd.setDate(maxEnd.getDate() + 90);
+                    const yyyy = maxEnd.getFullYear();
+                    const mm = String(maxEnd.getMonth() + 1).padStart(2, '0');
+                    const dd = String(maxEnd.getDate()).padStart(2, '0');
+                    const maxDateStr = `${yyyy}-${mm}-${dd}`;
+                    endDateEl.max = maxDateStr;
+
+                    if (endDateEl.value) {
+                        if (endDateEl.value < startDateEl.value) {
+                            endDateEl.value = startDateEl.value;
+                        } else if (endDateEl.value > maxDateStr) {
+                            endDateEl.value = maxDateStr;
+                        }
+                    }
+                } else {
+                    endDateEl.removeAttribute('min');
+                    endDateEl.removeAttribute('max');
+                }
+            }
+            startDateEl.addEventListener('change', updateDateLimits);
+            startDateEl.addEventListener('input', updateDateLimits);
+            endDateEl.addEventListener('change', function() {
+                if (startDateEl.value && this.value) {
+                    const start = new Date(startDateEl.value + 'T00:00:00');
+                    const maxEnd = new Date(start);
+                    maxEnd.setDate(maxEnd.getDate() + 90);
+                    const maxDateStr = `${maxEnd.getFullYear()}-${String(maxEnd.getMonth() + 1).padStart(2, '0')}-${String(maxEnd.getDate()).padStart(2, '0')}`;
+                    if (this.value > maxDateStr) {
+                        alert('Thời gian hẹn giờ tối đa là 3 tháng (90 ngày) kể từ ngày bắt đầu.');
+                        this.value = maxDateStr;
+                    } else if (this.value < startDateEl.value) {
+                        this.value = startDateEl.value;
+                    }
+                }
+            });
+            if (startDateEl.value) updateDateLimits();
+        }
+    });
 </script>
 
 <?php include 'includes/drive_browser.php'; ?>

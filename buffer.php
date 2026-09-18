@@ -833,7 +833,7 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
                                 5. Lên lịch tự động hàng loạt (Tùy chọn)
                             </label>
                             <p style="font-size: 13px; color: #7e22ce; margin-top: 0; margin-bottom: 14px; line-height: 1.4;">
-                                Chọn khoảng ngày và các khung giờ. Hệ thống sẽ trộn ngẫu nhiên tất cả các bài bạn cung cấp (từ file, link tiktok, drive) và xếp lịch rải đều. Nếu bạn không nhập lịch, tất cả sẽ được đăng / push lên hàng đợi ngay lập tức.
+                                Chọn khoảng ngày và các khung giờ, tối đa hẹn giờ 3 tháng một chiến dịch.
                             </p>
 
                             <div style="display: flex; gap: 15px; margin-bottom: 12px;">
@@ -1079,6 +1079,31 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
                     btnSubmit.innerText = '🚀 Gửi Bài Đăng Qua Buffer API';
                 });
             });
+
+document.addEventListener('DOMContentLoaded', function() {
+    const startDateInput = document.getElementById('start_date');
+    const endDateInput = document.getElementById('end_date');
+    if (startDateInput && endDateInput) {
+        startDateInput.addEventListener('change', function() {
+            if (this.value) {
+                const startDate = new Date(this.value);
+                const maxDate = new Date(startDate);
+                maxDate.setDate(maxDate.getDate() + 90);
+                
+                const maxStr = maxDate.toISOString().split('T')[0];
+                endDateInput.min = this.value;
+                endDateInput.max = maxStr;
+                
+                if (endDateInput.value && (endDateInput.value < this.value || endDateInput.value > maxStr)) {
+                    endDateInput.value = maxStr;
+                }
+            } else {
+                endDateInput.removeAttribute('min');
+                endDateInput.removeAttribute('max');
+            }
+        });
+    }
+});
             </script>
 
             <?php include 'includes/drive_browser.php'; ?>

@@ -144,6 +144,8 @@ $time_slots  = trim($_POST['time_slots'] ?? '');
 $schedule_dates = [];
 
 if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
+    $max_end = date('Y-m-d', strtotime($start_date . ' + 90 days'));
+    if ($end_date > $max_end) $end_date = $max_end;
     $slots   = array_filter(array_map('trim', explode(',', $time_slots)));
     $current = strtotime($start_date);
     $end     = strtotime($end_date);
