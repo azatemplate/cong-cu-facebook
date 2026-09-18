@@ -11,7 +11,6 @@ if (session_status() === PHP_SESSION_NONE) {
  * Sync Instagram Business Accounts linked to connected Facebook Pages
  */
 function sync_instagram_accounts($account_id) {
-    @set_time_limit(300);
     global $pdo;
     $synced_map = [];
     $limit_reached = false;
@@ -69,11 +68,7 @@ function sync_instagram_accounts($account_id) {
 
             $me_url = FB_API_BASE . "me/accounts?fields=id,name,access_token,instagram_business_account{id,username,name,profile_picture_url,followers_count}&limit=500&access_token=" . urlencode($u_token);
             $ch = curl_init($me_url);
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 15,
-                CURLOPT_CONNECTTIMEOUT => 8
-            ]);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             apply_proxy_to_curl($ch, $u_token);
             fb_curl_setssl($ch);
             $res = curl_exec($ch);
@@ -136,11 +131,7 @@ function sync_instagram_accounts($account_id) {
                     $url = FB_API_BASE . $page_id . "?fields=instagram_business_account{id,username,name,profile_picture_url,followers_count}&access_token=" . urlencode($token);
                     
                     $ch = curl_init($url);
-                    curl_setopt_array($ch, [
-                        CURLOPT_RETURNTRANSFER => true,
-                        CURLOPT_TIMEOUT => 15,
-                        CURLOPT_CONNECTTIMEOUT => 8
-                    ]);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                     apply_proxy_to_curl($ch, $token);
                     fb_curl_setssl($ch);
 
@@ -212,35 +203,41 @@ function get_instagram_accounts($account_id) {
 /**
  * Internal Helper: Poll Media Container status until FINISHED or error
  */
-function poll_instagram_container_status($container_id, $access_token, $max_wait_seconds = 60) {
+function poll_instagram_container_status($container_id, $access_token, $max_wait_seconds = 120) {
     $start = time();
+    $last_status = '';
     while (time() - $start < $max_wait_seconds) {
         $url = FB_API_BASE . $container_id . "?fields=status_code,status&access_token=" . urlencode($access_token);
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 10
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_CONNECTTIMEOUT => 8
         ]);
         apply_proxy_to_curl($ch, $access_token);
         fb_curl_setssl($ch);
         $res = curl_exec($ch);
         curl_close($ch);
 
-        $data = json_decode($res, true);
-        if (!empty($data['error'])) {
-            return ['status' => 'error', 'msg' => $data['error']['message'] ?? 'Lỗi kiểm tra Container Meta'];
-        }
+        if ($res) {
+            $data = json_decode($res, true);
+            if (!empty($data['error'])) {
+                return ['status' => 'error', 'msg' => $data['error']['message'] ?? 'Lỗi kiểm tra Container Meta'];
+            }
 
-        $status = strtoupper($data['status_code'] ?? '');
-        if ($status === 'FINISHED' || $status === 'PUBLISHED' || empty($status)) {
-            return ['status' => 'success'];
-        } elseif ($status === 'ERROR' || $status === 'EXPIRED') {
-            $msg = $data['status'] ?? 'Lỗi xử lý Container Media Instagram (Meta Status: ' . $status . ')';
-            return ['status' => 'error', 'msg' => $msg];
+            $status = strtoupper($data['status_code'] ?? '');
+            $last_status = $status;
+
+            if ($status === 'FINISHED' || $status === 'PUBLISHED') {
+                return ['status' => 'success'];
+            } elseif ($status === 'ERROR' || $status === 'EXPIRED') {
+                $msg = $data['status'] ?? ('Lỗi xử lý Container Media Instagram (Meta Status: ' . $status . ')');
+                return ['status' => 'error', 'msg' => $msg];
+            }
         }
-        sleep(2);
+        sleep(3);
     }
-    return ['status' => 'error', 'msg' => 'Hết thời gian chờ xử lý Container Media Instagram (Timeout)'];
+    return ['status' => 'error', 'msg' => 'Hết thời gian chờ xử lý Container Media Instagram (Timeout ' . $max_wait_seconds . 's, Meta Status: ' . ($last_status ?: 'IN_PROGRESS') . ')'];
 }
 
 /**
@@ -330,7 +327,7 @@ function post_instagram_photo($ig_user_id, $access_token, $image_url, $caption =
     }
 
     $container_id = $data['id'];
-    $poll = poll_instagram_container_status($container_id, $access_token, 30);
+    $poll = poll_instagram_container_status($container_id, $access_token, 60);
     if ($poll['status'] !== 'success') {
         return $poll;
     }
@@ -386,7 +383,7 @@ function post_instagram_carousel($ig_user_id, $access_token, $media_items, $capt
         }
 
         $c_id = $data['id'];
-        $poll = poll_instagram_container_status($c_id, $access_token, 60);
+        $poll = poll_instagram_container_status($c_id, $access_token, 90);
         if ($poll['status'] !== 'success') return $poll;
 
         $item_container_ids[] = $c_id;
@@ -423,7 +420,7 @@ function post_instagram_carousel($ig_user_id, $access_token, $media_items, $capt
     }
 
     $parent_container_id = $data['id'];
-    $poll = poll_instagram_container_status($parent_container_id, $access_token, 60);
+    $poll = poll_instagram_container_status($parent_container_id, $access_token, 90);
     if ($poll['status'] !== 'success') return $poll;
 
     return publish_instagram_container($ig_user_id, $parent_container_id, $access_token);
@@ -463,7 +460,7 @@ function post_instagram_reels($ig_user_id, $access_token, $video_url, $caption =
     }
 
     $container_id = $data['id'];
-    $poll = poll_instagram_container_status($container_id, $access_token, 90);
+    $poll = poll_instagram_container_status($container_id, $access_token, 120);
     if ($poll['status'] !== 'success') {
         return $poll;
     }
@@ -505,10 +502,9 @@ function post_instagram_story($ig_user_id, $access_token, $media_url, $is_video 
     }
 
     $container_id = $data['id'];
-    if ($is_video) {
-        $poll = poll_instagram_container_status($container_id, $access_token, 60);
-        if ($poll['status'] !== 'success') return $poll;
-    }
+    // Always poll container status (both image and video stories) until FINISHED
+    $poll = poll_instagram_container_status($container_id, $access_token, 90);
+    if ($poll['status'] !== 'success') return $poll;
 
     return publish_instagram_container($ig_user_id, $container_id, $access_token);
 }
