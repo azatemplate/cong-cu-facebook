@@ -889,28 +889,27 @@ function switchIgPostType(type) {
     const randomPhoto= document.getElementById('randomPhotoOptions');
     const imagesEl   = document.getElementById('images');
 
+    // Make TikTok section always visible across format tabs (like reels.php)
+    if (tiktokSec) tiktokSec.style.display = 'block';
+
     if (type === 'reels') {
-        if (tiktokSec) tiktokSec.style.display = 'block';
         if (autoTitle) autoTitle.style.display = 'block';
         if (photoInput) photoInput.style.display = 'none';
         if (videoInput) videoInput.style.display = 'block';
         if (randomPhoto) randomPhoto.style.display = 'none';
     } else if (type === 'story_photo') {
-        if (tiktokSec) tiktokSec.style.display = 'none';
         if (autoTitle) autoTitle.style.display = 'none';
         if (imagesEl) imagesEl.setAttribute('accept', 'image/*');
         if (photoInput) photoInput.style.display = 'block';
         if (videoInput) videoInput.style.display = 'none';
         if (randomPhoto) randomPhoto.style.display = 'none';
     } else if (type === 'story_video') {
-        if (tiktokSec) tiktokSec.style.display = 'block';
         if (autoTitle) autoTitle.style.display = 'none';
         if (photoInput) photoInput.style.display = 'none';
         if (videoInput) videoInput.style.display = 'block';
         if (randomPhoto) randomPhoto.style.display = 'none';
     } else {
         // photo feed
-        if (tiktokSec) tiktokSec.style.display = 'none';
         if (autoTitle) autoTitle.style.display = 'none';
         if (imagesEl) imagesEl.setAttribute('accept', 'image/*');
         if (photoInput) photoInput.style.display = 'block';
@@ -929,6 +928,9 @@ function onDriveFilesSelected(files) {
     const nameArray = files.map(f => f.name);
     
     document.getElementById('drive_file_id').value = idArray.join(',');
+    if (document.getElementById('drive_file_names')) {
+        document.getElementById('drive_file_names').value = nameArray.join('|||');
+    }
     const imgEl = document.getElementById('images');
     const vidEl = document.getElementById('video');
     if (imgEl) imgEl.value = '';
@@ -942,6 +944,9 @@ function onDriveFilesSelected(files) {
 
 function onDriveFolderSelected(folderId, folderName) {
     document.getElementById('drive_file_id').value = 'folder:' + folderId;
+    if (document.getElementById('drive_file_names')) {
+        document.getElementById('drive_file_names').value = 'folder:' + folderName;
+    }
     const imgEl = document.getElementById('images');
     const vidEl = document.getElementById('video');
     if (imgEl) imgEl.value = '';
@@ -954,6 +959,9 @@ function onDriveFolderSelected(folderId, folderName) {
 
 function clearDriveSelection() {
     document.getElementById('drive_file_id').value = '';
+    if (document.getElementById('drive_file_names')) {
+        document.getElementById('drive_file_names').value = '';
+    }
     document.getElementById('driveSelectedCount').innerText = '0';
     document.getElementById('driveSelectedName').innerText = '';
     document.getElementById('driveSelectionInfo').style.display = 'none';
