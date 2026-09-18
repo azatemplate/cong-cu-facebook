@@ -147,6 +147,7 @@ if (empty($valid_rows)) {
 echo "Bài có token hợp lệ: " . count($valid_rows) . "\n";
 
 if ($rq->isAvailable()) {
+    $rq->deleteCache('fb_insights_queue');
     $pushed_insights = 0;
     foreach ($valid_rows as $vr) {
         if ($rq->pushJob('fb_insights_queue', ['id' => $vr['id'], 'fb_post_id' => $vr['fb_post_id'], 'page_id' => $vr['page_id']])) {

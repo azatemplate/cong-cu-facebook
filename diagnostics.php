@@ -34,13 +34,16 @@ $redis_fb_msg_len = $rq->getQueueLength('fb_messaging_queue');
 $redis_zalo_msg_len = $rq->getQueueLength('zalo_messaging_queue');
 
 $db_publish_queue_len = 0;
+$db_insights_queue_len = 0;
 if (isset($pdo)) {
     try {
         $db_publish_queue_len = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing') AND scheduled_time <= NOW()")->fetchColumn();
+        $db_insights_queue_len = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'published' AND comment_mode = 'insights' AND comment_done = 0 AND (scheduled_time >= NOW() - INTERVAL 24 HOUR OR scheduled_time IS NULL)")->fetchColumn();
     } catch (Exception $e) {}
 }
 
 $display_publish_queue_len = ($redis_active && $redis_queue_len > 0) ? $redis_queue_len : $db_publish_queue_len;
+$display_insights_queue_len = ($redis_active && $redis_insights_len > 0 && $redis_insights_len <= $db_insights_queue_len) ? $redis_insights_len : $db_insights_queue_len;
 
 
 $now_php   = date('Y-m-d H:i:s');
@@ -223,6 +226,7 @@ $insights_total_count = (int)$pdo->query("
     WHERE status = 'published' 
       AND comment_mode = 'insights' 
       AND comment_done = 0
+      AND (scheduled_time >= NOW() - INTERVAL 24 HOUR OR scheduled_time IS NULL)
 ")->fetchColumn();
 
 $insights_waiting = $pdo->query("
@@ -235,6 +239,7 @@ $insights_waiting = $pdo->query("
     WHERE sp.status = 'published' 
       AND sp.comment_mode = 'insights' 
       AND sp.comment_done = 0
+      AND (sp.scheduled_time >= NOW() - INTERVAL 24 HOUR OR sp.scheduled_time IS NULL)
     ORDER BY sp.id DESC
     LIMIT 20
 ")->fetchAll(PDO::FETCH_ASSOC);
@@ -972,7 +977,7 @@ code {
                     </div>
                     <div class="info-item">
                         <span class="info-label">Queue Insights Comment:</span>
-                        <span class="info-value mono" style="font-weight: 700; color: #38bdf8;"><?= number_format($redis_insights_len) ?> bài</span>
+                        <span class="info-value mono" style="font-weight: 700; color: #38bdf8;"><?= number_format($display_insights_queue_len) ?> bài</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Queue Messaging FB:</span>
