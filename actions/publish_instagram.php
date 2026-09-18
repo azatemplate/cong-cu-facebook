@@ -41,6 +41,25 @@ if (empty($ig_user_ids)) {
     exit;
 }
 
+// Enforce daily posting limit (page_limit from system_accounts)
+$acc_stmt = $pdo->prepare("SELECT role, page_limit FROM system_accounts WHERE id = ?");
+$acc_stmt->execute([$account_id]);
+$user_acc_info = $acc_stmt->fetch(PDO::FETCH_ASSOC);
+$user_page_limit = intval($user_acc_info['page_limit'] ?? 500);
+$user_role = $user_acc_info['role'] ?? 'user';
+
+if ($user_role !== 'admin' && $user_page_limit > 0) {
+    $today_start = date('Y-m-d 00:00:00');
+    $today_end = date('Y-m-d 23:59:59');
+    $chk_stmt = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE account_id = ? AND created_at >= ? AND created_at <= ?");
+    $chk_stmt->execute([$account_id, $today_start, $today_end]);
+    $posts_created_today = intval($chk_stmt->fetchColumn());
+    if ($posts_created_today >= $user_page_limit) {
+        echo json_encode(['status' => 'error', 'msg' => "⚠️ Bạn đã đạt giới hạn tối đa {$user_page_limit} bài đăng/ngày (Đã tạo hôm nay: {$posts_created_today}/{$user_page_limit}). Vui lòng liên hệ Admin để nâng hạn ngạch."]);
+        exit;
+    }
+}
+
 $post_sub_type = $_POST['post_sub_type'] ?? 'Instagram'; // Instagram, Instagram_Reels, Instagram_Story
 $caption       = clean_markdown(trim($_POST['caption'] ?? $_POST['message'] ?? $_POST['description'] ?? ''));
 $use_ai          = isset($_POST['use_ai']) && $_POST['use_ai'] == '1';

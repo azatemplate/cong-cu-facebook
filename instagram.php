@@ -241,6 +241,12 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
     </div>
 </div>
 
+<?php if (!empty($global_flash_msg)): ?>
+    <div class="alert alert-warning" style="background:#fff7ed; border:1px solid #fed7aa; color:#c2410c; padding:12px 16px; border-radius:8px; margin-bottom:15px; font-weight:600;">
+        <?php echo htmlspecialchars($global_flash_msg); ?>
+    </div>
+<?php endif; ?>
+
 <?php if (isset($_GET['synced'])): ?>
     <div class="alert alert-success">
         ✅ Đã quét và đồng bộ thành công <strong><?php echo (int)$_GET['synced']; ?></strong> tài khoản Instagram Doanh nghiệp kết nối từ Facebook Pages!
@@ -429,7 +435,7 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
             ⚠️ Chưa có tài khoản Instagram nào được đồng bộ. Vui lòng bấm <a href="instagram.php?action=sync" style="font-weight:bold; text-decoration:underline; color:#c2410c;">Vào đây để đồng bộ kênh</a> trước khi đăng bài.
         </div>
     <?php else: ?>
-        <form id="igPublishForm" method="POST" action="actions/publish_instagram.php" enctype="multipart/form-data">
+        <form id="igPublishForm" enctype="multipart/form-data">
             
             <!-- 1. Chọn Kênh Instagram (Checkbox + Search UI) -->
             <div class="form-group" style="margin-bottom:20px;">
@@ -670,7 +676,7 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
                 <div style="flex:1; min-width:300px; background: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid var(--border-color);">
                     <label style="color: var(--primary-color); font-weight:600;">5. Lên lịch tự động hàng loạt (Tùy chọn)</label>
                     <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px; margin-bottom: 12px;">
-                        Chọn khoảng ngày và các khung giờ, tối đa hẹn giờ 3 tháng một chiến dịch.
+                        Nếu không nhập lịch, hệ thống sẽ đưa bài vào hàng đợi đăng ngay lập tức.
                     </p>
                     <div style="display: flex; gap: 12px; margin-bottom: 10px;">
                         <div style="flex: 1;">
@@ -889,27 +895,28 @@ function switchIgPostType(type) {
     const randomPhoto= document.getElementById('randomPhotoOptions');
     const imagesEl   = document.getElementById('images');
 
-    // Make TikTok section always visible across format tabs (like reels.php)
-    if (tiktokSec) tiktokSec.style.display = 'block';
-
     if (type === 'reels') {
+        if (tiktokSec) tiktokSec.style.display = 'block';
         if (autoTitle) autoTitle.style.display = 'block';
         if (photoInput) photoInput.style.display = 'none';
         if (videoInput) videoInput.style.display = 'block';
         if (randomPhoto) randomPhoto.style.display = 'none';
     } else if (type === 'story_photo') {
+        if (tiktokSec) tiktokSec.style.display = 'none';
         if (autoTitle) autoTitle.style.display = 'none';
         if (imagesEl) imagesEl.setAttribute('accept', 'image/*');
         if (photoInput) photoInput.style.display = 'block';
         if (videoInput) videoInput.style.display = 'none';
         if (randomPhoto) randomPhoto.style.display = 'none';
     } else if (type === 'story_video') {
+        if (tiktokSec) tiktokSec.style.display = 'block';
         if (autoTitle) autoTitle.style.display = 'none';
         if (photoInput) photoInput.style.display = 'none';
         if (videoInput) videoInput.style.display = 'block';
         if (randomPhoto) randomPhoto.style.display = 'none';
     } else {
         // photo feed
+        if (tiktokSec) tiktokSec.style.display = 'none';
         if (autoTitle) autoTitle.style.display = 'none';
         if (imagesEl) imagesEl.setAttribute('accept', 'image/*');
         if (photoInput) photoInput.style.display = 'block';
@@ -928,9 +935,6 @@ function onDriveFilesSelected(files) {
     const nameArray = files.map(f => f.name);
     
     document.getElementById('drive_file_id').value = idArray.join(',');
-    if (document.getElementById('drive_file_names')) {
-        document.getElementById('drive_file_names').value = nameArray.join('|||');
-    }
     const imgEl = document.getElementById('images');
     const vidEl = document.getElementById('video');
     if (imgEl) imgEl.value = '';
@@ -944,9 +948,6 @@ function onDriveFilesSelected(files) {
 
 function onDriveFolderSelected(folderId, folderName) {
     document.getElementById('drive_file_id').value = 'folder:' + folderId;
-    if (document.getElementById('drive_file_names')) {
-        document.getElementById('drive_file_names').value = 'folder:' + folderName;
-    }
     const imgEl = document.getElementById('images');
     const vidEl = document.getElementById('video');
     if (imgEl) imgEl.value = '';
@@ -959,9 +960,6 @@ function onDriveFolderSelected(folderId, folderName) {
 
 function clearDriveSelection() {
     document.getElementById('drive_file_id').value = '';
-    if (document.getElementById('drive_file_names')) {
-        document.getElementById('drive_file_names').value = '';
-    }
     document.getElementById('driveSelectedCount').innerText = '0';
     document.getElementById('driveSelectedName').innerText = '';
     document.getElementById('driveSelectionInfo').style.display = 'none';
@@ -1042,23 +1040,6 @@ document.getElementById('igPublishForm')?.addEventListener('submit', function(e)
         return;
     }
 
-    const imgEl = document.getElementById('images');
-    const vidEl = document.getElementById('video');
-    const isVideoTab = document.getElementById('videoInputWrap')?.style.display !== 'none';
-    const activeInput = isVideoTab ? vidEl : imgEl;
-    const driveFileId = document.getElementById('drive_file_id')?.value || '';
-    const tiktokUrls = document.getElementById('tiktok_urls')?.value || '';
-
-    const hasPhotoFiles = imgEl && imgEl.files && imgEl.files.length > 0;
-    const hasVideoFiles = vidEl && vidEl.files && vidEl.files.length > 0;
-    const inputToUpload = hasVideoFiles ? vidEl : (hasPhotoFiles ? imgEl : activeInput);
-    const hasLocalFiles = hasPhotoFiles || hasVideoFiles;
-
-    if (!hasLocalFiles && !driveFileId && !tiktokUrls) {
-        alert('Vui lòng cung cấp phương tiện: chọn ít nhất 1 hình ảnh/video từ máy, Google Drive hoặc dán link TikTok.');
-        return;
-    }
-
     btn.disabled = true;
     btn.textContent = '⏳ Đang xử lý...';
     res.style.display = 'none';
@@ -1068,7 +1049,11 @@ document.getElementById('igPublishForm')?.addEventListener('submit', function(e)
         localStatus.innerText = '';
     }
 
-    uploadLocalFilesPromise(inputToUpload, function(msg) {
+    const activeInput = (document.getElementById('videoInputWrap')?.style.display !== 'none') 
+        ? document.getElementById('video') 
+        : document.getElementById('images');
+
+    uploadLocalFilesPromise(activeInput, function(msg) {
         if (localStatus) {
             localStatus.style.display = 'block';
             localStatus.className = 'alert alert-warning';
@@ -1090,7 +1075,7 @@ document.getElementById('igPublishForm')?.addEventListener('submit', function(e)
             }
             const fileIds = uploadedFiles.map(f => f.id).join(',');
             document.getElementById('drive_file_id').value = fileIds;
-            if (inputToUpload) inputToUpload.value = '';
+            if (activeInput) activeInput.value = '';
         }
 
         btn.textContent = '🚀 Đang lưu thông tin bài đăng...';
@@ -1124,29 +1109,6 @@ document.getElementById('igPublishForm')?.addEventListener('submit', function(e)
         btn.disabled = false;
         btn.textContent = '🚀 Xác Nhận / Lên Lịch Đăng Bài Instagram';
     });
-document.addEventListener('DOMContentLoaded', function() {
-    const startDateInput = document.getElementById('start_date');
-    const endDateInput = document.getElementById('end_date');
-    if (startDateInput && endDateInput) {
-        startDateInput.addEventListener('change', function() {
-            if (this.value) {
-                const startDate = new Date(this.value);
-                const maxDate = new Date(startDate);
-                maxDate.setDate(maxDate.getDate() + 90);
-                
-                const maxStr = maxDate.toISOString().split('T')[0];
-                endDateInput.min = this.value;
-                endDateInput.max = maxStr;
-                
-                if (endDateInput.value && (endDateInput.value < this.value || endDateInput.value > maxStr)) {
-                    endDateInput.value = maxStr;
-                }
-            } else {
-                endDateInput.removeAttribute('min');
-                endDateInput.removeAttribute('max');
-            }
-        });
-    }
 });
 </script>
 
