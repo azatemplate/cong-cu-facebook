@@ -66,7 +66,10 @@ if ($campaign_id) {
                 trigger_campaign_publisher_worker($pdo, $campaign_id);
             }
         } catch (PDOException $e) { /* ignore */ }
-        header("Location: campaign_detail.php?id=$campaign_id" . (isset($_GET['filter']) ? '&filter='.$_GET['filter'] : ''));
+        $redirect_params = $_GET;
+        unset($redirect_params['action'], $redirect_params['post_id']);
+        $redirect_url = 'campaign_detail.php?' . http_build_query($redirect_params);
+        header("Location: " . $redirect_url);
         exit;
     }
 
@@ -78,7 +81,10 @@ if ($campaign_id) {
                 $pdo->prepare("UPDATE scheduled_posts SET status='pending', retry_count=0, error_msg=NULL WHERE campaign_id = ? AND status IN ('failed','checkpoint','processing','pending')")->execute([$campaign_id]);
                 trigger_campaign_publisher_worker($pdo, $campaign_id);
             } catch (PDOException $e) { /* ignore */ }
-            header("Location: campaign_detail.php?id=$campaign_id");
+            $redirect_params = $_GET;
+            unset($redirect_params['action']);
+            $redirect_url = 'campaign_detail.php?' . http_build_query($redirect_params);
+            header("Location: " . $redirect_url);
             exit;
         }
     }
@@ -93,7 +99,18 @@ if ($campaign_id) {
                 $pdo->prepare("DELETE FROM scheduled_posts WHERE id IN ($in) AND campaign_id = ? AND status IN ('pending','failed','checkpoint','processing')")->execute($params);
             } catch (PDOException $e) { /* ignore */ }
         }
-        header("Location: campaign_detail.php?id=$campaign_id");
+        $redirect_url = "campaign_detail.php?id=$campaign_id";
+        if (!empty($_SERVER['HTTP_REFERER'])) {
+            $parsed = parse_url($_SERVER['HTTP_REFERER']);
+            if (!empty($parsed['query'])) {
+                parse_str($parsed['query'], $q_params);
+                unset($q_params['action'], $q_params['post_id'], $q_params['bulk_action']);
+                if (!empty($q_params)) {
+                    $redirect_url = 'campaign_detail.php?' . http_build_query($q_params);
+                }
+            }
+        }
+        header("Location: " . $redirect_url);
         exit;
     }
 }
@@ -537,7 +554,7 @@ function status_label($s) {
                            style="font-size:12px;color:#dc2626;text-decoration:none;padding:3px 9px;border:1px solid #fca5a5;border-radius:4px;">Xóa</a>
                     <?php endif; ?>
                     <?php if (in_array($s, ['failed','checkpoint'])): ?>
-                        <a href="campaign_detail.php?id=<?php echo $campaign_id; ?>&action=retry&post_id=<?php echo $post['id']; ?>&filter=<?php echo $filter; ?>"
+                        <a href="campaign_detail.php?id=<?php echo $campaign_id; ?>&action=retry&post_id=<?php echo $post['id']; ?>&filter=<?php echo $filter; ?>&pg=<?php echo $current_pg; ?>"
                            style="font-size:12px;color:#059669;text-decoration:none;padding:3px 9px;border:1px solid #6ee7b7;border-radius:4px;">Retry</a>
                     <?php endif; ?>
                     </div>
@@ -629,14 +646,19 @@ function hideCdModal() {
 
 function doCdAction() {
     const cid = <?php echo $campaign_id; ?>;
+    const urlParams = new URLSearchParams(window.location.search);
     if (_cdAction === 'retry_all') {
-        window.location.href = 'campaign_detail.php?id=' + cid + '&action=retry_all';
+        urlParams.set('action', 'retry_all');
+        window.location.href = 'campaign_detail.php?' + urlParams.toString();
     } else if (_cdAction === 'delete_pending') {
         window.location.href = 'manage_posts.php?action=delete_campaign&id=' + cid;
     } else if (_cdAction === 'delete_campaign_empty') {
         window.location.href = 'manage_posts.php?action=delete_campaign&id=' + cid;
     } else if (_cdAction === 'delete_single') {
-        window.location.href = 'campaign_detail.php?id=' + cid + '&action=delete&post_id=' + _cdId + '&filter=' + (_cdExtra || 'all');
+        urlParams.set('action', 'delete');
+        urlParams.set('post_id', _cdId);
+        if (_cdExtra) urlParams.set('filter', _cdExtra);
+        window.location.href = 'campaign_detail.php?' + urlParams.toString();
     } else if (_cdAction === 'bulk_delete') {
         document.getElementById('cdConfirmModal').style.display = 'none';
         document.getElementById('bulkDeleteForm').submit();

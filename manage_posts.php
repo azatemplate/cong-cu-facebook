@@ -35,7 +35,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_action'], $_POST
             $pdo->prepare("DELETE FROM scheduled_posts WHERE id IN ($in) AND status IN ('pending','failed') $auth")->execute($params);
         } catch (PDOException $e) {}
     }
-    header('Location: manage_posts.php');
+    $redirect_url = 'manage_posts.php';
+    if (!empty($_SERVER['HTTP_REFERER'])) {
+        $parsed = parse_url($_SERVER['HTTP_REFERER']);
+        if (!empty($parsed['query'])) {
+            parse_str($parsed['query'], $q_params);
+            unset($q_params['action'], $q_params['id'], $q_params['bulk_action']);
+            if (!empty($q_params)) {
+                $redirect_url .= '?' . http_build_query($q_params);
+            }
+        }
+    }
+    header('Location: ' . $redirect_url);
     exit;
 }
 
@@ -80,7 +91,14 @@ if (isset($_GET['action'])) {
             $pdo->prepare("UPDATE scheduled_posts SET status='pending', retry_count=0, error_msg=NULL WHERE campaign_id = ? AND status IN ('failed', 'checkpoint') $auth")->execute($p);
         }
     } catch (PDOException $e) {}
-    header('Location: manage_posts.php');
+
+    $redirect_params = $_GET;
+    unset($redirect_params['action'], $redirect_params['id']);
+    $redirect_url = 'manage_posts.php';
+    if (!empty($redirect_params)) {
+        $redirect_url .= '?' . http_build_query($redirect_params);
+    }
+    header('Location: ' . $redirect_url);
     exit;
 }
 
@@ -448,11 +466,15 @@ function hideConfirmModal() {
 
 function doConfirmAction() {
     if (!_confirmAction) return;
+    const urlParams = new URLSearchParams(window.location.search);
     if (_confirmAction === 'clean_empty') {
-        window.location.href = 'manage_posts.php?action=clean_empty';
+        urlParams.set('action', 'clean_empty');
+        urlParams.delete('id');
     } else if (_confirmId) {
-        window.location.href = 'manage_posts.php?action=' + _confirmAction + '_campaign&id=' + _confirmId;
+        urlParams.set('action', _confirmAction + '_campaign');
+        urlParams.set('id', _confirmId);
     }
+    window.location.href = 'manage_posts.php?' + urlParams.toString();
 }
 
 function runCronJob() {
