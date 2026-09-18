@@ -258,7 +258,7 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
         Chọn Kênh YouTube, nhập liên kết hoặc tải lên video, tuỳ chọn nhờ AI viết Title/Description/Tags tự động.
     </p>
 
-    <form id="youtubeForm" enctype="multipart/form-data">
+    <form id="youtubeForm" method="POST" action="actions/publish_youtube.php" enctype="multipart/form-data">
         <style>
         .ps-wrapper { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--card-bg, #fff); }
         .ps-search-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border-color); background: #f8fafc; }

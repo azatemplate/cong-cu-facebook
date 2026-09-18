@@ -95,7 +95,7 @@ $has_credentials = !empty($cfg['client_key']) && !empty($cfg['client_secret']);
         Chọn Kênh TikTok, nhập tiêu đề, chọn tệp từ máy hoặc Google Drive để bắt đầu đăng ngay hoặc lên lịch rải đều.
     </p>
 
-    <form id="tiktokPublishForm" enctype="multipart/form-data">
+    <form id="tiktokPublishForm" method="POST" action="actions/publish_tiktok.php" enctype="multipart/form-data">
         <!-- 1. Select TikTok Accounts (Multi-Select) -->
         <style>
         .tt-wrapper { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--card-bg, #fff); margin-bottom: 20px; }

@@ -429,7 +429,7 @@ if ($active_tab === 'media' && !empty($selected_ig_id)) {
             ⚠️ Chưa có tài khoản Instagram nào được đồng bộ. Vui lòng bấm <a href="instagram.php?action=sync" style="font-weight:bold; text-decoration:underline; color:#c2410c;">Vào đây để đồng bộ kênh</a> trước khi đăng bài.
         </div>
     <?php else: ?>
-        <form id="igPublishForm" enctype="multipart/form-data">
+        <form id="igPublishForm" method="POST" action="actions/publish_instagram.php" enctype="multipart/form-data">
             
             <!-- 1. Chọn Kênh Instagram (Checkbox + Search UI) -->
             <div class="form-group" style="margin-bottom:20px;">
@@ -1031,6 +1031,18 @@ document.getElementById('igPublishForm')?.addEventListener('submit', function(e)
     const checkedChannels = document.querySelectorAll('.ig-ch-cb:checked');
     if (checkedChannels.length === 0) {
         alert('Vui lòng chọn ít nhất 1 kênh Instagram để đăng bài.');
+        return;
+    }
+
+    const activeInput = (document.getElementById('videoInputWrap')?.style.display !== 'none') 
+        ? document.getElementById('video') 
+        : document.getElementById('images');
+    const driveFileId = document.getElementById('drive_file_id')?.value || '';
+    const tiktokUrls = document.getElementById('tiktok_urls')?.value || '';
+    const hasLocalFiles = activeInput && activeInput.files && activeInput.files.length > 0;
+
+    if (!hasLocalFiles && !driveFileId && !tiktokUrls) {
+        alert('Vui lòng cung cấp phương tiện: chọn ít nhất 1 hình ảnh/video từ máy, Google Drive hoặc dán link TikTok.');
         return;
     }
 

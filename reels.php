@@ -65,7 +65,7 @@ $pages_json = json_encode($pages);
         Chọn User quản lý (Token), sau đó chọn Fanpage tương ứng để chuẩn bị đăng Reels.
     </p>
 
-    <form id="reelsForm" enctype="multipart/form-data">
+    <form id="reelsForm" method="POST" action="actions/publish_video.php" enctype="multipart/form-data">
         <div class="form-group">
             <label>1. Chọn User Quản Lý Token</label>
             <select id="user_select" name="user_id"

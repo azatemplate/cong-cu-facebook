@@ -63,7 +63,7 @@ $pages_json = json_encode($pages);
         Chọn User quản lý (Token), sau đó chọn Fanpage tương ứng để chuẩn bị đăng bài.
     </p>
 
-    <form id="postForm" enctype="multipart/form-data">
+    <form id="postForm" method="POST" action="actions/publish_post.php" enctype="multipart/form-data">
         <div class="form-group">
             <label>1. Chọn User Quản Lý Token</label>
             <select id="user_select" name="user_id" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px;" required>
