@@ -225,17 +225,22 @@ function poll_instagram_container_status($container_id, $access_token, $max_wait
                 return ['status' => 'error', 'msg' => $data['error']['message'] ?? 'Lỗi kiểm tra Container Meta'];
             }
 
+            // If status_code is not present in Meta response (e.g. photo container), container is ready!
+            if (!array_key_exists('status_code', $data)) {
+                return ['status' => 'success'];
+            }
+
             $status = strtoupper($data['status_code'] ?? '');
             $last_status = $status;
 
             if ($status === 'FINISHED' || $status === 'PUBLISHED') {
                 return ['status' => 'success'];
             } elseif ($status === 'ERROR' || $status === 'EXPIRED') {
-                $msg = $data['status'] ?? ('Lỗi xử lý Container Media Instagram (Meta Status: ' . $status . ')');
+                $msg = !empty($data['status']) ? $data['status'] : ('Lỗi xử lý Container Media Instagram (Meta Status: ' . $status . ')');
                 return ['status' => 'error', 'msg' => $msg];
             }
         }
-        sleep(3);
+        sleep(2);
     }
     return ['status' => 'error', 'msg' => 'Hết thời gian chờ xử lý Container Media Instagram (Timeout ' . $max_wait_seconds . 's, Meta Status: ' . ($last_status ?: 'IN_PROGRESS') . ')'];
 }
