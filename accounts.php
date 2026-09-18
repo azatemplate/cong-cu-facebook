@@ -147,87 +147,109 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     verify_csrf();
     $del_id = intval($_POST['del_id']);
     if ($del_id !== $_SESSION['account_id']) {
-        try {
-            $pdo->beginTransaction();
+        @set_time_limit(600);
+        @ignore_user_abort(true);
+        @ini_set('memory_limit', '1024M');
 
+        try {
             // 1. Lấy toàn bộ user_id thuộc account này
             $u_stmt = $pdo->prepare("SELECT id FROM users WHERE account_id = ?");
             $u_stmt->execute([$del_id]);
             $user_ids = $u_stmt->fetchAll(PDO::FETCH_COLUMN);
 
-            // 2. Lấy toàn bộ page_id thuộc các users đó
+            // 2. Lấy toàn bộ page_id thuộc các users đó (chia batch 500 nếu nhiều user)
             $page_ids = [];
             if (!empty($user_ids)) {
-                $in_u = implode(',', array_fill(0, count($user_ids), '?'));
-                $pg_stmt = $pdo->prepare("SELECT page_id FROM pages WHERE user_id IN ($in_u)");
-                $pg_stmt->execute($user_ids);
-                $page_ids = $pg_stmt->fetchAll(PDO::FETCH_COLUMN);
-            }
-
-            // 3. Xóa dữ liệu liên quan đến các page
-            if (!empty($page_ids)) {
-                $in_p = implode(',', array_fill(0, count($page_ids), '?'));
-
-                // Xóa media files trước khi xóa scheduled_posts
-                $media_stmt = $pdo->prepare("SELECT media_path FROM scheduled_posts WHERE page_id IN ($in_p) AND media_path IS NOT NULL AND media_path != ''");
-                $media_stmt->execute($page_ids);
-                foreach ($media_stmt->fetchAll(PDO::FETCH_COLUMN) as $path) {
-                    foreach (explode(',', $path) as $p) {
-                        $p = trim($p);
-                        if (strpos($p, 'uploads/') !== false) {
-                            $full = __DIR__ . '/../' . $p;
-                            if (file_exists($full) && is_file($full)) @unlink($full);
-                        }
-                    }
+                foreach (array_chunk($user_ids, 500) as $u_chunk) {
+                    $in_u = implode(',', array_fill(0, count($u_chunk), '?'));
+                    $pg_stmt = $pdo->prepare("SELECT page_id FROM pages WHERE user_id IN ($in_u)");
+                    $pg_stmt->execute($u_chunk);
+                    $page_ids = array_merge($page_ids, $pg_stmt->fetchAll(PDO::FETCH_COLUMN));
                 }
+            }
+            $page_ids = array_values(array_unique($page_ids));
 
-                $pdo->prepare("DELETE FROM scheduled_posts WHERE page_id IN ($in_p)")->execute($page_ids);
-                $pdo->prepare("DELETE FROM posts_history WHERE page_id IN ($in_p)")->execute($page_ids);
-                $pdo->prepare("DELETE FROM page_shares WHERE page_id IN ($in_p)")->execute($page_ids);
+            // 3. Xóa scheduled_posts trực tiếp theo account_id (chia nhỏ 5000 rows/lần tránh lock DB lâu)
+            do {
+                $del_sp = $pdo->prepare("DELETE FROM scheduled_posts WHERE account_id = ? LIMIT 5000");
+                $del_sp->execute([$del_id]);
+                $affected_sp = $del_sp->rowCount();
+            } while ($affected_sp > 0);
+
+            // 4. Xóa dữ liệu liên quan đến các page (nếu có page_ids) theo chunk 500
+            if (!empty($page_ids)) {
+                foreach (array_chunk($page_ids, 500) as $p_chunk) {
+                    $in_p = implode(',', array_fill(0, count($p_chunk), '?'));
+
+                    // Xóa scheduled_posts sót lại theo page_id
+                    do {
+                        $del_sp2 = $pdo->prepare("DELETE FROM scheduled_posts WHERE page_id IN ($in_p) LIMIT 5000");
+                        $del_sp2->execute($p_chunk);
+                        $aff2 = $del_sp2->rowCount();
+                    } while ($aff2 > 0);
+
+                    $pdo->prepare("DELETE FROM posts_history WHERE page_id IN ($in_p)")->execute($p_chunk);
+                    $pdo->prepare("DELETE FROM page_shares WHERE page_id IN ($in_p)")->execute($p_chunk);
+                }
             }
 
-            // 4. Xóa page_shares mà account là người chia sẻ hoặc người nhận
-            try {
-                $pdo->prepare("DELETE FROM page_shares WHERE owner_account_id = ? OR shared_with_account_id = ?")->execute([$del_id, $del_id]);
-            } catch (PDOException $e) {}
+            // 5. Xóa các bảng liên quan đến account_id
+            $account_tables = [
+                'page_shares' => 'owner_account_id = ? OR shared_with_account_id = ?',
+                'post_campaigns' => 'account_id = ?',
+                'fetched_fanpage_posts' => 'account_id = ?',
+                'dashboard_snapshots' => 'account_id = ?',
+                'saved_replies' => 'account_id = ?',
+                'ai_configs' => 'account_id = ?',
+                'youtube_channels' => 'account_id = ?',
+                'tiktok_accounts' => 'account_id = ?',
+                'buffer_channels' => 'account_id = ?',
+                'buffer_accounts' => 'account_id = ?',
+                'instagram_accounts' => 'account_id = ?',
+                'zalo_oas' => 'account_id = ?',
+                'zalo_settings' => 'account_id = ?',
+                'proxies' => 'account_id = ?',
+                'web_visitors' => 'account_id = ?',
+                'web_messages' => 'account_id = ?',
+                'web_chat_configs' => 'account_id = ?',
+                'customer_api_configs' => 'account_id = ?',
+                'bot_chat_rules' => 'account_id = ?'
+            ];
 
-            // 5. Xóa post_campaigns thuộc account
-            try {
-                $pdo->prepare("DELETE FROM post_campaigns WHERE account_id = ?")->execute([$del_id]);
-            } catch (PDOException $e) {}
+            foreach ($account_tables as $tbl => $cond) {
+                try {
+                    if (strpos($cond, 'OR') !== false) {
+                        $pdo->prepare("DELETE FROM {$tbl} WHERE {$cond}")->execute([$del_id, $del_id]);
+                    } else {
+                        $pdo->prepare("DELETE FROM {$tbl} WHERE {$cond}")->execute([$del_id]);
+                    }
+                } catch (PDOException $e) {}
+            }
 
-            // 6. Xóa scheduled_posts thuộc account (phòng trường hợp page đã bị xóa trước đó)
-            try {
-                $pdo->prepare("DELETE FROM scheduled_posts WHERE account_id = ?")->execute([$del_id]);
-            } catch (PDOException $e) {}
-
-            // 7. Xóa pages
+            // 6. Xóa pages
             if (!empty($user_ids)) {
-                $pdo->prepare("DELETE FROM pages WHERE user_id IN ($in_u)")->execute($user_ids);
+                foreach (array_chunk($user_ids, 500) as $u_chunk) {
+                    $in_u = implode(',', array_fill(0, count($u_chunk), '?'));
+                    $pdo->prepare("DELETE FROM pages WHERE user_id IN ($in_u)")->execute($u_chunk);
+                }
             }
 
-            // 8. Xóa users
+            // 7. Xóa users
             $pdo->prepare("DELETE FROM users WHERE account_id = ?")->execute([$del_id]);
 
-            // 9. Xóa saved_replies, ai_configs, youtube_channels
-            try { $pdo->prepare("DELETE FROM saved_replies WHERE account_id = ?")->execute([$del_id]); } catch (PDOException $e) {}
-            try { $pdo->prepare("DELETE FROM ai_configs WHERE account_id = ?")->execute([$del_id]); } catch (PDOException $e) {}
-            try { $pdo->prepare("DELETE FROM youtube_channels WHERE account_id = ?")->execute([$del_id]); } catch (PDOException $e) {}
-
-            // 10. Cuối cùng xóa system_account
+            // 8. Xóa system_accounts
             $pdo->prepare("DELETE FROM system_accounts WHERE id = ?")->execute([$del_id]);
-
-            $pdo->commit();
 
             // Clear cache
             $cache_dir = __DIR__ . '/uploads/cache';
-            foreach (glob($cache_dir . "/dashboard_user_{$del_id}_*.json") as $cf) { @unlink($cf); }
-            foreach (glob($cache_dir . "/dashboard_admin_*.json") as $cf) { @unlink($cf); }
+            if (is_dir($cache_dir)) {
+                foreach (glob($cache_dir . "/dashboard_user_{$del_id}_*.json") as $cf) { @unlink($cf); }
+                foreach (glob($cache_dir . "/dashboard_admin_*.json") as $cf) { @unlink($cf); }
+            }
 
             $alert_type = 'success';
-            $alert_message = 'Đã xóa tài khoản và toàn bộ dữ liệu liên quan.';
+            $alert_message = 'Đã xóa tài khoản và toàn bộ dữ liệu liên quan thành công.';
         } catch (Exception $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
             $alert_type = 'danger';
             $alert_message = 'Lỗi khi xóa tài khoản: ' . $e->getMessage();
         }
