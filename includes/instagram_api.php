@@ -11,6 +11,7 @@ if (session_status() === PHP_SESSION_NONE) {
  * Sync Instagram Business Accounts linked to connected Facebook Pages
  */
 function sync_instagram_accounts($account_id) {
+    @set_time_limit(300);
     global $pdo;
     $synced_map = [];
     $limit_reached = false;
@@ -68,7 +69,11 @@ function sync_instagram_accounts($account_id) {
 
             $me_url = FB_API_BASE . "me/accounts?fields=id,name,access_token,instagram_business_account{id,username,name,profile_picture_url,followers_count}&limit=500&access_token=" . urlencode($u_token);
             $ch = curl_init($me_url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 15,
+                CURLOPT_CONNECTTIMEOUT => 8
+            ]);
             apply_proxy_to_curl($ch, $u_token);
             fb_curl_setssl($ch);
             $res = curl_exec($ch);
@@ -131,7 +136,11 @@ function sync_instagram_accounts($account_id) {
                     $url = FB_API_BASE . $page_id . "?fields=instagram_business_account{id,username,name,profile_picture_url,followers_count}&access_token=" . urlencode($token);
                     
                     $ch = curl_init($url);
-                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt_array($ch, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_TIMEOUT => 15,
+                        CURLOPT_CONNECTTIMEOUT => 8
+                    ]);
                     apply_proxy_to_curl($ch, $token);
                     fb_curl_setssl($ch);
 

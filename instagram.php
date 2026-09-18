@@ -1034,12 +1034,17 @@ document.getElementById('igPublishForm')?.addEventListener('submit', function(e)
         return;
     }
 
-    const activeInput = (document.getElementById('videoInputWrap')?.style.display !== 'none') 
-        ? document.getElementById('video') 
-        : document.getElementById('images');
+    const imgEl = document.getElementById('images');
+    const vidEl = document.getElementById('video');
+    const isVideoTab = document.getElementById('videoInputWrap')?.style.display !== 'none';
+    const activeInput = isVideoTab ? vidEl : imgEl;
     const driveFileId = document.getElementById('drive_file_id')?.value || '';
     const tiktokUrls = document.getElementById('tiktok_urls')?.value || '';
-    const hasLocalFiles = activeInput && activeInput.files && activeInput.files.length > 0;
+
+    const hasPhotoFiles = imgEl && imgEl.files && imgEl.files.length > 0;
+    const hasVideoFiles = vidEl && vidEl.files && vidEl.files.length > 0;
+    const inputToUpload = hasVideoFiles ? vidEl : (hasPhotoFiles ? imgEl : activeInput);
+    const hasLocalFiles = hasPhotoFiles || hasVideoFiles;
 
     if (!hasLocalFiles && !driveFileId && !tiktokUrls) {
         alert('Vui lòng cung cấp phương tiện: chọn ít nhất 1 hình ảnh/video từ máy, Google Drive hoặc dán link TikTok.');
@@ -1055,11 +1060,7 @@ document.getElementById('igPublishForm')?.addEventListener('submit', function(e)
         localStatus.innerText = '';
     }
 
-    const activeInput = (document.getElementById('videoInputWrap')?.style.display !== 'none') 
-        ? document.getElementById('video') 
-        : document.getElementById('images');
-
-    uploadLocalFilesPromise(activeInput, function(msg) {
+    uploadLocalFilesPromise(inputToUpload, function(msg) {
         if (localStatus) {
             localStatus.style.display = 'block';
             localStatus.className = 'alert alert-warning';
@@ -1081,7 +1082,7 @@ document.getElementById('igPublishForm')?.addEventListener('submit', function(e)
             }
             const fileIds = uploadedFiles.map(f => f.id).join(',');
             document.getElementById('drive_file_id').value = fileIds;
-            if (activeInput) activeInput.value = '';
+            if (inputToUpload) inputToUpload.value = '';
         }
 
         btn.textContent = '🚀 Đang lưu thông tin bài đăng...';
