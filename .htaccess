@@ -57,8 +57,8 @@
     </IfModule>
 </FilesMatch>
 
-# Block backup/archive files
-<FilesMatch "\.(zip|tar|tar\.gz|bak|old|orig|swp)$">
+# Block backup/archive files (except caourltiktok.zip extension download)
+<FilesMatch "^(?!caourltiktok\.zip$).*\.(zip|tar|tar\.gz|bak|old|orig|swp)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
@@ -67,6 +67,16 @@
         Deny from all
     </IfModule>
 </FilesMatch>
+
+<Files "caourltiktok.zip">
+    <IfModule mod_authz_core.c>
+        Require all granted
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Allow from all
+    </IfModule>
+</Files>
 
 # Block shell scripts
 <FilesMatch "\.(sh|bash)$">
