@@ -22,21 +22,18 @@ rm -rf /www/trash/* 2>/dev/null
 find /tmp -type f \( -name "*.mp4" -o -name "*.mov" -o -name "*.avi" -o -name "*.tmp" -o -name "*.png" -o -name "*.jpg" -o -name "gdrive_*" -o -name "curl_*" -o -name "yt_tik_*" -o -name "buf_chk_*" \) -mmin +5 -delete 2>/dev/null
 
 # 3. Xóa file tạm trong thư mục temp & uploads/tmp của website (Cũ hơn 5 PHÚT)
-find /www/wwwroot/fbweb.hongdolab.com/temp /www/wwwroot/fbweb.hongdolab.com/uploads/tmp -type f -mmin +5 -delete 2>/dev/null
+find /www/wwwroot/fbweb1.hongdolab.com/temp /www/wwwroot/fbweb1.hongdolab.com/uploads/tmp -type f -mmin +5 -delete 2>/dev/null
 
-# 4. Dọn dẹp website data.hongdolab.com (Cũ hơn 5 PHÚT)
-find /www/wwwroot/data.hongdolab.com/uploads /www/wwwroot/data.hongdolab.com/uploads_tmp -type f -mmin +5 -delete 2>/dev/null
+# 4. Gọi php cleanup.php dọn dẹp ngầm
+php /www/wwwroot/fbweb1.hongdolab.com/cron/cleanup.php >/dev/null 2>&1
 
-# 5. Gọi php cleanup.php dọn dẹp ngầm
-php /www/wwwroot/fbweb.hongdolab.com/cron/cleanup.php >/dev/null 2>&1
-
-# 6. Làm rỗng File Log phình to (> 10MB)
+# 5. Làm rỗng File Log phình to (> 10MB)
 find /www/server/data/ -name "*.err" -size +10M -exec truncate -s 0 {} \; 2>/dev/null
 find /www/wwwlogs/ -name "*.log" -size +10M -exec truncate -s 0 {} \; 2>/dev/null
 find /www/wwwroot/ -name "*.log" -size +10M -exec truncate -s 0 {} \; 2>/dev/null
 find /tmp/ -name "fb_*.log" -size +10M -exec truncate -s 0 {} \; 2>/dev/null
 
-# 7. Thu hẹp nhật ký hệ thống Linux về 50MB
+# 6. Thu hẹp nhật ký hệ thống Linux về 50MB
 journalctl --vacuum-size=50M 2>/dev/null
 ```
 
