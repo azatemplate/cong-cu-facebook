@@ -105,6 +105,11 @@ if (isset($_FILES['images']) && is_array($_FILES['images']['name'])) {
             $media_pool[] = ['type' => 'local', 'saved_path' => 'uploads/' . $filename, 'name' => $_FILES['images']['name'][$i]];
         }
     }
+} elseif (isset($_FILES['images']) && !is_array($_FILES['images']['name']) && $_FILES['images']['error'] === UPLOAD_ERR_OK) {
+    $ext = pathinfo($_FILES['images']['name'], PATHINFO_EXTENSION) ?: 'jpg';
+    $filename = uniqid('ig_img_') . '.' . $ext;
+    copy($_FILES['images']['tmp_name'], $upload_dir . $filename);
+    $media_pool[] = ['type' => 'local', 'saved_path' => 'uploads/' . $filename, 'name' => $_FILES['images']['name']];
 }
 
 // Video / Reels
@@ -117,6 +122,11 @@ if (isset($_FILES['video']) && is_array($_FILES['video']['name'])) {
             $media_pool[] = ['type' => 'local', 'saved_path' => 'uploads/' . $filename, 'name' => $_FILES['video']['name'][$i]];
         }
     }
+} elseif (isset($_FILES['video']) && !is_array($_FILES['video']['name']) && $_FILES['video']['error'] === UPLOAD_ERR_OK) {
+    $ext = pathinfo($_FILES['video']['name'], PATHINFO_EXTENSION) ?: 'mp4';
+    $filename = uniqid('ig_vid_') . '.' . $ext;
+    copy($_FILES['video']['tmp_name'], $upload_dir . $filename);
+    $media_pool[] = ['type' => 'local', 'saved_path' => 'uploads/' . $filename, 'name' => $_FILES['video']['name']];
 }
 
 if (empty($media_pool) && !$is_drive_folder && empty($drive_file_ids_str)) {

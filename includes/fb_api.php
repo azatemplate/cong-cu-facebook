@@ -626,8 +626,41 @@ if (!function_exists('fb_echo_log')) {
 function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title = '', $description = '', $is_reel = false, $sp_post_id = 0, $chunk_size_mb = 20) {
     @ob_implicit_flush(1);
 
+    $temp_dl_file = null;
     $is_remote_url = (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0);
-    if (!$is_remote_url) {
+    if ($is_remote_url) {
+        fb_echo_log("   📥 Đang tải video từ URL về máy chủ để chuẩn bị upload Facebook...\n");
+        if ($sp_post_id > 0 && function_exists('update_post_progress')) {
+            global $pdo;
+            if (isset($pdo)) {
+                update_post_progress($pdo, $sp_post_id, "📥 Đang tải video từ URL về máy chủ...");
+            }
+        }
+        $temp_dl_file = sys_get_temp_dir() . '/fb_vid_' . uniqid() . '.mp4';
+        $ch_dl = curl_init($file_path);
+        $fp_dl = @fopen($temp_dl_file, 'wb');
+        if (!$fp_dl) {
+            return ['status_code' => 0, 'data' => ['error' => ['message' => "Không thể tạo file tạm để tải video từ URL: {$file_path}"]]];
+        }
+        curl_setopt_array($ch_dl, [
+            CURLOPT_FILE => $fp_dl,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 300,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+        ]);
+        $dl_exec = curl_exec($ch_dl);
+        $dl_code = curl_getinfo($ch_dl, CURLINFO_HTTP_CODE);
+        $dl_err  = curl_error($ch_dl);
+        curl_close($ch_dl);
+        fclose($fp_dl);
+
+        if (!$dl_exec || $dl_code !== 200 || !file_exists($temp_dl_file) || filesize($temp_dl_file) === 0) {
+            if (file_exists($temp_dl_file)) @unlink($temp_dl_file);
+            return ['status_code' => 0, 'data' => ['error' => ['message' => "Tải video từ URL thất bại (HTTP {$dl_code}): " . ($dl_err ?: 'File rỗng')]]];
+        }
+        $file_path = $temp_dl_file;
+    } else {
         if (!file_exists($file_path) && file_exists(__DIR__ . '/../' . ltrim($file_path, '/'))) {
             $file_path = __DIR__ . '/../' . ltrim($file_path, '/');
         }
@@ -750,6 +783,7 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
 
         if (!$chunk_success) {
             fclose($handle);
+            if ($temp_dl_file && file_exists($temp_dl_file)) @unlink($temp_dl_file);
             fb_echo_log("   ❌ [Đăng Thất Bại] Chunk {$chunk_index} bị lỗi sau 3 lần thử lại.\n");
             return $res2;
         }
@@ -789,6 +823,7 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
         fb_echo_log("   ❌ [Bước 3 Thất Bại] HTTP " . ($res3['status_code'] ?? 0) . " - " . json_encode($res3['data'] ?? []) . "\n");
     }
 
+    if ($temp_dl_file && file_exists($temp_dl_file)) @unlink($temp_dl_file);
     return $res3;
 }
 

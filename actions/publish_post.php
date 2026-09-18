@@ -86,6 +86,14 @@ if (isset($_FILES['images']) && is_array($_FILES['images']['name'])) {
             $post_type = 'Image';
         }
     }
+} elseif (empty($media_pool) && isset($_FILES['images']) && !is_array($_FILES['images']['name']) && $_FILES['images']['error'] === UPLOAD_ERR_OK) {
+    $media_pool[] = [
+        'type'     => 'local',
+        'tmp_name' => $_FILES['images']['tmp_name'],
+        'name'     => $_FILES['images']['name'],
+        'mime'     => mime_content_type($_FILES['images']['tmp_name'])
+    ];
+    $post_type = 'Image';
 }
 
 $content_data_arr = [

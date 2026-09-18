@@ -219,6 +219,13 @@ if (isset($_FILES['media_files']) && is_array($_FILES['media_files']['name'])) {
             }
         }
     }
+} elseif (isset($_FILES['media_files']) && !is_array($_FILES['media_files']['name']) && $_FILES['media_files']['error'] === UPLOAD_ERR_OK) {
+    $ext      = pathinfo($_FILES['media_files']['name'], PATHINFO_EXTENSION) ?: 'jpg';
+    $filename = uniqid('buf_') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    $target   = $upload_dir . $filename;
+    if (move_uploaded_file($_FILES['media_files']['tmp_name'], $target)) {
+        $media_pool[] = ['type' => 'local', 'path' => 'uploads/' . $filename];
+    }
 }
 
 // Helper giải mã media_path cho 1 bài

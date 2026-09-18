@@ -971,6 +971,8 @@ function clearDriveSelection() {
     }
 }
 
+const isDisableLocalUpload = <?php echo $disable_local_upload ? 'true' : 'false'; ?>;
+
 function uploadLocalFilesPromise(inputEl, progressCallback) {
     return new Promise((resolve, reject) => {
         if (!inputEl || !inputEl.files || inputEl.files.length === 0) {
@@ -1015,11 +1017,21 @@ function uploadLocalFilesPromise(inputEl, progressCallback) {
                     uploadedResults.push(...data.files);
                     uploadNext(index + 1);
                 } else {
-                    reject(data.msg || `Lỗi tải file ${file.name} lên Google Drive.`);
+                    if (!isDisableLocalUpload) {
+                        console.warn('Google Drive auto-upload skipped, falling back to direct upload:', data.msg);
+                        resolve(null);
+                    } else {
+                        reject(data.msg || `Lỗi tải file ${file.name} lên Google Drive.`);
+                    }
                 }
             })
             .catch(error => {
-                reject(error.message || error || `Lỗi kết nối khi tải file ${file.name}.`);
+                if (!isDisableLocalUpload) {
+                    console.warn('Google Drive auto-upload skipped, falling back to direct upload:', error);
+                    resolve(null);
+                } else {
+                    reject(error.message || error || `Lỗi kết nối khi tải file ${file.name}.`);
+                }
             });
         }
 

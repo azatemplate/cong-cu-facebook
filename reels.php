@@ -65,7 +65,7 @@ $pages_json = json_encode($pages);
         Chọn User quản lý (Token), sau đó chọn Fanpage tương ứng để chuẩn bị đăng Reels.
     </p>
 
-    <form id="reelsForm" method="POST" action="actions/publish_video.php" enctype="multipart/form-data">
+    <form id="reelsForm" enctype="multipart/form-data">
         <div class="form-group">
             <label>1. Chọn User Quản Lý Token</label>
             <select id="user_select" name="user_id"
@@ -321,6 +321,8 @@ $pages_json = json_encode($pages);
         window.pageSelectorFilterByUser(this.value);
     });
 
+    const isDisableLocalUpload = <?php echo $disable_local_upload ? 'true' : 'false'; ?>;
+
     function uploadLocalFilesPromise(inputEl, progressCallback) {
         return new Promise((resolve, reject) => {
             if (!inputEl || !inputEl.files || inputEl.files.length === 0) {
@@ -366,11 +368,21 @@ $pages_json = json_encode($pages);
                         uploadedResults.push(...data.files);
                         uploadNext(index + 1);
                     } else {
-                        reject(data.msg || `Lỗi tải file ${file.name} lên Google Drive.`);
+                        if (!isDisableLocalUpload) {
+                            console.warn('Google Drive auto-upload skipped, falling back to direct upload:', data.msg);
+                            resolve(null);
+                        } else {
+                            reject(data.msg || `Lỗi tải file ${file.name} lên Google Drive.`);
+                        }
                     }
                 })
                 .catch(error => {
-                    reject(error.message || error || `Lỗi kết nối khi tải file ${file.name}.`);
+                    if (!isDisableLocalUpload) {
+                        console.warn('Google Drive auto-upload skipped, falling back to direct upload:', error);
+                        resolve(null);
+                    } else {
+                        reject(error.message || error || `Lỗi kết nối khi tải file ${file.name}.`);
+                    }
                 });
             }
 
