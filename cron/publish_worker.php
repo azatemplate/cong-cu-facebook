@@ -2260,8 +2260,8 @@ do {
 
         $is_auto_title = isset($content_data['auto_title']) ? (bool)$content_data['auto_title'] : false;
 
-        if (!empty($t_title_override) && mb_strlen($t_title_override, 'UTF-8') > 1900) {
-            $t_title_override = mb_substr($t_title_override, 0, 1900, 'UTF-8');
+        if (!empty($t_title_override) && mb_strlen($t_title_override, 'UTF-8') > 1700) {
+            $t_title_override = mb_substr($t_title_override, 0, 1700, 'UTF-8');
         }
 
         if ($is_auto_title && !empty($t_title_override)) {
@@ -2277,15 +2277,15 @@ do {
             if (!empty($rewritten)) $post_text = $rewritten;
         }
 
-        // ⚡ Tự động cắt bớt văn bản bài đăng để tuân thủ giới hạn tối đa (tối đa 1950 ký tự cho Instagram/TikTok/Buffer)
+        // ⚡ Tự động cắt bớt văn bản bài đăng để tuân thủ giới hạn tối đa (tối đa 1800 ký tự cho Instagram/TikTok/Buffer)
         $post_type_lower = strtolower($post['post_type']);
         if (strpos($service, 'instagram') !== false || strpos($post_type_lower, 'instagram') !== false) {
-            if (mb_strlen($post_text, 'UTF-8') > 1950) {
-                $post_text = mb_substr($post_text, 0, 1950, 'UTF-8');
+            if (mb_strlen($post_text, 'UTF-8') > 1800) {
+                $post_text = mb_substr($post_text, 0, 1800, 'UTF-8');
             }
         } elseif (strpos($service, 'tiktok') !== false || strpos($post_type_lower, 'tiktok') !== false) {
-            if (mb_strlen($post_text, 'UTF-8') > 1950) {
-                $post_text = mb_substr($post_text, 0, 1950, 'UTF-8');
+            if (mb_strlen($post_text, 'UTF-8') > 1800) {
+                $post_text = mb_substr($post_text, 0, 1800, 'UTF-8');
             }
         } elseif ($service === 'twitter' || $service === 'x') {
             if (mb_strlen($post_text, 'UTF-8') > 280) {
@@ -2295,8 +2295,8 @@ do {
             if (mb_strlen($post_text, 'UTF-8') > 500) {
                 $post_text = mb_substr($post_text, 0, 500, 'UTF-8');
             }
-        } elseif (mb_strlen($post_text, 'UTF-8') > 1950) {
-            $post_text = mb_substr($post_text, 0, 1950, 'UTF-8');
+        } elseif (mb_strlen($post_text, 'UTF-8') > 1800) {
+            $post_text = mb_substr($post_text, 0, 1800, 'UTF-8');
         }
 
         // Gọi Buffer GraphQL API
@@ -2584,8 +2584,8 @@ do {
                     $input['text'] = mb_substr($input['text'], 0, 500, 'UTF-8');
                 }
             } else {
-                if (mb_strlen($input['text'], 'UTF-8') > 1950) {
-                    $input['text'] = mb_substr($input['text'], 0, 1950, 'UTF-8');
+                if (mb_strlen($input['text'], 'UTF-8') > 1800) {
+                    $input['text'] = mb_substr($input['text'], 0, 1800, 'UTF-8');
                 }
             }
         }
@@ -2623,6 +2623,13 @@ do {
 
                     if (!isset($create_res['post']['id'])) {
                         $input['metadata']['youtube']['type'] = 'video';
+                        $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
+                        $create_res = $res['data']['createPost'] ?? null;
+                    }
+                } elseif (stripos($err_msg, 'cannot exceed') !== false || stripos($err_msg, 'characters') !== false) {
+                    // Nếu Buffer API phản hồi lỗi độ dài ký tự (do emojis/surrogate pairs/hashtags), tự động cắt về 1500 ký tự và thử lại ngay lập tức
+                    if (!empty($input['text'])) {
+                        $input['text'] = mb_substr($input['text'], 0, 1500, 'UTF-8');
                         $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
                         $create_res = $res['data']['createPost'] ?? null;
                     }
