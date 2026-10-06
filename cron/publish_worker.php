@@ -2481,10 +2481,18 @@ do {
 
             $yt_category = !empty($content_data['category']) ? (string)$content_data['category'] : '22';
 
+            $yt_type = 'VIDEO';
+            if (isset($content_data['post_mode']) && strtolower($content_data['post_mode']) === 'shorts') {
+                $yt_type = 'SHORTS';
+            } elseif (strpos(strtolower($post['post_type']), 'shorts') !== false) {
+                $yt_type = 'SHORTS';
+            }
+
             $input['metadata'] = [
                 'youtube' => [
                     'title' => $yt_title,
-                    'categoryId' => $yt_category
+                    'categoryId' => $yt_category,
+                    'type' => $yt_type
                 ]
             ];
         }
@@ -2599,6 +2607,22 @@ do {
                 } elseif (stripos($err_msg, 'PostTypeGoogleBusiness') !== false || stripos($err_msg, 'whats_new') !== false) {
                     if (isset($input['metadata']['google'])) {
                         $input['metadata']['google']['type'] = 'WHATS_NEW';
+                        $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
+                        $create_res = $res['data']['createPost'] ?? null;
+                    }
+                } elseif (stripos($err_msg, 'YouTube Shorts') !== false || stripos($err_msg, 'portrait orientation') !== false || stripos($err_msg, 'vertical') !== false) {
+                    if (!isset($input['metadata']['youtube'])) {
+                        $input['metadata']['youtube'] = [
+                            'title' => mb_substr($t_title_override ?: ($post_text ?: 'Video mới'), 0, 98),
+                            'categoryId' => '22'
+                        ];
+                    }
+                    $input['metadata']['youtube']['type'] = 'VIDEO';
+                    $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
+                    $create_res = $res['data']['createPost'] ?? null;
+
+                    if (!isset($create_res['post']['id'])) {
+                        $input['metadata']['youtube']['type'] = 'video';
                         $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
                         $create_res = $res['data']['createPost'] ?? null;
                     }
