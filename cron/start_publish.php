@@ -37,6 +37,17 @@ try {
     }
 } catch (Exception $e) {}
 
+// Kích hoạt Comment Insights Worker ngầm (Đa luồng 5 workers song song)
+try {
+    $script_insights = __DIR__ . '/start_insights_workers.php';
+    if ($is_win) {
+        @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_insights\" 5", "r"));
+    } else {
+        @exec("nohup \"$php_bin\" \"$script_insights\" 5 > /dev/null 2>&1 &");
+    }
+} catch (Exception $e) {}
+
+
 // --- ĐẢM BẢO BÁO CÁO HÀNG NGÀY & CLEANUP CHẠY ĐÚNG ---
 try {
     $today = date('Y-m-d');
@@ -79,14 +90,12 @@ try {
     if ($current_shift !== '') {
         $snap_key = $today . '_' . $current_shift;
         if ($last_snap !== $snap_key) {
-            $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('last_snapshot_time', ?) ON DUPLICATE KEY UPDATE setting_value = ?")
-                ->execute([$snap_key, $snap_key]);
-            
             $script_snap = __DIR__ . '/daily_snapshot.php';
+            $log_snap_err = dirname(__DIR__) . '/uploads/daily_snapshot_error.log';
             if ($is_win) {
                 @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_snap\"", "r"));
             } else {
-                @exec("nohup \"$php_bin\" \"$script_snap\" > /dev/null 2>&1 &");
+                @exec("nohup \"$php_bin\" \"$script_snap\" > " . escapeshellarg($log_snap_err) . " 2>&1 &");
             }
         }
     }
@@ -109,12 +118,12 @@ try {
     echo "Loi reset stuck posts: " . $e->getMessage() . "\n";
 }
 
-// --- DỌN TẤT CẢ FILE LOCK CŨ > 15 PHÚT TỰ ĐỘNG ---
+// --- DỌN TẤT CẢ FILE LOCK CŨ > 5 PHÚT TỰ ĐỘNG ---
 try {
     $lock_dir = dirname(__DIR__) . '/locks';
     if (is_dir($lock_dir)) {
         foreach (glob($lock_dir . '/*.lock') as $lf) {
-            if (file_exists($lf) && (time() - filemtime($lf)) > 900) {
+            if (file_exists($lf) && (time() - filemtime($lf)) > 300) {
                 @unlink($lf);
             }
         }
@@ -225,6 +234,7 @@ $sql = "
       AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3))
       AND sp.status IN ('pending', 'failed')
       $camp_filter
+    ORDER BY sp.scheduled_time ASC
 ";
 $stmt = $pdo->prepare($sql);
 if (!$stmt) {
@@ -332,13 +342,13 @@ foreach ($dispatch_list as $dispatch) {
     $page_ids_str = $dispatch['page_id']; // Chuỗi các page_id thuộc Token này
 
     // Kiểm tra và giải phóng lock cũ trước khi spawn worker
-    // Nếu lock > 15 phút → worker cũ đã crash hoặc account vừa được gia hạn
+    // Nếu lock > 5 phút → worker cũ đã crash hoặc account vừa được gia hạn
     $lock_dir = dirname(__DIR__) . '/locks';
     $lock_key = md5('uid_' . $uid);
     $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
     if (file_exists($lock_file)) {
         $lock_age = time() - filemtime($lock_file);
-        if ($lock_age > 900) { // > 15 phút
+        if ($lock_age > 300) { // > 5 phút
             @unlink($lock_file);
             echo "  ⚠ Đã dọn lock cũ ($lock_age giây) cho token #$uid trước khi spawn worker.\n";
         }

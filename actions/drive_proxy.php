@@ -1,5 +1,8 @@
 <?php
 // actions/drive_proxy.php
+@set_time_limit(0);
+@ini_set('max_execution_time', '0');
+@ini_set('memory_limit', '1024M');
 require_once __DIR__ . '/../includes/db.php';
 session_start();
 $action = isset($_GET['action']) ? $_GET['action'] : 'list_files';
@@ -12,30 +15,80 @@ if (!isset($_SESSION['account_id']) && $action !== 'stream' && $action !== 'down
 $account_id = isset($_GET['account_id']) ? intval($_GET['account_id']) : ($_SESSION['account_id'] ?? 1);
 $user_id = isset($_REQUEST['user_id']) ? intval($_REQUEST['user_id']) : 0;
 
-// Helper: Exchange Refresh Token for Access Token
+// Helper: Exchange Refresh Token for Access Token (Google OAuth2 Client Pattern with Cache)
 function exchange_refresh_token($client_id, $client_secret, $refresh_token) {
     if (empty($client_id) || empty($client_secret) || empty($refresh_token)) {
         return null;
     }
+
+    static $memory_cache = [];
+    $cache_key = md5($client_id . '_' . $refresh_token);
+
+    // 1. In-memory static cache check
+    if (isset($memory_cache[$cache_key])) {
+        $cached = $memory_cache[$cache_key];
+        if (!empty($cached['access_token']) && ($cached['expires_at'] - 120) > time()) {
+            return $cached['access_token'];
+        }
+    }
+
+    // 2. Disk cache check
+    $cache_file = sys_get_temp_dir() . '/gg_access_token_' . $cache_key . '.json';
+    if (file_exists($cache_file)) {
+        $json = @file_get_contents($cache_file);
+        $data = json_decode($json, true);
+        if ($data && !empty($data['access_token']) && ($data['expires_at'] - 120) > time()) {
+            $memory_cache[$cache_key] = $data;
+            return $data['access_token'];
+        }
+    }
+
+    // 3. Request fresh access token from Google OAuth2 Token Endpoint
     $token_url = 'https://oauth2.googleapis.com/token';
     $post_fields = [
-        'client_id' => $client_id,
+        'client_id'     => $client_id,
         'client_secret' => $client_secret,
         'refresh_token' => $refresh_token,
-        'grant_type' => 'refresh_token'
+        'grant_type'    => 'refresh_token'
     ];
 
     $ch = curl_init($token_url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post_fields));
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => http_build_query($post_fields),
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_IPRESOLVE      => CURL_IPRESOLVE_V4,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT        => 15
+    ]);
     $token_response_raw = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
     $token_data = json_decode($token_response_raw, true);
-    return $token_data['access_token'] ?? null;
+
+    if ($http_code === 200 && !empty($token_data['access_token'])) {
+        $expires_in = (int)($token_data['expires_in'] ?? 3600);
+        $token_info = [
+            'access_token' => $token_data['access_token'],
+            'expires_at'   => time() + $expires_in
+        ];
+        $memory_cache[$cache_key] = $token_info;
+        @file_put_contents($cache_file, json_encode($token_info));
+        return $token_data['access_token'];
+    }
+
+    if (isset($token_data['error'])) {
+        $err_desc = $token_data['error_description'] ?? $token_data['error'];
+        @file_put_contents(
+            __DIR__ . '/../webhook_db_errors.txt',
+            date('Y-m-d H:i:s') . " GOOGLE_OAUTH2_REFRESH_ERROR (HTTP {$http_code}): {$err_desc}\n",
+            FILE_APPEND
+        );
+    }
+
+    return null;
 }
 
 // Get prioritized list of token configurations WITHOUT exchanging them upfront

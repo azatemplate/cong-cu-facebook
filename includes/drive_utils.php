@@ -12,27 +12,76 @@ function get_drive_access_token($pdo, $account_id, $page_id = null) {
         if (empty($client_id) || empty($client_secret) || empty($refresh_token)) {
             return null;
         }
+
+        static $memory_cache = [];
+        $cache_key = md5($client_id . '_' . $refresh_token);
+
+        // 1. Kiểm tra cache trong bộ nhớ (Google OAuth2 Client Pattern)
+        if (isset($memory_cache[$cache_key])) {
+            $cached = $memory_cache[$cache_key];
+            if (!empty($cached['access_token']) && ($cached['expires_at'] - 120) > time()) {
+                return $cached['access_token'];
+            }
+        }
+
+        // 2. Kiểm tra cache trên đĩa cứng đệm (tránh gọi cURL nhiều lần liên tục)
+        $cache_file = sys_get_temp_dir() . '/gg_access_token_' . $cache_key . '.json';
+        if (file_exists($cache_file)) {
+            $json = @file_get_contents($cache_file);
+            $data = json_decode($json, true);
+            if ($data && !empty($data['access_token']) && ($data['expires_at'] - 120) > time()) {
+                $memory_cache[$cache_key] = $data;
+                return $data['access_token'];
+            }
+        }
+
+        // 3. Đổi token mới từ endpoint Google OAuth2 theo chuẩn Google API Client
         $token_url = 'https://oauth2.googleapis.com/token';
         $post_fields = [
-            'client_id' => $client_id,
+            'client_id'     => $client_id,
             'client_secret' => $client_secret,
             'refresh_token' => $refresh_token,
-            'grant_type' => 'refresh_token'
+            'grant_type'    => 'refresh_token'
         ];
 
         $ch = curl_init($token_url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post_fields));
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => http_build_query($post_fields),
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_IPRESOLVE      => CURL_IPRESOLVE_V4,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT        => 15
+        ]);
         $token_response_raw = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
         $token_data = json_decode($token_response_raw, true);
-        return $token_data['access_token'] ?? null;
+
+        if ($http_code === 200 && !empty($token_data['access_token'])) {
+            $expires_in = (int)($token_data['expires_in'] ?? 3600);
+            $token_info = [
+                'access_token' => $token_data['access_token'],
+                'expires_at'   => time() + $expires_in
+            ];
+            $memory_cache[$cache_key] = $token_info;
+            @file_put_contents($cache_file, json_encode($token_info));
+            return $token_data['access_token'];
+        }
+
+        // Ghi log chi tiết nếu Google từ chối cấp token (invalid_grant, client_id sai,...)
+        if (isset($token_data['error'])) {
+            $err_desc = $token_data['error_description'] ?? $token_data['error'];
+            @file_put_contents(
+                __DIR__ . '/../webhook_db_errors.txt',
+                date('Y-m-d H:i:s') . " GOOGLE_OAUTH2_REFRESH_ERROR (HTTP {$http_code}): {$err_desc}\n",
+                FILE_APPEND
+            );
+        }
+
+        return null;
     };
 
     // System default client_id / secret
@@ -149,6 +198,7 @@ function download_drive_file_temp($access_token, $file_id) {
     $cached_files = glob($temp_dir . '/gdrive_' . md5($file_id) . '.*');
     if (!empty($cached_files)) {
         foreach ($cached_files as $cf) {
+            if (substr($cf, -12) === '.downloading' || substr($cf, -4) === '.tmp') continue;
             if (file_exists($cf) && filesize($cf) > 0 && (time() - filemtime($cf)) < 7200) {
                 $c_mb = round(filesize($cf) / 1024 / 1024, 2);
                 $c_name = basename($cf);
@@ -211,11 +261,12 @@ function download_drive_file_temp($access_token, $file_id) {
         }
     }
 
-    // 3. Download nội dung file trực tiếp từ Google CDN (không qua Proxy)
-    $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media";
-    $temp_path_with_ext = $temp_dir . '/gdrive_' . md5($file_id) . '.' . $ext;
+    // 3. Download nội dung file trực tiếp từ Google CDN (vào file tạm .downloading trước)
+    $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media&supportsAllDrives=true&acknowledgeAbuse=true";
+    $temp_path_final = $temp_dir . '/gdrive_' . md5($file_id) . '.' . $ext;
+    $temp_path_downloading = $temp_path_final . '.downloading';
 
-    $fp = fopen($temp_path_with_ext, 'w+');
+    $fp = fopen($temp_path_downloading, 'w+');
     if ($fp === false) {
         return ['error' => 'Không thể tạo file tạm trên Server.'];
     }
@@ -258,21 +309,34 @@ function download_drive_file_temp($access_token, $file_id) {
     $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
     $curl_err = curl_error($ch2);
     curl_close($ch2);
-    fclose($fp);
-    @chmod($temp_path_with_ext, 0644);
+    if (is_resource($fp)) {
+        @fclose($fp);
+    }
+    clearstatcache(true, $temp_path_downloading);
 
-    if (!$success || $http_code !== 200) {
-        @unlink($temp_path_with_ext);
-        return ['error' => 'Lỗi tải file từ Google Drive (HTTP ' . $http_code . ', CURL: ' . $curl_err . ').'];
+    $file_exists = file_exists($temp_path_downloading);
+    $file_size = $file_exists ? filesize($temp_path_downloading) : 0;
+
+    if (!$success || $http_code !== 200 || !$file_exists || $file_size === 0) {
+        if ($file_exists && $file_size === 0 && $http_code === 200) {
+            $err_msg = 'Tệp tải về từ Google Drive có dung lượng 0 byte (HTTP 200). Vui lòng kiểm tra quyền hoặc file trên Drive.';
+        } else {
+            $err_msg = 'Lỗi tải file từ Google Drive (HTTP ' . $http_code . ', CURL: ' . ($curl_err ?: 'Bị ngắt kết nối hoặc dung lượng 0 byte') . ').';
+        }
+        @unlink($temp_path_downloading);
+        return ['error' => $err_msg];
     }
 
-    $d_mb = round(filesize($temp_path_with_ext) / 1024 / 1024, 2);
+    @rename($temp_path_downloading, $temp_path_final);
+    @chmod($temp_path_final, 0644);
+
+    $d_mb = round(filesize($temp_path_final) / 1024 / 1024, 2);
     echo "   → Tải xong file '{$file_name}' ({$d_mb} MB) từ Google Drive.\n";
     if (ob_get_level() > 0) @ob_flush();
     @flush();
 
     return [
-        'path' => $temp_path_with_ext,
+        'path' => $temp_path_final,
         'name' => $file_name,
         'mime_type' => $mime_type
     ];
@@ -419,13 +483,7 @@ if (!function_exists('resolve_drive_folder_file')) {
             return ['error' => 'Không tìm thấy tệp tin phù hợp trong thư mục.'];
         }
 
-        // Nếu KHÔNG bật "Chống trùng và xóa file đã đăng Drive" => Lấy ngẫu nhiên 1 tệp bình thường, không chặn DB
-        if (!$only_anti_duplicate) {
-            shuffle($candidates);
-            return $candidates[0];
-        }
-
-        // --- NẾU CÓ BẬT CHỐNG TRÙNG VÀ XÓA FILE DRIVE ($only_anti_duplicate = true) ---
+        // Xoay vòng qua tất cả các file chưa đăng trong thư mục Drive để tránh lặp file
         $posted_files = [];
         try {
             $stmt = $pdo->prepare("SELECT file_id FROM posted_folder_files WHERE folder_id = ?");
@@ -440,13 +498,17 @@ if (!function_exists('resolve_drive_folder_file')) {
             }
         }
 
-        // Recycle if all files are posted
+        // Đã đăng hết toàn bộ file trong thư mục -> Tái sử dụng (nếu không bật xóa file) hoặc báo hết bài (nếu có bật xóa file)
         if (empty($unposted_candidates) && !empty($posted_files)) {
-            try {
-                $stmt = $pdo->prepare("DELETE FROM posted_folder_files WHERE folder_id = ?");
-                $stmt->execute([$folder_id]);
-            } catch (Exception $e) {}
-            $unposted_candidates = $candidates;
+            if (!$only_anti_duplicate) {
+                try {
+                    $stmt = $pdo->prepare("DELETE FROM posted_folder_files WHERE folder_id = ?");
+                    $stmt->execute([$folder_id]);
+                } catch (Exception $e) {}
+                $unposted_candidates = $candidates;
+            } else {
+                return ['error' => 'Tất cả các tệp trong thư mục đã được đăng.'];
+            }
         }
 
         if (empty($unposted_candidates)) {
@@ -474,6 +536,95 @@ if (!function_exists('resolve_drive_folder_file')) {
     }
 }
 
+if (!function_exists('resolve_drive_folder_files_multi')) {
+    function resolve_drive_folder_files_multi($pdo, $access_token, $folder_id, $mime_filter = null, $only_anti_duplicate = false, $count = 1) {
+        $files = list_drive_files_in_folder($access_token, $folder_id);
+        if ($files === false) {
+            return ['error' => 'Không thể kết nối API Google Drive hoặc thư mục không tồn tại.'];
+        }
+
+        $candidates = [];
+        foreach ($files as $file) {
+            $mime = $file['mimeType'];
+            if ($mime === 'application/vnd.google-apps.folder') {
+                continue;
+            }
+            if ($mime_filter !== null) {
+                $matched = false;
+                foreach ((array)$mime_filter as $filter) {
+                    $pattern = '/^' . str_replace(['/', '*'], ['\/', '.+'], $filter) . '$/i';
+                    if (preg_match($pattern, $mime)) {
+                        $matched = true;
+                        break;
+                    }
+                }
+                if (!$matched) continue;
+            }
+            $candidates[] = $file;
+        }
+
+        if (empty($candidates)) {
+            return ['error' => 'Không tìm thấy tệp tin phù hợp trong thư mục.'];
+        }
+
+        if (!$only_anti_duplicate) {
+            shuffle($candidates);
+            return array_slice($candidates, 0, min($count, count($candidates)));
+        }
+
+        // With anti-duplicate
+        $posted_files = [];
+        try {
+            $stmt = $pdo->prepare("SELECT file_id FROM posted_folder_files WHERE folder_id = ?");
+            $stmt->execute([$folder_id]);
+            $posted_files = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        } catch (Exception $e) {}
+
+        $unposted_candidates = [];
+        foreach ($candidates as $file) {
+            if (!in_array($file['id'], $posted_files)) {
+                $unposted_candidates[] = $file;
+            }
+        }
+
+        if (empty($unposted_candidates) && !empty($posted_files)) {
+            try {
+                $stmt = $pdo->prepare("DELETE FROM posted_folder_files WHERE folder_id = ?");
+                $stmt->execute([$folder_id]);
+            } catch (Exception $e) {}
+            $unposted_candidates = $candidates;
+        }
+
+        if (empty($unposted_candidates)) {
+            return ['error' => 'Không tìm thấy tệp tin phù hợp trong thư mục.'];
+        }
+
+        shuffle($unposted_candidates);
+        $result = [];
+        foreach ($unposted_candidates as $file) {
+            if (count($result) >= $count) break;
+            $file_id = $file['id'];
+            try {
+                $stmt = $pdo->prepare("INSERT INTO posted_folder_files (folder_id, file_id) VALUES (?, ?)");
+                $stmt->execute([$folder_id, $file_id]);
+                $result[] = $file;
+            } catch (PDOException $e) {
+                if ($e->getCode() == '23000') {
+                    continue;
+                } else {
+                    $result[] = $file;
+                }
+            }
+        }
+
+        if (empty($result)) {
+            return ['error' => 'Tất cả các tệp trong thư mục đã được đăng hoặc đang được đăng bởi kênh khác.'];
+        }
+
+        return $result;
+    }
+}
+
 function make_drive_file_public($access_token, $file_id) {
     if (empty($file_id) || empty($access_token)) return;
     $url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "/permissions";
@@ -493,6 +644,188 @@ function make_drive_file_public($access_token, $file_id) {
     @curl_close($ch);
 }
 
+if (!function_exists('get_or_create_folder_id')) {
+    function get_or_create_folder_id($access_token, $folder_name) {
+        $q = "mimeType = 'application/vnd.google-apps.folder' and name = '" . str_replace("'", "\\'", $folder_name) . "' and trashed = false";
+        $url = "https://www.googleapis.com/drive/v3/files?q=" . urlencode($q) . "&fields=files(id)";
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer $access_token"
+        ]);
+        $response = curl_exec($ch);
+        if ($response === false) {
+            curl_close($ch);
+            return false;
+        }
+        curl_close($ch);
+        
+        $data = json_decode($response, true);
+        if (!empty($data['files'])) {
+            return $data['files'][0]['id'];
+        }
+        
+        $create_url = "https://www.googleapis.com/drive/v3/files";
+        $post_data = [
+            'name' => $folder_name,
+            'mimeType' => 'application/vnd.google-apps.folder'
+        ];
+        
+        $ch = curl_init($create_url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer $access_token",
+            "Content-Type: application/json"
+        ]);
+        $response = curl_exec($ch);
+        if ($response === false) {
+            curl_close($ch);
+            return false;
+        }
+        curl_close($ch);
+        
+        $data = json_decode($response, true);
+        return $data['id'] ?? false;
+    }
+}
+
+if (!function_exists('detect_mime_type')) {
+    function detect_mime_type($tmp_name, $original_name, $client_mime_type = 'application/octet-stream') {
+        $ext = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
+        $map = [
+            'jpg'  => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png'  => 'image/png',
+            'gif'  => 'image/gif',
+            'webp' => 'image/webp',
+            'mp4'  => 'video/mp4',
+            'mov'  => 'video/quicktime',
+            'avi'  => 'video/x-msvideo',
+            'mkv'  => 'video/x-matroska',
+            'webm' => 'video/webm'
+        ];
+        if (isset($map[$ext])) {
+            return $map[$ext];
+        }
+        if (!empty($client_mime_type) && $client_mime_type !== 'application/octet-stream') {
+            return $client_mime_type;
+        }
+        if (extension_loaded('fileinfo') && function_exists('mime_content_type')) {
+            $mime = @mime_content_type($tmp_name);
+            if ($mime) return $mime;
+        }
+        return 'application/octet-stream';
+    }
+}
+
+if (!function_exists('upload_file_to_drive_resumable')) {
+    function upload_file_to_drive_resumable($access_token, $file_path, $file_name, $mime_type, $parent_folder_id) {
+        $file_size = filesize($file_path);
+        
+        $init_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable";
+        $metadata = [
+            'name' => $file_name,
+            'parents' => [$parent_folder_id]
+        ];
+        $metadata_json = json_encode($metadata);
+        
+        $ch = curl_init($init_url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $metadata_json);
+        curl_setopt($ch, CURLOPT_HEADER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer $access_token",
+            "Content-Type: application/json; charset=UTF-8",
+            "X-Upload-Content-Type: $mime_type",
+            "X-Upload-Content-Length: $file_size"
+        ]);
+        
+        $response = curl_exec($ch);
+        if ($response === false) {
+            $error_msg = curl_error($ch);
+            curl_close($ch);
+            return ['error' => true, 'msg' => 'cURL Error (Initiation): ' . $error_msg];
+        }
+        
+        $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $headers = substr($response, 0, $header_size);
+        curl_close($ch);
+        
+        $location = null;
+        foreach (explode("\r\n", $headers) as $line) {
+            if (stripos($line, 'Location:') === 0) {
+                $location = trim(substr($line, 9));
+                break;
+            }
+        }
+        
+        if (!$location) {
+            return ['error' => true, 'msg' => 'Could not retrieve upload Location header from Drive API.'];
+        }
+        
+        $fp = fopen($file_path, 'rb');
+        if (!$fp) {
+            return ['error' => true, 'msg' => 'Cannot open local file for reading.'];
+        }
+        
+        $ch = curl_init($location);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+        curl_setopt($ch, CURLOPT_INFILE, $fp);
+        curl_setopt($ch, CURLOPT_INFILESIZE, $file_size);
+        curl_setopt($ch, CURLOPT_UPLOAD, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer $access_token",
+            "Content-Type: $mime_type",
+            "Content-Length: $file_size"
+        ]);
+        
+        $upload_response = curl_exec($ch);
+        $upload_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        fclose($fp);
+        curl_close($ch);
+        
+        $data = json_decode($upload_response, true);
+        if (($upload_http_code === 200 || $upload_http_code === 201) && isset($data['id'])) {
+            return $data;
+        }
+        
+        return [
+            'error' => true,
+            'msg' => isset($data['error']['message']) ? $data['error']['message'] : 'Upload failed (HTTP ' . $upload_http_code . ')'
+        ];
+    }
+}
+
+if (!function_exists('upload_local_video_to_drive')) {
+    function upload_local_video_to_drive($pdo, $account_id, $local_file_path, $original_name = null) {
+        if (!file_exists($local_file_path) || filesize($local_file_path) < 10) {
+            return false;
+        }
+
+        $drive_token = get_drive_access_token($pdo, $account_id, null);
+        if (!$drive_token) return false;
+
+        $folder_id = get_or_create_folder_id($drive_token, 'HONGDOLABS');
+        if (!$folder_id) return false;
+
+        $file_name = $original_name ? $original_name : basename($local_file_path);
+        $mime = detect_mime_type($local_file_path, $file_name, 'video/mp4');
+
+        $res = upload_file_to_drive_resumable($drive_token, $local_file_path, $file_name, $mime, $folder_id);
+
+        if (isset($res['id'])) {
+            make_drive_file_public($drive_token, $res['id']);
+            return $res['id'];
+        }
+        return false;
+    }
+}
+
 if (!function_exists('upload_local_file_to_drive_public')) {
     function upload_local_file_to_drive_public($pdo, $account_id, $local_file_path) {
         if (!file_exists($local_file_path) || filesize($local_file_path) < 10) {
@@ -501,15 +834,6 @@ if (!function_exists('upload_local_file_to_drive_public')) {
 
         $drive_token = get_drive_access_token($pdo, $account_id, null);
         if (!$drive_token) return false;
-
-        $proxy_file = __DIR__ . '/../actions/drive_proxy.php';
-        if (file_exists($proxy_file)) {
-            require_once $proxy_file;
-        }
-
-        if (!function_exists('get_or_create_folder_id') || !function_exists('upload_file_to_drive_resumable')) {
-            return false;
-        }
 
         $folder_id = get_or_create_folder_id($drive_token, 'HONGDOLABS');
         if (!$folder_id) return false;
@@ -525,6 +849,7 @@ if (!function_exists('upload_local_file_to_drive_public')) {
             if ($is_img) {
                 return "https://lh3.googleusercontent.com/d/" . $res['id'] . "=w2000";
             }
+            return $res['id'];
         }
         return false;
     }
