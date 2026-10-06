@@ -15,6 +15,7 @@ if (!isset($_SESSION['account_id'])) {
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/drive_utils.php';
+require_once __DIR__ . '/../includes/kho_data_helper.php';
 
 ob_end_clean();
 header('Content-Type: application/json');
@@ -26,10 +27,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $account_id         = $_SESSION['account_id'];
 $text_input         = trim($_POST['text'] ?? '');
+if (mb_strlen($text_input, 'UTF-8') > 1700) {
+    $text_input = mb_substr($text_input, 0, 1700, 'UTF-8');
+}
 $selected_channels  = $_POST['channels'] ?? [];
 $auto_title         = isset($_POST['auto_title']) && $_POST['auto_title'] == '1';
 $use_ai             = isset($_POST['use_ai']) && $_POST['use_ai'] == '1';
 $delete_drive_file  = isset($_POST['delete_drive_file']) && $_POST['delete_drive_file'] == '1';
+$data_group_id      = intval($_POST['data_group_id'] ?? ($_REQUEST['data_group_id'] ?? 0));
+$data_mode          = trim($_POST['data_mode'] ?? ($_REQUEST['data_mode'] ?? 'dedup'));
 $tiktok_urls_str    = trim($_POST['tiktok_urls'] ?? '');
 $drive_file_ids_str = trim($_POST['drive_file_id'] ?? '');
 
@@ -65,7 +71,9 @@ if (empty($channels)) {
 $media_pool      = [];
 $is_drive_folder = (strpos($drive_file_ids_str, 'folder:') === 0);
 
-if (!empty($tiktok_urls_str)) {
+if ($data_group_id > 0) {
+    $media_pool[] = ['type' => 'kho_data', 'group_id' => $data_group_id, 'mode' => $data_mode];
+} elseif (!empty($tiktok_urls_str)) {
     foreach (array_filter(array_map('trim', explode("\n", $tiktok_urls_str))) as $url) {
         $media_pool[] = ['type' => 'tiktok', 'url' => $url];
     }
@@ -219,18 +227,18 @@ if (isset($_FILES['media_files']) && is_array($_FILES['media_files']['name'])) {
             }
         }
     }
-} elseif (isset($_FILES['media_files']) && !is_array($_FILES['media_files']['name']) && $_FILES['media_files']['error'] === UPLOAD_ERR_OK) {
-    $ext      = pathinfo($_FILES['media_files']['name'], PATHINFO_EXTENSION) ?: 'jpg';
-    $filename = uniqid('buf_') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-    $target   = $upload_dir . $filename;
-    if (move_uploaded_file($_FILES['media_files']['tmp_name'], $target)) {
-        $media_pool[] = ['type' => 'local', 'path' => 'uploads/' . $filename];
-    }
 }
 
 // Helper giải mã media_path cho 1 bài
-function resolve_buffer_media_path($media) {
+function resolve_buffer_media_path($media, $pdo = null, $account_id = 0) {
     if (!$media) return '';
+    if ($media['type'] === 'kho_data') {
+        $url = get_url_from_kho_data($pdo, $account_id, $media['group_id'], $media['mode']);
+        if (!$url) {
+            throw new Exception("Nhóm Data trong Kho Data đã hết URL khả dụng.");
+        }
+        return 'tiktok:' . $url;
+    }
     if ($media['type'] === 'folder') return 'folder:' . $media['id'];
     if ($media['type'] === 'drive') return 'drive:' . $media['id'];
     if ($media['type'] === 'tiktok') return 'tiktok:' . $media['url'];
@@ -291,7 +299,7 @@ try {
             
             foreach ($channels as $c_idx => $c) {
                 $media_item = !empty($media_pool) ? $media_pool[($schedule_index + $c_idx) % count($media_pool)] : null;
-                $media_path_str = resolve_buffer_media_path($media_item);
+                $media_path_str = resolve_buffer_media_path($media_item, $pdo, $account_id);
 
                 $orig_src = '';
                 if ($media_item) {
@@ -330,7 +338,7 @@ try {
     } else {
         foreach ($channels as $c_idx => $c) {
             $media_item = !empty($media_pool) ? $media_pool[$c_idx % count($media_pool)] : null;
-            $media_path_str = resolve_buffer_media_path($media_item);
+            $media_path_str = resolve_buffer_media_path($media_item, $pdo, $account_id);
 
             $orig_src = '';
             if ($media_item) {
