@@ -630,13 +630,13 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
 
     $res1 = fb_api_request($endpoint, $start_params, 'POST', [], 60);
 
-    if ($res1['status_code'] !== 200 || empty($res1['data']['video_id']) || empty($res1['data']['upload_session_id'])) {
+    if ($res1['status_code'] !== 200 || empty($res1['data']['video_id'])) {
         fb_echo_log("   ❌ [Bước 1 Thất Bại] HTTP " . ($res1['status_code'] ?? 0) . " - " . json_encode($res1['data'] ?? []) . "\n");
         return $res1;
     }
 
     $video_id          = $res1['data']['video_id'];
-    $upload_session_id = $res1['data']['upload_session_id'];
+    $upload_session_id = $res1['data']['upload_session_id'] ?? $res1['data']['video_id'];
     $start_offset      = (int)($res1['data']['start_offset'] ?? 0);
 
     fb_echo_log("   ✅ [Bước 1 Thành Công] Video ID: {$video_id} - Session ID: {$upload_session_id}\n");

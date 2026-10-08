@@ -1482,6 +1482,7 @@ do {
         if (isset($content_data['title'])) $content_data['title'] = spin_text($content_data['title']);
 
         if (isset($content_data['use_ai']) && $content_data['use_ai']) {
+            if (function_exists('update_post_progress')) update_post_progress($pdo, $post['id'], '🤖 Đang tạo nội dung YouTube bằng AI...');
             $is_auto = isset($content_data['auto_title']) && $content_data['auto_title'];
             if ($is_auto && !empty($t_title_override)) {
                 // Checkbox auto_title ON: {prompt} = Tên file/Title TikTok + mô tả user nhập (nếu có)
@@ -1563,6 +1564,7 @@ do {
 
         // --- RESUMABLE UPLOAD PROCESS ---
         $file_size = filesize($abs_media_path);
+        if (function_exists('update_post_progress')) update_post_progress($pdo, $post['id'], '📤 Đang tải video lên YouTube...');
 
         $ch_init = curl_init('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status');
         curl_setopt($ch_init, CURLOPT_RETURNTRANSFER, true);
