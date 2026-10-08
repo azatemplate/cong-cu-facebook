@@ -79,14 +79,14 @@ function ensure_db_schema_ready($pdo) {
     static $already_checked = false;
     if ($already_checked) return;
 
-    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v18.done';
+    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v19.done';
     if (file_exists($flag_file)) {
         $already_checked = true;
         return;
     }
 
     try {
-        $chk = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'schema_init_v18_done'");
+        $chk = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'schema_init_v19_done'");
         if ($chk && $chk->fetchColumn() === '1') {
             @file_put_contents($flag_file, date('Y-m-d H:i:s'));
             $already_checked = true;
