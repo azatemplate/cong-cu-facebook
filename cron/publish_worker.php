@@ -3793,9 +3793,9 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
     if (ob_get_level() > 0) @ob_flush();
     @flush();
     if (function_exists('ensure_pdo_alive')) ensure_pdo_alive($pdo);
-    // Cắt và chuẩn hóa thông báo lỗi Quota YouTube API 429
-    if (stripos($msg, 'Quota exceeded') !== false || stripos($msg, 'rateLimitExceeded') !== false || stripos($msg, 'RESOURCE_EXHAUSTED') !== false || stripos($msg, 'defaultVideoInsertPerDayPerProject') !== false) {
-        $msg = "Lỗi YouTube API: Đã đạt giới hạn Quota/ngày";
+    // Cắt và chuẩn hóa thông báo lỗi Quota / Upload Limit YouTube API
+    if (stripos($msg, 'Quota exceeded') !== false || stripos($msg, 'rateLimitExceeded') !== false || stripos($msg, 'RESOURCE_EXHAUSTED') !== false || stripos($msg, 'defaultVideoInsertPerDayPerProject') !== false || stripos($msg, 'uploadLimitExceeded') !== false || stripos($msg, 'exceeded the number of videos') !== false) {
+        $msg = "Lỗi YouTube: Tài khoản kênh đã vượt quá giới hạn đăng video tối đa trong ngày (YouTube Daily Upload Limit Exceeded)";
     }
 
     // Bắt lỗi Facebook/TikTok giới hạn tần suất đăng bài (Spam Rate Limit) -> GỠ TOÀN BỘ LỊCH CỦA PAGE ĐÓ RA KHỎI CAMPAIGN
