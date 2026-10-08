@@ -25,10 +25,9 @@ $temp_drive_file = null;
 
 try {
     $stmt = $pdo->prepare("
-        SELECT sp.*, p.access_token as page_access_token, sa.access_token as account_token
+        SELECT sp.*, p.access_token as page_access_token
         FROM scheduled_posts sp
         LEFT JOIN pages p ON sp.page_id = p.page_id
-        LEFT JOIN system_accounts sa ON sp.account_id = sa.id
         WHERE sp.id = ?
     ");
     $stmt->execute([$post_id]);
@@ -38,7 +37,7 @@ try {
         die("Post #{$post_id} not found.\n");
     }
 
-    $page_token = !empty($post['page_access_token']) ? $post['page_access_token'] : ($post['account_token'] ?? '');
+    $page_token = !empty($post['page_access_token']) ? $post['page_access_token'] : '';
     $page_id    = $post['page_id'];
     $raw_media  = $post['media_path'];
     $post_type  = $post['post_type'];
