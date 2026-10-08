@@ -460,6 +460,11 @@ function ensure_db_schema_ready($pdo) {
         try {
             $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
         } catch (Exception $e) {}
+        try {
+            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_status ENUM('none','pending','uploading','uploaded','failed') DEFAULT 'none'");
+            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preuploaded_media_id VARCHAR(255) DEFAULT NULL");
+            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_session_id VARCHAR(255) DEFAULT NULL");
+        } catch (Exception $e) {}
 
         $add_idx = function($p, $tbl, $name, $cols) {
             try {
@@ -483,6 +488,7 @@ function ensure_db_schema_ready($pdo) {
         $add_idx($pdo, 'scheduled_posts', 'idx_post_type_sched', 'post_type, scheduled_time');
         $add_idx($pdo, 'scheduled_posts', 'idx_updated_at', 'updated_at');
         $add_idx($pdo, 'scheduled_posts', 'idx_status_retry', 'status, retry_count');
+        $add_idx($pdo, 'scheduled_posts', 'idx_preupload', 'preupload_status, scheduled_time, status');
         $add_idx($pdo, 'pages', 'idx_user_id', 'user_id');
         $add_idx($pdo, 'pages', 'idx_page_id', 'page_id');
         $add_idx($pdo, 'users', 'idx_account_id', 'account_id');

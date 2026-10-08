@@ -3678,7 +3678,23 @@ do {
     set_time_limit(600); // Allow long upload for videos
     update_post_progress($pdo, $post['id'], '🚀 Đang tải lên Facebook...');
     if (strpos($post_type, 'Story') === false) {
-        if ($post_type === 'Video' || $post_type === 'Reel') {
+        if (!empty($post['preuploaded_media_id'])) {
+            echo "   🚀 [INSTANT PUBLISH] Bài viết đã được Pre-upload trước (Media ID: {$post['preuploaded_media_id']}). Đang xuất bản tức thì 0.5s...\n";
+            update_post_progress($pdo, $post['id'], '⚡ Đang xuất bản tức thì (Pre-uploaded)...');
+            $is_photo_type = ($post_type === 'Photo' || strpos($post_type, 'Photo') !== false);
+            $v_title = $p_title ?? '';
+            $v_desc = $post_data['description'] ?? ($post['content'] ?? '');
+            $response = fb_instant_publish_preuploaded(
+                $post['page_id'],
+                $page_access_token,
+                $post['preuploaded_media_id'],
+                $post['preupload_session_id'] ?? '',
+                $v_desc,
+                $v_title,
+                ($post_type === 'Reel'),
+                $is_photo_type
+            );
+        } elseif ($post_type === 'Video' || $post_type === 'Reel') {
             $is_reel = ($post_type === 'Reel');
             $v_title = $p_title ?? '';
             $v_desc = $post_data['description'] ?? '';

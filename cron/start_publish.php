@@ -47,6 +47,16 @@ try {
     }
 } catch (Exception $e) {}
 
+// Kích hoạt Pre-upload Dispatcher ngầm (chỉ chạy khi hàng đợi rảnh)
+try {
+    $script_preupload = __DIR__ . '/start_preupload.php';
+    if ($is_win) {
+        @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_preupload\"", "r"));
+    } else {
+        @exec("nohup \"$php_bin\" \"$script_preupload\" > /dev/null 2>&1 &");
+    }
+} catch (Exception $e) {}
+
 
 // --- ĐẢM BẢO BÁO CÁO HÀNG NGÀY & CLEANUP CHẠY ĐÚNG ---
 try {

@@ -949,4 +949,196 @@ function process_auto_comment_reply($pdo, $page_id, $comment_id, $sender_id = ''
         return false;
     }
 }
+
+/**
+ * Pre-upload media (Photo or Video/Reel) to Meta Graph API with published=false.
+ * Returns array ['status' => true/false, 'media_id' => string, 'session_id' => string, 'error' => string]
+ */
+function fb_preupload_media($page_id, $page_access_token, $file_path, $post_type = 'Video') {
+    if (empty($page_id) || empty($page_access_token) || empty($file_path)) {
+        return ['status' => false, 'error' => 'Missing page_id, token, or file_path'];
+    }
+
+    $is_photo = ($post_type === 'Photo' || strpos($post_type, 'Photo') !== false || preg_match('/\.(jpg|jpeg|png|webp|gif)$/i', $file_path));
+
+    // ── 1. PRE-UPLOAD PHOTO ───────────────────────────────────────────
+    if ($is_photo) {
+        $endpoint = $page_id . '/photos';
+        $is_remote_url = (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0);
+        
+        $params = [
+            'published'    => 'false',
+            'access_token' => $page_access_token
+        ];
+
+        if ($is_remote_url) {
+            $params['url'] = $file_path;
+            $res = fb_api_request($endpoint, $params, 'POST', [], 60);
+        } else {
+            if (!file_exists($file_path) && file_exists(__DIR__ . '/../' . ltrim($file_path, '/'))) {
+                $file_path = __DIR__ . '/../' . ltrim($file_path, '/');
+            }
+            if (!file_exists($file_path)) {
+                return ['status' => false, 'error' => 'Local photo file not found'];
+            }
+            $post_data = [
+                'published'    => 'false',
+                'access_token' => $page_access_token,
+                'source'       => new CURLFile($file_path)
+            ];
+            $res = fb_api_request($endpoint, [], 'POST', $post_data, 60);
+        }
+
+        if (($res['status_code'] === 200 || $res['status_code'] === 201) && !empty($res['data']['id'])) {
+            return [
+                'status'   => true,
+                'media_id' => (string)$res['data']['id']
+            ];
+        }
+        return ['status' => false, 'error' => json_encode($res['data'] ?? [])];
+    }
+
+    // ── 2. PRE-UPLOAD VIDEO / REEL (Phase 1 Start + Phase 2 Transfer Chunks) ──
+    $is_remote_url = (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0);
+    if (!$is_remote_url) {
+        if (!file_exists($file_path) && file_exists(__DIR__ . '/../' . ltrim($file_path, '/'))) {
+            $file_path = __DIR__ . '/../' . ltrim($file_path, '/');
+        }
+        if (!file_exists($file_path)) {
+            return ['status' => false, 'error' => 'Local video file not found'];
+        }
+    }
+
+    $file_size = filesize($file_path);
+    if ($file_size <= 0) {
+        return ['status' => false, 'error' => 'Invalid video file size'];
+    }
+
+    $endpoint = $page_id . '/videos';
+
+    // Phase 1: Start
+    $start_params = [
+        'upload_phase' => 'start',
+        'file_size'    => $file_size,
+        'access_token' => $page_access_token
+    ];
+
+    $res1 = fb_api_request($endpoint, $start_params, 'POST', [], 60);
+    if ($res1['status_code'] !== 200 || empty($res1['data']['video_id']) || empty($res1['data']['upload_session_id'])) {
+        return ['status' => false, 'error' => 'Phase 1 Start failed: ' . json_encode($res1['data'] ?? [])];
+    }
+
+    $video_id          = (string)$res1['data']['video_id'];
+    $upload_session_id = (string)$res1['data']['upload_session_id'];
+    $start_offset      = (int)($res1['data']['start_offset'] ?? 0);
+
+    // Phase 2: Transfer Chunks
+    $handle = @fopen($file_path, 'rb');
+    if (!$handle) {
+        return ['status' => false, 'error' => 'Cannot open video file'];
+    }
+
+    $chunk_size_bytes = 10 * 1024 * 1024; // 10MB chunk
+    $temp_dir = __DIR__ . '/../uploads/tmp';
+    if (!is_dir($temp_dir)) @mkdir($temp_dir, 0777, true);
+
+    $chunk_index = 0;
+    while ($start_offset < $file_size) {
+        $chunk_index++;
+        fseek($handle, $start_offset);
+        $chunk_data = fread($handle, $chunk_size_bytes);
+        if ($chunk_data === false || strlen($chunk_data) === 0) break;
+
+        $current_chunk_len = strlen($chunk_data);
+        $chunk_file_path = $temp_dir . '/preup_' . $upload_session_id . '_' . $start_offset . '.tmp';
+        file_put_contents($chunk_file_path, $chunk_data);
+        unset($chunk_data);
+
+        $safe_ext  = pathinfo($file_path, PATHINFO_EXTENSION);
+        $safe_name = 'preup_chunk_' . $chunk_index . ($safe_ext ? '.' . $safe_ext : '.mp4');
+
+        $chunk_params = [
+            'upload_phase'      => 'transfer',
+            'upload_session_id' => $upload_session_id,
+            'start_offset'      => (string)$start_offset,
+            'video_file_chunk'  => new CURLFile($chunk_file_path, 'application/octet-stream', $safe_name),
+            'access_token'      => $page_access_token
+        ];
+
+        $retry_count = 0;
+        $chunk_success = false;
+        while ($retry_count < 3 && !$chunk_success) {
+            $retry_count++;
+            $res2 = fb_api_request($endpoint, [], 'POST', $chunk_params, 60);
+            if ($res2['status_code'] === 200 || $res2['status_code'] === 206) {
+                $chunk_success = true;
+                if (isset($res2['data']['start_offset'])) {
+                    $next_offset = (int)$res2['data']['start_offset'];
+                    $start_offset = ($next_offset > $start_offset) ? $next_offset : ($start_offset + $current_chunk_len);
+                } else {
+                    $start_offset += $current_chunk_len;
+                }
+            } else {
+                sleep(2);
+            }
+        }
+
+        @unlink($chunk_file_path);
+        if (!$chunk_success) {
+            fclose($handle);
+            return ['status' => false, 'error' => "Phase 2 Chunk {$chunk_index} failed"];
+        }
+    }
+
+    fclose($handle);
+    return [
+        'status'     => true,
+        'media_id'   => $video_id,
+        'session_id' => $upload_session_id
+    ];
+}
+
+/**
+ * Instant publish an already pre-uploaded media item to Meta Graph API.
+ * Takes 0.5s with zero file upload bandwidth.
+ */
+function fb_instant_publish_preuploaded($page_id, $page_access_token, $media_id, $session_id = '', $content = '', $title = '', $is_reel = false, $is_photo = false) {
+    if (empty($page_id) || empty($page_access_token) || empty($media_id)) {
+        return ['status_code' => 0, 'data' => ['error' => ['message' => 'Missing preuploaded media ID or token']]];
+    }
+
+    // ── 1. INSTANT PUBLISH PHOTO ──────────────────────────────────────
+    if ($is_photo) {
+        $endpoint = $page_id . '/feed';
+        $params = [
+            'access_token'        => $page_access_token,
+            'message'             => $content,
+            'attached_media[0]'   => json_encode(['media_fbid' => $media_id])
+        ];
+        return fb_api_request($endpoint, [], 'POST', $params, 30);
+    }
+
+    // ── 2. INSTANT PUBLISH VIDEO / REEL (Phase 3 Finish) ──────────────
+    $endpoint = $page_id . '/videos';
+    $finish_params = [
+        'upload_phase'      => 'finish',
+        'upload_session_id' => $session_id ?: $media_id,
+        'access_token'      => $page_access_token,
+        'title'             => $title,
+        'description'       => $content
+    ];
+
+    if ($is_reel) {
+        $finish_params['post_video_as_reels'] = 'true';
+    }
+
+    $res3 = fb_api_request($endpoint, [], 'POST', $finish_params, 60);
+
+    if ($res3['status_code'] === 200 && (!empty($res3['data']['success']) || !empty($res3['data']['id']))) {
+        $res3['data']['id']      = $media_id;
+        $res3['data']['post_id'] = $media_id;
+    }
+
+    return $res3;
+}
 ?>
