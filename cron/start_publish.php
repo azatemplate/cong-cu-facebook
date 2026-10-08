@@ -209,6 +209,8 @@ try {
     if ($del_orphaned > 0) {
         echo "  [CLEANUP] Đã xóa $del_orphaned bài mồ côi (Campaign đã bị xóa trước đó).\n";
     }
+} catch (Exception $e) {}
+
 // --- 🧹 LOGIC TỰ ĐỘNG XÓA BÀI HẸN GIỜ CHƯA HOÀN THÀNH CUỐI NGÀY (11:59 PM & BÀI CŨ) ---
 try {
     $current_h  = (int)date('H');
