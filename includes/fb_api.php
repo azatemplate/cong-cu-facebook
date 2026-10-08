@@ -141,12 +141,12 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024); // Ngắt nếu tốc độ truyền tải < 1KB/s
+    curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);    // trong 60s liên tục (chống cURL treo vô hạn)
     fb_curl_setssl($ch);
 
     // Dùng proxy cho API thường, nhưng BỎ PROXY khi upload file binary (CURLFile) để tận dụng 100% băng thông VPS
     if (!$has_file) {
-        curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024); // Ngắt nếu tốc độ truyền tải < 1KB/s
-        curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);    // trong 60s liên tục (chống cURL treo vô hạn)
         $token_for_proxy = (is_array($params) ? ($params['access_token'] ?? null) : null) ?? (is_array($post_data) ? ($post_data['access_token'] ?? null) : null);
         if (!empty($token_for_proxy)) {
             apply_proxy_to_curl($ch, $token_for_proxy);
@@ -165,6 +165,31 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
             if (is_array($post_data)) {
                 if (!$has_file) {
                     $post_data = http_build_query($post_data);
+                } else {
+                    $last_printed_pct = -10;
+                    curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+                    curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct) {
+                        $args = func_get_args();
+                        if (count($args) >= 5) {
+                            $uploaded = $args[4];
+                            $total = $args[3];
+                        } else {
+                            $uploaded = $args[3] ?? 0;
+                            $total = $args[2] ?? 0;
+                        }
+                        if ($total > 0 && $uploaded > 0) {
+                            $pct = (int) floor(($uploaded / $total) * 100);
+                            if ($pct >= $last_printed_pct + 10 || $pct === 100) {
+                                $last_printed_pct = $pct;
+                                $up_mb = round($uploaded / 1024 / 1024, 2);
+                                $tot_mb = round($total / 1024 / 1024, 2);
+                                fb_echo_log("   → Tiến trình upload: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
+                                if ($pct === 100) {
+                                    fb_echo_log("   ⏳ Đã truyền xong 100% dữ liệu sang Facebook, đang chờ Facebook xác nhận...\n");
+                                }
+                            }
+                        }
+                    });
                 }
             } else if (is_string($post_data) && (strpos($post_data, '{') === 0 || strpos($post_data, '[') === 0)) {
                 $headers[] = 'Content-Type: application/json';
@@ -695,7 +720,7 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
         $t_start = microtime(true);
         while ($retry_count < 3 && !$chunk_success) {
             $retry_count++;
-            $res2 = fb_api_request($endpoint, ['access_token' => $page_access_token], 'POST', $chunk_params, 300);
+            $res2 = fb_api_request($endpoint, [], 'POST', $chunk_params, 300);
             
             if ($res2['status_code'] === 200 || $res2['status_code'] === 206) {
                 $chunk_success = true;
@@ -752,7 +777,7 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
         $finish_params['post_video_as_reels'] = 'true';
     }
 
-    $res3 = fb_api_request($endpoint, ['access_token' => $page_access_token], 'POST', $finish_params, 120);
+    $res3 = fb_api_request($endpoint, [], 'POST', $finish_params, 120);
 
     if ($res3['status_code'] === 200 && (!empty($res3['data']['success']) || !empty($res3['data']['id']))) {
         $res3['data']['id']      = $video_id;
