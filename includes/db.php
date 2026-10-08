@@ -904,6 +904,13 @@ function ensure_db_schema_ready($pdo) {
         } catch (Exception $e) {}
 
         try {
+            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_status ENUM('none','pending','uploading','uploaded','failed') DEFAULT 'none'");
+            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preuploaded_media_id VARCHAR(255) DEFAULT NULL");
+            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_session_id VARCHAR(255) DEFAULT NULL");
+            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_error TEXT DEFAULT NULL");
+        } catch (Exception $e) {}
+
+        try {
             $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('schema_init_v17_done', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
         } catch (Exception $e) {}
         @file_put_contents($flag_file, date('Y-m-d H:i:s'));

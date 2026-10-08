@@ -246,22 +246,44 @@ $upcoming = $pdo->query("
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Bài đã/đang Pre-upload (Upload Nháp Facebook) ────────────────────────────
-$preupload_total_count = (int)$pdo->query("
-    SELECT COUNT(*) FROM scheduled_posts 
-    WHERE preupload_status IN ('uploaded', 'uploading') 
-       OR (preupload_status = 'failed' AND status = 'pending')
-")->fetchColumn();
+$preupload_total_count = 0;
+$preupload_posts = [];
+try {
+    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_status ENUM('none','pending','uploading','uploaded','failed') DEFAULT 'none'");
+    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preuploaded_media_id VARCHAR(255) DEFAULT NULL");
+    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_session_id VARCHAR(255) DEFAULT NULL");
+    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_error TEXT DEFAULT NULL");
 
-$preupload_posts = $pdo->query("
-    SELECT sp.id, sp.account_id, sp.page_id, sp.post_type, sp.status, sp.scheduled_time, sp.preupload_status, sp.preuploaded_media_id, sp.preupload_session_id, sp.preupload_error, sp.error_msg, sp.updated_at,
-           sa.username AS account_name
-    FROM scheduled_posts sp
-    LEFT JOIN system_accounts sa ON sp.account_id = sa.id
-    WHERE sp.preupload_status IN ('uploaded', 'uploading')
-       OR (sp.preupload_status = 'failed' AND sp.status = 'pending')
-    ORDER BY sp.updated_at DESC, sp.id DESC
-    LIMIT 30
-")->fetchAll(PDO::FETCH_ASSOC);
+    $preupload_total_count = (int)$pdo->query("
+        SELECT COUNT(*) FROM scheduled_posts 
+        WHERE preupload_status IN ('uploaded', 'uploading') 
+           OR (preupload_status = 'failed' AND status = 'pending')
+    ")->fetchColumn();
+
+    $preupload_posts = $pdo->query("
+        SELECT sp.id, sp.account_id, sp.page_id, sp.post_type, sp.status, sp.scheduled_time, sp.preupload_status, sp.preuploaded_media_id, sp.preupload_session_id, sp.preupload_error, sp.error_msg, sp.updated_at,
+               sa.username AS account_name
+        FROM scheduled_posts sp
+        LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+        WHERE sp.preupload_status IN ('uploaded', 'uploading')
+           OR (sp.preupload_status = 'failed' AND sp.status = 'pending')
+        ORDER BY sp.updated_at DESC, sp.id DESC
+        LIMIT 30
+    ")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    try {
+        $preupload_posts = $pdo->query("
+            SELECT sp.id, sp.account_id, sp.page_id, sp.post_type, sp.status, sp.scheduled_time, sp.preupload_status, sp.preuploaded_media_id, sp.preupload_session_id, '' AS preupload_error, sp.error_msg, sp.updated_at,
+                   sa.username AS account_name
+            FROM scheduled_posts sp
+            LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+            WHERE sp.preupload_status IN ('uploaded', 'uploading')
+               OR (sp.preupload_status = 'failed' AND sp.status = 'pending')
+            ORDER BY sp.updated_at DESC, sp.id DESC
+            LIMIT 30
+        ")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e2) {}
+}
 $processing_posts = $pdo->query("
     SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time, sp.updated_at,
            TIMESTAMPDIFF(MINUTE, sp.updated_at, NOW()) AS duration_min,
