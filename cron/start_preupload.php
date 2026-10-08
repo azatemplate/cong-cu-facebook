@@ -67,10 +67,10 @@ try {
         SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time, sp.campaign_id
         FROM scheduled_posts sp
         WHERE sp.status = 'pending'
-          AND (sp.preupload_status IS NULL OR sp.preupload_status IN ('none', 'failed'))
-          AND sp.scheduled_time BETWEEN DATE_ADD(NOW(), INTERVAL 2 MINUTE) AND DATE_ADD(NOW(), INTERVAL 24 HOUR)
+          AND (sp.preupload_status IS NULL OR sp.preupload_status = 'none')
+          AND sp.scheduled_time >= DATE_ADD(NOW(), INTERVAL 1 MINUTE)
           AND sp.media_path IS NOT NULL AND sp.media_path != ''
-          AND (sp.post_type IN ('Video', 'Reel', 'Photo', 'Facebook', 'Facebook Reel') OR sp.post_type LIKE 'Facebook%')
+          AND (LOWER(sp.post_type) IN ('video', 'reel', 'photo', 'facebook', 'facebook reel') OR sp.post_type LIKE '%Facebook%' OR sp.post_type LIKE '%Reel%' OR sp.post_type LIKE '%Video%')
         ORDER BY sp.scheduled_time ASC
         LIMIT {$fetch_limit}
     ";
