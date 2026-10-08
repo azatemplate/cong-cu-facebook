@@ -87,6 +87,10 @@ try {
 } catch (Exception $e) {}
 
 // ── Đếm số worker đang thực sự chạy (1 Campaign/Kênh = 1 Worker độc lập) ─────
+try {
+    $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE)");
+} catch (Exception $e) {}
+
 $active_camp_w = (int)$pdo->query("SELECT COUNT(DISTINCT campaign_id) FROM scheduled_posts WHERE status = 'processing' AND campaign_id IS NOT NULL AND campaign_id > 0")->fetchColumn();
 $active_uncamp_w = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing' AND (campaign_id IS NULL OR campaign_id = 0)")->fetchColumn();
 $active_publish = $active_camp_w + $active_uncamp_w;

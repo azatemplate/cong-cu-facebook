@@ -552,7 +552,7 @@ echo "Bat dau quet bai viet len lich luc: " . date('Y-m-d H:i:s') . "\n";
 // If a previous worker run crashed, posts stay at 'processing' forever.
 // We reset them so they can be retried.
 try {
-    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 60 MINUTE) AND (fb_post_id IS NULL OR fb_post_id = '')");
+    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE) AND (fb_post_id IS NULL OR fb_post_id = '')");
     if ($stuck > 0)
         echo "  [RESET] Reset $stuck bài bị kẹt ở trạng thái 'processing' về 'pending'.\n";
 
@@ -1270,7 +1270,7 @@ if (!empty($user_id_lock)) {
 if ($is_campaign_run && !empty($campaign_id)) {
     // Reset ONLY orphaned processing posts (stuck > 15 mins), NEVER force reset failed posts back to pending
     try {
-        $pdo->prepare("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = ? AND status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 60 MINUTE) AND (fb_post_id IS NULL OR fb_post_id = '')")
+        $pdo->prepare("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = ? AND status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE) AND (fb_post_id IS NULL OR fb_post_id = '')")
             ->execute([$campaign_id]);
     } catch (Exception $e) {}
 }

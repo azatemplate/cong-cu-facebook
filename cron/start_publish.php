@@ -173,9 +173,9 @@ try {
     echo "Loi tu dong quet SĐT: " . $e->getMessage() . "\n";
 }
 
-// --- TỰ ĐỘNG RESET BÀI BỊ KẸT PROCESSING VỀ PENDING (>10 PHÚT) ---
+// --- TỰ ĐỘNG RESET BÀI BỊ KẸT PROCESSING VỀ PENDING (>3 PHÚT) ---
 try {
-    $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 10 MINUTE)");
+    $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE)");
     
     // --- ĐẢM BẢO CHỈ 1 BÀI PROCESSING PER CAMPAIGN ---
     // Nếu 1 campaign có nhiều bài processing cùng lúc, giữ lại bài mới nhất và trả bài thừa về pending
