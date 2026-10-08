@@ -18,14 +18,9 @@ function fb_curl_setssl($ch) {
         curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
     }
 
-    // Disable SSL verification only in development environment
-    if (defined('APP_ENV') && APP_ENV === 'development') {
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-    } else {
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-    }
+    // Disable SSL verification to prevent SSL certificate errors on VPS servers
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
 }
 
 function apply_proxy_to_curl($ch, $access_token = null) {
@@ -702,7 +697,7 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
         $t_start = microtime(true);
         while ($retry_count < 3 && !$chunk_success) {
             $retry_count++;
-            $res2 = fb_api_request($endpoint, [], 'POST', $chunk_params, 300);
+            $res2 = fb_api_request($endpoint, ['access_token' => $page_access_token], 'POST', $chunk_params, 300);
             
             if ($res2['status_code'] === 200 || $res2['status_code'] === 206) {
                 $chunk_success = true;
@@ -759,7 +754,7 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
         $finish_params['post_video_as_reels'] = 'true';
     }
 
-    $res3 = fb_api_request($endpoint, [], 'POST', $finish_params, 120);
+    $res3 = fb_api_request($endpoint, ['access_token' => $page_access_token], 'POST', $finish_params, 120);
 
     if ($res3['status_code'] === 200 && (!empty($res3['data']['success']) || !empty($res3['data']['id']))) {
         $res3['data']['id']      = $video_id;

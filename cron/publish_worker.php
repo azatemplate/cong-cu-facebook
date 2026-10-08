@@ -1568,6 +1568,8 @@ do {
         curl_setopt($ch_init, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch_init, CURLOPT_POST, true);
         curl_setopt($ch_init, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch_init, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch_init, CURLOPT_SSL_VERIFYHOST, false);
         curl_setopt($ch_init, CURLOPT_POSTFIELDS, json_encode($metadata));
         curl_setopt($ch_init, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer $access_token",
@@ -1578,13 +1580,15 @@ do {
         curl_setopt($ch_init, CURLOPT_TIMEOUT, 30);
         $init_response = curl_exec($ch_init);
         $init_code = curl_getinfo($ch_init, CURLINFO_HTTP_CODE);
+        $init_err = curl_error($ch_init);
         $init_header_size = curl_getinfo($ch_init, CURLINFO_HEADER_SIZE);
         $init_headers = substr($init_response, 0, $init_header_size);
         $init_body = substr($init_response, $init_header_size);
         curl_close($ch_init);
 
         if ($init_code !== 200) {
-            marKAsFailed($pdo, $post['id'], "Lỗi khởi tạo upload YouTube: HTTP $init_code - $init_body", $sys_max_retries, $sys_retry_interval);
+            $err_desc = !empty($init_body) ? $init_body : $init_err;
+            marKAsFailed($pdo, $post['id'], "Lỗi khởi tạo upload YouTube: HTTP $init_code - $err_desc", $sys_max_retries, $sys_retry_interval);
             if ($temp_drive_file && file_exists($temp_drive_file))
                 @unlink($temp_drive_file);
             continue;
@@ -1616,6 +1620,8 @@ do {
         curl_setopt($ch_upload, CURLOPT_INFILE, $file_handle);
         curl_setopt($ch_upload, CURLOPT_INFILESIZE, $file_size);
         curl_setopt($ch_upload, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch_upload, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch_upload, CURLOPT_SSL_VERIFYHOST, false);
         curl_setopt($ch_upload, CURLOPT_TIMEOUT, 1800);
         curl_setopt($ch_upload, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer $access_token",
@@ -1623,6 +1629,7 @@ do {
         ]);
         $upload_response = curl_exec($ch_upload);
         $upload_code = curl_getinfo($ch_upload, CURLINFO_HTTP_CODE);
+        $upload_err = curl_error($ch_upload);
         curl_close($ch_upload);
         fclose($file_handle);
 
@@ -1710,7 +1717,7 @@ do {
             echo " -> Đăng Video YouTube thành công! Video ID: $video_id\n";
         } else {
             $err_data = json_decode($upload_response, true);
-            $err_msg = $err_data['error']['message'] ?? $upload_response;
+            $err_msg = $err_data['error']['message'] ?? (!empty($upload_response) ? $upload_response : (!empty($upload_err) ? $upload_err : 'Unknown error'));
             marKAsFailed($pdo, $post['id'], "Lỗi lúc tải file lên YouTube: HTTP $upload_code - $err_msg", $sys_max_retries, $sys_retry_interval);
             if ($temp_drive_file && file_exists($temp_drive_file))
                 @unlink($temp_drive_file);
