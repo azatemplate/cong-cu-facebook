@@ -187,13 +187,25 @@ try {
     }
 } catch (Exception $e) {}
 
-// Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động
+// Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động (Kiểm tra khoá OS thực tế)
 $lock_dir = dirname(__DIR__) . '/locks';
-$active_locks = 0;
+$active_workers = 0;
 if (is_dir($lock_dir)) {
-    $active_locks = count(glob($lock_dir . '/publish_user_*.lock'));
+    foreach (glob($lock_dir . '/publish_user_*.lock') ?: [] as $lf) {
+        if (!file_exists($lf)) continue;
+        $fp = @fopen($lf, 'c+');
+        if ($fp) {
+            if (!@flock($fp, LOCK_EX | LOCK_NB)) {
+                $active_workers++;
+                @fclose($fp);
+            } else {
+                @flock($fp, LOCK_UN);
+                @fclose($fp);
+                @unlink($lf);
+            }
+        }
+    }
 }
-$active_workers = $active_locks;
 
 echo "  [THROTTLE] Hien dang co $active_workers luong dang xu ly (Max: $MAX_WORKERS).\n";
 

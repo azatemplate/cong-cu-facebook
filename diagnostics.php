@@ -86,10 +86,25 @@ try {
     }
 } catch (Exception $e) {}
 
-// ── Đếm số worker đang thực sự chạy (active) ────────────────────────────────
+// ── Đếm số worker đang thực sự chạy (active OS processes) ──────────────────
 $lock_dir_diag = __DIR__ . '/locks';
-$active_locks_diag = is_dir($lock_dir_diag) ? count(glob($lock_dir_diag . '/publish_user_*.lock')) : 0;
-$active_publish = max($active_locks_diag, (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn());
+$active_publish = 0;
+if (is_dir($lock_dir_diag)) {
+    foreach (glob($lock_dir_diag . '/publish_user_*.lock') ?: [] as $lf) {
+        if (!file_exists($lf)) continue;
+        $fp = @fopen($lf, 'c+');
+        if ($fp) {
+            if (!@flock($fp, LOCK_EX | LOCK_NB)) {
+                $active_publish++;
+                @fclose($fp);
+            } else {
+                @flock($fp, LOCK_UN);
+                @fclose($fp);
+                @unlink($lf);
+            }
+        }
+    }
+}
 $active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
 
 // ── Kích hoạt thủ công nếu có ?run=1 ─────────────────────────────────────────
