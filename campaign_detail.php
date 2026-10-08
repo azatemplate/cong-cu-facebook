@@ -757,7 +757,11 @@ function status_label($s) {
                             <?php elseif ($s === 'published'): ?>
                                 <span class="cd-badge" style="background:#d1fae5; color:#065f46;">✅ Đã đăng</span>
                             <?php elseif ($s === 'pending'): ?>
-                                <span class="cd-badge" style="background:#fef3c7; color:#d97706;">⏳ Chờ</span>
+                                <?php if (!empty($post['preupload_status']) && $post['preupload_status'] === 'uploaded' && !empty($post['preuploaded_media_id'])): ?>
+                                    <span class="cd-badge" style="background:#ccfbf1; color:#0f766e; border:1px solid #99f6e4;" title="Đã Upload nháp sang Meta CDN, sẵn sàng xuất bản tức thì 0.5s">⚡ Đã Upload nháp</span>
+                                <?php else: ?>
+                                    <span class="cd-badge" style="background:#fef3c7; color:#d97706;">⏳ Chờ</span>
+                                <?php endif; ?>
                             <?php else: ?>
                                 <span class="cd-badge" style="background:<?php echo status_bg($s); ?>; color:<?php echo status_tc($s); ?>;"><?php echo status_label($s); ?></span>
                                 <?php if (!empty($post['retry_count'])): ?>
