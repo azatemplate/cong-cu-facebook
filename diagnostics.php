@@ -106,9 +106,41 @@ try {
     }
 } catch (Exception $e) {}
 
+$lock_dir = __DIR__ . '/locks';
+$active_preupload_locks = 0;
+$active_preupload_ids = [];
+if (is_dir($lock_dir)) {
+    foreach (glob($lock_dir . '/preupload_post_*.lock') ?: [] as $lf) {
+        if (!file_exists($lf)) continue;
+        $fp = @fopen($lf, 'c+');
+        if ($fp) {
+            if (!@flock($fp, LOCK_EX | LOCK_NB)) {
+                $active_preupload_locks++;
+                if (preg_match('/preupload_post_(\d+)\.lock$/', $lf, $m)) {
+                    $active_preupload_ids[] = (int)$m[1];
+                }
+                @fclose($fp);
+            } else {
+                @flock($fp, LOCK_UN);
+                @fclose($fp);
+                @unlink($lf);
+            }
+        }
+    }
+}
+
+// Dọn sạch rác status 'uploading' trong CSDL nếu không có file lock hoạt động
+try {
+    if (!empty($active_preupload_ids)) {
+        $pdo->exec("UPDATE scheduled_posts SET preupload_status = 'none' WHERE preupload_status = 'uploading' AND id NOT IN (" . implode(',', $active_preupload_ids) . ")");
+    } else {
+        $pdo->exec("UPDATE scheduled_posts SET preupload_status = 'none' WHERE preupload_status = 'uploading'");
+    }
+} catch (Exception $e) {}
+
 $active_publish = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 $active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
-$active_preupload = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE preupload_status = 'uploading'")->fetchColumn();
+$active_preupload = $active_preupload_locks;
 $total_active_publish_group = $active_publish + $active_preupload;
 $preupload_uploaded_count = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE preupload_status = 'uploaded' AND status = 'pending'")->fetchColumn();
 

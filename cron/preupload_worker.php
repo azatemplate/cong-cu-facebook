@@ -21,6 +21,16 @@ if ($post_id <= 0) {
     die("Invalid Post ID.\n");
 }
 
+$lock_dir = __DIR__ . '/../locks';
+if (!is_dir($lock_dir)) @mkdir($lock_dir, 0777, true);
+$lock_file = $lock_dir . "/preupload_post_{$post_id}.lock";
+$lock_fp = @fopen($lock_file, 'c+');
+if ($lock_fp) {
+    if (!@flock($lock_fp, LOCK_EX | LOCK_NB)) {
+        die("Preupload worker for post #{$post_id} already running.\n");
+    }
+}
+
 $temp_drive_file = null;
 
 try {
@@ -127,5 +137,9 @@ try {
     @$pdo->prepare("UPDATE scheduled_posts SET preupload_status = 'failed', preupload_error = ? WHERE id = ?")->execute([$err_msg, $post_id]);
     echo "Lỗi Pre-upload Worker: " . $err_msg . "\n";
 } finally {
-    // Không tự ý xóa temp file nếu còn cần cho lệnh publish sau này (chỉ xóa nếu là tmp download)
+    if (!empty($lock_fp)) {
+        @flock($lock_fp, LOCK_UN);
+        @fclose($lock_fp);
+        @unlink($lock_file);
+    }
 }
