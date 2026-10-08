@@ -144,5 +144,18 @@ class RedisQueue {
             return false;
         }
     }
+
+    public function deleteCacheByPattern($pattern) {
+        if (!$this->isAvailable()) return false;
+        try {
+            $keys = $this->redis->keys($pattern);
+            if (!empty($keys)) {
+                return $this->redis->del($keys);
+            }
+            return true;
+        } catch (Exception $e) {
+            return false;
+        }
+    }
 }
 

@@ -136,7 +136,7 @@ if ($action === 'add_account' || $action === 'edit_account') {
                     $chk_buf->execute([$account_id, $channel_id]);
                     $existing_buf = $chk_buf->fetch();
 
-                    if (!$existing_buf && !$is_admin && $max_buffer_channels > 0) {
+                    if (!$existing_buf && !$is_admin) {
                         $cnt_buf_stmt = $pdo->prepare("SELECT COUNT(*) FROM buffer_channels WHERE account_id = ?");
                         $cnt_buf_stmt->execute([$account_id]);
                         $curr_buf_count = (int)$cnt_buf_stmt->fetchColumn();

@@ -27,6 +27,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $account_id          = $_SESSION['account_id'];
 $user_id             = intval($_POST['user_id'] ?? 0);
+$select_mode         = trim($_POST['select_mode'] ?? 'user');
+$group_id            = ($select_mode === 'group' && !empty($_POST['group_id'])) ? intval($_POST['group_id']) : null;
 $drive_file_ids_str  = trim($_POST['drive_file_id'] ?? '');
 $comment_lines = isset($_POST['enable_comment']) && !empty(trim($_POST['comment_lines'] ?? ''))
     ? trim($_POST['comment_lines'])
@@ -41,8 +43,8 @@ if (isset($_POST['page_ids']) && is_array($_POST['page_ids'])) {
     $page_ids[] = $_POST['page_id'];
 }
 
-if (!$user_id || empty($page_ids)) {
-    echo json_encode(['status' => 'error', 'msg' => 'Vui lòng chọn đầy đủ User và Fanpage.']);
+if (empty($page_ids)) {
+    echo json_encode(['status' => 'error', 'msg' => 'Vui lòng chọn ít nhất 1 Fanpage.']);
     exit;
 }
 
@@ -154,8 +156,13 @@ if (!empty($schedule_dates)) {
     $campaign_name .= ' — ' . date('d/m/Y H:i');
 }
 try {
-    $camp_stmt = $pdo->prepare("INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time) VALUES (?, ?, ?, ?, ?)");
-    $camp_stmt->execute([$account_id, $campaign_name, 'Story', $total_posts, $first_time]);
+    try {
+        $camp_stmt = $pdo->prepare("INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time, group_id) VALUES (?, ?, ?, ?, ?, ?)");
+        $camp_stmt->execute([$account_id, $campaign_name, 'Story', $total_posts, $first_time, $group_id]);
+    } catch (PDOException $e) {
+        $camp_stmt = $pdo->prepare("INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time) VALUES (?, ?, ?, ?, ?)");
+        $camp_stmt->execute([$account_id, $campaign_name, 'Story', $total_posts, $first_time]);
+    }
     $campaign_id = $pdo->lastInsertId();
 } catch (PDOException $e) {
     // Table may not exist yet. Scheduling continues without campaign.

@@ -28,6 +28,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $account_id = $_SESSION['account_id'];
 $user_id    = isset($_POST['user_id']) ? intval($_POST['user_id']) : 0;
+$select_mode = trim($_POST['select_mode'] ?? 'user');
+$group_id    = ($select_mode === 'group' && !empty($_POST['group_id'])) ? intval($_POST['group_id']) : null;
 
 // Support either single page_id or array of page_ids
 $page_ids = [];
@@ -48,8 +50,8 @@ $enable_random_images = isset($_POST['enable_random_images']) && $_POST['enable_
 $random_image_count   = isset($_POST['random_image_count']) ? max(1, intval($_POST['random_image_count'])) : 5;
 $delete_drive_file    = isset($_POST['delete_drive_file']) && $_POST['delete_drive_file'] == '1';
 
-if (!$user_id || empty($page_ids) || empty($message)) {
-    echo json_encode(['status' => 'error', 'msg' => 'Vui lòng điền đầy đủ các thông tin bắt buộc.']);
+if (empty($page_ids) || empty($message)) {
+    echo json_encode(['status' => 'error', 'msg' => 'Vui lòng chọn Fanpage và nhập nội dung bài viết.']);
     exit;
 }
 
@@ -86,14 +88,6 @@ if (isset($_FILES['images']) && is_array($_FILES['images']['name'])) {
             $post_type = 'Image';
         }
     }
-} elseif (empty($media_pool) && isset($_FILES['images']) && !is_array($_FILES['images']['name']) && $_FILES['images']['error'] === UPLOAD_ERR_OK) {
-    $media_pool[] = [
-        'type'     => 'local',
-        'tmp_name' => $_FILES['images']['tmp_name'],
-        'name'     => $_FILES['images']['name'],
-        'mime'     => mime_content_type($_FILES['images']['tmp_name'])
-    ];
-    $post_type = 'Image';
 }
 
 $content_data_arr = [
@@ -104,6 +98,10 @@ $content_data_arr = [
 ];
 if ($delete_drive_file) {
     $content_data_arr['delete_drive_file'] = 1;
+}
+if ($enable_random_images) {
+    $content_data_arr['enable_random_images'] = 1;
+    $content_data_arr['random_image_count'] = $random_image_count;
 }
 $content_data = json_encode($content_data_arr);
 
@@ -172,9 +170,14 @@ if (!empty($schedule_dates)) {
 }
 
 try {
-    $camp_stmt = $pdo->prepare("INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time) VALUES (?, ?, ?, ?, ?)");
     $first_time = !empty($schedule_dates) ? $schedule_dates[0] : $scheduled_time;
-    $camp_stmt->execute([$account_id, $campaign_name, $post_type, $total_posts, $first_time]);
+    try {
+        $camp_stmt = $pdo->prepare("INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time, group_id) VALUES (?, ?, ?, ?, ?, ?)");
+        $camp_stmt->execute([$account_id, $campaign_name, $post_type, $total_posts, $first_time, $group_id]);
+    } catch (PDOException $e) {
+        $camp_stmt = $pdo->prepare("INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time) VALUES (?, ?, ?, ?, ?)");
+        $camp_stmt->execute([$account_id, $campaign_name, $post_type, $total_posts, $first_time]);
+    }
     $campaign_id = $pdo->lastInsertId();
 } catch (PDOException $e) {
     // Table may not exist yet — run migrate.php to create it. Scheduling continues without campaign.

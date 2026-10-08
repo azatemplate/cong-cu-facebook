@@ -17,6 +17,7 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/drive_utils.php';
 require_once __DIR__ . '/../includes/ai_rewriter.php';
+require_once __DIR__ . '/../includes/kho_data_helper.php';
 
 ob_end_clean();
 header('Content-Type: application/json');
@@ -28,6 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $account_id = $_SESSION['account_id'];
 $user_id    = isset($_POST['user_id']) ? intval($_POST['user_id']) : 0;
+$select_mode = trim($_POST['select_mode'] ?? 'user');
+$group_id    = ($select_mode === 'group' && !empty($_POST['group_id'])) ? intval($_POST['group_id']) : null;
 
 $page_ids = [];
 if (isset($_POST['page_ids']) && is_array($_POST['page_ids'])) {
@@ -41,6 +44,8 @@ $desc_input      = clean_markdown(trim($_POST['description'] ?? ''));
 $use_ai          = isset($_POST['use_ai']) && $_POST['use_ai'] == '1';
 $is_reel         = isset($_POST['is_reel']) && $_POST['is_reel'] == '1';
 $auto_title      = isset($_POST['auto_title']) && $_POST['auto_title'] == '1';
+$data_group_id   = intval($_POST['data_group_id'] ?? ($_REQUEST['data_group_id'] ?? 0));
+$data_mode       = trim($_POST['data_mode'] ?? ($_REQUEST['data_mode'] ?? 'dedup'));
 $tiktok_urls_str = trim($_POST['tiktok_urls'] ?? '');
 $drive_file_ids_str = trim($_POST['drive_file_id'] ?? '');
 $comment_lines = isset($_POST['enable_comment']) && !empty(trim($_POST['comment_lines'] ?? ''))
@@ -65,8 +70,8 @@ if ($comment_lines) {
     $comment_threshold_comments = intval($_POST['threshold_comments'] ?? 5);
 }
 
-if (!$user_id || empty($page_ids)) {
-    echo json_encode(['status' => 'error', 'msg' => 'Vui lòng chọn đầy đủ User và Fanpage.']);
+if (empty($page_ids)) {
+    echo json_encode(['status' => 'error', 'msg' => 'Vui lòng chọn ít nhất 1 Fanpage.']);
     exit;
 }
 
@@ -74,7 +79,9 @@ if (!$user_id || empty($page_ids)) {
 $media_pool  = [];
 $drive_token = null;
 
-if (!empty($tiktok_urls_str)) {
+if ($data_group_id > 0) {
+    $media_pool[] = ['type' => 'kho_data', 'group_id' => $data_group_id, 'mode' => $data_mode];
+} elseif (!empty($tiktok_urls_str)) {
     foreach (array_filter(array_map('trim', explode("\n", $tiktok_urls_str))) as $url) {
         $media_pool[] = ['type' => 'tiktok', 'url' => $url, 'title' => ''];
     }
@@ -145,13 +152,20 @@ foreach ($media_pool as &$media) {
 unset($media);
 
 // ── Helper: Resolve media for 1 slot ─────────────────────────────────────
-function resolve_media_path_video($media, $auto_title, $title_input, $desc_input) {
+function resolve_media_path_video($media, $auto_title, $title_input, $desc_input, $pdo = null, $account_id = 0) {
     $t_title = $title_input;
     $t_desc  = $desc_input;
     $media_path = null;
     $original_source = null;
 
-    if ($media['type'] === 'drive') {
+    if ($media['type'] === 'kho_data') {
+        $url = get_url_from_kho_data($pdo, $account_id, $media['group_id'], $media['mode']);
+        if (!$url) {
+            throw new Exception("Nhóm Data được chọn trong Kho Data đã hết URL khả dụng.");
+        }
+        $media_path = 'tiktok:' . $url;
+        $original_source = $url;
+    } elseif ($media['type'] === 'drive') {
         $media_path = 'drive:' . $media['id'];
         $original_source = isset($media['original_name']) && !empty($media['original_name']) ? $media['original_name'] : $media['title'];
         if ($auto_title) { $t_title = $media['title']; $t_desc = $media['title'] . ($desc_input ? "\n\n" . $desc_input : ''); }
@@ -223,8 +237,13 @@ if (!empty($schedule_dates)) {
     $campaign_name .= ' — ' . date('d/m/Y H:i');
 }
 try {
-    $camp_stmt = $pdo->prepare("INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time) VALUES (?, ?, ?, ?, ?)");
-    $camp_stmt->execute([$account_id, $campaign_name, $post_type, $total_posts, $first_time]);
+    try {
+        $camp_stmt = $pdo->prepare("INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time, group_id) VALUES (?, ?, ?, ?, ?, ?)");
+        $camp_stmt->execute([$account_id, $campaign_name, $post_type, $total_posts, $first_time, $group_id]);
+    } catch (PDOException $e) {
+        $camp_stmt = $pdo->prepare("INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time) VALUES (?, ?, ?, ?, ?)");
+        $camp_stmt->execute([$account_id, $campaign_name, $post_type, $total_posts, $first_time]);
+    }
     $campaign_id = $pdo->lastInsertId();
 } catch (PDOException $e) {
     // Table may not exist yet — run migrate.php. Scheduling continues without campaign.
@@ -295,7 +314,7 @@ try {
                     } else {
                         $media = $media_pool[array_rand($media_pool)];
                     }
-                    [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input);
+                    [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input, $pdo, $account_id);
                 }
                 $content_arr = ['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source];
                 if ($delete_drive_file) {
@@ -323,7 +342,7 @@ try {
                 } else {
                     $media = $media_pool[array_rand($media_pool)];
                 }
-                [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input);
+                [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_video($media, $auto_title, $title_input, $desc_input, $pdo, $account_id);
             }
             $content_arr = ['description' => $t_desc, 'title' => $t_title, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source];
             if ($delete_drive_file) {

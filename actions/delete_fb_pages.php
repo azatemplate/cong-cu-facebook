@@ -46,7 +46,9 @@ try {
             $pdo->prepare("DELETE FROM posts_history WHERE page_id = ?")->execute([$pid]);
             // 3. Xóa phân quyền share
             $pdo->prepare("DELETE FROM page_shares WHERE page_id = ?")->execute([$pid]);
-            // 4. Cuối cùng, xóa page
+            // 4. Xóa Instagram account gắn liền với Fanpage này
+            $pdo->prepare("DELETE FROM instagram_accounts WHERE fb_page_id = ?")->execute([$pid]);
+            // 5. Cuối cùng, xóa page
             $pdo->prepare("DELETE FROM pages WHERE page_id = ?")->execute([$pid]);
         }
     }

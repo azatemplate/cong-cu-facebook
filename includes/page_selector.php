@@ -130,6 +130,21 @@
         render('');
     };
 
+    window.pageSelectorFilterByGroup = function(pageIdsArray) {
+        checkedIds.clear();
+        searchEl.value = '';
+        clearBtn.style.display = 'none';
+        if (Array.isArray(pageIdsArray) && pageIdsArray.length > 0) {
+            const setIds = new Set(pageIdsArray.map(id => String(id)));
+            currentPages = ALL_PAGES.filter(p => setIds.has(String(p.page_id)) || setIds.has(String(p.id)));
+            // Auto check all fanpages in this group for convenience
+            currentPages.forEach(p => checkedIds.add(p.page_id));
+        } else {
+            currentPages = [];
+        }
+        render('');
+    };
+
     /* ── Render list ────────────────────────────────────── */
     function render(query) {
         const q = query.trim().toLowerCase();

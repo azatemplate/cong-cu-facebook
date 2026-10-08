@@ -53,6 +53,11 @@ $stmt->execute([$user_id, $account_id]);
                 try {
                     $pdo->prepare("DELETE FROM page_shares WHERE page_id IN ($in)")->execute($page_ids);
                 } catch (PDOException $e) {}
+
+                // 4.5 Xóa instagram_accounts của các page này
+                try {
+                    $pdo->prepare("DELETE FROM instagram_accounts WHERE fb_page_id IN ($in)")->execute($page_ids);
+                } catch (PDOException $e) {}
             }
 
             // 5. Xóa post_campaigns thuộc account này mà không còn scheduled_posts nào

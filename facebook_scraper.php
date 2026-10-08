@@ -1660,9 +1660,14 @@ $targetPagesListJson = json_encode($targetPagesList);
 ?>
 
 <style>
-    /* ─── Facebook Scraper Hero ────────────────────────────────────────────────────── */
+    /* ─── evondev UI/UX Design System for Facebook Scraper ─────────────────── */
+    .container, button, input, select, textarea {
+        font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    }
+
     .fb-hero {
-        background: linear-gradient(135deg, #1877F2 0%, #0c4391 100%);
+        background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+        border: 1px solid rgba(99, 102, 241, 0.25);
         border-radius: 16px;
         padding: 28px 32px;
         margin-bottom: 24px;
@@ -1671,44 +1676,47 @@ $targetPagesListJson = json_encode($targetPagesList);
         gap: 20px;
         position: relative;
         overflow: hidden;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
     }
 
     .fb-hero::before {
         content: '';
         position: absolute;
-        top: -30px;
-        right: -30px;
-        width: 180px;
-        height: 180px;
-        background: radial-gradient(circle, rgba(255, 255, 255, 0.2) 0%, transparent 70%);
+        top: -40px;
+        right: -40px;
+        width: 220px;
+        height: 220px;
+        background: radial-gradient(circle, rgba(99, 102, 241, 0.25) 0%, transparent 70%);
         pointer-events: none;
     }
 
     .fb-logo-wrap {
         width: 56px;
         height: 56px;
-        background: #fff;
-        color: #1877F2;
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+        color: #ffffff;
         border-radius: 14px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 32px;
+        font-size: 28px;
         flex-shrink: 0;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
     }
 
     .fb-hero-text h1 {
         font-size: 22px;
         font-weight: 700;
-        color: #fff;
-        margin: 0 0 4px;
+        color: #ffffff;
+        margin: 0 0 6px;
+        letter-spacing: -0.02em;
     }
 
     .fb-hero-text p {
         font-size: 13px;
-        color: rgba(255, 255, 255, 0.85);
+        color: #cbd5e1;
         margin: 0;
+        line-height: 1.5;
     }
 
     /* ─── Navigation Tabs ─── */
@@ -1716,15 +1724,15 @@ $targetPagesListJson = json_encode($targetPagesList);
         display: flex;
         gap: 8px;
         margin-bottom: 20px;
-        border-bottom: 2px solid var(--border-color);
-        padding-bottom: 2px;
+        border-bottom: 2px solid var(--border-color, #e2e8f0);
+        padding-bottom: 4px;
     }
 
     .nav-tab-btn {
         padding: 10px 20px;
         font-size: 14px;
         font-weight: 600;
-        color: var(--text-muted);
+        color: var(--text-muted, #64748b);
         background: transparent;
         border: none;
         border-bottom: 3px solid transparent;
@@ -1733,13 +1741,19 @@ $targetPagesListJson = json_encode($targetPagesList);
         display: flex;
         align-items: center;
         gap: 8px;
-        border-radius: 6px 6px 0 0;
+        border-radius: 8px 8px 0 0;
+    }
+
+    .nav-tab-btn:hover {
+        color: var(--text-main, #1e293b);
+        background: rgba(99, 102, 241, 0.05);
     }
 
     .nav-tab-btn.active {
-        color: #1877F2;
-        border-bottom-color: #1877F2;
-        background: rgba(24, 119, 242, 0.05);
+        color: #6366f1;
+        border-bottom-color: #6366f1;
+        background: rgba(99, 102, 241, 0.1);
+        font-weight: 700;
     }
 
     .tab-content-panel {
@@ -1752,11 +1766,12 @@ $targetPagesListJson = json_encode($targetPagesList);
 
     /* ─── Form Cards ─── */
     .search-form-card {
-        background: var(--card-bg);
-        border: 1px solid var(--border-color);
+        background: var(--card-bg, #ffffff);
+        border: 1px solid var(--border-color, #e2e8f0);
         border-radius: 14px;
         padding: 24px;
         margin-bottom: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }
 
     .search-row {
@@ -1775,7 +1790,7 @@ $targetPagesListJson = json_encode($targetPagesList);
     .search-field label {
         font-size: 12px;
         font-weight: 600;
-        color: var(--text-muted);
+        color: var(--text-main, #1e293b);
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
@@ -1784,10 +1799,10 @@ $targetPagesListJson = json_encode($targetPagesList);
     .search-field input[type="number"],
     .search-field select {
         padding: 10px 14px;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        background: var(--bg-color);
-        color: var(--text-main);
+        border: 1px solid var(--border-color, #cbd5e1);
+        border-radius: 10px;
+        background: var(--card-bg, #ffffff);
+        color: var(--text-main, #1e293b);
         font-size: 14px;
         outline: none;
         transition: border-color 0.2s, box-shadow 0.2s;
@@ -1795,8 +1810,8 @@ $targetPagesListJson = json_encode($targetPagesList);
 
     .search-field input:focus,
     .search-field select:focus {
-        border-color: #1877F2;
-        box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.12);
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
     }
 
     .search-field.grow {
@@ -1805,11 +1820,11 @@ $targetPagesListJson = json_encode($targetPagesList);
     }
 
     .btn-primary-action {
-        padding: 10px 24px;
-        background: linear-gradient(135deg, #1877F2, #165ab5);
-        color: #fff;
+        padding: 10px 22px;
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+        color: #ffffff;
         border: none;
-        border-radius: 8px;
+        border-radius: 10px;
         font-size: 14px;
         font-weight: 600;
         cursor: pointer;
@@ -1817,13 +1832,13 @@ $targetPagesListJson = json_encode($targetPagesList);
         display: flex;
         align-items: center;
         gap: 8px;
-        transition: transform .15s, box-shadow .15s;
-        box-shadow: 0 4px 14px rgba(24, 119, 242, .3);
+        transition: transform .15s ease, box-shadow .15s ease, opacity .15s;
+        box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
     }
 
     .btn-primary-action:hover {
         transform: translateY(-1px);
-        box-shadow: 0 6px 18px rgba(24, 119, 242, .4);
+        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
     }
 
     .btn-primary-action:disabled {
@@ -1835,9 +1850,9 @@ $targetPagesListJson = json_encode($targetPagesList);
     /* ─── Table ─── */
     .table-wrap {
         overflow-x: auto;
-        border: 1px solid var(--border-color);
+        border: 1px solid var(--border-color, #e2e8f0);
         border-radius: 12px;
-        background: var(--card-bg);
+        background: var(--card-bg, #ffffff);
         margin-bottom: 24px;
     }
 
@@ -1850,27 +1865,23 @@ $targetPagesListJson = json_encode($targetPagesList);
 
     .custom-table thead th {
         padding: 12px 14px;
-        background: rgba(0, 0, 0, 0.02);
-        color: var(--text-muted);
+        background: var(--bg-color, #f8fafc);
+        color: var(--text-muted, #64748b);
         font-size: 12px;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: .5px;
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--border-color, #e2e8f0);
         text-align: left;
     }
 
-    .dark-mode .custom-table thead th {
-        background: rgba(255, 255, 255, 0.02);
-    }
-
     .custom-table tbody tr {
-        border-bottom: 1px solid var(--border-color);
-        transition: background .1s;
+        border-bottom: 1px solid var(--border-color, #e2e8f0);
+        transition: background .15s ease;
     }
 
     .custom-table tbody tr:hover {
-        background: rgba(24, 119, 242, .03);
+        background: rgba(99, 102, 241, 0.06);
     }
 
     .custom-table tbody tr:last-child {
@@ -1879,44 +1890,48 @@ $targetPagesListJson = json_encode($targetPagesList);
 
     .custom-table td {
         padding: 11px 14px;
-        color: var(--text-main);
+        color: var(--text-main, #1e293b);
         vertical-align: middle;
     }
 
     /* ─── Buttons inside table ─── */
     .btn-sm {
-        padding: 5px 12px;
+        padding: 6px 14px;
         border: none;
-        border-radius: 6px;
+        border-radius: 8px;
         font-size: 12px;
         font-weight: 600;
         cursor: pointer;
-        transition: all 0.2s;
+        transition: all 0.2s ease;
     }
 
     .btn-danger {
-        background: rgba(239, 68, 68, 0.1);
+        background: rgba(239, 68, 68, 0.12);
         color: #ef4444;
+        border: 1px solid rgba(239, 68, 68, 0.2);
     }
 
     .btn-danger:hover {
-        background: rgba(239, 68, 68, 0.2);
+        background: rgba(239, 68, 68, 0.25);
+        color: #dc2626;
     }
 
     .btn-info {
-        background: rgba(14, 165, 233, 0.1);
-        color: #0ea5e9;
+        background: rgba(14, 165, 233, 0.12);
+        color: #0284c7;
+        border: 1px solid rgba(14, 165, 233, 0.2);
     }
 
     .btn-info:hover {
-        background: rgba(14, 165, 233, 0.2);
+        background: rgba(14, 165, 233, 0.25);
+        color: #0369a1;
     }
 
     /* ─── Scrape Modal View ─── */
     #scrape-section {
         display: none;
-        background: var(--card-bg);
-        border: 1px solid var(--border-color);
+        background: var(--card-bg, #ffffff);
+        border: 1px solid var(--border-color, #e2e8f0);
         border-radius: 14px;
         padding: 24px;
         margin-bottom: 24px;
@@ -1926,7 +1941,7 @@ $targetPagesListJson = json_encode($targetPagesList);
         display: flex;
         justify-content: space-between;
         align-items: center;
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--border-color, #e2e8f0);
         padding-bottom: 16px;
         margin-bottom: 16px;
     }
@@ -1934,7 +1949,7 @@ $targetPagesListJson = json_encode($targetPagesList);
     .scrape-header h2 {
         font-size: 18px;
         font-weight: 700;
-        color: var(--primary-color);
+        color: var(--text-main, #1e293b);
         margin: 0;
     }
 
@@ -1953,20 +1968,21 @@ $targetPagesListJson = json_encode($targetPagesList);
     }
 
     .bot-card {
-        background: var(--card-bg);
-        border: 1px solid var(--border-color);
+        background: var(--card-bg, #ffffff);
+        border: 1px solid var(--border-color, #e2e8f0);
         border-radius: 14px;
         padding: 20px;
         display: flex;
         flex-direction: column;
         gap: 14px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.03);
-        transition: transform 0.2s, box-shadow 0.2s;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     }
 
     .bot-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+        box-shadow: 0 10px 20px -5px rgba(0,0,0,0.1);
+        border-color: rgba(99, 102, 241, 0.3);
     }
 
     .bot-card-header {
@@ -1978,13 +1994,13 @@ $targetPagesListJson = json_encode($targetPagesList);
     .bot-title {
         font-size: 16px;
         font-weight: 700;
-        color: var(--text-main);
+        color: var(--text-main, #1e293b);
         margin: 0 0 4px 0;
     }
 
     .bot-meta {
         font-size: 12px;
-        color: var(--text-muted);
+        color: var(--text-muted, #64748b);
     }
 
     .bot-badges {
@@ -1994,27 +2010,31 @@ $targetPagesListJson = json_encode($targetPagesList);
     }
 
     .badge-pill {
-        padding: 3px 8px;
+        padding: 4px 10px;
         border-radius: 12px;
         font-size: 11px;
         font-weight: 600;
-        background: rgba(24, 119, 242, 0.1);
-        color: #1877F2;
+        background: rgba(99, 102, 241, 0.12);
+        color: #4f46e5;
+        border: 1px solid rgba(99, 102, 241, 0.2);
     }
 
     .badge-pill.green {
-        background: rgba(16, 185, 129, 0.1);
-        color: #10b981;
+        background: rgba(16, 185, 129, 0.12);
+        color: #059669;
+        border: 1px solid rgba(16, 185, 129, 0.2);
     }
 
     .badge-pill.purple {
-        background: rgba(139, 92, 246, 0.1);
-        color: #8b5cf6;
+        background: rgba(139, 92, 246, 0.12);
+        color: #7c3aed;
+        border: 1px solid rgba(139, 92, 246, 0.2);
     }
 
     .badge-pill.orange {
-        background: rgba(245, 158, 11, 0.1);
+        background: rgba(245, 158, 11, 0.12);
         color: #d97706;
+        border: 1px solid rgba(245, 158, 11, 0.2);
     }
 
     .bot-actions {
@@ -2022,8 +2042,8 @@ $targetPagesListJson = json_encode($targetPagesList);
         align-items: center;
         gap: 8px;
         margin-top: auto;
-        padding-top: 10px;
-        border-top: 1px solid var(--border-color);
+        padding-top: 12px;
+        border-top: 1px solid var(--border-color, #e2e8f0);
     }
 
     /* ─── Modal Styles ─── */
@@ -2033,8 +2053,8 @@ $targetPagesListJson = json_encode($targetPagesList);
         left: 0;
         width: 100vw;
         height: 100vh;
-        background: rgba(0,0,0,0.5);
-        backdrop-filter: blur(4px);
+        background: rgba(15, 23, 42, 0.75);
+        backdrop-filter: blur(6px);
         z-index: 9999;
         display: flex;
         align-items: center;
@@ -2043,21 +2063,21 @@ $targetPagesListJson = json_encode($targetPagesList);
     }
 
     .custom-modal-card {
-        background: var(--card-bg);
-        border: 1px solid var(--border-color);
+        background: var(--card-bg, #ffffff);
+        border: 1px solid var(--border-color, #cbd5e1);
         border-radius: 16px;
         width: 100%;
         max-width: 720px;
         max-height: 90vh;
         overflow-y: auto;
-        box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
         display: flex;
         flex-direction: column;
     }
 
     .modal-head {
         padding: 18px 24px;
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--border-color, #e2e8f0);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -2067,7 +2087,7 @@ $targetPagesListJson = json_encode($targetPagesList);
         margin: 0;
         font-size: 18px;
         font-weight: 700;
-        color: var(--text-main);
+        color: var(--text-main, #1e293b);
     }
 
     .modal-body {
@@ -2079,7 +2099,7 @@ $targetPagesListJson = json_encode($targetPagesList);
 
     .modal-foot {
         padding: 16px 24px;
-        border-top: 1px solid var(--border-color);
+        border-top: 1px solid var(--border-color, #e2e8f0);
         display: flex;
         justify-content: flex-end;
         gap: 12px;
@@ -2092,9 +2112,9 @@ $targetPagesListJson = json_encode($targetPagesList);
         max-height: 200px;
         overflow-y: auto;
         padding: 10px;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        background: var(--bg-color);
+        border: 1px solid var(--border-color, #cbd5e1);
+        border-radius: 10px;
+        background: var(--card-bg, #ffffff);
     }
 
     .target-checklist label {
@@ -2103,12 +2123,12 @@ $targetPagesListJson = json_encode($targetPagesList);
         gap: 8px;
         font-size: 13px;
         cursor: pointer;
-        padding: 4px;
-        border-radius: 4px;
+        padding: 6px 10px;
+        border-radius: 6px;
     }
 
     .target-checklist label:hover {
-        background: rgba(24,119,242,0.05);
+        background: rgba(99, 102, 241, 0.1);
     }
 
     /* ─── Spinners ─── */
@@ -2228,7 +2248,7 @@ $targetPagesListJson = json_encode($targetPagesList);
                 </div>
                 <div class="search-field">
                     <label style="visibility:hidden;">‎</label>
-                    <label style="display:inline-flex; align-items:center; font-size:12px; gap:5px; cursor:pointer; white-space:nowrap; height:38px; background:rgba(24,119,242,0.06); border:1px solid rgba(24,119,242,0.15); border-radius:8px; padding:0 12px; margin:0;" title="Chỉ lấy các bài viết có nội dung chữ">
+                    <label style="display:inline-flex; align-items:center; font-size:12px; gap:5px; cursor:pointer; white-space:nowrap; height:38px; background:rgba(24,119,242,0.06); border:1px solid rgba(24,119,242,0.15); border-radius:8px; padding:0 12px; margin:0; color:var(--text-main, #1e293b);" title="Chỉ lấy các bài viết có nội dung chữ">
                         <input type="checkbox" id="scrape-only-content" style="margin:0;"> 📝 Chỉ bài có nội dung
                     </label>
                 </div>

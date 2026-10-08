@@ -307,44 +307,8 @@ try {
             $is_default_name = empty($cust_name) || (mb_strpos($cust_name, 'Khách vãng lai') !== false);
             $display_name_status = $is_default_name ? "CHƯA CÓ" : $cust_name;
 
-            // Build AI prompt context (Identical to Zalo OA & Facebook Live Chat)
-            $info_context = "\n\n--- THÔNG TIN KHÁCH HÀNG ĐÃ CÓ ---\n";
-            $info_context .= "- Tên/Xưng hô khách hàng: " . $display_name_status . "\n";
-            $info_context .= "- Số điện thoại: " . ($cust_phone ?: "CHƯA CÓ") . "\n";
-            $info_context .= "- Tỉnh thành: " . ($cust_province ?: "CHƯA CÓ") . "\n";
-            $info_context .= "- Nhu cầu/Yêu cầu khách hàng: " . ($cust_notes ?: "CHƯA CÓ") . "\n";
-            $info_context .= "-----------------------------------\n";
-            $info_context .= "HƯỚNG DẪN BẮT BUỘC: Bạn là chatbot chăm sóc khách hàng chuyên nghiệp. Hãy kiểm tra các thông tin ở trên:\n";
-            $info_context .= "1. Với thông tin nào đã có (không phải là 'CHƯA CÓ'), bạn tuyệt đối không được hỏi lại khách hàng nữa.\n";
-            $info_context .= "2. Với thông tin nào ghi 'CHƯA CÓ', hãy khéo léo, tự nhiên và thân thiện hỏi khách hàng để xin nốt. Quy tắc xin thông tin: Chỉ hỏi xin TỪNG thông tin một trong mỗi tin nhắn, TUYỆT ĐỐI không hỏi dồn dập nhiều thông tin cùng lúc. Bạn hãy ưu tiên hỏi xin Tên/Xưng hô (ví dụ: 'Dạ em có thể xưng hô với anh/chị như thế nào ạ?') và Nhu cầu/Sản phẩm trước để biết khách muốn mua gì và tiện giao tiếp, sau đó mới hỏi đến Tỉnh thành (khi hỏi tỉnh thành bạn phải chủ động giới thiệu địa chỉ cửa hàng của mình trước để khách biết vị trí của shop), và cuối cùng mới xin Số điện thoại để Sales liên hệ báo giá cụ thể. Trả lời NGẮN GỌN, đi thẳng vào câu hỏi. TUYỆT ĐỐI không cảm ơn đi cảm ơn lại nhiều lần.\n";
-            $info_context .= "3. Khi đã thu thập đủ cả 4 thông tin (Tên khách hàng, Số điện thoại, Tỉnh thành, Nhu cầu), hãy tóm tắt lại và gửi lời cảm ơn khách hàng.\n";
-            $info_context .= "4. ĐỊNH DẠNG TIN NHẮN: Hãy xuống dòng hợp lý để tin nhắn dễ đọc. Mỗi ý chính nên ở một dòng riêng.\n";
-            $info_context .= "5. KHÔNG LIỆT KÊ/TÓM TẮT GIỮA CUỘC: Trong suốt quá trình xin thông tin (khi chưa đủ thông tin), bạn TUYỆT ĐỐI KHÔNG ĐƯỢC nhắc lại, liệt kê hay tóm tắt các thông tin đã thu thập được. Chỉ tóm tắt đầy đủ duy nhất một lần ở cuối cuộc trò chuyện khi đã thu thập đủ thông tin.\n";
-
-            if (!$is_default_name) {
-                $info_context .= "⚠️ LƯU Ý ĐẶC BIỆT QUAN TRỌNG: Khách hàng này ĐÃ CÓ tên xưng hô là \"{$cust_name}\". Bạn TUYỆT ĐỐI KHÔNG ĐƯỢC HỎI XIN LẠI tên nữa và hãy chủ động xưng hô thân mật với khách bằng tên \"{$cust_name}\".\n";
-            }
-            if (!empty($cust_phone)) {
-                $info_context .= "⚠️ LƯU Ý ĐẶC BIỆT QUAN TRỌNG: Khách hàng này ĐÃ CÓ số điện thoại là \"{$cust_phone}\". Bạn TUYỆT ĐỐI KHÔNG ĐƯỢC HỎI XIN lại số điện thoại trong mọi trường hợp.\n";
-            }
-            if (!empty($cust_province)) {
-                $info_context .= "⚠️ LƯU Ý ĐẶC BIỆT QUAN TRỌNG: Khách hàng này ĐÃ CÓ tỉnh thành là \"{$cust_province}\". Bạn TUYỆT ĐỐI KHÔNG ĐƯỢC HỎI LẠI tỉnh thành nữa.\n";
-            }
-
-            $json_instruction = "\n\nQUY ĐỊNH PHẢN HỒI: BẮT BUỘC phải phản hồi dưới định dạng JSON duy nhất:\n";
-            $json_instruction .= "{\n";
-            $json_instruction .= '  "reply": "Nội dung tin nhắn trả lời khách hàng (tiếng Việt tự nhiên)",' . "\n";
-            $json_instruction .= '  "extracted": {' . "\n";
-            $json_instruction .= '    "name": "Tên/xưng hô phát hiện mới của khách hàng (ví dụ: Anh Hùng, Chị Mai) nếu khách cung cấp (hoặc null)",' . "\n";
-            $json_instruction .= '    "phone": "Số điện thoại phát hiện mới trong tin nhắn (hoặc null)",' . "\n";
-            $json_instruction .= '    "province": "Tỉnh thành phát hiện mới trong tin nhắn (hoặc null)",' . "\n";
-            $json_instruction .= '    "requirements": "Nhu cầu/sản phẩm khách hàng muốn mua (hoặc null)",' . "\n";
-            $json_instruction .= '    "stop_consulting": true hoặc false' . "\n";
-            $json_instruction .= "  }\n";
-            $json_instruction .= "}\n";
-
-            $base_prompt = $config['system_prompt'] ?: "Bạn là trợ lý tư vấn CSKH AI chuyên nghiệp tên {bot_name}. Hãy trả lời thân thiện, lịch sự.";
-            $sys_prompt = str_replace('{bot_name}', $bot_name, $base_prompt) . $info_context . $json_instruction;
+            require_once __DIR__ . '/../includes/bot_prompt_helper.php';
+            $sys_prompt = build_cop_pha_viet_system_prompt($config['system_prompt'] ?? '', $display_name_status, $cust_phone, $cust_province, $cust_notes, '', '', $history_text);
 
             $ai_response_raw = generate_chat_reply_with_ai($user_msg, $sys_prompt, $account_id, 'Website Live Chat', $history_text);
 
@@ -355,6 +319,8 @@ try {
                 $parsed_extracted = $ai_parsed['extracted'];
 
                 if (!empty($reply_to_send)) {
+                    $reply_to_send = filter_ai_reply_no_duplicate_asks($reply_to_send, $cust_phone, $cust_province, $cust_notes);
+
                     $ai_upd_fields = [];
                     $ai_upd_params = [];
                     if (!empty($parsed_extracted['name'])) {
@@ -372,9 +338,23 @@ try {
                         $ai_upd_fields[] = "province = ?";
                         $ai_upd_params[] = trim($parsed_extracted['province']);
                     }
-                    if (!empty($parsed_extracted['requirements'])) {
+                    $extracted_req = $parsed_extracted['requirements'] ?? null;
+                    if (!empty($extracted_req) && trim($extracted_req) !== 'null') {
+                        $ext_clean = trim($extracted_req);
+                        if (empty($cust_notes)) {
+                            $final_notes = $ext_clean;
+                        } else if (mb_strpos(mb_strtolower($cust_notes, 'UTF-8'), mb_strtolower($ext_clean, 'UTF-8')) === false) {
+                            $final_notes = $cust_notes . " - " . $ext_clean;
+                        } else {
+                            $final_notes = $cust_notes;
+                        }
+                    } else {
+                        $final_notes = detect_product_and_quantity($user_msg, $cust_notes);
+                    }
+                    if (!empty($final_notes) && $final_notes !== $cust_notes) {
                         $ai_upd_fields[] = "notes = ?";
-                        $ai_upd_params[] = trim($parsed_extracted['requirements']);
+                        $ai_upd_params[] = $final_notes;
+                        $cust_notes = $final_notes;
                     }
                     if (isset($parsed_extracted['stop_consulting']) && $parsed_extracted['stop_consulting'] === true) {
                         $ai_upd_fields[] = "consulted = 3";
@@ -567,12 +547,10 @@ try {
         $notes = trim($_POST['notes'] ?? '');
         $consulted = intval($_POST['consulted'] ?? 0);
 
-        // If customer has ALL 4 FIELDS (name, phone, province, notes), promote status 0 -> 4 (Chờ xử lý). If info incomplete, reset 4 -> 0.
+        // If customer has ALL 4 FIELDS (name, phone, province, notes), promote status 0 -> 4 (Chờ xử lý).
         $is_full_info = !empty($name) && !empty($phone) && !empty($province) && !empty($notes);
         if ($is_full_info && $consulted === 0) {
             $consulted = 4;
-        } elseif (!$is_full_info && $consulted === 4) {
-            $consulted = 0;
         }
 
         if (empty($visitor_uuid)) {

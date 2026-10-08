@@ -210,6 +210,13 @@ if (is_dir($lock_dir)) {
 $curr_processing_posts = 0;
 try {
     $curr_processing_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+    // Nếu tổng số bài đang PROCESSING vượt quá trần $MAX_WORKERS, tự động đưa các bài cũ nhất về 'pending'
+    if ($curr_processing_posts > $MAX_WORKERS) {
+        $excess = $curr_processing_posts - $MAX_WORKERS;
+        $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' ORDER BY updated_at ASC LIMIT " . (int)$excess);
+        $curr_processing_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+        echo "  [THROTTLE] Đã đưa $excess bài PROCESSING dư thừa vượt trần $MAX_WORKERS về 'pending'.\n";
+    }
 } catch (Exception $e) {}
 
 $effective_active = max($active_workers, $curr_processing_posts);

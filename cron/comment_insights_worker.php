@@ -1,16 +1,11 @@
 <?php
 // cron/comment_insights_worker.php
-// OPTIMIZED VERSION: Uses curl_multi for parallel API calls
+// MULTI-THREADED PRIORITIZED INSIGHTS WORKER
 //
-// Checks published Reels/Videos that have comment_mode='insights' and comment_status='waiting_insights'
-// Uses Facebook Graph API video_insights to check if the post meets thresholds (views, likes, comments)
-// If thresholds are met, posts a comment immediately.
-// Designed to be called by cron every 5 minutes.
-//
-// Performance: With curl_multi, checks ALL waiting posts (even thousands) in minutes
-// instead of hours with the old sequential approach.
-//
-// Crontab: */5 * * * * php /path/to/cron/comment_insights_worker.php
+// 1. Prioritizes NEWEST published posts first (ORDER BY scheduled_time DESC, id DESC)
+// 2. Supports multi-threading via --thread=X and --total-threads=N
+// 3. Checks each post individually using cURL multi parallel handles (Direct views field, Post Insights post_video_views, Engagement)
+// 4. If thresholds are met, posts a comment immediately.
 
 ignore_user_abort(true);
 set_time_limit(0);
@@ -20,96 +15,163 @@ require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/telegram.php';
 require_once __DIR__ . '/../includes/redis_queue.php';
 
-$rq = RedisQueue::getInstance();
-if (!$rq->acquireLock('lock:cron:comment_insights_worker', 1800)) {
-    echo "Tiến trình comment_insights_worker đang chạy (Redis Lock). Bỏ qua.\n";
-    exit;
+// Helper function to extract clean Facebook Video/Post ID
+function get_clean_fb_id($fb_post_id) {
+    if (empty($fb_post_id)) return '';
+    $fb_post_id = trim($fb_post_id);
+    if (strpos($fb_post_id, '#') !== false) {
+        $parts = explode('#', $fb_post_id);
+        $last = trim(end($parts));
+        if (is_numeric($last)) return $last;
+        $fb_post_id = $parts[0];
+    }
+    if (strpos($fb_post_id, 'http') === 0) {
+        if (preg_match('/\/(\d{10,})\/?/', $fb_post_id, $m)) {
+            return $m[1];
+        }
+    }
+    return $fb_post_id;
 }
 
-$lock_file = sys_get_temp_dir() . "/facebook_comment_insights_worker.lock";
+// Parse CLI arguments
+$is_force = isset($_GET['force']) || (isset($argv) && in_array('--force', $argv));
+
+$thread = null;
+$total_threads = null;
+if (isset($_GET['thread'])) $thread = intval($_GET['thread']);
+if (isset($_GET['total_threads'])) $total_threads = intval($_GET['total_threads']);
+
+if (isset($argv) && is_array($argv)) {
+    foreach ($argv as $arg) {
+        if (strpos($arg, '--thread=') === 0) {
+            $thread = intval(substr($arg, 9));
+        }
+        if (strpos($arg, '--total-threads=') === 0) {
+            $total_threads = intval(substr($arg, 16));
+        }
+    }
+}
+
+$lock_suffix = ($thread !== null) ? "_t{$thread}" : "";
+$redis_lock_key = "lock:cron:comment_insights_worker" . $lock_suffix;
+$lock_file = sys_get_temp_dir() . "/facebook_comment_insights_worker{$lock_suffix}.lock";
+
+$rq = RedisQueue::getInstance();
+if ($is_force) {
+    echo "[INFO] Đã bật cờ --force: Bỏ qua kiểm tra Lock.\n";
+} else {
+    if (!$rq->acquireLock($redis_lock_key, 300)) {
+        echo "Tiến trình comment_insights_worker{$lock_suffix} đang chạy (Redis Lock). Bỏ qua.\n";
+        exit;
+    }
+}
+
 $lock_fp = @fopen($lock_file, 'c');
-if ($lock_fp) {
+if ($lock_fp && !$is_force) {
     @flock($lock_fp, LOCK_EX | LOCK_NB);
 }
 
-echo "\n=== Comment Insights Worker (Parallel Mode) ===\n";
-echo "Thời gian: " . date('Y-m-d H:i:s') . "\n";
+register_shutdown_function(function() use ($rq, &$lock_fp, &$lock_file, $is_force, $redis_lock_key) {
+    if (!$is_force) {
+        try {
+            if ($rq && method_exists($rq, 'releaseLock')) {
+                $rq->releaseLock($redis_lock_key);
+            }
+        } catch (Exception $e) {}
+        if ($lock_fp) {
+            @flock($lock_fp, LOCK_UN);
+            @fclose($lock_fp);
+        }
+        if ($lock_file && file_exists($lock_file)) {
+            @unlink($lock_file);
+        }
+    }
+});
 
-// Ghi nhận thời gian chạy vào DB để theo dõi cron
+$thread_label = ($thread !== null && $total_threads !== null) ? " (Thread {$thread}/{$total_threads})" : "";
+echo "\n======================================================\n";
+echo "   COMMENT INSIGHTS WORKER{$thread_label} — " . date('Y-m-d H:i:s') . "\n";
+echo "======================================================\n";
+
+// Record last run time
 try {
     $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('last_insights_cron_run', NOW()) ON DUPLICATE KEY UPDATE setting_value = NOW()")->execute();
 } catch (Exception $e) {}
 
-// ── Fetch ALL posts waiting for insights check (không giới hạn LIMIT) ─────
+// ── Fetch posts waiting for insights check (NEWEST FIRST) ──────────────────
+$time_filter_sql = "";
+if (!$is_force) {
+    // Không quét lại bài vừa quét trong 15 phút qua (để nhường tài nguyên cho bài khác)
+    $time_filter_sql = " AND (sp.updated_at IS NULL OR sp.updated_at <= NOW() - INTERVAL 15 MINUTE)";
+}
+
+$thread_filter_sql = "";
+if ($thread !== null && $total_threads !== null && $total_threads > 0) {
+    $thread_filter_sql = " AND (sp.id % {$total_threads} = {$thread})";
+}
+
 try {
     $stmt = $pdo->prepare("
         SELECT sp.id, sp.fb_post_id, sp.comment_lines, sp.page_id, sp.post_type,
                sp.comment_threshold_views, sp.comment_threshold_likes, sp.comment_threshold_comments,
-               sp.account_id, sp.scheduled_time
+               sp.account_id, sp.scheduled_time, sp.created_at, sp.updated_at
         FROM scheduled_posts sp
         JOIN system_accounts sa ON sp.account_id = sa.id
         WHERE sp.status = 'published'
           AND sp.comment_mode = 'insights'
-          AND sp.comment_status = 'waiting_insights'
+          AND (sp.comment_status = 'waiting_insights' OR sp.comment_status IS NULL OR sp.comment_status = '' OR sp.comment_status = 'pending')
           AND sp.comment_lines IS NOT NULL
+          AND sp.comment_lines != ''
           AND sp.comment_done = 0
           AND sp.fb_post_id IS NOT NULL
           AND sp.fb_post_id != ''
           AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
-        ORDER BY sp.id ASC
+          {$time_filter_sql}
+          {$thread_filter_sql}
+        ORDER BY sp.scheduled_time DESC, sp.id DESC
     ");
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    echo "Lỗi truy vấn: " . $e->getMessage() . "\n";
-    flock($lock_fp, LOCK_UN);
-    fclose($lock_fp);
-    @unlink($lock_file);
+    echo "❌ Lỗi truy vấn DB: " . $e->getMessage() . "\n";
     exit;
 }
 
 if (empty($rows)) {
-    echo "Không có bài nào cần kiểm tra insights.\n";
-    echo "==============================\n";
-    flock($lock_fp, LOCK_UN);
-    fclose($lock_fp);
-    @unlink($lock_file);
+    echo "📭 Không có bài viết nào cần kiểm tra lúc này{$thread_label}.\n";
+    echo "======================================================\n";
     exit;
 }
 
-echo "Tìm thấy " . count($rows) . " bài cần kiểm tra insights (chế độ song song).\n\n";
+echo "📋 Tìm thấy " . count($rows) . " bài viết cần kiểm tra (Ưu tiên bài MỚI ĐĂNG trước).\n\n";
 
-// ── Bước 0: Lọc bài hết hạn 24h trước ──────────────────────────────────────
+// ── Bước 0: Lọc bài quá hạn 48h ──────────────────────────────────────────
 $active_rows = [];
 $expired_ids = [];
 foreach ($rows as $row) {
-    $scheduled_time = $row['scheduled_time'];
-    if ($scheduled_time && (time() - strtotime($scheduled_time)) > 86400) {
+    $ref_time = !empty($row['scheduled_time']) ? strtotime($row['scheduled_time']) : (!empty($row['created_at']) ? strtotime($row['created_at']) : time());
+    if ($ref_time > 0 && (time() - $ref_time) > 172800) { // 48 giờ
         $expired_ids[] = $row['id'];
-        echo "─ ID {$row['id']} | ⏳ Quá 24h ($scheduled_time). Ngừng theo dõi.\n";
+        echo "  ⏳ Post #{$row['id']} | Quá 48h theo dõi (" . date('Y-m-d H:i', $ref_time) . "). Đánh dấu hết hạn.\n";
     } else {
         $active_rows[] = $row;
     }
 }
 
-// Batch update expired posts
 if (!empty($expired_ids)) {
     $placeholders = implode(',', array_fill(0, count($expired_ids), '?'));
     $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'expired_insights' WHERE id IN ($placeholders)")
         ->execute($expired_ids);
-    echo "→ Đã đánh dấu " . count($expired_ids) . " bài hết hạn.\n\n";
+    echo "  → Đã cập nhật " . count($expired_ids) . " bài sang trạng thái 'expired_insights'.\n\n";
 }
 
 if (empty($active_rows)) {
-    echo "Không còn bài active nào sau khi lọc hết hạn.\n";
-    echo "==============================\n";
-    flock($lock_fp, LOCK_UN);
-    fclose($lock_fp);
-    @unlink($lock_file);
+    echo "📭 Không còn bài active nào sau khi lọc các bài quá hạn 48h.\n";
+    echo "======================================================\n";
     exit;
 }
 
-echo "Bài còn active: " . count($active_rows) . "\n";
+echo "🔍 Số bài active sẵn sàng quét API: " . count($active_rows) . " bài.\n";
 
 // ── Bước 1: Thu thập page access tokens ─────────────────────────────────────
 $page_ids_needed = array_unique(array_column($active_rows, 'page_id'));
@@ -122,257 +184,105 @@ try {
         $page_tokens[$t['page_id']] = decryptData($t['access_token']);
     }
 } catch (Exception $e) {
-    echo "Lỗi lấy token: " . $e->getMessage() . "\n";
+    echo "❌ Lỗi lấy token trang: " . $e->getMessage() . "\n";
 }
 
-// Lọc bỏ bài không có token
 $valid_rows = [];
 foreach ($active_rows as $row) {
     if (!empty($page_tokens[$row['page_id']])) {
         $valid_rows[] = $row;
     } else {
-        echo "─ ID {$row['id']} | ✗ Không tìm thấy token cho page_id: {$row['page_id']}. Bỏ qua.\n";
+        echo "  ❌ Post #{$row['id']} | Không tìm thấy Access Token cho Page ID: {$row['page_id']}. Ngắt dừng theo dõi.\n";
+        try {
+            $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'missing_token' WHERE id = ?")->execute([$row['id']]);
+        } catch (Exception $e) {}
     }
 }
 
 if (empty($valid_rows)) {
-    echo "Không còn bài nào có token hợp lệ.\n";
-    echo "==============================\n";
-    flock($lock_fp, LOCK_UN);
-    fclose($lock_fp);
-    @unlink($lock_file);
+    echo "❌ Không còn bài nào có Token trang hợp lệ.\n";
+    echo "======================================================\n";
     exit;
 }
 
-echo "Bài có token hợp lệ: " . count($valid_rows) . "\n";
-
-if ($rq->isAvailable()) {
-    $rq->deleteCache('fb_insights_queue');
-    $pushed_insights = 0;
-    foreach ($valid_rows as $vr) {
-        if ($rq->pushJob('fb_insights_queue', ['id' => $vr['id'], 'fb_post_id' => $vr['fb_post_id'], 'page_id' => $vr['page_id']])) {
-            $pushed_insights++;
-        }
-    }
-    echo "  [REDIS QUEUE] Đã đẩy $pushed_insights bài vào hàng đợi fb_insights_queue.\n";
-}
-
-// Touch lock file để tránh bị coi là stale
 @touch($lock_file);
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PHA 1: CHECK VIEWS SONG SONG (curl_multi, 50 bài/lượt)
+// STREAMING BATCH (50 BÀI/ĐỢT) — QUÉT CHI TIẾT TỪNG BÀI SONG SONG CẤP THẤP
 // ═══════════════════════════════════════════════════════════════════════════════
-echo "\n── Pha 1: Kiểm tra Views (song song, 50 bài/lượt) ──\n";
-
-$views_data = []; // id => views count
 $chunks = array_chunk($valid_rows, 50);
+$total_valid = count($valid_rows);
+$total_chunks = count($chunks);
+
+echo "\n🚀 BẮT ĐẦU QUÉT & BÌNH LUẬN SONG SONG ($total_valid bài chia làm $total_chunks đợt - Ưu tiên bài mới trước)...\n";
+@ob_flush(); @flush();
+
+$qualified_count = 0;
+$not_qualified_count = 0;
+$api_error_count = 0;
 
 foreach ($chunks as $chunk_idx => $chunk) {
-    $multi_curl = curl_multi_init();
-    $handles = [];
-
-    foreach ($chunk as $row) {
-        $fb_post_id = $row['fb_post_id'];
-        $token = $page_tokens[$row['page_id']];
-        $is_reel = ($row['post_type'] === 'Reel');
-        $view_metric = $is_reel ? 'blue_reels_play_count' : 'total_video_views';
-
-        $url = FB_API_BASE . $fb_post_id . '/video_insights?'
-             . http_build_query(['metric' => $view_metric, 'period' => 'lifetime', 'access_token' => $token]);
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        fb_curl_setssl($ch);
-        curl_multi_add_handle($multi_curl, $ch);
-        $handles[$row['id']] = ['ch' => $ch, 'row' => $row, 'metric' => $view_metric];
+    if (function_exists('ensure_pdo_alive')) {
+        ensure_pdo_alive($pdo);
     }
-
-    // Execute all requests in parallel
-    $active = null;
-    do {
-        $mrc = curl_multi_exec($multi_curl, $active);
-        if ($active) {
-            curl_multi_select($multi_curl, 0.5);
-        }
-    } while ($active && $mrc == CURLM_OK);
-
-    // Collect results
-    foreach ($handles as $id => $info) {
-        $response = curl_multi_getcontent($info['ch']);
-        $http_code = curl_getinfo($info['ch'], CURLINFO_HTTP_CODE);
-        curl_multi_remove_handle($multi_curl, $info['ch']);
-
-        $current_views = 0;
-        if ($http_code === 200) {
-            $data = json_decode($response, true);
-            if (!empty($data['data'])) {
-                foreach ($data['data'] as $metric) {
-                    if ($metric['name'] === $info['metric'] && isset($metric['values'][0]['value'])) {
-                        $current_views = (int)$metric['values'][0]['value'];
-                        break;
-                    }
-                }
-            }
-        }
-        $views_data[$id] = $current_views;
-    }
-    curl_multi_close($multi_curl);
-
-    echo "  Batch " . ($chunk_idx + 1) . "/" . count($chunks) . ": " . count($chunk) . " bài đã kiểm tra views.\n";
-
-    // Touch lock file giữa các batch
     @touch($lock_file);
-}
 
-// ── Fallback: Bài có views = 0, thử alternate metric + video object ─────────
-$zero_view_rows = [];
-foreach ($valid_rows as $row) {
-    if (($views_data[$row['id']] ?? 0) === 0) {
-        $zero_view_rows[] = $row;
-    }
-}
+    $chunk_num = $chunk_idx + 1;
+    echo "\n⚡ [ĐỢT {$chunk_num}/{$total_chunks}] Đang lấy chỉ số API cho " . count($chunk) . " bài...\n";
+    @ob_flush(); @flush();
 
-if (!empty($zero_view_rows)) {
-    echo "  → " . count($zero_view_rows) . " bài views=0, thử fallback alternate metric...\n";
-    $fallback_chunks = array_chunk($zero_view_rows, 50);
-
-    foreach ($fallback_chunks as $chunk) {
-        $multi_curl = curl_multi_init();
-        $handles = [];
-
-        foreach ($chunk as $row) {
-            $fb_post_id = $row['fb_post_id'];
-            $token = $page_tokens[$row['page_id']];
-            $is_reel = ($row['post_type'] === 'Reel');
-            // Dùng metric ngược lại
-            $alt_metric = $is_reel ? 'total_video_views' : 'blue_reels_play_count';
-
-            $url = FB_API_BASE . $fb_post_id . '/video_insights?'
-                 . http_build_query(['metric' => $alt_metric, 'period' => 'lifetime', 'access_token' => $token]);
-
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            fb_curl_setssl($ch);
-            curl_multi_add_handle($multi_curl, $ch);
-            $handles[$row['id']] = ['ch' => $ch, 'row' => $row, 'metric' => $alt_metric];
-        }
-
-        $active = null;
-        do {
-            $mrc = curl_multi_exec($multi_curl, $active);
-            if ($active) curl_multi_select($multi_curl, 0.5);
-        } while ($active && $mrc == CURLM_OK);
-
-        foreach ($handles as $id => $info) {
-            $response = curl_multi_getcontent($info['ch']);
-            $http_code = curl_getinfo($info['ch'], CURLINFO_HTTP_CODE);
-            curl_multi_remove_handle($multi_curl, $info['ch']);
-
-            if ($http_code === 200) {
-                $data = json_decode($response, true);
-                if (!empty($data['data'])) {
-                    foreach ($data['data'] as $metric) {
-                        if ($metric['name'] === $info['metric'] && isset($metric['values'][0]['value'])) {
-                            $v = (int)$metric['values'][0]['value'];
-                            if ($v > 0) $views_data[$id] = $v;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        curl_multi_close($multi_curl);
-    }
-
-    // Fallback 2: Bài vẫn views=0, thử lấy trực tiếp từ Video object
-    $still_zero = [];
-    foreach ($zero_view_rows as $row) {
-        if (($views_data[$row['id']] ?? 0) === 0) {
-            $still_zero[] = $row;
-        }
-    }
-
-    if (!empty($still_zero)) {
-        echo "  → " . count($still_zero) . " bài vẫn views=0, thử Video object fields...\n";
-        $fallback2_chunks = array_chunk($still_zero, 50);
-        foreach ($fallback2_chunks as $chunk) {
-            $multi_curl = curl_multi_init();
-            $handles = [];
-
-            foreach ($chunk as $row) {
-                $url = FB_API_BASE . $row['fb_post_id'] . '?'
-                     . http_build_query(['fields' => 'views,video_view_count', 'access_token' => $page_tokens[$row['page_id']]]);
-
-                $ch = curl_init();
-                curl_setopt($ch, CURLOPT_URL, $url);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-                fb_curl_setssl($ch);
-                curl_multi_add_handle($multi_curl, $ch);
-                $handles[$row['id']] = ['ch' => $ch, 'row' => $row];
-            }
-
-            $active = null;
-            do {
-                $mrc = curl_multi_exec($multi_curl, $active);
-                if ($active) curl_multi_select($multi_curl, 0.5);
-            } while ($active && $mrc == CURLM_OK);
-
-            foreach ($handles as $id => $info) {
-                $response = curl_multi_getcontent($info['ch']);
-                $http_code = curl_getinfo($info['ch'], CURLINFO_HTTP_CODE);
-                curl_multi_remove_handle($multi_curl, $info['ch']);
-
-                if ($http_code === 200) {
-                    $data = json_decode($response, true);
-                    $v1 = (int)($data['views'] ?? 0);
-                    $v2 = (int)($data['video_view_count'] ?? 0);
-                    $v = max($v1, $v2);
-                    if ($v > 0) $views_data[$id] = $v;
-                }
-            }
-            curl_multi_close($multi_curl);
-        }
-    }
-}
-
-@touch($lock_file);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PHA 2: CHECK LIKES/COMMENTS SONG SONG (curl_multi, 50 bài/lượt)
-// ═══════════════════════════════════════════════════════════════════════════════
-echo "\n── Pha 2: Kiểm tra Likes/Comments (song song, 50 bài/lượt) ──\n";
-
-$engagement_data = []; // id => ['likes' => x, 'comments' => y]
-$engagement_chunks = array_chunk($valid_rows, 50);
-
-foreach ($engagement_chunks as $chunk_idx => $chunk) {
+    // Gọi song song 3 Handles cURL cho MỖI BÀI VIẾT trong đợt
     $multi_curl = curl_multi_init();
-    $handles = [];
+    $post_handles = [];
 
     foreach ($chunk as $row) {
+        $clean_id = get_clean_fb_id($row['fb_post_id']);
+        $video_id = (strpos($clean_id, '_') !== false) ? explode('_', $clean_id)[1] : $clean_id;
+        $target_id = (strpos($clean_id, '_') !== false) ? $clean_id : ($row['page_id'] . '_' . $clean_id);
         $token = $page_tokens[$row['page_id']];
-        // Thử format pageid_videoid trước (phổ biến nhất)
-        $target_id = $row['page_id'] . '_' . $row['fb_post_id'];
 
-        $url = FB_API_BASE . $target_id . '?'
-             . http_build_query([
-                 'fields' => 'reactions.summary(true),likes.summary(true),comments.summary(true)',
-                 'access_token' => $token
-               ]);
+        // Handle 1: Engagement (Reactions, Likes, Comments)
+        $url1 = FB_API_BASE . $target_id . '?' . http_build_query([
+            'fields' => 'reactions.summary(true),likes.summary(true),comments.summary(true)',
+            'access_token' => $token
+        ]);
+        $ch1 = curl_init($url1);
+        curl_setopt($ch1, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch1, CURLOPT_TIMEOUT, 15);
+        fb_curl_setssl($ch1);
+        curl_multi_add_handle($multi_curl, $ch1);
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        fb_curl_setssl($ch);
-        curl_multi_add_handle($multi_curl, $ch);
-        $handles[$row['id']] = ['ch' => $ch, 'row' => $row];
+        // Handle 2: Direct Video field 'views'
+        $url2 = FB_API_BASE . $video_id . '?' . http_build_query([
+            'fields' => 'views,length',
+            'access_token' => $token
+        ]);
+        $ch2 = curl_init($url2);
+        curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch2, CURLOPT_TIMEOUT, 15);
+        fb_curl_setssl($ch2);
+        curl_multi_add_handle($multi_curl, $ch2);
+
+        // Handle 3: Post Insights 'post_video_views'
+        $url3 = FB_API_BASE . $target_id . '/insights?' . http_build_query([
+            'metric' => 'post_video_views',
+            'period' => 'lifetime',
+            'access_token' => $token
+        ]);
+        $ch3 = curl_init($url3);
+        curl_setopt($ch3, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch3, CURLOPT_TIMEOUT, 15);
+        fb_curl_setssl($ch3);
+        curl_multi_add_handle($multi_curl, $ch3);
+
+        $post_handles[$row['id']] = [
+            'ch1' => $ch1,
+            'ch2' => $ch2,
+            'ch3' => $ch3,
+            'row' => $row,
+            'video_id' => $video_id,
+            'target_id' => $target_id
+        ];
     }
 
     $active = null;
@@ -381,285 +291,241 @@ foreach ($engagement_chunks as $chunk_idx => $chunk) {
         if ($active) curl_multi_select($multi_curl, 0.5);
     } while ($active && $mrc == CURLM_OK);
 
-    foreach ($handles as $id => $info) {
-        $response = curl_multi_getcontent($info['ch']);
-        $http_code = curl_getinfo($info['ch'], CURLINFO_HTTP_CODE);
-        curl_multi_remove_handle($multi_curl, $info['ch']);
+    $batch_metrics = [];
+    $fatal_error_posts = [];
 
+    foreach ($post_handles as $id => $h) {
+        $views = 0;
         $likes = 0;
         $comments = 0;
 
-        if ($http_code === 200) {
-            $data = json_decode($response, true);
-            $reacts = (int)($data['reactions']['summary']['total_count'] ?? 0);
-            $lk = (int)($data['likes']['summary']['total_count'] ?? 0);
+        // Parse Handle 1 (Engagement)
+        $res1 = curl_multi_getcontent($h['ch1']);
+        $code1 = curl_getinfo($h['ch1'], CURLINFO_HTTP_CODE);
+        curl_multi_remove_handle($multi_curl, $h['ch1']);
+        if ($code1 === 200) {
+            $d1 = json_decode($res1, true);
+            $reacts = (int)($d1['reactions']['summary']['total_count'] ?? 0);
+            $lk = (int)($d1['likes']['summary']['total_count'] ?? 0);
             $likes = max($reacts, $lk);
-            $comments = (int)($data['comments']['summary']['total_count'] ?? 0);
-        }
-        $engagement_data[$id] = ['likes' => $likes, 'comments' => $comments, 'format_ok' => ($http_code === 200)];
-    }
-    curl_multi_close($multi_curl);
+            $comments = (int)($d1['comments']['summary']['total_count'] ?? 0);
+        } else {
+            $d1 = json_decode($res1, true);
+            $err_code = (int)($d1['error']['code'] ?? 0);
+            $err_subcode = (int)($d1['error']['error_subcode'] ?? 0);
+            $err_msg = $d1['error']['message'] ?? ($res1 ? mb_strimwidth($res1, 0, 100, '…') : "HTTP {$code1}");
+            $err_msg_lower = mb_strtolower($err_msg);
 
-    echo "  Batch " . ($chunk_idx + 1) . "/" . count($engagement_chunks) . ": " . count($chunk) . " bài đã kiểm tra engagement.\n";
-    @touch($lock_file);
-}
+            $is_token_or_checkpoint = in_array($err_code, [190, 102, 200])
+                || in_array($err_subcode, [458, 459, 460, 463, 467])
+                || strpos($err_msg_lower, 'checkpoint') !== false
+                || strpos($err_msg_lower, 'access token') !== false
+                || strpos($err_msg_lower, 'session') !== false
+                || strpos($err_msg_lower, 'permission') !== false;
 
-// Fallback: Bài format pageid_videoid không được, thử videoid trực tiếp
-$format_failed = [];
-foreach ($valid_rows as $row) {
-    $eng = $engagement_data[$row['id']] ?? null;
-    if (!$eng || (!$eng['format_ok'] || ($eng['likes'] === 0 && $eng['comments'] === 0))) {
-        $format_failed[] = $row;
-    }
-}
+            $is_object_not_found = ($err_code === 100)
+                || strpos($err_msg_lower, 'does not exist') !== false
+                || strpos($err_msg_lower, 'cannot be loaded') !== false
+                || strpos($err_msg_lower, 'unsupported get request') !== false;
 
-if (!empty($format_failed)) {
-    echo "  → " . count($format_failed) . " bài thử fallback videoid format...\n";
-    $fb_chunks = array_chunk($format_failed, 50);
-
-    foreach ($fb_chunks as $chunk) {
-        $multi_curl = curl_multi_init();
-        $handles = [];
-
-        foreach ($chunk as $row) {
-            $token = $page_tokens[$row['page_id']];
-            // Thử chỉ videoid
-            $url = FB_API_BASE . $row['fb_post_id'] . '?'
-                 . http_build_query([
-                     'fields' => 'reactions.summary(true),likes.summary(true),comments.summary(true)',
-                     'access_token' => $token
-                   ]);
-
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            fb_curl_setssl($ch);
-            curl_multi_add_handle($multi_curl, $ch);
-            $handles[$row['id']] = ['ch' => $ch, 'row' => $row];
-        }
-
-        $active = null;
-        do {
-            $mrc = curl_multi_exec($multi_curl, $active);
-            if ($active) curl_multi_select($multi_curl, 0.5);
-        } while ($active && $mrc == CURLM_OK);
-
-        foreach ($handles as $id => $info) {
-            $response = curl_multi_getcontent($info['ch']);
-            $http_code = curl_getinfo($info['ch'], CURLINFO_HTTP_CODE);
-            curl_multi_remove_handle($multi_curl, $info['ch']);
-
-            if ($http_code === 200) {
-                $data = json_decode($response, true);
-                $reacts = (int)($data['reactions']['summary']['total_count'] ?? 0);
-                $lk = (int)($data['likes']['summary']['total_count'] ?? 0);
-                $likes = max($reacts, $lk);
-                $comments_count = (int)($data['comments']['summary']['total_count'] ?? 0);
-
-                if ($likes > 0 || $comments_count > 0) {
-                    $engagement_data[$id] = ['likes' => $likes, 'comments' => $comments_count, 'format_ok' => true];
-                }
+            if ($is_token_or_checkpoint) {
+                $fatal_error_posts[$id] = [
+                    'status' => 'error_checkpoint',
+                    'reason' => "Tài khoản/Token lỗi hoặc bị Checkpoint (#{$err_code}): " . mb_strimwidth($err_msg, 0, 80, '…')
+                ];
+            } elseif ($is_object_not_found) {
+                $fatal_error_posts[$id] = [
+                    'status' => 'error_post_deleted',
+                    'reason' => "Bài viết không tồn tại/đã xóa (#{$err_code}): " . mb_strimwidth($err_msg, 0, 80, '…')
+                ];
+            } elseif ($code1 >= 400) {
+                $fatal_error_posts[$id] = [
+                    'status' => 'error_api',
+                    'reason' => "Lỗi FB Graph API HTTP {$code1}: " . mb_strimwidth($err_msg, 0, 80, '…')
+                ];
             }
         }
-        curl_multi_close($multi_curl);
-    }
-}
 
-// Fallback 3: engagement field cho bài vẫn likes=0
-$still_no_likes = [];
-foreach ($valid_rows as $row) {
-    $eng = $engagement_data[$row['id']] ?? null;
-    if (!$eng || $eng['likes'] === 0) {
-        $still_no_likes[] = $row;
-    }
-}
-
-if (!empty($still_no_likes)) {
-    echo "  → " . count($still_no_likes) . " bài likes=0, thử engagement field...\n";
-    $eng_chunks = array_chunk($still_no_likes, 50);
-
-    foreach ($eng_chunks as $chunk) {
-        $multi_curl = curl_multi_init();
-        $handles = [];
-
-        foreach ($chunk as $row) {
-            $url = FB_API_BASE . $row['fb_post_id'] . '?'
-                 . http_build_query(['fields' => 'engagement', 'access_token' => $page_tokens[$row['page_id']]]);
-
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            fb_curl_setssl($ch);
-            curl_multi_add_handle($multi_curl, $ch);
-            $handles[$row['id']] = ['ch' => $ch, 'row' => $row];
+        // Parse Handle 2 (Direct Video Views)
+        $res2 = curl_multi_getcontent($h['ch2']);
+        $code2 = curl_getinfo($h['ch2'], CURLINFO_HTTP_CODE);
+        curl_multi_remove_handle($multi_curl, $h['ch2']);
+        if ($code2 === 200) {
+            $d2 = json_decode($res2, true);
+            if (isset($d2['views']) && is_numeric($d2['views'])) {
+                $views = max($views, (int)$d2['views']);
+            }
         }
 
-        $active = null;
-        do {
-            $mrc = curl_multi_exec($multi_curl, $active);
-            if ($active) curl_multi_select($multi_curl, 0.5);
-        } while ($active && $mrc == CURLM_OK);
-
-        foreach ($handles as $id => $info) {
-            $response = curl_multi_getcontent($info['ch']);
-            $http_code = curl_getinfo($info['ch'], CURLINFO_HTTP_CODE);
-            curl_multi_remove_handle($multi_curl, $info['ch']);
-
-            if ($http_code === 200) {
-                $data = json_decode($response, true);
-                if (isset($data['engagement'])) {
-                    $reaction_count = (int)($data['engagement']['reaction_count'] ?? 0);
-                    if ($reaction_count > 0) {
-                        if (!isset($engagement_data[$id])) {
-                            $engagement_data[$id] = ['likes' => 0, 'comments' => 0, 'format_ok' => true];
-                        }
-                        $engagement_data[$id]['likes'] = max($engagement_data[$id]['likes'], $reaction_count);
+        // Parse Handle 3 (Post Insights post_video_views)
+        $res3 = curl_multi_getcontent($h['ch3']);
+        $code3 = curl_getinfo($h['ch3'], CURLINFO_HTTP_CODE);
+        curl_multi_remove_handle($multi_curl, $h['ch3']);
+        if ($code3 === 200) {
+            $d3 = json_decode($res3, true);
+            if (!empty($d3['data'])) {
+                foreach ($d3['data'] as $m_item) {
+                    if (isset($m_item['values'][0]['value'])) {
+                        $v = (int)$m_item['values'][0]['value'];
+                        if ($v > 0) $views = max($views, $v);
                     }
                 }
             }
         }
-        curl_multi_close($multi_curl);
+
+        $batch_metrics[$id] = [
+            'views' => $views,
+            'likes' => $likes,
+            'comments' => $comments
+        ];
     }
-}
+    curl_multi_close($multi_curl);
 
-@touch($lock_file);
+    // ── ĐÁNH GIÁ NGƯỠNG & BÌNH LUẬN CHO BÀI ĐỦ ĐIỀU KIỆN ─────────────────────
+    $chunk_qualified = 0;
+    $chunk_ids = array_column($chunk, 'id');
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PHA 3: SO SÁNH NGƯỠNG & BÌNH LUẬN CHO CÁC BÀI ĐỦ ĐIỀU KIỆN
-// ═══════════════════════════════════════════════════════════════════════════════
-echo "\n── Pha 3: Đánh giá ngưỡng & bình luận ──\n";
+    foreach ($chunk as $row) {
+        $id = $row['id'];
 
-$qualified_count = 0;
-$not_qualified_count = 0;
-
-foreach ($valid_rows as $row) {
-    $id = $row['id'];
-    $current_views = $views_data[$id] ?? 0;
-    $current_likes = $engagement_data[$id]['likes'] ?? 0;
-    $current_comments = $engagement_data[$id]['comments'] ?? 0;
-
-    $threshold_views = (int)($row['comment_threshold_views'] ?? 1000);
-    $threshold_likes = (int)($row['comment_threshold_likes'] ?? 10);
-    $threshold_comments = (int)($row['comment_threshold_comments'] ?? 5);
-
-    $views_ok = ($current_views >= $threshold_views);
-    $likes_ok = ($current_likes >= $threshold_likes);
-    $comments_ok = ($current_comments >= $threshold_comments);
-
-    // Cập nhật updated_at để round-robin (bài vừa check xuống cuối hàng đợi)
-    $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW() WHERE id = ?")->execute([$id]);
-
-    if (!$views_ok || !$likes_ok || !$comments_ok) {
-        $not_qualified_count++;
-        // Chỉ log chi tiết nếu số lượng nhỏ, tránh spam log
-        if (count($valid_rows) <= 50) {
-            $missing = [];
-            if (!$views_ok) $missing[] = "V($current_views/$threshold_views)";
-            if (!$likes_ok) $missing[] = "L($current_likes/$threshold_likes)";
-            if (!$comments_ok) $missing[] = "C($current_comments/$threshold_comments)";
-            echo "  ⏳ ID $id: Chưa đủ — " . implode(', ', $missing) . "\n";
+        if (isset($fatal_error_posts[$id])) {
+            $err_info = $fatal_error_posts[$id];
+            $api_error_count++;
+            echo "  ❌ Post #{$id} | {$err_info['reason']}. Dừng theo dõi (Xóa khỏi Chờ Insights).\n";
+            try {
+                if (function_exists('ensure_pdo_alive')) ensure_pdo_alive($pdo);
+                $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = ? WHERE id = ?")
+                    ->execute([$err_info['status'], $id]);
+            } catch (Exception $e) {}
+            continue;
         }
-        continue;
-    }
 
-    // ═══ BÀI ĐỦ ĐIỀU KIỆN — BÌNH LUẬN NGAY ═══
-    $qualified_count++;
-    echo "\n  ✅ ID $id | ĐẠT ĐỦ điều kiện!\n";
-    echo "    📊 View=$current_views, Like=$current_likes, Comment=$current_comments\n";
-    echo "    🎯 Ngưỡng: V≥$threshold_views, L≥$threshold_likes, C≥$threshold_comments\n";
+        $current_views = $batch_metrics[$id]['views'] ?? 0;
+        $current_likes = $batch_metrics[$id]['likes'] ?? 0;
+        $current_comments = $batch_metrics[$id]['comments'] ?? 0;
 
-    // Lock the row to prevent duplicate commenting
-    $lock_stmt = $pdo->prepare("UPDATE scheduled_posts SET comment_done = 2 WHERE id = ? AND comment_done = 0");
-    $lock_stmt->execute([$id]);
-    if ($lock_stmt->rowCount() === 0) {
-        echo "    ⚠ Row đã bị xử lý bởi tiến trình khác. Bỏ qua.\n";
-        continue;
-    }
+        $threshold_views = (isset($row['comment_threshold_views']) && $row['comment_threshold_views'] !== null && $row['comment_threshold_views'] !== '') ? (int)$row['comment_threshold_views'] : 0;
+        $threshold_likes = (isset($row['comment_threshold_likes']) && $row['comment_threshold_likes'] !== null && $row['comment_threshold_likes'] !== '') ? (int)$row['comment_threshold_likes'] : 0;
+        $threshold_comments = (isset($row['comment_threshold_comments']) && $row['comment_threshold_comments'] !== null && $row['comment_threshold_comments'] !== '') ? (int)$row['comment_threshold_comments'] : 0;
 
-    // Pick random comment line
-    $lines = array_values(array_filter(array_map('trim', explode("\n", $row['comment_lines']))));
-    if (empty($lines)) {
-        $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'error' WHERE id = ?")
-            ->execute([$id]);
-        echo "    ✗ Không có nội dung bình luận. Bỏ qua.\n";
-        continue;
-    }
-    $comment_text = $lines[array_rand($lines)];
+        $views_ok = ($current_views >= $threshold_views);
+        $likes_ok = ($current_likes >= $threshold_likes);
+        $comments_ok = ($current_comments >= $threshold_comments);
 
-    // Post the comment (tuần tự vì cần đảm bảo từng bài)
-    $fb_post_id = $row['fb_post_id'];
-    $page_access_token = $page_tokens[$row['page_id']];
-
-    $response = fb_api_request(
-        $fb_post_id . '/comments',
-        ['access_token' => $page_access_token],
-        'POST',
-        ['message' => $comment_text]
-    );
-
-    if ($response['status_code'] === 200 && isset($response['data']['id'])) {
-        $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'done', comment_at = NOW() WHERE id = ?")
-            ->execute([$id]);
-        echo "    🎉 Bình luận thành công! Comment ID: {$response['data']['id']}\n";
-        echo "    📝 Nội dung: \"$comment_text\"\n";
-
-        // Gửi thông báo Telegram
-        send_telegram_notification($pdo, $row['account_id'], "<b>Video đủ điều kiện bình luận!</b>\n🎬 Video: {$fb_post_id}\n📊 View: {$current_views}, Like: {$current_likes}, Comment: {$current_comments}\n📝 Bình luận: \"{$comment_text}\"", 'comment');
-
-        // Gửi thông báo lên chuông (bell notification)
-        try {
-            $notif_snippet = json_encode([
-                'type' => 'success',
-                'video_id' => $fb_post_id,
-                'content' => $comment_text
-            ], JSON_UNESCAPED_UNICODE);
-            $pdo->prepare("INSERT INTO page_notifications (page_id, type, sender_name, snippet, post_id, comment_id) VALUES (?, 'insights_comment', 'Hệ thống', ?, ?, ?)")
-                ->execute([$row['page_id'], $notif_snippet, $fb_post_id, $response['data']['id']]);
-        } catch (Exception $e) {
-            echo "    ⚠ Không gửi được thông báo: " . $e->getMessage() . "\n";
+        if (!$views_ok || !$likes_ok || !$comments_ok) {
+            $not_qualified_count++;
+            continue;
         }
-    } else {
-        $err = $response['data']['error']['message'] ?? json_encode($response['data'] ?? []);
-        $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'error' WHERE id = ?")
-            ->execute([$id]);
-        echo "    ✗ Lỗi bình luận: $err\n";
 
-        // Gửi thông báo lỗi Telegram
-        $short_err = mb_strimwidth($err, 0, 100, '…');
-        send_telegram_notification($pdo, $row['account_id'], "<b>Lỗi bình luận!</b>\n🎬 Video: {$fb_post_id}\n❌ Lỗi: {$short_err}", 'error');
+        // ═══ ĐẠT ĐỦ ĐIỀU KIỆN — BÌNH LUẬN NGAY ═══
+        $qualified_count++;
+        $chunk_qualified++;
 
-        // Gửi thông báo lỗi lên chuông
+        echo "  🎉 [ĐẠT ĐỦ ĐIỀU KIỆN] Post #{$id}!\n";
+        echo "     📊 Chỉ số thực tế: View = {$current_views}, Like = {$current_likes}, Comment = {$current_comments}\n";
+        echo "     🎯 Ngưỡng yêu cầu:  View ≥ {$threshold_views}, Like ≥ {$threshold_likes}, Comment ≥ {$threshold_comments}\n";
+
+        if (function_exists('ensure_pdo_alive')) ensure_pdo_alive($pdo);
+        $lock_stmt = $pdo->prepare("UPDATE scheduled_posts SET comment_done = 2 WHERE id = ? AND comment_done = 0");
+        $lock_stmt->execute([$id]);
+        if ($lock_stmt->rowCount() === 0) {
+            echo "     ⚠️ Row #{$id} đã được xử lý bởi tiến trình khác. Bỏ qua.\n";
+            continue;
+        }
+
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $row['comment_lines']))));
+        if (empty($lines)) {
+            $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'error' WHERE id = ?")
+                ->execute([$id]);
+            echo "     ❌ Post #{$id}: Nội dung bình luận rỗng. Đánh dấu lỗi.\n";
+            continue;
+        }
+        $comment_text = $lines[array_rand($lines)];
+        if (function_exists('spin_text')) {
+            $comment_text = spin_text($comment_text);
+        }
+
+        $clean_id = get_clean_fb_id($row['fb_post_id']);
+        $target_id = (strpos($clean_id, '_') !== false) ? $clean_id : ($row['page_id'] . '_' . $clean_id);
+        $page_access_token = $page_tokens[$row['page_id']];
+
+        echo "     💬 Đang đăng bình luận lên Facebook (Target: {$target_id})...\n";
+
+        $response = fb_api_request(
+            $target_id . '/comments',
+            ['access_token' => $page_access_token],
+            'POST',
+            ['message' => $comment_text]
+        );
+
+        if ($response['status_code'] !== 200 && $target_id !== $clean_id && !empty($clean_id)) {
+            echo "     ⚠️ Post {$target_id} lỗi HTTP {$response['status_code']}. Thử fallback Clean ID {$clean_id}...\n";
+            $response = fb_api_request(
+                $clean_id . '/comments',
+                ['access_token' => $page_access_token],
+                'POST',
+                ['message' => $comment_text]
+            );
+        }
+
+        if ($response['status_code'] === 200 && isset($response['data']['id'])) {
+            $comment_id = $response['data']['id'];
+            $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'done', comment_at = NOW() WHERE id = ?")
+                ->execute([$id]);
+            echo "     ✅ BÌNH LUẬN THÀNH CÔNG! Comment ID: {$comment_id}\n";
+            echo "     📝 Nội dung: \"{$comment_text}\"\n";
+
+            send_telegram_notification($pdo, $row['account_id'], "<b>Video đủ điều kiện bình luận!</b>\n🎬 Video: {$target_id}\n📊 View: {$current_views}, Like: {$current_likes}, Comment: {$current_comments}\n📝 Bình luận: \"{$comment_text}\"", 'comment');
+
+            try {
+                $notif_snippet = json_encode([
+                    'type' => 'success',
+                    'video_id' => $target_id,
+                    'content' => $comment_text
+                ], JSON_UNESCAPED_UNICODE);
+                $pdo->prepare("INSERT INTO page_notifications (page_id, type, sender_name, snippet, post_id, comment_id) VALUES (?, 'insights_comment', 'Hệ thống', ?, ?, ?)")
+                    ->execute([$row['page_id'], $notif_snippet, $target_id, $comment_id]);
+            } catch (Exception $e) {}
+        } else {
+            $err = $response['data']['error']['message'] ?? json_encode($response['data'] ?? []);
+            $pdo->prepare("UPDATE scheduled_posts SET comment_done = 1, comment_status = 'error' WHERE id = ?")
+                ->execute([$id]);
+            echo "     ❌ LỖI GỬI BÌNH LUẬN (HTTP {$response['status_code']}): {$err}\n";
+
+            $short_err = mb_strimwidth($err, 0, 100, '…');
+            send_telegram_notification($pdo, $row['account_id'], "<b>Lỗi bình luận!</b>\n🎬 Video: {$target_id}\n❌ Lỗi: {$short_err}", 'error');
+
+            try {
+                $notif_err_snippet = json_encode([
+                    'type' => 'error',
+                    'video_id' => $target_id,
+                    'error' => mb_strimwidth($err, 0, 100, '…')
+                ], JSON_UNESCAPED_UNICODE);
+                $pdo->prepare("INSERT INTO page_notifications (page_id, type, sender_name, snippet, post_id) VALUES (?, 'insights_comment', 'Hệ thống', ?, ?)")
+                    ->execute([$row['page_id'], $notif_err_snippet, $target_id]);
+            } catch (Exception $e) {}
+        }
+    }
+
+    // ── Cập nhật updated_at cho đợt (Tránh lặp lại trong 15 phút) ─────────────
+    if (!empty($chunk_ids)) {
         try {
-            $notif_err_snippet = json_encode([
-                'type' => 'error',
-                'video_id' => $fb_post_id,
-                'error' => mb_strimwidth($err, 0, 100, '…')
-            ], JSON_UNESCAPED_UNICODE);
-            $pdo->prepare("INSERT INTO page_notifications (page_id, type, sender_name, snippet, post_id) VALUES (?, 'insights_comment', 'Hệ thống', ?, ?)")
-                ->execute([$row['page_id'], $notif_err_snippet, $fb_post_id]);
+            if (function_exists('ensure_pdo_alive')) ensure_pdo_alive($pdo);
+            $in_clause = implode(',', array_fill(0, count($chunk_ids), '?'));
+            $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW() WHERE id IN ($in_clause)")->execute($chunk_ids);
         } catch (Exception $e) {}
     }
+
+    echo "  ✔ Hoàn tất đợt {$chunk_num}/{$total_chunks} (" . count($chunk) . " bài): " . ($chunk_qualified > 0 ? "🎉 {$chunk_qualified} BÀI ĐẠT ĐỦ ĐIỀU KIỆN & ĐÃ COMMENT THÀNH CÔNG!" : "Chưa có bài nào đạt ngưỡng.") . "\n";
+    @ob_flush(); @flush();
 }
 
-// Log tổng kết
-if ($not_qualified_count > 50) {
-    echo "\n  📋 Tổng bài chưa đủ điều kiện: $not_qualified_count (ẩn chi tiết vì quá nhiều)\n";
-}
-
-echo "\n══════════════════════════════════════════\n";
-echo "📊 Tổng kết: " . count($valid_rows) . " bài đã kiểm tra\n";
-echo "   ✅ Đủ điều kiện & bình luận: $qualified_count\n";
-echo "   ⏳ Chưa đủ điều kiện: $not_qualified_count\n";
-echo "   🕐 Hết hạn 24h: " . count($expired_ids) . "\n";
-echo "   ✗ Thiếu token: " . (count($active_rows) - count($valid_rows)) . "\n";
-echo "══════════════════════════════════════════\n";
-
-// Release lock
-if ($lock_fp) {
-    flock($lock_fp, LOCK_UN);
-    fclose($lock_fp);
-}
-@unlink($lock_file);
-?>
+echo "\n======================================================\n";
+echo "📊 TỔNG KẾT TIẾN TRÌNH CHECK INSIGHTS{$thread_label}:\n";
+echo "   - Tổng số bài quét API:         " . count($valid_rows) . "\n";
+echo "   - 🎉 Đủ điều kiện & đã comment: {$qualified_count}\n";
+echo "   - ⏳ Chưa đủ ngưỡng điều kiện:  {$not_qualified_count}\n";
+echo "   - ⌛ Quá 48h tự ngừng theo dõi: " . count($expired_ids) . "\n";
+echo "   - ❌ Bài lỗi token:             " . (count($active_rows) - count($valid_rows)) . "\n";
+echo "   - 🛑 Bài lỗi API/Checkpoint:    {$api_error_count}\n";
+echo "======================================================\n\n";

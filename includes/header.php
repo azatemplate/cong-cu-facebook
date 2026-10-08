@@ -49,6 +49,9 @@ require_once __DIR__ . '/fb_api.php';
     <link rel="icon" type="image/png" href="logo.png">
     <link rel="shortcut icon" type="image/png" href="logo.png">
     <link rel="apple-touch-icon" href="logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
@@ -68,7 +71,10 @@ require_once __DIR__ . '/fb_api.php';
                     <div id="notif_dropdown" style="display:none; position: absolute; right: 0; top: 30px; width: 340px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); z-index: 1000; padding: 10px; max-height: 400px; overflow-y: auto;">
                         <div style="font-weight:bold; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center;">
                             <span>Thông báo</span>
-                            <span id="notif_count_label" style="font-size: 11px; background: #fee2e2; color: #dc2626; padding: 2px 6px; border-radius: 10px; display:none;">0 mới</span>
+                            <div style="display:flex; align-items:center; gap: 8px;">
+                                <span id="notif_count_label" style="font-size: 11px; background: #fee2e2; color: #dc2626; padding: 2px 6px; border-radius: 10px; display:none;">0 mới</span>
+                                <a href="javascript:void(0)" onclick="readAllNotifs()" style="font-size:11px; color:#0ea5e9; text-decoration:none; font-weight:500;">Đánh dấu đã đọc</a>
+                            </div>
                         </div>
                         <div id="notif_tabs" style="display:flex; gap: 10px; margin-bottom: 10px; font-size: 12px; font-weight: 500; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
                             <span class="notif-tab active" data-tab="all" style="cursor: pointer; padding: 4px 8px; border-radius: 4px; background: #0ea5e9; color: white;">Tất cả</span>
@@ -176,7 +182,6 @@ require_once __DIR__ . '/fb_api.php';
                             e.stopPropagation();
                             if (notifDropdown.style.display === 'none') {
                                 notifDropdown.style.display = 'block';
-                                notifBadge.style.display = 'none';
                                 // Reset & reload mỗi lần mở
                                 notifOffset   = 0;
                                 notifHasMore  = false;
@@ -361,19 +366,16 @@ require_once __DIR__ . '/fb_api.php';
 
                                 if (!append) {
                                     // === Lần đầu: render toàn bộ ===
-                                    let totalCount = data.failed_posts.length + data.live_notifs.length;
+                                    let totalCount = (data.unread_count !== undefined) ? data.unread_count : (data.failed_posts.length + data.live_notifs.length);
 
                                     // Cập nhật badge
-                                    if (totalCount > 0 && notifDropdown.style.display === 'none') {
+                                    if (totalCount > 0) {
                                         notifBadge.style.display = 'inline-block';
                                         notifBadge.innerText = totalCount > 9 ? '9+' : totalCount;
-                                    } else if (totalCount === 0) {
-                                        notifBadge.style.display = 'none';
-                                    }
-                                    if (totalCount > 0) {
                                         notifCountLabel.innerText = totalCount + ' mới';
                                         notifCountLabel.style.display = 'inline-block';
                                     } else {
+                                        notifBadge.style.display = 'none';
                                         notifCountLabel.style.display = 'none';
                                     }
 
@@ -395,9 +397,10 @@ require_once __DIR__ . '/fb_api.php';
                                         html += `<div style="font-weight:bold;font-size:12px;margin-top:10px;margin-bottom:5px;color:#0284c7;">Tin nhắn & Bình luận mới</div>`;
                                         data.live_notifs.forEach(cn => { html += renderNotifItem(cn); });
                                     }
-                                    if (totalCount === 0) {
-                                        html = `<div style="text-align:center;padding:20px 0;color:#9ca3af;"><div style="font-size:24px;margin-bottom:10px;">🎉</div>Không có thông báo mới.</div>`;
-                                    }
+                                     let tabItemCount = data.failed_posts.length + data.live_notifs.length;
+                                     if (tabItemCount === 0) {
+                                         html = `<div style="text-align:center;padding:20px 0;color:#9ca3af;"><div style="font-size:24px;margin-bottom:10px;">🎉</div>Không có thông báo.</div>`;
+                                     }
                                     notifContent.innerHTML = html;
                                     notifInitDone = true;
 
@@ -445,29 +448,41 @@ require_once __DIR__ . '/fb_api.php';
                             .then(() => { window.location.href = link; });
                         };
 
-                        // Polling badge mỗi 15s (không reset dropdown đang mở)
+                        window.readAllNotifs = function() {
+                            const fd = new FormData();
+                            fd.append('read_all', '1');
+                            fetch('actions/read_notification.php', { method: 'POST', body: fd })
+                            .then(r => r.json())
+                            .then(() => {
+                                notifBadge.style.display = 'none';
+                                notifCountLabel.style.display = 'none';
+                                notifOffset = 0;
+                                loadNotifications();
+                            });
+                        };
+
                         function pollBadge() {
                             fetch('actions/get_notifications.php?offset=0&tab=unread')
                             .then(r => r.json())
                             .then(data => {
                                 if (data.status !== 'success') return;
-                                const total = data.failed_posts.length + data.live_notifs.length;
-                                if (total > 0 && notifDropdown.style.display === 'none') {
+                                const total = (data.unread_count !== undefined) ? data.unread_count : (data.failed_posts.length + data.live_notifs.length);
+                                if (total > 0) {
                                     notifBadge.style.display = 'inline-block';
                                     notifBadge.innerText = total > 9 ? '9+' : total;
-                                } else if (total === 0) {
-                                    notifBadge.style.display = 'none';
-                                }
-                                if (total > 0) {
                                     notifCountLabel.innerText = total + ' mới';
                                     notifCountLabel.style.display = 'inline-block';
                                 } else {
+                                    notifBadge.style.display = 'none';
                                     notifCountLabel.style.display = 'none';
                                 }
                             }).catch(() => {});
                         }
-                        // Polling badge mỗi 45s (không làm nghẽn server)
-                        setInterval(pollBadge, 45000);
+                        // Gọi pollBadge ngay lập tức khi tải trang để hiển thị 9+ ngay
+                        pollBadge();
+                        // Tự động làm mới badge mỗi 30s
+                        setInterval(pollBadge, 30000);
+
 
                         // Sidebar Toggle Logic
                         const menuToggle = document.querySelector('.menu-toggle');
@@ -508,6 +523,57 @@ require_once __DIR__ . '/fb_api.php';
                             });
                         }
                     });
+
+                    window.showNotice = function(msg, type = 'info') {
+                        let container = document.getElementById('global-toast-container');
+                        if (!container) {
+                            container = document.createElement('div');
+                            container.id = 'global-toast-container';
+                            container.style.cssText = 'position:fixed; top:20px; right:20px; z-index:999999; display:flex; flex-direction:column; gap:10px; max-width:420px; width:calc(100% - 40px); pointer-events:none;';
+                            document.body.appendChild(container);
+                        }
+
+                        const toast = document.createElement('div');
+                        toast.style.pointerEvents = 'auto';
+                        toast.style.padding = '12px 18px';
+                        toast.style.borderRadius = '10px';
+                        toast.style.fontSize = '13.5px';
+                        toast.style.fontWeight = '600';
+                        toast.style.boxShadow = '0 8px 24px rgba(0,0,0,0.18)';
+                        toast.style.display = 'flex';
+                        toast.style.alignItems = 'center';
+                        toast.style.justifyContent = 'space-between';
+                        toast.style.gap = '12px';
+                        toast.style.transition = 'all 0.3s ease';
+
+                        if (type === 'error' || type === 'danger') {
+                            toast.style.background = '#fef2f2';
+                            toast.style.color = '#991b1b';
+                            toast.style.border = '1px solid #fca5a5';
+                        } else if (type === 'success') {
+                            toast.style.background = '#f0fdf4';
+                            toast.style.color = '#166534';
+                            toast.style.border = '1px solid #86efac';
+                        } else if (type === 'warning') {
+                            toast.style.background = '#fffbeb';
+                            toast.style.color = '#92400e';
+                            toast.style.border = '1px solid #fde68a';
+                        } else {
+                            toast.style.background = '#f0f9ff';
+                            toast.style.color = '#075985';
+                            toast.style.border = '1px solid #7dd3fc';
+                        }
+
+                        toast.innerHTML = `<span>${msg}</span><button onclick="this.parentElement.remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:inherit;opacity:0.7;padding:0;line-height:1;">&times;</button>`;
+
+                        container.appendChild(toast);
+
+                        setTimeout(() => {
+                            toast.style.opacity = '0';
+                            toast.style.transform = 'translateY(-10px)';
+                            setTimeout(() => toast.remove(), 300);
+                        }, 4500);
+                    };
                 </script>
                 <div class="user-profile">
                     <div class="avatar" style="text-transform: uppercase;"><?php echo substr($_SESSION['username'], 0, 1); ?></div>

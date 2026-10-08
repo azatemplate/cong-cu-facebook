@@ -16,6 +16,7 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/tiktok_api.php';
 require_once __DIR__ . '/../includes/drive_utils.php';
+require_once __DIR__ . '/../includes/kho_data_helper.php';
 
 ob_end_clean();
 header('Content-Type: application/json');
@@ -60,6 +61,8 @@ $allow_duet     = isset($_POST['allow_duet']) && $_POST['allow_duet'] == '1';
 $allow_stitch   = isset($_POST['allow_stitch']) && $_POST['allow_stitch'] == '1';
 $auto_add_music = isset($_POST['auto_add_music']) && $_POST['auto_add_music'] == '1';
 
+$data_group_id      = intval($_POST['data_group_id'] ?? ($_REQUEST['data_group_id'] ?? 0));
+$data_mode          = trim($_POST['data_mode'] ?? ($_REQUEST['data_mode'] ?? 'dedup'));
 $drive_file_ids_str = trim($_POST['drive_file_id'] ?? '');
 $tiktok_urls_str    = trim($_POST['tiktok_urls'] ?? '');
 $is_drive_folder    = (strpos($drive_file_ids_str, 'folder:') === 0);
@@ -67,10 +70,16 @@ $is_drive_folder    = (strpos($drive_file_ids_str, 'folder:') === 0);
 // ── Build Media Pool ──────────────────────────────────────────────────
 $media_pool = [];
 
-// 1. TikTok Links
-if (!empty($tiktok_urls_str)) {
-    foreach (array_filter(array_map('trim', explode("\n", $tiktok_urls_str))) as $url) {
-        $media_pool[] = ['type' => 'tiktok', 'url' => $url, 'title' => ''];
+// 1. Kho Data or TikTok Links
+if ($data_group_id > 0) {
+    $media_pool[] = ['type' => 'kho_data', 'group_id' => $data_group_id, 'mode' => $data_mode];
+} elseif (!empty($tiktok_urls_str)) {
+    $raw_urls = preg_split('/\r\n|\r|\n/', $tiktok_urls_str);
+    foreach ($raw_urls as $url) {
+        $u = trim($url);
+        if (!empty($u)) {
+            $media_pool[] = ['type' => 'tiktok', 'url' => $u, 'title' => ''];
+        }
     }
 }
 
@@ -96,7 +105,7 @@ if (!empty($drive_file_ids_str)) {
     }
 }
 
-// 3. Local Uploads
+// 3. Local Uploads (Tải file từ máy -> Tự động tải lên Google Drive nếu đã kết nối)
 $upload_dir = __DIR__ . '/../uploads/videos/';
 if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
 
@@ -105,24 +114,48 @@ if (isset($_FILES['video']) && is_array($_FILES['video']['name'])) {
         if ($_FILES['video']['error'][$i] === UPLOAD_ERR_OK) {
             $ext = pathinfo($_FILES['video']['name'][$i], PATHINFO_EXTENSION) ?: 'mp4';
             $filename = 'tt_' . time() . '_' . rand(1000, 9999) . '.' . $ext;
-            if (move_uploaded_file($_FILES['video']['tmp_name'][$i], $upload_dir . $filename)) {
-                $media_pool[] = [
-                    'type' => 'local',
-                    'saved_path' => 'uploads/videos/' . $filename,
-                    'name' => $_FILES['video']['name'][$i]
-                ];
+            $full_path = $upload_dir . $filename;
+            if (move_uploaded_file($_FILES['video']['tmp_name'][$i], $full_path)) {
+                $orig_name = $_FILES['video']['name'][$i];
+                $drive_id = upload_local_video_to_drive($pdo, $account_id, $full_path, $orig_name);
+                if ($drive_id) {
+                    $media_pool[] = [
+                        'type' => 'drive',
+                        'id' => $drive_id,
+                        'title' => pathinfo($orig_name, PATHINFO_FILENAME),
+                        'original_name' => $orig_name
+                    ];
+                } else {
+                    $media_pool[] = [
+                        'type' => 'local',
+                        'saved_path' => 'uploads/videos/' . $filename,
+                        'name' => $orig_name
+                    ];
+                }
             }
         }
     }
 } elseif (empty($media_pool) && isset($_FILES['video']) && !is_array($_FILES['video']['name']) && $_FILES['video']['error'] === UPLOAD_ERR_OK) {
     $ext = pathinfo($_FILES['video']['name'], PATHINFO_EXTENSION) ?: 'mp4';
     $filename = 'tt_' . time() . '_' . rand(1000, 9999) . '.' . $ext;
-    if (move_uploaded_file($_FILES['video']['tmp_name'], $upload_dir . $filename)) {
-        $media_pool[] = [
-            'type' => 'local',
-            'saved_path' => 'uploads/videos/' . $filename,
-            'name' => $_FILES['video']['name']
-        ];
+    $full_path = $upload_dir . $filename;
+    if (move_uploaded_file($_FILES['video']['tmp_name'], $full_path)) {
+        $orig_name = $_FILES['video']['name'];
+        $drive_id = upload_local_video_to_drive($pdo, $account_id, $full_path, $orig_name);
+        if ($drive_id) {
+            $media_pool[] = [
+                'type' => 'drive',
+                'id' => $drive_id,
+                'title' => pathinfo($orig_name, PATHINFO_FILENAME),
+                'original_name' => $orig_name
+            ];
+        } else {
+            $media_pool[] = [
+                'type' => 'local',
+                'saved_path' => 'uploads/videos/' . $filename,
+                'name' => $orig_name
+            ];
+        }
     }
 }
 
@@ -182,16 +215,33 @@ try {
     $campaign_id = $pdo->lastInsertId();
 } catch (Exception $e) {}
 
+// Detect campaign_id column in scheduled_posts
+$has_campaign_col = false;
+try {
+    $col_chk = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='scheduled_posts' AND COLUMN_NAME='campaign_id'");
+    $has_campaign_col = ($col_chk && $col_chk->fetchColumn() > 0);
+} catch (Exception $e) {}
+
+if (!$has_campaign_col) $campaign_id = null;
+
+$stmt_insert_with = $has_campaign_col
+    ? $pdo->prepare("INSERT INTO scheduled_posts (account_id, page_id, post_type, content, media_path, scheduled_time, status, campaign_id) VALUES (?, ?, 'TikTok', ?, ?, ?, 'pending', ?)")
+    : null;
+$stmt_insert_without = $pdo->prepare("INSERT INTO scheduled_posts (account_id, page_id, post_type, content, media_path, scheduled_time, status) VALUES (?, ?, 'TikTok', ?, ?, ?, 'pending')");
+
+function insert_sp_tiktok_item($s_with, $s_without, $campaign_id, $account_id, $page_id, $content_data, $media_path, $scheduled_time) {
+    if ($campaign_id !== null && $s_with !== null) {
+        $s_with->execute([$account_id, $page_id, $content_data, $media_path, $scheduled_time, $campaign_id]);
+    } else {
+        $s_without->execute([$account_id, $page_id, $content_data, $media_path, $scheduled_time]);
+    }
+}
+
 // ── Insert Scheduled Posts ────────────────────────────────────────────────
 $success_count = 0;
 
 try {
     $pdo->beginTransaction();
-
-    $stmt_insert = $pdo->prepare("
-        INSERT INTO scheduled_posts (account_id, page_id, post_type, content, media_path, scheduled_time, status, campaign_id)
-        VALUES (?, ?, 'TikTok', ?, ?, ?, 'pending', ?)
-    ");
 
     if (!empty($schedule_dates)) {
         // Scheduled matrix mode
@@ -203,7 +253,14 @@ try {
                     $post_title = $title_input;
                 } else {
                     $media = $media_pool[$idx % count($media_pool)];
-                    if ($media['type'] === 'drive') {
+                    if ($media['type'] === 'kho_data') {
+                        $url = get_url_from_kho_data($pdo, $account_id, $media['group_id'], $media['mode']);
+                        if (!$url) {
+                            throw new Exception("Nhóm Data trong Kho Data đã hết URL khả dụng.");
+                        }
+                        $media_path = 'tiktok:' . $url;
+                        $post_title = $title_input;
+                    } elseif ($media['type'] === 'drive') {
                         $media_path = 'drive:' . $media['id'];
                         $post_title = $auto_title ? $media['title'] : $title_input;
                     } elseif ($media['type'] === 'tiktok') {
@@ -217,7 +274,18 @@ try {
 
                 if (empty($post_title)) $post_title = $title_input;
 
-                $stmt_insert->execute([$account_id, $tt_acc['id'], $post_title, $media_path, $datetime, $campaign_id]);
+                $content_arr = [
+                    'title' => $post_title,
+                    'privacy_level' => $privacy_level,
+                    'allow_comment' => $allow_comment,
+                    'allow_duet' => $allow_duet,
+                    'allow_stitch' => $allow_stitch,
+                    'auto_add_music' => $auto_add_music,
+                    'auto_title' => $auto_title
+                ];
+                $content_data = json_encode($content_arr);
+
+                insert_sp_tiktok_item($stmt_insert_with, $stmt_insert_without, $campaign_id, $account_id, $tt_acc['id'], $content_data, $media_path, $datetime);
                 $success_count++;
             }
             $idx++;
@@ -227,7 +295,14 @@ try {
         $now = date('Y-m-d H:i:s');
         foreach ($media_pool as $media) {
             foreach ($valid_accounts as $tt_acc) {
-                if ($media['type'] === 'drive') {
+                if ($media['type'] === 'kho_data') {
+                    $url = get_url_from_kho_data($pdo, $account_id, $media['group_id'], $media['mode']);
+                    if (!$url) {
+                        throw new Exception("Nhóm Data trong Kho Data đã hết URL khả dụng.");
+                    }
+                    $media_path = 'tiktok:' . $url;
+                    $post_title = $title_input;
+                } elseif ($media['type'] === 'drive') {
                     $media_path = 'drive:' . $media['id'];
                     $post_title = $auto_title ? $media['title'] : $title_input;
                 } elseif ($media['type'] === 'tiktok') {
@@ -243,7 +318,18 @@ try {
 
                 if (empty($post_title)) $post_title = $title_input;
 
-                $stmt_insert->execute([$account_id, $tt_acc['id'], $post_title, $media_path, $now, $campaign_id]);
+                $content_arr = [
+                    'title' => $post_title,
+                    'privacy_level' => $privacy_level,
+                    'allow_comment' => $allow_comment,
+                    'allow_duet' => $allow_duet,
+                    'allow_stitch' => $allow_stitch,
+                    'auto_add_music' => $auto_add_music,
+                    'auto_title' => $auto_title
+                ];
+                $content_data = json_encode($content_arr);
+
+                insert_sp_tiktok_item($stmt_insert_with, $stmt_insert_without, $campaign_id, $account_id, $tt_acc['id'], $content_data, $media_path, $now);
                 $success_count++;
             }
         }
@@ -268,16 +354,32 @@ try {
     } catch (Exception $e) {}
 
     ob_clean();
-    echo json_encode([
-        'status' => 'success',
-        'msg' => "🎉 Đã đưa {$success_count} bài TikTok cho {$acc_count} kênh vào hàng đợi xử lý thành công!",
-        'redirect' => 'manage_posts.php',
-        'campaign_id' => $campaign_id
-    ]);
+    $is_ajax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) || (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) || isset($_POST['is_ajax']);
+
+    if ($is_ajax) {
+        echo json_encode([
+            'status' => 'success',
+            'msg' => "🎉 Đã đưa {$success_count} bài TikTok cho {$acc_count} kênh vào hàng đợi xử lý thành công!",
+            'redirect' => 'manage_posts.php',
+            'campaign_id' => $campaign_id
+        ]);
+    } else {
+        $dest = $campaign_id ? ("campaign_detail.php?id=" . $campaign_id) : "manage_posts.php";
+        $_SESSION['flash_msg'] = "🎉 Đã đưa {$success_count} bài TikTok cho {$acc_count} kênh vào hàng đợi xử lý thành công!";
+        header("Location: ../" . $dest);
+        exit;
+    }
 
 } catch (Exception $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     ob_clean();
-    echo json_encode(['status' => 'error', 'msg' => 'Lỗi lưu hàng đợi bài đăng TikTok: ' . $e->getMessage()]);
+    $is_ajax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) || (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) || isset($_POST['is_ajax']);
+    if ($is_ajax) {
+        echo json_encode(['status' => 'error', 'msg' => 'Lỗi lưu hàng đợi bài đăng TikTok: ' . $e->getMessage()]);
+    } else {
+        $_SESSION['flash_msg'] = '⚠️ Lỗi lưu hàng đợi bài đăng TikTok: ' . $e->getMessage();
+        header("Location: ../tiktok.php");
+        exit;
+    }
 }
 ?>

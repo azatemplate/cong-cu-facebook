@@ -141,6 +141,8 @@ if (empty($yt_data['items'])) {
 }
 
 $added_count = 0;
+$limit_reached_flag = false;
+$max_yt_channels = 10;
 
 foreach ($yt_data['items'] as $item) {
     $channel_id = $item['id'];
@@ -156,6 +158,7 @@ foreach ($yt_data['items'] as $item) {
         $final_refresh_token = $refresh_token ?: $existing['refresh_token'];
         $u_stmt = $pdo->prepare("UPDATE youtube_channels SET channel_title=?, channel_avatar=?, refresh_token=?, gg_client_id=?, gg_client_secret=? WHERE id=?");
         $u_stmt->execute([$channel_title, $channel_avatar, $final_refresh_token, $is_custom ? $client_id : null, $is_custom ? $client_secret : null, $existing['id']]);
+        $added_count++;
     } else {
         if (!$refresh_token) {
             continue; // Lỗi: mới thêm nhưng google không trả về refresh token
@@ -168,29 +171,38 @@ foreach ($yt_data['items'] as $item) {
         $is_admin = (($acc_info['role'] ?? '') === 'admin');
         $max_yt_channels = (int)($acc_info['max_yt_channels'] ?? 10);
         
-        if (!$is_admin && $max_yt_channels > 0) {
+        if (!$is_admin) {
             $cnt_stmt = $pdo->prepare("SELECT COUNT(*) FROM youtube_channels WHERE account_id = ?");
             $cnt_stmt->execute([$account_id]);
             $curr_yt_count = (int)$cnt_stmt->fetchColumn();
             
             if ($curr_yt_count >= $max_yt_channels) {
-                $_SESSION['flash_msg'] = "⚠️ Tài khoản của bạn đã đạt giới hạn tối đa $max_yt_channels Kênh YouTube (Hiện tại: $curr_yt_count/$max_yt_channels). Vui lòng nâng cấp gói cước để thêm kênh mới!";
-                header("Location: youtube.php?tab=channels");
-                exit;
+                $limit_reached_flag = true;
+                continue; // Ngừng không chèn thêm kênh vượt hạn ngạch
             }
         }
 
         $i_stmt = $pdo->prepare("INSERT INTO youtube_channels (account_id, channel_id, channel_title, channel_avatar, refresh_token, gg_client_id, gg_client_secret) VALUES (?, ?, ?, ?, ?, ?, ?)");
         $i_stmt->execute([$account_id, $channel_id, $channel_title, $channel_avatar, $refresh_token, $is_custom ? $client_id : null, $is_custom ? $client_secret : null]);
+        $added_count++;
     }
-    $added_count++;
 }
 
 // Clear custom credentials from session
 unset($_SESSION['custom_gg_client_id']);
 unset($_SESSION['custom_gg_client_secret']);
 
-if ($added_count > 0) {
+if ($limit_reached_flag) {
+    $msg = "⚠️ Tài khoản của bạn đã đạt/vượt giới hạn tối đa $max_yt_channels Kênh YouTube.";
+    if ($added_count > 0) {
+        $msg .= " Đã lưu $added_count kênh hợp lệ, các kênh còn lại vượt quá hạn ngạch đã bị chặn.";
+    } else {
+        $msg .= " Vui lòng liên hệ Admin để nâng cấp hạn ngạch!";
+    }
+    $_SESSION['flash_msg'] = $msg;
+    header("Location: youtube.php?tab=channels");
+    exit;
+} elseif ($added_count > 0) {
     $_SESSION['flash_msg'] = "Liên kết $added_count Kênh YouTube thành công!";
     header("Location: youtube_channels.php");
     exit;

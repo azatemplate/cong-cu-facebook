@@ -14,6 +14,7 @@ function sync_instagram_accounts($account_id) {
     global $pdo;
     $synced_map = [];
     $limit_reached = false;
+    $start_time = microtime(true);
 
     // Fetch user max_instagram_accounts limit
     $acc_stmt = $pdo->prepare("SELECT role, max_instagram_accounts FROM system_accounts WHERE id = ?");
@@ -22,26 +23,41 @@ function sync_instagram_accounts($account_id) {
     $max_ig = (int)($acc_info['max_instagram_accounts'] ?? 10);
     $is_admin = (($acc_info['role'] ?? '') === 'admin');
 
-    $save_ig_account = function($up_stmt, $account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $p_token) use ($pdo, &$synced_map, &$limit_reached, $is_admin, $max_ig) {
-        $chk = $pdo->prepare("SELECT id FROM instagram_accounts WHERE account_id = ? AND ig_user_id = ?");
-        $chk->execute([$account_id, $ig_id]);
-        $exists = $chk->fetchColumn();
+    // Pre-fetch page ownership map to avoid N+1 DB queries inside loops
+    $owner_stmt = $pdo->query("SELECT p.page_id, u.account_id FROM pages p JOIN users u ON p.user_id = u.id");
+    $page_owner_map = $owner_stmt->fetchAll(PDO::FETCH_KEY_PAIR); // [ 'page_id' => account_id ]
+
+    // Pre-fetch existing instagram_accounts for this account_id
+    $existing_stmt = $pdo->prepare("SELECT ig_user_id FROM instagram_accounts WHERE account_id = ?");
+    $existing_stmt->execute([$account_id]);
+    $existing_ig_map = array_flip($existing_stmt->fetchAll(PDO::FETCH_COLUMN));
+
+    $scanned_page_ids = [];
+
+    $save_ig_account = function($up_stmt, $account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $p_token) use ($pdo, &$synced_map, &$limit_reached, $is_admin, $max_ig, &$page_owner_map, &$existing_ig_map) {
+        // Check if page_id belongs to a DIFFERENT SaaS account in pages table
+        if (!empty($page_id) && isset($page_owner_map[$page_id])) {
+            if ((int)$page_owner_map[$page_id] !== (int)$account_id) {
+                // Page is currently owned by another SaaS account. Account cannot sync its IG account.
+                return;
+            }
+        }
+
+        $exists = isset($existing_ig_map[$ig_id]);
 
         if ($exists) {
             $up_stmt->execute([$account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $p_token]);
             $synced_map[$ig_id] = true;
         } else {
-            if (!$is_admin && $max_ig > 0) {
-                $c_stmt = $pdo->prepare("SELECT COUNT(*) FROM instagram_accounts WHERE account_id = ?");
-                $c_stmt->execute([$account_id]);
-                $curr = (int)$c_stmt->fetchColumn();
-                if ($curr >= $max_ig) {
+            if (!$is_admin) {
+                if (count($existing_ig_map) >= $max_ig) {
                     $limit_reached = true;
                     return;
                 }
             }
             $up_stmt->execute([$account_id, $ig_id, $page_id, $username, $name, $avatar, $followers, $p_token]);
             $synced_map[$ig_id] = true;
+            $existing_ig_map[$ig_id] = true;
         }
     };
 
@@ -57,18 +73,24 @@ function sync_instagram_accounts($account_id) {
                 access_token = VALUES(access_token)
         ");
 
-        // 1. Scan User Tokens from users table with Nested Fields (Gets ALL connected IG accounts in 1 HTTP call!)
+        // 1. Scan User Tokens from users table with Nested Fields (Gets ALL connected IG accounts in 1 HTTP call per FB user)
         $u_stmt = $pdo->prepare("SELECT access_token FROM users WHERE account_id = ? AND access_token IS NOT NULL AND access_token != ''");
         $u_stmt->execute([$account_id]);
         $users = $u_stmt->fetchAll(PDO::FETCH_ASSOC);
 
         foreach ($users as $usr) {
+            if (microtime(true) - $start_time > 12) break; // Timeout guard (12 seconds)
+
             $u_token = decryptData($usr['access_token']);
             if (empty($u_token)) continue;
 
             $me_url = FB_API_BASE . "me/accounts?fields=id,name,access_token,instagram_business_account{id,username,name,profile_picture_url,followers_count}&limit=500&access_token=" . urlencode($u_token);
             $ch = curl_init($me_url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 8,
+                CURLOPT_CONNECTTIMEOUT => 4
+            ]);
             apply_proxy_to_curl($ch, $u_token);
             fb_curl_setssl($ch);
             $res = curl_exec($ch);
@@ -77,12 +99,15 @@ function sync_instagram_accounts($account_id) {
             $me_data = json_decode($res, true);
             if (!empty($me_data['data'])) {
                 foreach ($me_data['data'] as $p_item) {
+                    $page_id = $p_item['id'] ?? '';
+                    if (!empty($page_id)) {
+                        $scanned_page_ids[$page_id] = true;
+                    }
                     if (!empty($p_item['instagram_business_account'])) {
                         $ig_info = $p_item['instagram_business_account'];
                         $ig_id = $ig_info['id'] ?? '';
                         if (empty($ig_id)) continue;
 
-                        $page_id = $p_item['id'];
                         $p_token = $p_item['access_token'] ?? $u_token;
                         $username = $ig_info['username'] ?? '';
                         $name = $ig_info['name'] ?? $username;
@@ -97,84 +122,111 @@ function sync_instagram_accounts($account_id) {
             }
         }
 
-        // 2. Parallel scan for pages in `pages` table using curl_multi in batches of 40
-        $stmt = $pdo->prepare("
-            SELECT p.page_id, p.access_token
-            FROM pages p
-            JOIN users u ON p.user_id = u.id
-            WHERE u.account_id = ?
-        ");
-        $stmt->execute([$account_id]);
-        $pages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // 2. Parallel scan ONLY for pages in `pages` table that were NOT already scanned in Step 1
+        if (microtime(true) - $start_time < 12) {
+            $stmt = $pdo->prepare("
+                SELECT p.page_id, p.access_token
+                FROM pages p
+                JOIN users u ON p.user_id = u.id
+                WHERE u.account_id = ?
+            ");
+            $stmt->execute([$account_id]);
+            $pages = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $valid_pages = [];
-        foreach ($pages as $pg) {
-            $t = decryptData($pg['access_token']);
-            if (!empty($t)) {
-                $valid_pages[] = [
-                    'page_id' => $pg['page_id'],
-                    'token' => $t
-                ];
-            }
-        }
+            $valid_pages = [];
+            foreach ($pages as $pg) {
+                // Skip if this page was already scanned in Step 1
+                if (isset($scanned_page_ids[$pg['page_id']])) continue;
 
-        if (!empty($valid_pages)) {
-            $chunks = array_chunk($valid_pages, 40);
-            foreach ($chunks as $chunk) {
-                $mh = curl_multi_init();
-                $curl_handles = [];
-
-                foreach ($chunk as $idx => $p_item) {
-                    $page_id = $p_item['page_id'];
-                    $token = $p_item['token'];
-                    // Nested query gets IG info in 1 single HTTP request
-                    $url = FB_API_BASE . $page_id . "?fields=instagram_business_account{id,username,name,profile_picture_url,followers_count}&access_token=" . urlencode($token);
-                    
-                    $ch = curl_init($url);
-                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                    apply_proxy_to_curl($ch, $token);
-                    fb_curl_setssl($ch);
-
-                    curl_multi_add_handle($mh, $ch);
-                    $curl_handles[$idx] = [
-                        'ch' => $ch,
-                        'page_id' => $page_id,
-                        'token' => $token
+                $t = decryptData($pg['access_token']);
+                if (!empty($t)) {
+                    $valid_pages[] = [
+                        'page_id' => $pg['page_id'],
+                        'token' => $t
                     ];
                 }
+            }
 
-                $running = null;
-                do {
-                    curl_multi_exec($mh, $running);
-                    curl_multi_select($mh);
-                } while ($running > 0);
+            if (!empty($valid_pages)) {
+                $chunks = array_chunk($valid_pages, 30);
+                foreach ($chunks as $chunk) {
+                    if (microtime(true) - $start_time > 12) break; // Timeout guard
 
-                foreach ($curl_handles as $item) {
-                    $ch = $item['ch'];
-                    $res = curl_multi_getcontent($ch);
-                    curl_multi_remove_handle($mh, $ch);
-                    curl_close($ch);
+                    $mh = curl_multi_init();
+                    $curl_handles = [];
 
-                    if (empty($res)) continue;
-                    $data = json_decode($res, true);
-                    if (!empty($data['instagram_business_account'])) {
-                        $ig_info = $data['instagram_business_account'];
-                        $ig_id = $ig_info['id'] ?? '';
-                        if (empty($ig_id)) continue;
+                    foreach ($chunk as $idx => $p_item) {
+                        $page_id = $p_item['page_id'];
+                        $token = $p_item['token'];
+                        $url = FB_API_BASE . $page_id . "?fields=instagram_business_account{id,username,name,profile_picture_url,followers_count}&access_token=" . urlencode($token);
+                        
+                        $ch = curl_init($url);
+                        curl_setopt_array($ch, [
+                            CURLOPT_RETURNTRANSFER => true,
+                            CURLOPT_TIMEOUT => 6,
+                            CURLOPT_CONNECTTIMEOUT => 3
+                        ]);
+                        apply_proxy_to_curl($ch, $token);
+                        fb_curl_setssl($ch);
 
-                        $username = $ig_info['username'] ?? '';
-                        $name = $ig_info['name'] ?? $username;
-                        $avatar = $ig_info['profile_picture_url'] ?? '';
-                        $followers = (int)($ig_info['followers_count'] ?? 0);
+                        curl_multi_add_handle($mh, $ch);
+                        $curl_handles[$idx] = [
+                            'ch' => $ch,
+                            'page_id' => $page_id,
+                            'token' => $token
+                        ];
+                    }
 
-                        if (!empty($username)) {
-                            $save_ig_account($up_stmt, $account_id, $ig_id, $item['page_id'], $username, $name, $avatar, $followers, $item['token']);
+                    $running = null;
+                    do {
+                        $status = curl_multi_exec($mh, $running);
+                        if ($running > 0) {
+                            if (curl_multi_select($mh, 0.2) === -1) {
+                                usleep(10000);
+                            }
+                        }
+                    } while ($running > 0 && $status === CURLM_OK);
+
+                    foreach ($curl_handles as $item) {
+                        $ch = $item['ch'];
+                        $res = curl_multi_getcontent($ch);
+                        curl_multi_remove_handle($mh, $ch);
+                        curl_close($ch);
+
+                        if (empty($res)) continue;
+                        $data = json_decode($res, true);
+                        if (!empty($data['instagram_business_account'])) {
+                            $ig_info = $data['instagram_business_account'];
+                            $ig_id = $ig_info['id'] ?? '';
+                            if (empty($ig_id)) continue;
+
+                            $username = $ig_info['username'] ?? '';
+                            $name = $ig_info['name'] ?? $username;
+                            $avatar = $ig_info['profile_picture_url'] ?? '';
+                            $followers = (int)($ig_info['followers_count'] ?? 0);
+
+                            if (!empty($username)) {
+                                $save_ig_account($up_stmt, $account_id, $ig_id, $item['page_id'], $username, $name, $avatar, $followers, $item['token']);
+                            }
                         }
                     }
+                    curl_multi_close($mh);
                 }
-                curl_multi_close($mh);
             }
         }
+
+        // Clean up orphaned instagram_accounts records for this account whose fb_page_id is no longer owned by this account in `pages`
+        $clean_stmt = $pdo->prepare("
+            DELETE ig FROM instagram_accounts ig
+            WHERE ig.account_id = ?
+              AND ig.fb_page_id NOT IN (
+                  SELECT p.page_id 
+                  FROM pages p 
+                  JOIN users u ON p.user_id = u.id 
+                  WHERE u.account_id = ?
+              )
+        ");
+        $clean_stmt->execute([$account_id, $account_id]);
     } catch (Exception $e) {
         error_log("sync_instagram_accounts error: " . $e->getMessage());
     }
@@ -192,8 +244,15 @@ function sync_instagram_accounts($account_id) {
 function get_instagram_accounts($account_id) {
     global $pdo;
     try {
-        $stmt = $pdo->prepare("SELECT * FROM instagram_accounts WHERE account_id = ? ORDER BY created_at DESC");
-        $stmt->execute([$account_id]);
+        $stmt = $pdo->prepare("
+            SELECT ig.* 
+            FROM instagram_accounts ig
+            JOIN pages p ON ig.fb_page_id = p.page_id
+            JOIN users u ON p.user_id = u.id
+            WHERE ig.account_id = ? AND u.account_id = ?
+            ORDER BY ig.created_at DESC
+        ");
+        $stmt->execute([$account_id, $account_id]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
         return [];
@@ -203,46 +262,35 @@ function get_instagram_accounts($account_id) {
 /**
  * Internal Helper: Poll Media Container status until FINISHED or error
  */
-function poll_instagram_container_status($container_id, $access_token, $max_wait_seconds = 120) {
+function poll_instagram_container_status($container_id, $access_token, $max_wait_seconds = 60) {
     $start = time();
-    $last_status = '';
     while (time() - $start < $max_wait_seconds) {
         $url = FB_API_BASE . $container_id . "?fields=status_code,status&access_token=" . urlencode($access_token);
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 15,
-            CURLOPT_CONNECTTIMEOUT => 8
+            CURLOPT_TIMEOUT => 10
         ]);
         apply_proxy_to_curl($ch, $access_token);
         fb_curl_setssl($ch);
         $res = curl_exec($ch);
         curl_close($ch);
 
-        if ($res) {
-            $data = json_decode($res, true);
-            if (!empty($data['error'])) {
-                return ['status' => 'error', 'msg' => $data['error']['message'] ?? 'Lỗi kiểm tra Container Meta'];
-            }
+        $data = json_decode($res, true);
+        if (!empty($data['error'])) {
+            return ['status' => 'error', 'msg' => $data['error']['message'] ?? 'Lỗi kiểm tra Container Meta'];
+        }
 
-            // If status_code is not present in Meta response (e.g. photo container), container is ready!
-            if (!array_key_exists('status_code', $data)) {
-                return ['status' => 'success'];
-            }
-
-            $status = strtoupper($data['status_code'] ?? '');
-            $last_status = $status;
-
-            if ($status === 'FINISHED' || $status === 'PUBLISHED') {
-                return ['status' => 'success'];
-            } elseif ($status === 'ERROR' || $status === 'EXPIRED') {
-                $msg = !empty($data['status']) ? $data['status'] : ('Lỗi xử lý Container Media Instagram (Meta Status: ' . $status . ')');
-                return ['status' => 'error', 'msg' => $msg];
-            }
+        $status = strtoupper($data['status_code'] ?? '');
+        if ($status === 'FINISHED' || $status === 'PUBLISHED' || empty($status)) {
+            return ['status' => 'success'];
+        } elseif ($status === 'ERROR' || $status === 'EXPIRED') {
+            $msg = $data['status'] ?? 'Lỗi xử lý Container Media Instagram (Meta Status: ' . $status . ')';
+            return ['status' => 'error', 'msg' => $msg];
         }
         sleep(2);
     }
-    return ['status' => 'error', 'msg' => 'Hết thời gian chờ xử lý Container Media Instagram (Timeout ' . $max_wait_seconds . 's, Meta Status: ' . ($last_status ?: 'IN_PROGRESS') . ')'];
+    return ['status' => 'error', 'msg' => 'Hết thời gian chờ xử lý Container Media Instagram (Timeout)'];
 }
 
 /**
@@ -332,7 +380,7 @@ function post_instagram_photo($ig_user_id, $access_token, $image_url, $caption =
     }
 
     $container_id = $data['id'];
-    $poll = poll_instagram_container_status($container_id, $access_token, 60);
+    $poll = poll_instagram_container_status($container_id, $access_token, 30);
     if ($poll['status'] !== 'success') {
         return $poll;
     }
@@ -388,7 +436,7 @@ function post_instagram_carousel($ig_user_id, $access_token, $media_items, $capt
         }
 
         $c_id = $data['id'];
-        $poll = poll_instagram_container_status($c_id, $access_token, 90);
+        $poll = poll_instagram_container_status($c_id, $access_token, 60);
         if ($poll['status'] !== 'success') return $poll;
 
         $item_container_ids[] = $c_id;
@@ -425,7 +473,7 @@ function post_instagram_carousel($ig_user_id, $access_token, $media_items, $capt
     }
 
     $parent_container_id = $data['id'];
-    $poll = poll_instagram_container_status($parent_container_id, $access_token, 90);
+    $poll = poll_instagram_container_status($parent_container_id, $access_token, 60);
     if ($poll['status'] !== 'success') return $poll;
 
     return publish_instagram_container($ig_user_id, $parent_container_id, $access_token);
@@ -465,7 +513,7 @@ function post_instagram_reels($ig_user_id, $access_token, $video_url, $caption =
     }
 
     $container_id = $data['id'];
-    $poll = poll_instagram_container_status($container_id, $access_token, 120);
+    $poll = poll_instagram_container_status($container_id, $access_token, 90);
     if ($poll['status'] !== 'success') {
         return $poll;
     }
@@ -507,9 +555,10 @@ function post_instagram_story($ig_user_id, $access_token, $media_url, $is_video 
     }
 
     $container_id = $data['id'];
-    // Always poll container status (both image and video stories) until FINISHED
-    $poll = poll_instagram_container_status($container_id, $access_token, 90);
-    if ($poll['status'] !== 'success') return $poll;
+    if ($is_video) {
+        $poll = poll_instagram_container_status($container_id, $access_token, 60);
+        if ($poll['status'] !== 'success') return $poll;
+    }
 
     return publish_instagram_container($ig_user_id, $container_id, $access_token);
 }

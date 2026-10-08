@@ -67,6 +67,8 @@ if ($user_info_res['status'] === 'success') {
     $display_name = $u['display_name'] ?? 'TikTok User';
     $avatar       = $u['avatar_url'] ?? '';
     $union_id     = $u['union_id'] ?? '';
+}
+
 // Check max_tiktok_accounts limit before inserting new account
 $chk_tt = $pdo->prepare("SELECT id FROM tiktok_accounts WHERE account_id = ? AND open_id = ?");
 $chk_tt->execute([$account_id, $open_id]);
@@ -79,13 +81,13 @@ if (!$existing_tt) {
     $max_tiktok_accounts = (int)($acc_info['max_tiktok_accounts'] ?? 10);
     $is_admin = (($acc_info['role'] ?? '') === 'admin');
 
-    if (!$is_admin && $max_tiktok_accounts > 0) {
+    if (!$is_admin) {
         $cnt_tt_stmt = $pdo->prepare("SELECT COUNT(*) FROM tiktok_accounts WHERE account_id = ?");
         $cnt_tt_stmt->execute([$account_id]);
         $curr_tt_count = (int)$cnt_tt_stmt->fetchColumn();
 
         if ($curr_tt_count >= $max_tiktok_accounts) {
-            $_SESSION['flash_msg'] = "⚠️ Tài khoản của bạn đã đạt giới hạn tối đa $max_tiktok_accounts Kênh TikTok (Hiện tại: $curr_tt_count/$max_tiktok_accounts). Vui lòng liên hệ Admin để nâng cấp gói cước!";
+            $_SESSION['flash_msg'] = "⚠️ Tài khoản của bạn đã đạt/vượt giới hạn tối đa $max_tiktok_accounts Kênh TikTok (Hiện tại: $curr_tt_count/$max_tiktok_accounts). Vui lòng liên hệ Admin để nâng cấp gói cước!";
             header("Location: tiktok.php");
             exit;
         }
@@ -123,6 +125,6 @@ try {
     $_SESSION['flash_msg'] = "Lỗi lưu tài khoản TikTok vào cơ sở dữ liệu: " . $e->getMessage();
 }
 
-header("Location: tiktok.php");
+header("Location: tiktok.php?tab=channels");
 exit;
 ?>

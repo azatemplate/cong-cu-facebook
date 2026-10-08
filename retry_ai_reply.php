@@ -108,44 +108,8 @@ if ($history_count > 0 && !empty($conversation_id)) {
     }
 }
 
-// 5. Build system prompt
-$info_context = "\n\n--- THÔNG TIN KHÁCH HÀNG ĐÃ CÓ ---\n";
-$info_context .= "- Tên khách hàng: " . ($sender_name ?: "CHƯA CÓ") . "\n";
-$info_context .= "- Số điện thoại: " . ($cust_phone ?: "CHƯA CÓ") . "\n";
-$info_context .= "- Tỉnh thành: " . ($cust_province ?: "CHƯA CÓ") . "\n";
-$info_context .= "- Nhu cầu/Yêu cầu khách hàng: " . ($cust_notes ?: "CHƯA CÓ") . "\n";
-$info_context .= "- Số điện thoại Sales phụ trách: " . ($cust_sales_phone ?: "CHƯA CÓ") . "\n";
-$info_context .= "- Ghi chú của Sales: " . ($cust_sales_notes ?: "CHƯA CÓ") . "\n";
-$info_context .= "-----------------------------------\n";
-if (!empty($cust_sales_phone)) {
-    $info_context .= "HƯỚNG DẪN THÊM VỀ BÀN GIAO SALES: Nếu có thông tin 'Số điện thoại Sales phụ trách' và khách hàng hỏi/thắc mắc về việc liên hệ, báo giá hoặc phản hồi chậm, bạn hãy khéo léo thông báo cho khách hàng biết rằng nhân viên Sales số điện thoại " . $cust_sales_phone . " đã/đang xử lý và liên hệ với khách hàng. Hướng dẫn khách hàng liên hệ trực tiếp hoặc add Zalo số đó để được xử lý nhanh nhất.\n";
-}
-if (!empty($cust_phone)) {
-    $info_context .= "⚠️ LƯU Ý ĐẶC BIỆT QUAN TRỌNG: Khách hàng này ĐÃ CÓ số điện thoại là \"{$cust_phone}\". Bạn TUYỆT ĐỐI KHÔNG ĐƯỢC HỎI XIN lại số điện thoại trong mọi trường hợp (ngay cả khi khách hàng hỏi về việc liên hệ, báo giá, hoặc đơn hàng). Nếu khách hàng yêu cầu liên hệ hoặc báo giá, hãy nói rõ rằng bộ phận tư vấn sẽ liên hệ qua số điện thoại {$cust_phone} đã có.\n";
-}
-if (!empty($cust_province)) {
-    $info_context .= "⚠️ LƯU Ý ĐẶC BIỆT QUAN TRỌNG: Khách hàng này ĐÃ CÓ tỉnh thành là \"{$cust_province}\". Bạn TUYỆT ĐỐI KHÔNG ĐƯỢC HỎI LẠI khách hàng ở tỉnh nào nữa. Nếu cần tính phí vận chuyển hoặc báo giá, hãy mặc định sử dụng luôn tỉnh thành \"{$cust_province}\" để tính toán hoặc báo với khách là sẽ giao về \"{$cust_province}\".\n";
-}
-$info_context .= "HƯỚNG DẪN BẮT BUỘC: Bạn là chatbot chăm sóc khách hàng chuyên nghiệp. Hãy kiểm tra các thông tin ở trên:\n";
-$info_context .= "1. Với thông tin nào đã có (không phải là 'CHƯA CÓ'), bạn tuyệt đối không được hỏi lại khách hàng nữa.\n";
-$info_context .= "2. Với thông tin nào ghi 'CHƯA CÓ', hãy khéo léo, tự nhiên và thân thiện hỏi khách hàng để xin nốt. Quy tắc xin thông tin: Chỉ hỏi xin TỪNG thông tin một trong mỗi tin nhắn, TUYỆT ĐỐI không hỏi dồn dập nhiều thông tin cùng lúc (ví dụ: không được hỏi xin cả tỉnh thành lẫn số điện thoại trong cùng một câu). Bạn phải ưu tiên hỏi về Nhu cầu/Sản phẩm trước để biết khách muốn mua gì, sau đó mới hỏi đến Tỉnh thành (khi hỏi tỉnh thành bạn phải chủ động giới thiệu địa chỉ cửa hàng của mình trước để khách biết vị trí của shop), và cuối cùng mới xin Số điện thoại để Sales liên hệ báo giá cụ thể. Trả lời NGẮN GỌN, đi thẳng vào câu hỏi. TUYỆT ĐỐI không cảm ơn đi cảm ơn lại nhiều lần (không cần nói câu cảm ơn mỗi khi nhận được một thông tin đơn lẻ như địa chỉ hay số điện thoại, chỉ ghi nhận nhanh và hỏi tiếp ngắn gọn).\n";
-$info_context .= "3. Khi đã thu thập đủ cả 3 thông tin (Số điện thoại, Tỉnh thành, Nhu cầu), hãy tóm tắt lại và gửi lời cảm ơn khách hàng.\n";
-$info_context .= "4. ĐỊNH DẠNG TIN NHẮN: Hãy xuống dòng hợp lý để tin nhắn dễ đọc. Mỗi ý chính nên ở một dòng riêng. Khi liệt kê nhiều sản phẩm hoặc thông tin, dùng dấu gạch đầu dòng (- ) và xuống hàng cho từng mục. Không viết tất cả thành một đoạn dài liền nhau.\n";
-$info_context .= "5. XỬ LÝ KHÁCH Ở QUÁ XA HOẶC KHÔNG MUỐN MUA: Nếu khách hàng nói hoặc ngụ ý rằng địa chỉ của chúng ta quá xa so với họ (ví dụ: 'xa quá', 'ở xa thế', 'không tiện', v.v.) hoặc từ chối tiếp tục tư vấn, bạn hãy trả lời lịch sự và ngắn gọn: 'Cảm ơn anh/chị đã liên hệ, nếu có cơ hội mong được hợp tác.' sau đó thiết lập trường 'stop_consulting' trong JSON trả về thành true để hệ thống tự động dừng tư vấn khách này. Với những trường hợp này, bạn tuyệt đối không được tiếp tục hỏi xin số điện thoại hay thông tin gì khác nữa.\n";
-                                     $info_context .= "6. KHÔNG LIỆT KÊ/TÓM TẮT GIỮA CUỘC: Trong suốt quá trình xin thông tin (khi chưa đủ cả 3 thông tin), bạn TUYỆT ĐỐI KHÔNG ĐƯỢC nhắc lại, liệt kê hay tóm tắt các thông tin đã thu thập được dưới dạng danh sách hay gạch đầu dòng. Hãy đi thẳng vào câu hỏi tiếp theo một cách ngắn gọn, tự nhiên. Chỉ tóm tắt đầy đủ thông tin dưới dạng danh sách gạch đầu dòng duy nhất một lần ở cuối cuộc trò chuyện khi đã thu thập đủ cả 3 thông tin (Số điện thoại, Tỉnh thành, Nhu cầu).\n";
-
-$json_instruction = "\n\nQUY ĐỊNH PHẢN HỒI: Để đồng bộ thông tin vào hệ thống quản lý, bạn BẮT BUỘC phải phản hồi dưới định dạng JSON duy nhất (không bọc trong thẻ ```json hay bất kỳ chữ giải thích nào khác ngoài cấu trúc JSON), nội dung như sau:\n";
-$json_instruction .= "{\n";
-$json_instruction .= '  "reply": "Nội dung tin nhắn bạn muốn trả lời khách hàng (viết bằng tiếng Việt tự nhiên)",\n';
-$json_instruction .= '  "extracted": {\n';
-$json_instruction .= '    "phone": "Số điện thoại phát hiện được trong tin nhắn mới của khách hàng (nếu có, không lấy số cũ), nếu khách hàng gửi lại số điện thoại khác thì trả về số mới, nếu không có trả về null",\n';
-$json_instruction .= '    "province": "Tỉnh thành phát hiện được trong tin nhắn mới của khách hàng (nếu có, không lấy tỉnh cũ), nếu không có trả về null",\n';
-$json_instruction .= '    "requirements": "Nhu cầu/yêu cầu đầy đủ nhất của khách hàng đã được cập nhật hoặc bổ sung thêm thông tin mới...",\n';
-$json_instruction .= '    "stop_consulting": true hoặc false (trả về true nếu khách hàng nói hoặc ngụ ý địa chỉ quá xa không mua nữa, từ chối hoặc không có nhu cầu tiếp tục tư vấn, để hệ thống tự động dừng tư vấn khách hàng này, ngược lại trả về false)\n';
-$json_instruction .= "  }\n";
-$json_instruction .= "}\n";
-
-$custom_system_prompt = $ai_rule['message'] . $info_context . $json_instruction;
+require_once __DIR__ . '/includes/bot_prompt_helper.php';
+$custom_system_prompt = build_cop_pha_viet_system_prompt($ai_rule['message'] ?? '', $sender_name, $cust_phone, $cust_province, $cust_notes, $cust_sales_phone, $cust_sales_notes, $history_text);
 
 echo "Calling OpenAI API... \n";
 $ai_reply_text = generate_chat_reply_with_ai($custom_text, $custom_system_prompt, $acc_id, $page_name, $history_text);
@@ -161,6 +125,7 @@ $reply_to_send = $ai_parsed['reply'];
 $parsed_extracted = $ai_parsed['extracted'];
 
 if (!empty($reply_to_send)) {
+    $reply_to_send = filter_ai_reply_no_duplicate_asks($reply_to_send, $cust_phone, $cust_province, $cust_notes);
     echo "Parsed Reply message: \"$reply_to_send\"\n";
     
     // Extracted fields

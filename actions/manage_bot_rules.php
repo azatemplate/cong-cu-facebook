@@ -50,9 +50,14 @@ if ($action === 'save') {
     if (strlen($active_start_time) === 5) $active_start_time .= ':00';
     if (strlen($active_end_time) === 5) $active_end_time .= ':00';
 
-    if (empty($message)) {
-        echo json_encode(['status' => 'error', 'msg' => 'Vui lòng nhập nội dung phản hồi']);
-        exit;
+    if (empty(trim($message))) {
+        if ($rule_type === 'ai_reply') {
+            require_once __DIR__ . '/../includes/bot_prompt_helper.php';
+            $message = get_default_saas_master_prompt();
+        } else {
+            echo json_encode(['status' => 'error', 'msg' => 'Vui lòng nhập nội dung phản hồi']);
+            exit;
+        }
     }
     
     if ($rule_type === 'keyword' && empty(trim($keywords))) {

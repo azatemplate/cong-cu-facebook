@@ -212,6 +212,9 @@ if (in_array($event_name, ['user_send_file', 'user_send_image', 'user_send_audio
     }
 }
 
+require_once __DIR__ . '/includes/bot_prompt_helper.php';
+save_chat_history_log($pdo, 'zalo', $oa_id, $sender_id, 'user', $cust_name, $snippet);
+
 // 4. Update or Insert Customer Profile
 // Khởi tạo/Cập nhật thông tin tương tác cuối trong zalo_customers
 try {
@@ -403,8 +406,8 @@ try {
 
         if ($ai_rule) {
             $delay_s = (int)($ai_rule['delay_seconds'] ?? 0);
-            if ($delay_s > 0 && $delay_s < 10) {
-                $delay_s = 10;
+            if ($delay_s <= 0) {
+                $delay_s = 3; // Mặc định gom tin nhắn trong 3 giây để tránh AI trả lời lặp tin
             }
             
             // Handle message delays / merging
@@ -442,91 +445,12 @@ try {
                 $stmt_del_lock->execute([$oa_id, $sender_id]);
             }
 
-            // Fetch history from Zalo OA API
-            $data_param = json_encode([
-                'user_id' => $sender_id,
-                'offset' => 0,
-                'count' => 10
-            ]);
-            $history_url = ZALO_API_BASE . 'v2.0/oa/conversation?data=' . urlencode($data_param);
-            $history_headers = ["access_token: {$access_token}"];
-            $history_res = zalo_api_request($history_url, 'GET', $history_headers);
-            
-            $history_text = '';
+            require_once __DIR__ . '/includes/bot_prompt_helper.php';
+            $history_count = (int)($ai_rule['history_count'] ?? 10);
+            $history_text = get_local_chat_history_text($pdo, 'zalo', $oa_id, $sender_id, $history_count, $access_token);
             $user_merged_text = $snippet;
-            
-            if ($history_res['status_code'] === 200 && isset($history_res['data']['error']) && $history_res['data']['error'] === 0) {
-                $history_msgs = $history_res['data']['data'] ?? [];
-                
-                // If delay occurred, merge user messages within the delay window
-                if ($delay_s > 0) {
-                    $merged_parts = [];
-                    $cutoff_time = (time() - $delay_s - 2) * 1000;
-                    
-                    foreach ($history_msgs as $msg) {
-                        if (isset($msg['src']) && $msg['src'] == 1 && $msg['time'] >= $cutoff_time) {
-                            if (isset($msg['type']) && $msg['type'] === 'text' && !empty($msg['message'])) {
-                                $merged_parts[] = trim($msg['message']);
-                            }
-                        }
-                    }
-                    if (!empty($merged_parts)) {
-                        $merged_parts = array_reverse($merged_parts);
-                        $user_merged_text = implode("\n", $merged_parts);
-                    }
-                }
-                
-                // Construct history text
-                $history_count = (int)($ai_rule['history_count'] ?? 6);
-                $sliced_history = array_slice($history_msgs, 0, $history_count);
-                $sliced_history = array_reverse($sliced_history);
-                
-                foreach ($sliced_history as $msg) {
-                    if (empty($msg['message'])) continue;
-                    $role = ($msg['src'] == 0) ? "Bạn (Cửa hàng)" : "Khách hàng";
-                    $history_text .= "$role: " . $msg['message'] . "\n";
-                }
-            }
-
-            // Build AI prompt context
-            $info_context = "\n\n--- THÔNG TIN KHÁCH HÀNG ĐÃ CÓ ---\n";
-            $info_context .= "- Tên khách hàng: " . ($cust_name ?: "CHƯA CÓ") . "\n";
-            $info_context .= "- Số điện thoại: " . ($cust_phone ?: "CHƯA CÓ") . "\n";
-            $info_context .= "- Tỉnh thành: " . ($cust_province ?: "CHƯA CÓ") . "\n";
-            $info_context .= "- Nhu cầu/Yêu cầu khách hàng: " . ($cust_notes ?: "CHƯA CÓ") . "\n";
-            $info_context .= "- Số điện thoại Sales phụ trách: " . ($cust_sales_phone ?: "CHƯA CÓ") . "\n";
-            $info_context .= "- Ghi chú của Sales: " . ($cust_sales_notes ?: "CHƯA CÓ") . "\n";
-            $info_context .= "-----------------------------------\n";
-            if (!empty($cust_sales_phone)) {
-                $info_context .= "HƯỚNG DẪN THÊM VỀ BÀN GIAO SALES: Nếu có thông tin 'Số điện thoại Sales phụ trách' và khách hàng hỏi/thắc mắc về việc liên hệ, báo giá hoặc phản hồi chậm, bạn hãy khéo léo thông báo cho khách hàng biết rằng nhân viên Sales số điện thoại " . $cust_sales_phone . " đã/đang xử lý và liên hệ với khách hàng (dựa trên Ghi chú của Sales nếu có, ví dụ như gọi không liên lạc được, bận...). Hướng dẫn khách hàng liên hệ trực tiếp hoặc add Zalo số đó để được xử lý nhanh nhất.\n";
-            }
-            $info_context .= "HƯỚNG DẪN BẮT BUỘC: Bạn là chatbot chăm sóc khách hàng chuyên nghiệp. Hãy kiểm tra các thông tin ở trên:\n";
-            $info_context .= "1. Với thông tin nào đã có (không phải là 'CHƯA CÓ'), bạn tuyệt đối không được hỏi lại khách hàng nữa.\n";
-            $info_context .= "2. Với thông tin nào ghi 'CHƯA CÓ', hãy khéo léo, tự nhiên và thân thiện hỏi khách hàng để xin nốt. Quy tắc xin thông tin: Chỉ hỏi xin TỪNG thông tin một trong mỗi tin nhắn, TUYỆT ĐỐI không hỏi dồn dập nhiều thông tin cùng lúc (ví dụ: không được hỏi xin cả tỉnh thành lẫn số điện thoại trong cùng một câu). Bạn phải ưu tiên hỏi về Nhu cầu/Sản phẩm trước để biết khách muốn mua gì, sau đó mới hỏi đến Tỉnh thành (khi hỏi tỉnh thành bạn phải chủ động giới thiệu địa chỉ cửa hàng của mình trước để khách biết vị trí của shop), và cuối cùng mới xin Số điện thoại để Sales liên hệ báo giá cụ thể. Trả lời NGẮN GỌN, đi thẳng vào câu hỏi. TUYỆT ĐỐI không cảm ơn đi cảm ơn lại nhiều lần (không cần nói câu cảm ơn mỗi khi nhận được một thông tin đơn lẻ như địa chỉ hay số điện thoại, chỉ ghi nhận nhanh và hỏi tiếp ngắn gọn).\n";
-            $info_context .= "3. Khi đã thu thập đủ cả 3 thông tin (Số điện thoại, Tỉnh thành, Nhu cầu), hãy tóm tắt lại và gửi lời cảm ơn khách hàng.\n";
-            $info_context .= "4. ĐỊNH DẠNG TIN NHẮN: Hãy xuống dòng hợp lý để tin nhắn dễ đọc. Mỗi ý chính nên ở một dòng riêng. Khi liệt kê nhiều sản phẩm hoặc thông tin, dùng dấu gạch đầu dòng (- ) và xuống hàng cho từng mục. Không viết tất cả thành một đoạn dài liền nhau.\n";
-            $info_context .= "5. XỬ LÝ KHÁCH Ở QUÁ XA HOẶC KHÔNG MUỐN MUA: Nếu khách hàng nói hoặc ngụ ý rằng địa chỉ của chúng ta quá xa so với họ (ví dụ: 'xa quá', 'ở xa thế', 'không tiện', v.v.) hoặc từ chối tiếp tục tư vấn, bạn hãy trả lời lịch sự và ngắn gọn: 'Cảm ơn anh/chị đã liên hệ, nếu có cơ hội mong được hợp tác.' sau đó thiết lập trường 'stop_consulting' trong JSON trả về thành true để hệ thống tự động dừng tư vấn khách này. Với những trường hợp này, bạn tuyệt đối không được tiếp tục hỏi xin số điện thoại hay thông tin gì khác nữa.\n";
-            $info_context .= "6. KHÔNG LIỆT KÊ/TÓM TẮT GIỮA CUỘC: Trong suốt quá trình xin thông tin (khi chưa đủ cả 3 thông tin), bạn TUYỆT ĐỐI KHÔNG ĐƯỢC nhắc lại, liệt kê hay tóm tắt các thông tin đã thu thập được dưới dạng danh sách hay gạch đầu dòng. Hãy đi thẳng vào câu hỏi tiếp theo một cách ngắn gọn, tự nhiên. Chỉ tóm tắt đầy đủ thông tin dưới dạng danh sách gạch đầu dòng duy nhất một lần ở cuối cuộc trò chuyện khi đã thu thập đủ cả 3 thông tin (Số điện thoại, Tỉnh thành, Nhu cầu).\n";
-            
-            if (!empty($cust_phone)) {
-                $info_context .= "⚠️ LƯU Ý ĐẶC BIỆT QUAN TRỌNG: Khách hàng này ĐÃ CÓ số điện thoại là \"{$cust_phone}\". Bạn TUYỆT ĐỐI KHÔNG ĐƯỢC HỎI XIN lại số điện thoại trong mọi trường hợp (ngay cả khi khách hàng hỏi về việc liên hệ, báo giá, hoặc đơn hàng). Nếu khách hàng yêu cầu liên hệ hoặc báo giá, hãy nói rõ rằng bộ phận tư vấn sẽ liên hệ qua số điện thoại {$cust_phone} đã có.\n";
-            }
-            if (!empty($cust_province)) {
-                $info_context .= "⚠️ LƯU Ý ĐẶC BIỆT QUAN TRỌNG: Khách hàng này ĐÃ CÓ tỉnh thành là \"{$cust_province}\". Bạn TUYỆT ĐỐI KHÔNG ĐƯỢC HỎI LẠI khách hàng ở tỉnh nào nữa. Nếu cần tính phí vận chuyển hoặc báo giá, hãy mặc định sử dụng luôn tỉnh thành \"{$cust_province}\" để tính toán hoặc báo với khách là sẽ giao về \"{$cust_province}\".\n";
-            }
-
-            $json_instruction = "\n\nQUY ĐỊNH PHẢN HỒI: Để đồng bộ thông tin vào hệ thống quản lý, bạn BẮT BUỘC phải phản hồi dưới định dạng JSON duy nhất (không bọc trong thẻ ```json hay bất kỳ chữ giải thích nào khác ngoài cấu trúc JSON), nội dung như sau:\n";
-            $json_instruction .= "{\n";
-            $json_instruction .= '  "reply": "Nội dung tin nhắn bạn muốn trả lời khách hàng (viết bằng tiếng Việt tự nhiên)",\n';
-            $json_instruction .= '  "extracted": {\n';
-            $json_instruction .= '    "phone": "Số điện thoại phát hiện được trong tin nhắn mới của khách hàng (nếu có, không lấy số cũ), nếu khách hàng gửi lại số điện thoại khác thì trả về số mới, nếu không có trả về null",\n';
-            $json_instruction .= '    "province": "Tỉnh thành phát hiện được trong tin nhắn mới của khách hàng (nếu có, không lấy tỉnh cũ), nếu không có trả về null",\n';
-            $json_instruction .= '    "requirements": "Nhu cầu/yêu cầu đầy đủ nhất của khách hàng đã được cập nhật hoặc bổ sung thêm thông tin mới. Hãy đối chiếu với mục Nhu cầu/Yêu cầu khách hàng trong THÔNG TIN KHÁCH HÀNG ĐÃ CÓ ở trên để cập nhật hoặc tích lũy một cách chính xác theo các nguyên tắc sau:\n1. BẮT BUỘC phải trích xuất ngay tên sản phẩm khi khách hàng đề cập, dù khách hàng chưa cung cấp số lượng (ví dụ: khách nói \'tôi muốn mua cùm giáo\' -> lập tức cập nhật \'Cùm giáo\'). Không được bỏ qua hay chờ số lượng.\n2. Nếu khách hàng bổ sung số lượng cho sản phẩm đã nói trước đó (ví dụ: thông tin cũ là \'Cùm giáo\', nay khách nói thêm \'lấy cho em 50 cái\' -> cập nhật tích lũy thành \'Cùm giáo - 50 cái\').\n3. Nếu khách hàng bổ sung thêm sản phẩm/yêu cầu mới khác (ví dụ: thông tin cũ là \'Cùm giáo - 50 cái\', nay khách nói mua thêm \'100m ty ren\' -> tích lũy thêm thành \'Cùm giáo - 50 cái, 100m ty ren\').\nNếu khách hàng không đề cập gì thêm về sản phẩm/nhu cầu hoặc không có thông tin thay đổi so với thông tin đã có, trả về null",\n';
-            $json_instruction .= '    "stop_consulting": true hoặc false (trả về true nếu khách hàng nói hoặc ngụ ý địa chỉ quá xa không mua nữa, từ chối hoặc không có nhu cầu tiếp tục tư vấn, để hệ thống tự động dừng tư vấn khách hàng này, ngược lại trả về false)\n';
-            $json_instruction .= "  }\n";
-            $json_instruction .= "}\n";
-
-            $custom_system_prompt = $ai_rule['message'] . $info_context . $json_instruction;
+            require_once __DIR__ . '/includes/bot_prompt_helper.php';
+            $custom_system_prompt = build_cop_pha_viet_system_prompt($ai_rule['message'] ?? '', $cust_name, $cust_phone, $cust_province, $cust_notes, $cust_sales_phone, $cust_sales_notes, $history_text);
             
             require_once __DIR__ . '/includes/ai_rewriter.php';
             
@@ -546,6 +470,8 @@ try {
                 $parsed_extracted = $ai_parsed['extracted'];
                 
                 if (!empty($reply_to_send)) {
+                    $reply_to_send = filter_ai_reply_no_duplicate_asks($reply_to_send, $cust_phone, $cust_province, $cust_notes);
+
                     // Update customer DB fields if extracted
                     $ai_upd_fields = [];
                     $ai_upd_params = [];
@@ -566,13 +492,23 @@ try {
                             $cust_province = $new_province;
                         }
                     }
-                    if (!empty($parsed_extracted['requirements'])) {
-                        $new_notes = trim($parsed_extracted['requirements']);
-                        if ($new_notes !== $cust_notes) {
-                            $ai_upd_fields[] = "notes = ?";
-                            $ai_upd_params[] = $new_notes;
-                            $cust_notes = $new_notes;
+                    $extracted_req = $parsed_extracted['requirements'] ?? null;
+                    if (!empty($extracted_req) && trim($extracted_req) !== 'null') {
+                        $ext_clean = trim($extracted_req);
+                        if (empty($cust_notes)) {
+                            $final_notes = $ext_clean;
+                        } else if (mb_strpos(mb_strtolower($cust_notes, 'UTF-8'), mb_strtolower($ext_clean, 'UTF-8')) === false) {
+                            $final_notes = $cust_notes . " - " . $ext_clean;
+                        } else {
+                            $final_notes = $cust_notes;
                         }
+                    } else {
+                        $final_notes = detect_product_and_quantity($user_merged_text, $cust_notes);
+                    }
+                    if (!empty($final_notes) && $final_notes !== $cust_notes) {
+                        $ai_upd_fields[] = "notes = ?";
+                        $ai_upd_params[] = $final_notes;
+                        $cust_notes = $final_notes;
                     }
                     if (isset($parsed_extracted['stop_consulting']) && $parsed_extracted['stop_consulting'] === true) {
                         $ai_upd_fields[] = "consulted = 3";
@@ -627,6 +563,7 @@ try {
                 // Send reply to Zalo
                 if (!empty($reply_to_send)) {
                     $send_res = zalo_send_text_message($access_token, $sender_id, $reply_to_send);
+                    save_chat_history_log($pdo, 'zalo', $oa_id, $sender_id, 'bot', 'Bạn (Cửa hàng)', $reply_to_send);
                     if (isset($send_res['status_code']) && $send_res['status_code'] === 200 && isset($send_res['data']['error']) && $send_res['data']['error'] === 0) {
                         $stmt_upd_thread = $pdo->prepare("
                             INSERT INTO zalo_messages (oa_id, sender_id, sender_name, snippet, unread_count, updated_time)

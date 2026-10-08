@@ -90,6 +90,9 @@ try {
     $upcoming_posts = $stmt_upcoming->fetchAll(PDO::FETCH_ASSOC);
     
     foreach ($upcoming_posts as $post) {
+        $scheduled_ts = strtotime($post['scheduled_time']);
+        $seconds_left = max(0, $scheduled_ts - time());
+
         $response['upcoming'][] = [
             'id' => $post['id'],
             'campaign_id' => $post['campaign_id'] ?? null,
@@ -99,7 +102,7 @@ try {
             'post_type' => $post['post_type'],
             'scheduled_time' => $post['scheduled_time'],
             'status' => $post['status'],
-            'seconds_left' => max(0, (int)$post['seconds_left']),
+            'seconds_left' => $seconds_left,
             'buffer_service' => $post['buffer_service'] ?? '',
             'buffer_channel_name' => $post['buffer_channel_name'] ?? ''
         ];

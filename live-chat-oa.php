@@ -524,11 +524,6 @@ if (!$enable_live_chat_oa) {
         <span>💬</span> Zalo Official Account
     </a>
     <?php endif; ?>
-    <?php if ($enable_live_chat_tiktok): ?>
-    <a href="live-chat-tiktok.php" class="platform-tab-btn <?php echo ($current_page === 'live_chat_tiktok') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'live_chat_tiktok') ? '#fe2c55' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'live_chat_tiktok') ? '#fe2c55' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
-        <span>🎵</span> TikTok
-    </a>
-    <?php endif; ?>
     <?php if ($enable_website): ?>
     <a href="website.php" class="platform-tab-btn <?php echo ($current_page === 'website') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'website') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'website') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>🌐</span> Live Chat Website
@@ -2814,8 +2809,8 @@ if (!$enable_live_chat_oa) {
                     </div>
                     <div style="flex:1; text-align:left;">
                         <label style="display:block; font-size:13px; font-weight:600; margin-bottom:5px; color:#1f2937;">Lịch sử trò chuyện (Tin)</label>
-                        <input type="number" id="rule_history_count" min="0" max="20" value="6" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;">
-                        <div style="font-size:11px; color:#6b7280; margin-top:4px;">Lấy X tin nhắn gần nhất làm ngữ cảnh.</div>
+                        <input type="number" id="rule_history_count" min="0" max="50" value="10" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;">
+                        <div style="font-size:11px; color:#6b7280; margin-top:4px;">Lấy X tin nhắn gần nhất làm ngữ cảnh (Tối đa 50 tin).</div>
                     </div>
                 </div>
             </div>

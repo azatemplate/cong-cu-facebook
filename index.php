@@ -11,7 +11,7 @@ $start_date = date('Y-m-d', strtotime('-28 days'));
 
 $sub_msg = $is_admin 
     ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" style="display:inline-block; vertical-align:text-bottom; margin-right:4px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> SUPER ADMIN • GLOBAL VIEW • DỮ LIỆU TOÀN HỆ THỐNG' 
-    : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" style="display:inline-block; vertical-align:text-bottom; margin-right:4px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> THÀNH VIÊN • DỮ LIỆU TÀI KHOẢN CÁ NHÂN';
+    : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" style="display:inline-block; vertical-align:text-bottom; margin-right:4px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 4-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> THÀNH VIÊN • DỮ LIỆU TÀI KHOẢN CÁ NHÂN';
 
 // ── Chart data from snapshots (lightweight DB query, always fast) ────────────
 $snap_account_id = $is_admin ? 0 : $account_id;
@@ -52,65 +52,152 @@ foreach ($chart_days as $day) {
 ?>
 
 <style>
-/* Premium Dashboard Card Overrides */
+/* Evondev Skill Styling for Main Dashboard */
+.dashboard-container,
+.dashboard-container button,
+.dashboard-container input,
+.dashboard-container select {
+    font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.dashboard-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding-bottom: 40px;
+}
+
+/* Header Banner Card */
+.db-header-card {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+    border: 1px solid #312e81;
+    border-radius: 16px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 8px 32px rgba(15, 23, 42, 0.15);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.db-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.db-header-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #818cf8;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.db-header-info h1 {
+    font-size: 22px;
+    font-weight: 800;
+    color: #ffffff;
+    margin: 0 0 4px 0;
+    letter-spacing: -0.02em;
+}
+
+.db-header-role {
+    font-size: 12px;
+    font-weight: 600;
+    color: #c7d2fe;
+    letter-spacing: 0.03em;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.db-health-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.health-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #047857;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    padding: 5px 12px;
+    border-radius: 9999px;
+}
+
+.health-dot {
+    width: 7px;
+    height: 7px;
+    background: #10b981;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+    animation: pulseDot 2s infinite;
+}
+
+@keyframes pulseDot {
+    0% { transform: scale(0.95); opacity: 0.8; }
+    50% { transform: scale(1.1); opacity: 1; }
+    100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+/* KPI Stats Grid */
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
     gap: 20px;
     margin-bottom: 24px;
 }
 
 .stat-card.premium-card {
-    background: var(--card-bg);
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
     border-radius: 16px;
-    padding: 20px;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-    border: 1px solid var(--border-color);
+    padding: 22px;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.04);
     display: flex;
     align-items: center;
     gap: 16px;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: all 0.2s ease;
 }
 
 .stat-card.premium-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.08);
 }
 
 .premium-card .card-icon-container {
-    width: 58px;
-    height: 58px;
+    width: 54px;
+    height: 54px;
     border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
+    color: #ffffff;
     flex-shrink: 0;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
-/* Gradients for the icon containers */
-.premium-card .grad-purple {
-    background: linear-gradient(135deg, #a855f7, #6366f1);
-}
-.premium-card .grad-blue {
-    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-}
-.premium-card .grad-red {
-    background: linear-gradient(135deg, #f43f5e, #e11d48);
-}
-.premium-card .grad-green {
-    background: linear-gradient(135deg, #10b981, #059669);
-}
-.premium-card .grad-orange {
-    background: linear-gradient(135deg, #f97316, #ea580c);
-}
-.premium-card .grad-indigo {
-    background: linear-gradient(135deg, #8b5cf6, #6d28d9);
-}
-.premium-card .grad-sky {
-    background: linear-gradient(135deg, #0ea5e9, #0284c7);
-}
+.premium-card .grad-purple { background: linear-gradient(135deg, #a855f7, #6366f1); }
+.premium-card .grad-blue { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+.premium-card .grad-red { background: linear-gradient(135deg, #f43f5e, #e11d48); }
+.premium-card .grad-green { background: linear-gradient(135deg, #10b981, #059669); }
+.premium-card .grad-orange { background: linear-gradient(135deg, #f97316, #ea580c); }
+.premium-card .grad-indigo { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+.premium-card .grad-sky { background: linear-gradient(135deg, #0ea5e9, #0284c7); }
 
 .premium-card .card-info-container {
     flex: 1;
@@ -118,12 +205,12 @@ foreach ($chart_days as $day) {
 }
 
 .premium-card .stat-title {
-    color: var(--text-muted);
-    font-size: 13px;
-    font-weight: 600;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 700;
     margin-bottom: 4px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.05em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -139,255 +226,424 @@ foreach ($chart_days as $day) {
 
 .premium-card .stat-value {
     font-size: 28px;
-    font-weight: 700;
+    font-weight: 900;
     line-height: 1.1;
-    letter-spacing: -0.5px;
+    letter-spacing: -0.03em;
+    color: #0f172a;
 }
-
 .premium-card .stat-value.color-purple { color: #8b5cf6; }
 .premium-card .stat-value.color-blue { color: #2563eb; }
 .premium-card .stat-value.color-red { color: #e11d48; }
-.premium-card .stat-value.color-green { color: #10b981; }
+.premium-card .stat-value.color-green { color: #059669; }
 .premium-card .stat-value.color-orange { color: #ea580c; }
-.premium-card .stat-value.color-indigo { color: #6366f1; }
+.premium-card .stat-value.color-indigo { color: #4f46e5; }
 .premium-card .stat-value.color-sky { color: #0284c7; }
 
 .premium-card .stat-subtitle {
-    font-size: 11px;
-    color: var(--text-muted);
+    font-size: 11.5px;
+    color: #64748b;
     margin-top: 0;
     line-height: 1.3;
 }
 
-/* Badge styles for trend indicators */
+/* Trend Badges */
 .trend-badge {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: 3px;
     padding: 2px 8px;
     border-radius: 9999px;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     line-height: 1;
 }
-
 .trend-badge.trend-up {
-    background: #f0fdf4;
-    color: #16a34a;
-    border: 1px solid #bbf7d0;
+    background: #ecfdf5;
+    color: #059669;
+    border: 1px solid #a7f3d0;
 }
-
 .trend-badge.trend-down {
     background: #fef2f2;
-    color: #ef4444;
+    color: #dc2626;
     border: 1px solid #fecaca;
 }
 
-body.dark-mode .trend-badge.trend-up {
-    background: rgba(22, 163, 74, 0.15);
-    color: #4ade80;
-    border-color: rgba(34, 197, 94, 0.3);
+/* Section Cards & Tables */
+.db-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.04);
 }
 
-body.dark-mode .trend-badge.trend-down {
-    background: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-    border-color: rgba(239, 68, 68, 0.3);
+.db-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
-body.dark-mode .stat-card.premium-card {
-    background: var(--card-bg);
-    border-color: var(--border-color);
+.db-card-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
 }
 
-@media (max-width: 1024px) {
-    .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
+.db-card-sub {
+    font-size: 12px;
+    color: #64748b;
 }
-@media (max-width: 640px) {
-    .stats-grid {
-        grid-template-columns: 1fr;
-    }
-    .stat-card.premium-card {
-        padding: 16px;
-        gap: 12px;
-    }
-    .premium-card .card-icon-container {
-        width: 48px;
-        height: 48px;
-        border-radius: 12px;
-    }
-    .premium-card .card-icon-container svg {
-        width: 20px;
-        height: 20px;
-    }
-    .premium-card .stat-value {
-        font-size: 22px;
-    }
+
+/* Chart Canvas Wrapper */
+.chart-wrapper {
+    height: 340px;
+    position: relative;
+    width: 100%;
+}
+
+.chart-legend-box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 14px;
+    font-size: 13px;
+    font-weight: 700;
+}
+.legend-pill-followers {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #059669;
+}
+.legend-pill-reach {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #dc2626;
+}
+
+/* Dual Activity Grid */
+.dual-activity-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+@media (max-width: 992px) {
+    .dual-activity-grid { grid-template-columns: 1fr; }
+}
+
+.db-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    text-align: left;
+}
+.db-table th {
+    background: #f8fafc;
+    padding: 12px 14px;
+    font-weight: 800;
+    color: #475569;
+    border-bottom: 1px solid #e2e8f0;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+}
+.db-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+}
+.db-table tr:hover td {
+    background: #fafafa;
+}
+.db-table tr:last-child td {
+    border-bottom: none;
+}
+
+/* Status Badges */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-size: 11.5px;
+    font-weight: 700;
+    line-height: 1;
+}
+.badge-published { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.badge-failed { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; cursor: help; }
+.badge-pending { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+.badge-processing { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; animation: pulse 2s infinite; }
+
+.countdown-timer {
+    font-weight: 700;
+    color: #4f46e5;
+    font-size: 12.5px;
+}
+
+/* Skeleton Pulse */
+@keyframes skeleton-pulse {
+    0% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+    100% { opacity: 0.4; }
+}
+.skeleton-box {
+    height: 14px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
 }
 </style>
 
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
-    <div style="display: flex; align-items: center; gap: 14px;">
-        <div class="dashboard-header-icon-container" style="width: 48px; height: 48px; border-radius: 12px; background: #ffffff; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.1), 0 4px 6px -4px rgba(99, 102, 241, 0.05); border: 1px solid var(--border-color); flex-shrink: 0;">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="url(#headerGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="28" height="28">
-                <defs>
-                    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stop-color="#a855f7" />
-                        <stop offset="100%" stop-color="#6366f1" />
-                    </linearGradient>
-                </defs>
-                <path d="M3 17l6-6 4 4 8-8"/>
-                <path d="M17 7h4v4"/>
-                <path d="M6 20v-4M10 20v-8M14 20v-5M18 20V8"/>
-            </svg>
+<div class="dashboard-container">
+    <!-- Header Banner Card -->
+    <div class="db-header-card">
+        <div class="db-header-left">
+            <div class="db-header-icon">
+                <svg width="28" height="28" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            </div>
+            <div class="db-header-info">
+                <h1>Today's Overview</h1>
+                <div class="db-header-role">
+                    <?= $sub_msg ?>
+                </div>
+            </div>
         </div>
-        <div>
-            <div class="page-title" style="margin-bottom: 3px; font-size: 22px; font-weight: 700; color: var(--text-main); line-height: 1.1;">Today's Overview</div>
-            <div style="font-size: 11px; font-weight: 600; color: #6366f1; letter-spacing: 0.5px; text-transform: uppercase; display: flex; align-items: center; gap: 4px;">
-                <?php echo $sub_msg; ?>
+
+        <div class="db-health-group">
+            <span class="health-pill">
+                <span class="health-dot"></span>
+                <span>API: Online</span>
+            </span>
+            <span class="health-pill">
+                <span class="health-dot"></span>
+                <span>DB: 4ms</span>
+            </span>
+            <span class="health-pill">
+                <span class="health-dot"></span>
+                <span>Redis: Ready</span>
+            </span>
+        </div>
+    </div>
+
+    <!-- Banner cảnh báo checkpoint -->
+    <div id="checkpoint-warning-banner"
+        style="display:none; background:#fffbeb; border:1px solid #fde68a; border-left:4px solid #f59e0b; padding:14px 18px; border-radius:12px; margin-bottom:24px; font-size:13.5px; color:#78350f; line-height:1.6; font-weight:600;">
+    </div>
+
+    <!-- Stats Grid (Loaded via AJAX for 0ms instant page render) -->
+    <div class="stats-grid">
+        <!-- Card 1: Connected Accounts -->
+        <div class="stat-card premium-card">
+            <div class="card-icon-container grad-purple">
+                <svg width="26" height="26" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M4.5 6.375a4.125 4.125 0 1 1 8.25 0 4.125 4.125 0 0 1-8.25 0ZM14.25 8.625a3.375 3.375 0 1 1 6.75 0 3.375 3.375 0 0 1-6.75 0ZM1.5 19.125a7.125 7.125 0 0 1 14.25 0v.003l-.001.119a.75.75 0 0 1-.363.63 13.067 13.067 0 0 1-6.761 1.873c-2.472 0-4.786-.684-6.76-1.873a.75.75 0 0 1-.364-.63l-.001-.122ZM17.25 19.128l-.001.144a2.25 2.25 0 0 1-.233.96 10.088 10.088 0 0 0 3.484-1.104.75.75 0 0 0 .363-.63 6.75 6.75 0 0 0-11.238-5.187 8.623 8.623 0 0 1 7.625 5.817Z" />
+                </svg>
+            </div>
+            <div class="card-info-container">
+                <div class="stat-title"><?= $is_admin ? "Connected Accounts (All Users)" : "Connected FB Profiles"; ?></div>
+                <div class="stat-value-row">
+                    <span class="stat-value color-purple" id="ajax-users">—</span>
+                    <span id="ajax-users-diff" style="display:none;"></span>
+                </div>
+                <div class="stat-subtitle"><?= $is_admin ? "Tổng tài khoản FB đã kết nối" : "Số tài khoản Facebook đã liên kết"; ?></div>
+            </div>
+        </div>
+
+        <!-- Card 2: Total Fanpages -->
+        <div class="stat-card premium-card">
+            <div class="card-icon-container grad-blue">
+                <svg width="26" height="26" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1v2h3v3h-3v6.95c4.56-.93 8-4.96 8-9.75z"/>
+                </svg>
+            </div>
+            <div class="card-info-container">
+                <div class="stat-title"><?= $is_admin ? "Total Fanpages (All Users)" : "Total Fanpages"; ?></div>
+                <div class="stat-value-row">
+                    <span class="stat-value color-blue" id="ajax-pages">—</span>
+                    <span id="ajax-pages-diff" style="display:none;"></span>
+                </div>
+                <div class="stat-subtitle"><?= $is_admin ? "Tổng fanpage trên toàn hệ thống" : "Tổng fanpage sở hữu & chia sẻ"; ?></div>
+            </div>
+        </div>
+
+        <!-- Card 3: Total Reach -->
+        <div class="stat-card premium-card">
+            <div class="card-icon-container grad-red">
+                <svg width="26" height="26" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+                </svg>
+            </div>
+            <div class="card-info-container">
+                <div class="stat-title"><?= $is_admin ? "Total Reach (All Users)" : "Total Reach"; ?></div>
+                <div class="stat-value-row">
+                    <span class="stat-value color-red" id="ajax-reach">—</span>
+                    <span id="ajax-reach-diff" style="display:none;"></span>
+                </div>
+                <div class="stat-subtitle"><?= $is_admin ? "Tổng reach từ page insights" : "Tổng tiếp cận fanpage"; ?> (<?= htmlspecialchars($period); ?>)</div>
+            </div>
+        </div>
+
+        <!-- Card 4: Total Followers -->
+        <div class="stat-card premium-card">
+            <div class="card-icon-container grad-green">
+                <svg width="26" height="26" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M2 20h2v-8H2v8zm19.83-8.88c-.2-.67-.82-1.12-1.52-1.12h-5.69l.86-4.14.03-.3c0-.38-.15-.74-.41-1.01L14.22 3.5 8.59 9.13C8.22 9.5 8 10 8 10.5V18c0 1.1.9 2 2 2h7.3c.73 0 1.37-.48 1.57-1.17l2.8-6.52c.1-.24.16-.5.16-.76v-1.13c0-.28-.06-.55-.17-.84z"/>
+                </svg>
+            </div>
+            <div class="card-info-container">
+                <div class="stat-title"><?= $is_admin ? "Total Flow (All Followers)" : "Total Followers"; ?></div>
+                <div class="stat-value-row">
+                    <span class="stat-value color-green" id="ajax-followers">—</span>
+                    <span id="ajax-followers-diff" style="display:none;"></span>
+                </div>
+                <div class="stat-subtitle"><?= $is_admin ? "Tổng người theo dõi toàn bộ fanpage" : "Tổng người theo dõi các fanpage"; ?></div>
+            </div>
+        </div>
+
+        <!-- Card 5: Reels Uploaded Today -->
+        <div class="stat-card premium-card">
+            <div class="card-icon-container grad-orange">
+                <svg width="26" height="26" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2zm0 4h3L5 6H4v2zm5 0h3L10 6H8v2zm5 0h3l-2-2h-2v2zm5 0h2V6h-1l-2 2zm-12 2v8h14v-8H8zm4 6v-4l4 2-4 2z"/>
+                </svg>
+            </div>
+            <div class="card-info-container">
+                <div class="stat-title"><?= $is_admin ? "Reels Uploaded Today (All Users)" : "Reels Uploaded Today"; ?></div>
+                <div class="stat-value-row">
+                    <span class="stat-value color-orange" id="ajax-reels">—</span>
+                    <span id="ajax-reels-diff" style="display:none;"></span>
+                </div>
+                <div class="stat-subtitle"><?= $is_admin ? "Tổng reels đã upload hôm nay (giờ VN)" : "Tổng Reels đã đăng hôm nay"; ?></div>
+            </div>
+        </div>
+
+        <!-- Card 6: Total Views -->
+        <div class="stat-card premium-card">
+            <div class="card-icon-container grad-indigo">
+                <svg width="26" height="26" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                </svg>
+            </div>
+            <div class="card-info-container">
+                <div class="stat-title"><?= $is_admin ? "Total Views (All Users)" : "Total Views"; ?></div>
+                <div class="stat-value-row">
+                    <span class="stat-value color-indigo" id="ajax-views">—</span>
+                    <span id="ajax-views-diff" style="display:none;"></span>
+                </div>
+                <div class="stat-subtitle"><?= $is_admin ? "Tổng views video/reels theo dữ liệu" : "Tổng lượt xem video/reels"; ?> (<?= htmlspecialchars($period); ?>)</div>
+            </div>
+        </div>
+
+        <!-- Card 7: Total Posts Today -->
+        <div class="stat-card premium-card">
+            <div class="card-icon-container grad-sky">
+                <svg width="26" height="26" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                </svg>
+            </div>
+            <div class="card-info-container">
+                <div class="stat-title"><?= $is_admin ? 'Total Post Today (All Users)' : 'Total Posts Today'; ?></div>
+                <div class="stat-value-row">
+                    <span class="stat-value color-sky" id="ajax-posts-today">—</span>
+                    <span id="ajax-posts-today-diff" style="display:none;"></span>
+                </div>
+                <div class="stat-subtitle"><?= $is_admin ? 'Tổng số bài viết đã đăng trong ngày hôm nay' : 'Tổng số bài viết đã đăng hôm nay'; ?></div>
             </div>
         </div>
     </div>
-    
-    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px;">
-        <div style="display: flex; gap: 10px;">
-            <span style="font-size: 11px; color: #16a34a; border: 1px solid #bbf7d0; background: #f0fdf4; padding: 3px 8px; border-radius: 4px; font-weight: 500;">✅ API: Online</span>
-            <span style="font-size: 11px; color: #16a34a; border: 1px solid #bbf7d0; background: #f0fdf4; padding: 3px 8px; border-radius: 4px; font-weight: 500;">✅ DB: 4ms</span>
-            <span style="font-size: 11px; color: #16a34a; border: 1px solid #bbf7d0; background: #f0fdf4; padding: 3px 8px; border-radius: 4px; font-weight: 500;">✅ Redis: Ready</span>
+
+    <!-- Growth Chart Card -->
+    <div class="db-card">
+        <div class="db-card-header">
+            <div>
+                <h3 class="db-card-title">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                    Growth Chart (7 Days History)
+                </h3>
+                <div class="db-card-sub">Dữ liệu tự động đồng bộ lúc 6:00 AM & 6:00 PM ICT mỗi ngày</div>
+            </div>
+            <span style="font-size: 11.5px; font-weight: 700; background: #e0e7ff; color: #4338ca; padding: 4px 12px; border-radius: 9999px;">Snapshot 7 ngày</span>
+        </div>
+
+        <div class="chart-wrapper">
+            <canvas id="growthChart"></canvas>
+        </div>
+
+        <div class="chart-legend-box">
+            <span class="legend-pill-followers">● Followers (Người theo dõi)</span>
+            <span class="legend-pill-reach">● Reach (Lượt tiếp cận)</span>
+        </div>
+    </div>
+
+    <!-- Dual Activity Tables -->
+    <div class="dual-activity-grid">
+        <!-- Card 1: Lịch sử đăng gần đây -->
+        <div class="db-card" style="margin-bottom:0;">
+            <div class="db-card-header">
+                <h3 class="db-card-title">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Lịch Sử Đăng Bài Gần Đây
+                </h3>
+            </div>
+            <div style="overflow-x: auto;">
+                <table class="db-table">
+                    <thead>
+                        <tr>
+                            <th>Kênh / Fanpage</th>
+                            <th>Loại bài</th>
+                            <th>Thời gian</th>
+                            <th>Trạng thái</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recent-posts-body">
+                        <tr><td><div class="skeleton-box" style="width:75%;"></div></td><td><div class="skeleton-box" style="width:50%;"></div></td><td><div class="skeleton-box" style="width:60%;"></div></td><td><div class="skeleton-box" style="width:40%;"></div></td></tr>
+                        <tr><td><div class="skeleton-box" style="width:60%;"></div></td><td><div class="skeleton-box" style="width:50%;"></div></td><td><div class="skeleton-box" style="width:65%;"></div></td><td><div class="skeleton-box" style="width:40%;"></div></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Card 2: Hàng chờ đăng sắp tới -->
+        <div class="db-card" style="margin-bottom:0;">
+            <div class="db-card-header">
+                <h3 class="db-card-title">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                    Hàng Chờ Đăng Bài Sắp Tới
+                </h3>
+            </div>
+            <div style="overflow-x: auto;">
+                <table class="db-table">
+                    <thead>
+                        <tr>
+                            <th>Kênh / Fanpage</th>
+                            <th>Loại bài</th>
+                            <th>Dự kiến đăng</th>
+                            <th>Thời gian chờ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="upcoming-queue-body">
+                        <tr><td><div class="skeleton-box" style="width:70%;"></div></td><td><div class="skeleton-box" style="width:50%;"></div></td><td><div class="skeleton-box" style="width:65%;"></div></td><td><div class="skeleton-box" style="width:45%;"></div></td></tr>
+                        <tr><td><div class="skeleton-box" style="width:80%;"></div></td><td><div class="skeleton-box" style="width:50%;"></div></td><td><div class="skeleton-box" style="width:60%;"></div></td><td><div class="skeleton-box" style="width:45%;"></div></td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
 
-<!-- Banner cảnh báo checkpoint -->
-<div id="checkpoint-warning-banner"
-    style="display:none; background:#fffbeb; border:1px solid #fde68a; border-left:4px solid #f59e0b; padding:12px 16px; border-radius:6px; margin-bottom:16px; font-size:13px; color:#78350f; line-height:1.6;">
-</div>
-
-<!-- Stats Grid: All values loaded via AJAX for instant page render -->
-<div class="stats-grid">
-    <!-- Card 1: Connected Accounts -->
-    <div class="stat-card premium-card">
-        <div class="card-icon-container grad-purple">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-                <path d="M4.5 6.375a4.125 4.125 0 1 1 8.25 0 4.125 4.125 0 0 1-8.25 0ZM14.25 8.625a3.375 3.375 0 1 1 6.75 0 3.375 3.375 0 0 1-6.75 0ZM1.5 19.125a7.125 7.125 0 0 1 14.25 0v.003l-.001.119a.75.75 0 0 1-.363.63 13.067 13.067 0 0 1-6.761 1.873c-2.472 0-4.786-.684-6.76-1.873a.75.75 0 0 1-.364-.63l-.001-.122ZM17.25 19.128l-.001.144a2.25 2.25 0 0 1-.233.96 10.088 10.088 0 0 0 3.484-1.104.75.75 0 0 0 .363-.63 6.75 6.75 0 0 0-11.238-5.187 8.623 8.623 0 0 1 7.625 5.817Z" />
-            </svg>
-        </div>
-        <div class="card-info-container">
-            <div class="stat-title"><?php echo $is_admin ? "Connected Accounts (All Users)" : "Connected FB Profiles"; ?></div>
-            <div class="stat-value-row">
-                <span class="stat-value color-purple" id="ajax-users">—</span>
-                <span id="ajax-users-diff" style="display:none;"></span>
-            </div>
-            <div class="stat-subtitle"><?php echo $is_admin ? "Tổng tài khoản FB đã kết nối" : "Số tài khoản Facebook đã liên kết"; ?></div>
-        </div>
-    </div>
-    
-    <!-- Card 2: Total Fanpages -->
-    <div class="stat-card premium-card">
-        <div class="card-icon-container grad-blue">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-                <path d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1v2h3v3h-3v6.95c4.56-.93 8-4.96 8-9.75z"/>
-            </svg>
-        </div>
-        <div class="card-info-container">
-            <div class="stat-title"><?php echo $is_admin ? "Total Fanpages (All Users)" : "Total Fanpages"; ?></div>
-            <div class="stat-value-row">
-                <span class="stat-value color-blue" id="ajax-pages">—</span>
-                <span id="ajax-pages-diff" style="display:none;"></span>
-            </div>
-            <div class="stat-subtitle"><?php echo $is_admin ? "Tổng fanpage trên toàn hệ thống" : "Tổng fanpage sở hữu & chia sẻ"; ?></div>
-        </div>
-    </div>
-
-    <!-- Card 3: Total Reach -->
-    <div class="stat-card premium-card">
-        <div class="card-icon-container grad-red">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-            </svg>
-        </div>
-        <div class="card-info-container">
-            <div class="stat-title"><?php echo $is_admin ? "Total Reach (All Users)" : "Total Reach"; ?></div>
-            <div class="stat-value-row">
-                <span class="stat-value color-red" id="ajax-reach">—</span>
-                <span id="ajax-reach-diff" style="display:none;"></span>
-            </div>
-            <div class="stat-subtitle"><?php echo $is_admin ? "Tổng reach từ page insights" : "Tổng tiếp cận fanpage"; ?> (<?php echo htmlspecialchars($period); ?>)</div>
-        </div>
-    </div>
-    
-    <!-- Card 4: Total Followers -->
-    <div class="stat-card premium-card">
-        <div class="card-icon-container grad-green">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-                <path d="M2 20h2v-8H2v8zm19.83-8.88c-.2-.67-.82-1.12-1.52-1.12h-5.69l.86-4.14.03-.3c0-.38-.15-.74-.41-1.01L14.22 3.5 8.59 9.13C8.22 9.5 8 10 8 10.5V18c0 1.1.9 2 2 2h7.3c.73 0 1.37-.48 1.57-1.17l2.8-6.52c.1-.24.16-.5.16-.76v-1.13c0-.28-.06-.55-.17-.84z"/>
-            </svg>
-        </div>
-        <div class="card-info-container">
-            <div class="stat-title"><?php echo $is_admin ? "Total Flow (All Followers)" : "Total Followers"; ?></div>
-            <div class="stat-value-row">
-                <span class="stat-value color-green" id="ajax-followers">—</span>
-                <span id="ajax-followers-diff" style="display:none;"></span>
-            </div>
-            <div class="stat-subtitle"><?php echo $is_admin ? "Tổng người theo dõi toàn bộ fanpage" : "Tổng người theo dõi các fanpage"; ?></div>
-        </div>
-    </div>
-    
-    <!-- Card 5: Reels Uploaded Today -->
-    <div class="stat-card premium-card">
-        <div class="card-icon-container grad-orange">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2zm0 4h3L5 6H4v2zm5 0h3L10 6H8v2zm5 0h3l-2-2h-2v2zm5 0h2V6h-1l-2 2zm-12 2v8h14v-8H8zm4 6v-4l4 2-4 2z"/>
-            </svg>
-        </div>
-        <div class="card-info-container">
-            <div class="stat-title"><?php echo $is_admin ? "Reels Uploaded Today (All Users)" : "Reels Uploaded Today"; ?></div>
-            <div class="stat-value-row">
-                <span class="stat-value color-orange" id="ajax-reels">—</span>
-                <span id="ajax-reels-diff" style="display:none;"></span>
-            </div>
-            <div class="stat-subtitle"><?php echo $is_admin ? "Tổng reels đã upload hôm nay (giờ VN)" : "Tổng Reels đã đăng hôm nay"; ?></div>
-        </div>
-    </div>
-    
-    <!-- Card 6: Total Views -->
-    <div class="stat-card premium-card">
-        <div class="card-icon-container grad-indigo">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-                <path d="M8 5v14l11-7z"/>
-            </svg>
-        </div>
-        <div class="card-info-container">
-            <div class="stat-title"><?php echo $is_admin ? "Total Views (All Users)" : "Total Views"; ?></div>
-            <div class="stat-value-row">
-                <span class="stat-value color-indigo" id="ajax-views">—</span>
-                <span id="ajax-views-diff" style="display:none;"></span>
-            </div>
-            <div class="stat-subtitle"><?php echo $is_admin ? "Tổng views video/reels theo dữ liệu" : "Tổng lượt xem video/reels"; ?> (<?php echo htmlspecialchars($period); ?>)</div>
-        </div>
-    </div>
-    
-    <!-- Card 7: Total Post Today -->
-    <div class="stat-card premium-card">
-        <div class="card-icon-container grad-sky">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
-            </svg>
-        </div>
-        <div class="card-info-container">
-            <div class="stat-title"><?php echo $is_admin ? 'Total Post Today (All Users)' : 'Total Posts Today'; ?></div>
-            <div class="stat-value-row">
-                <span class="stat-value color-sky" id="ajax-posts-today">—</span>
-                <span id="ajax-posts-today-diff" style="display:none;"></span>
-            </div>
-            <div class="stat-subtitle"><?php echo $is_admin ? 'Tổng số bài viết đã đăng trong ngày hôm nay' : 'Tổng số bài viết đã đăng hôm nay'; ?></div>
-        </div>
-    </div>
-</div>
-
-<!-- AJAX: Load all dashboard metrics asynchronously -->
+<!-- AJAX Scripts & Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 function renderTrendBadge(htmlStr, targetId) {
     const el = document.getElementById(targetId);
@@ -428,11 +684,11 @@ function formatPostType(type) {
 }
 
 function formatTimeRemaining(seconds) {
-    if (seconds <= 0) return '<span style="color: var(--secondary-color); font-weight: 500;">Sắp đăng...</span>';
+    if (seconds <= 0) return '<span style="color: #4f46e5; font-weight: 700;">Sắp đăng...</span>';
     if (seconds < 60) return seconds + ' giây';
     const mins = Math.floor(seconds / 60);
     if (mins < 60) return mins + ' phút';
-    const hours = Math.floor(mins / 60);
+    const hours = Math.floor(seconds / 3600);
     const remainingMins = mins % 60;
     if (hours < 24) {
         return hours + ' giờ ' + remainingMins + ' phút';
@@ -457,37 +713,105 @@ function startCountdown() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Start countdown timer
     startCountdown();
 
-    // 1. Fast DB metrics (users, pages, followers, reels) — should return in <100ms
+    // Render Growth Chart
+    const ctx = document.getElementById('growthChart').getContext('2d');
+    
+    const gradientFollowers = ctx.createLinearGradient(0, 0, 0, 320);
+    gradientFollowers.addColorStop(0, 'rgba(16, 185, 129, 0.25)');
+    gradientFollowers.addColorStop(1, 'rgba(16, 185, 129, 0)');
+
+    const gradientReach = ctx.createLinearGradient(0, 0, 0, 320);
+    gradientReach.addColorStop(0, 'rgba(239, 68, 68, 0.25)');
+    gradientReach.addColorStop(1, 'rgba(239, 68, 68, 0)');
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: <?= json_encode($chart_days); ?>,
+            datasets: [
+                {
+                    label: 'Followers',
+                    data: <?= json_encode($followers_chart_data); ?>,
+                    borderColor: '#10b981',
+                    backgroundColor: gradientFollowers,
+                    borderWidth: 2.5,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#10b981',
+                    spanGaps: true
+                },
+                {
+                    label: 'Reach',
+                    data: <?= json_encode($reach_chart_data); ?>,
+                    borderColor: '#ef4444',
+                    backgroundColor: gradientReach,
+                    borderWidth: 2.5,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#ef4444',
+                    spanGaps: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'transparent', drawBorder: false },
+                    ticks: { color: '#64748b', font: { size: 11, weight: '600' } }
+                },
+                y: {
+                    grid: { color: '#f1f5f9', drawBorder: false, borderDash: [4, 4] },
+                    ticks: { 
+                        color: '#64748b', 
+                        font: { size: 11, weight: '600' },
+                        callback: function(value) {
+                            if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
+                            if (value >= 1000) return (value / 1000).toFixed(0) + 'k';
+                            return value;
+                        }
+                    }
+                }
+            },
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            }
+        }
+    });
+
+    // 1. Fast DB metrics (users, pages, followers, reels)
     fetch('actions/ajax_dashboard_db.php')
         .then(res => res.json())
         .then(data => {
             if (data.total_users !== undefined) document.getElementById('ajax-users').textContent = Number(data.total_users).toLocaleString();
-            if (data.users_diff_html) {
-                renderTrendBadge(data.users_diff_html, 'ajax-users-diff');
-            }
+            if (data.users_diff_html) renderTrendBadge(data.users_diff_html, 'ajax-users-diff');
+            
             if (data.total_pages !== undefined) document.getElementById('ajax-pages').textContent = Number(data.total_pages).toLocaleString();
-            if (data.pages_diff_html) {
-                renderTrendBadge(data.pages_diff_html, 'ajax-pages-diff');
-            }
+            if (data.pages_diff_html) renderTrendBadge(data.pages_diff_html, 'ajax-pages-diff');
+
             if (data.total_followers !== undefined) document.getElementById('ajax-followers').textContent = Number(data.total_followers).toLocaleString();
-            if (data.followers_diff_html) {
-                renderTrendBadge(data.followers_diff_html, 'ajax-followers-diff');
-            }
+            if (data.followers_diff_html) renderTrendBadge(data.followers_diff_html, 'ajax-followers-diff');
+
             if (data.total_reels_today !== undefined) {
                 let reelsText = Number(data.total_reels_today).toLocaleString();
                 if (data.failed_reels_today > 0) {
-                    reelsText += ' <span style="font-size:12px; color:#ef4444; margin-left:10px; font-weight: 500;">(' + data.failed_reels_today + ' failed)</span>';
+                    reelsText += ' <span style="font-size:12px; color:#ef4444; margin-left:8px; font-weight:700;">(' + data.failed_reels_today + ' lỗi)</span>';
                 } else {
-                    reelsText += ' <span style="font-size:12px; color:var(--text-muted); margin-left:10px; font-weight: normal;">(0 failed)</span>';
+                    reelsText += ' <span style="font-size:12px; color:#64748b; margin-left:8px; font-weight:500;">(0 lỗi)</span>';
                 }
                 document.getElementById('ajax-reels').innerHTML = reelsText;
             }
-            if (data.reels_diff_html) {
-                renderTrendBadge(data.reels_diff_html, 'ajax-reels-diff');
-            }
+            if (data.reels_diff_html) renderTrendBadge(data.reels_diff_html, 'ajax-reels-diff');
+
             if (data.total_posts_today !== undefined) {
                 let postsHtml = Number(data.total_posts_today).toLocaleString();
                 if (data.page_limit > 0) {
@@ -496,27 +820,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 document.getElementById('ajax-posts-today').innerHTML = postsHtml;
             }
-            if (data.posts_diff_html) {
-                renderTrendBadge(data.posts_diff_html, 'ajax-posts-today-diff');
-            }
+            if (data.posts_diff_html) renderTrendBadge(data.posts_diff_html, 'ajax-posts-today-diff');
         })
         .catch(() => {
             document.getElementById('ajax-users').textContent = 'Lỗi';
             document.getElementById('ajax-pages').textContent = 'Lỗi';
         });
 
-    // 2. Slow FB API metrics (reach, views) — may take several seconds
+    // 2. Slow FB API metrics (reach, views)
     fetch('actions/ajax_dashboard_metrics.php')
         .then(res => res.json())
         .then(data => {
             if (data.reach_formatted) document.getElementById('ajax-reach').textContent = data.reach_formatted;
-            if (data.reach_diff_html) {
-                renderTrendBadge(data.reach_diff_html, 'ajax-reach-diff');
-            }
+            if (data.reach_diff_html) renderTrendBadge(data.reach_diff_html, 'ajax-reach-diff');
+
             if (data.views_formatted) document.getElementById('ajax-views').textContent = data.views_formatted;
-            if (data.views_diff_html) {
-                renderTrendBadge(data.views_diff_html, 'ajax-views-diff');
-            }
+            if (data.views_diff_html) renderTrendBadge(data.views_diff_html, 'ajax-views-diff');
+
             if (data.checkpointed_pages && data.checkpointed_pages > 0) {
                 var banner = document.getElementById('checkpoint-warning-banner');
                 if (banner) {
@@ -529,7 +849,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
         })
-        .catch(err => {
+        .catch(() => {
             document.getElementById('ajax-reach').textContent = 'Lỗi API';
             document.getElementById('ajax-views').textContent = 'Lỗi API';
         });
@@ -583,8 +903,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
 
                     if (postUrl) {
-                        linkStart = `<a href="${postUrl}" target="_blank" style="text-decoration:none; color:var(--primary-color); font-weight:500; display:inline-flex; align-items:center; gap:4px;">`;
-                        linkEnd = ` <span style="font-size:10px; color:var(--text-muted);">↗</span></a>`;
+                        linkStart = `<a href="${postUrl}" target="_blank" style="text-decoration:none; color:#4f46e5; font-weight:700; display:inline-flex; align-items:center; gap:4px;">`;
+                        linkEnd = ` <span style="font-size:11px; color:#64748b;">↗</span></a>`;
                     }
                     
                     let safePageName = escapeHtml(p.page_name);
@@ -593,24 +913,24 @@ document.addEventListener('DOMContentLoaded', function() {
                     let campLinkHtml = '';
                     if (p.campaign_name) {
                         let campUrl = p.campaign_id ? `campaign_detail.php?id=${p.campaign_id}` : `manage_posts.php?search=${encodeURIComponent(p.page_name)}`;
-                        campLinkHtml = `<div style="font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: normal;">📁 Chiến dịch: <a href="${campUrl}" style="color:var(--primary-color); text-decoration:underline;">${safeCampName}</a></div>`;
+                        campLinkHtml = `<div style="font-size: 11px; color: #64748b; margin-top: 3px; font-weight: normal;">📁 Chiến dịch: <a href="${campUrl}" style="color:#4f46e5; text-decoration:underline; font-weight:600;">${safeCampName}</a></div>`;
                     } else if (p.page_name) {
-                        campLinkHtml = `<div style="font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: normal;">📁 <a href="manage_posts.php?search=${encodeURIComponent(p.page_name)}" style="color:var(--text-muted); text-decoration:underline;">Tìm chiến dịch của kênh này</a></div>`;
+                        campLinkHtml = `<div style="font-size: 11px; color: #64748b; margin-top: 3px; font-weight: normal;">📁 <a href="manage_posts.php?search=${encodeURIComponent(p.page_name)}" style="color:#64748b; text-decoration:underline;">Tìm chiến dịch của kênh</a></div>`;
                     }
 
                     recentHtml += `<tr>
-                        <td style="font-weight: 500; color: var(--primary-color);">
+                        <td style="font-weight: 700; color: #1e293b;">
                             ${linkStart}${safePageName}${linkEnd}
                             ${campLinkHtml}
                         </td>
-                        <td><span style="font-size: 13px; font-weight:500;">${formatPostType(p.post_type)}</span></td>
-                        <td style="font-size: 13px; color: var(--text-muted);">${p.scheduled_time}</td>
+                        <td><span style="font-size: 13px; font-weight:600;">${formatPostType(p.post_type)}</span></td>
+                        <td style="font-size: 12.5px; color: #64748b; font-weight:600;">${p.scheduled_time}</td>
                         <td><span class="badge ${badgeClass}" ${titleAttr}>${statusText}</span></td>
                     </tr>`;
                 });
                 document.getElementById('recent-posts-body').innerHTML = recentHtml;
             } else {
-                document.getElementById('recent-posts-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">Không có bài viết nào gần đây.</td></tr>';
+                document.getElementById('recent-posts-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:#64748b; padding:24px;">Không có bài viết nào gần đây.</td></tr>';
             }
 
             // Load upcoming posts
@@ -626,225 +946,34 @@ document.addEventListener('DOMContentLoaded', function() {
                     let upCampLinkHtml = '';
                     if (p.campaign_name) {
                         let campUrl = p.campaign_id ? `campaign_detail.php?id=${p.campaign_id}` : `manage_posts.php?search=${encodeURIComponent(p.page_name)}`;
-                        upCampLinkHtml = `<div style="font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: normal;">📁 Chiến dịch: <a href="${campUrl}" style="color:var(--primary-color); text-decoration:underline;">${safeUpCampName}</a></div>`;
+                        upCampLinkHtml = `<div style="font-size: 11px; color: #64748b; margin-top: 3px; font-weight: normal;">📁 Chiến dịch: <a href="${campUrl}" style="color:#4f46e5; text-decoration:underline; font-weight:600;">${safeUpCampName}</a></div>`;
                     }
 
                     upcomingHtml += `<tr>
-                        <td style="font-weight: 500; color: var(--primary-color);">
+                        <td style="font-weight: 700; color: #1e293b;">
                             ${safeUpPageName}
                             ${upCampLinkHtml}
                         </td>
-                        <td><span style="font-size: 13px; font-weight:500;">${formatPostType(p.post_type)}</span></td>
-                        <td style="font-size: 13px; color: var(--text-muted);">${p.scheduled_time}</td>
+                        <td><span style="font-size: 13px; font-weight:600;">${formatPostType(p.post_type)}</span></td>
+                        <td style="font-size: 12.5px; color: #64748b; font-weight:600;">${p.scheduled_time}</td>
                         <td>
                             <span class="countdown-timer" data-seconds="${p.seconds_left}">
                                 ${formatTimeRemaining(p.seconds_left)}
                             </span>
-                            <span class="badge ${badgeClass}" style="margin-left: 6px; font-size:10px; padding: 2px 6px;">${statusText}</span>
+                            <span class="badge ${badgeClass}" style="margin-left: 6px;">${statusText}</span>
                         </td>
                     </tr>`;
                 });
                 document.getElementById('upcoming-queue-body').innerHTML = upcomingHtml;
             } else {
-                document.getElementById('upcoming-queue-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">Không có bài viết nào đang chờ đăng.</td></tr>';
+                document.getElementById('upcoming-queue-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:#64748b; padding:24px;">Không có bài viết nào đang chờ đăng.</td></tr>';
             }
         })
-        .catch(err => {
-            document.getElementById('recent-posts-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:#ef4444; padding:20px;">Lỗi tải dữ liệu.</td></tr>';
-            document.getElementById('upcoming-queue-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:#ef4444; padding:20px;">Lỗi tải dữ liệu.</td></tr>';
+        .catch(() => {
+            document.getElementById('recent-posts-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:#ef4444; padding:24px;">Lỗi tải dữ liệu.</td></tr>';
+            document.getElementById('upcoming-queue-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:#ef4444; padding:24px;">Lỗi tải dữ liệu.</td></tr>';
         });
 });
 </script>
-
-<div class="card" style="margin-bottom: 25px;">
-    <h3 style="margin-bottom: 5px;">Growth Chart (7 Days) <span style="font-size: 13px; color: var(--text-muted); font-weight: normal;">(8 Days)</span></h3>
-    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px;">Dữ liệu tự động cập nhật lúc 6:00 AM & 6:00 PM ICT mỗi ngày.</div>
-    
-    <div style="height: 350px; position: relative; width: 100%;">
-        <canvas id="growthChart"></canvas>
-    </div>
-    <div style="text-align: center; margin-top: 15px; font-size: 13px; font-weight: 500;">
-        <span style="color: #10b981;">● Followers</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #ef4444;">● Reach</span>
-    </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const ctx = document.getElementById('growthChart').getContext('2d');
-    
-    const gradientFollowers = ctx.createLinearGradient(0, 0, 0, 350);
-    gradientFollowers.addColorStop(0, 'rgba(16, 185, 129, 0.3)');
-    gradientFollowers.addColorStop(1, 'rgba(16, 185, 129, 0)');
-
-    const gradientReach = ctx.createLinearGradient(0, 0, 0, 350);
-    gradientReach.addColorStop(0, 'rgba(239, 68, 68, 0.3)');
-    gradientReach.addColorStop(1, 'rgba(239, 68, 68, 0)');
-
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: <?php echo json_encode($chart_days); ?>,
-            datasets: [
-                {
-                    label: 'Followers',
-                    data: <?php echo json_encode($followers_chart_data); ?>,
-                    borderColor: '#10b981',
-                    backgroundColor: gradientFollowers,
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 4,
-                    spanGaps: true
-                },
-                {
-                    label: 'Reach',
-                    data: <?php echo json_encode($reach_chart_data); ?>,
-                    borderColor: '#ef4444',
-                    backgroundColor: gradientReach,
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 4,
-                    spanGaps: true
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false }
-            },
-            scales: {
-                x: {
-                    grid: { color: 'rgba(0,0,0,0)', drawBorder: false },
-                    ticks: { color: '#6b7280', font: { size: 11 } }
-                },
-                y: {
-                    grid: { color: '#e5e7eb', drawBorder: false, borderDash: [5, 5] },
-                    ticks: { 
-                        color: '#6b7280', 
-                        font: { size: 11 },
-                        callback: function(value) {
-                            if (value >= 1000000) return value / 1000000 + 'M';
-                            if (value >= 1000) return value / 1000 + 'k';
-                            return value;
-                        }
-                    }
-                }
-            },
-            interaction: {
-                mode: 'index',
-                intersect: false,
-            }
-        }
-    });
-});
-</script>
-
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 20px;">
-    <!-- Card 1: Lịch sử đăng gần đây -->
-    <div class="card" style="margin-bottom: 0;">
-        <h3 style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
-            <span>🕒</span> Lịch sử đăng gần đây
-        </h3>
-        <div style="overflow-x: auto;">
-            <table style="width: 100%; min-width: 400px; border-collapse: collapse;">
-                <thead>
-                    <tr>
-                        <th>Kênh / Fanpage</th>
-                        <th>Loại bài</th>
-                        <th>Thời gian</th>
-                        <th>Trạng thái</th>
-                    </tr>
-                </thead>
-                <tbody id="recent-posts-body">
-                    <tr>
-                        <td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">
-                            <span style="display:inline-block; width:14px; height:14px; border:2px solid #e5e7eb; border-top-color:var(--primary-color); border-radius:50%; animation: spin 1s linear infinite;"></span>
-                            Đang tải...
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- Card 2: Hàng chờ đăng sắp tới -->
-    <div class="card" style="margin-bottom: 0;">
-        <h3 style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
-            <span>📅</span> Hàng chờ đăng sắp tới
-        </h3>
-        <div style="overflow-x: auto;">
-            <table style="width: 100%; min-width: 400px; border-collapse: collapse;">
-                <thead>
-                    <tr>
-                        <th>Kênh / Fanpage</th>
-                        <th>Loại bài</th>
-                        <th>Dự kiến đăng</th>
-                        <th>Thời gian chờ</th>
-                    </tr>
-                </thead>
-                <tbody id="upcoming-queue-body">
-                    <tr>
-                        <td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">
-                            <span style="display:inline-block; width:14px; height:14px; border:2px solid #e5e7eb; border-top-color:var(--primary-color); border-radius:50%; animation: spin 1s linear infinite;"></span>
-                            Đang tải...
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-<style>
-@keyframes spin { 100% { transform: rotate(360deg); } }
-.badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 500;
-    line-height: 1;
-}
-.badge-published {
-    background: rgba(16, 185, 129, 0.1);
-    color: #10b981;
-    border: 1px solid rgba(16, 185, 129, 0.2);
-}
-.badge-failed {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    cursor: help;
-}
-.badge-pending {
-    background: rgba(245, 158, 11, 0.1);
-    color: #f59e0b;
-    border: 1px solid rgba(245, 158, 11, 0.2);
-}
-.badge-processing {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
-    border: 1px solid rgba(59, 130, 246, 0.2);
-    animation: pulse 2s infinite;
-}
-@keyframes pulse {
-    0% { opacity: 0.6; }
-    50% { opacity: 1; }
-    100% { opacity: 0.6; }
-}
-
-/* Responsive adjustment for grid tables on mobile */
-@media (max-width: 768px) {
-    div[style*="grid-template-columns"] {
-        grid-template-columns: 1fr !important;
-    }
-}
-</style>
 
 <?php include 'includes/footer.php'; ?>

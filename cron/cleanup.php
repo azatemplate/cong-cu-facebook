@@ -219,8 +219,25 @@ try {
     echo "  [LỖI] Delete failed: " . $e->getMessage() . "\n";
 }
 
+// ── Xóa post_campaigns trống (không còn bài nào)
+echo "\n[STEP 6] Xóa chiến dịch trống (post_campaigns không còn bài nào)...\n";
+try {
+    $del_camps = $pdo->query("
+        DELETE FROM post_campaigns 
+        WHERE id NOT IN (
+            SELECT DISTINCT campaign_id 
+            FROM scheduled_posts 
+            WHERE campaign_id IS NOT NULL
+        )
+    ");
+    $stats['campaigns'] = $del_camps->rowCount();
+    echo "  -> Đã xóa: {$stats['campaigns']} chiến dịch trống\n";
+} catch (Exception $e) {
+    echo "  [LỖI] Empty campaigns cleanup: " . $e->getMessage() . "\n";
+}
+
 // ── Xóa posts_history > history_retain_days
-echo "\n[STEP 6] Xóa posts_history cũ (> {$history_retain_days} ngày)...\n";
+echo "\n[STEP 7] Xóa posts_history cũ (> {$history_retain_days} ngày)...\n";
 try {
     $del_hist = $pdo->prepare("
         DELETE FROM posts_history
@@ -234,7 +251,7 @@ try {
 }
 
 // ── OPTIMIZE TABLE disabled in automated cron to prevent InnoDB table locking
-echo "\n[STEP 7] Bỏ qua OPTIMIZE TABLE tự động (tránh làm khóa bảng DB)...\n";
+echo "\n[STEP 8] Bỏ qua OPTIMIZE TABLE tự động (tránh làm khóa bảng DB)...\n";
 
 // Đánh dấu đã dọn DB hôm nay
 @file_put_contents($flag_file, date('Y-m-d H:i:s'));
@@ -243,6 +260,7 @@ echo "\n========================================\n";
 echo "  TỔNG KẾT CLEANUP HÔM NAY\n";
 echo "  Temp files đã xóa:      " . ($stats['temp_files'] + $stats['uploads_tmp'] + $stats['sys_tmp_files']) . "\n";
 echo "  Media bài cũ đã xóa:    {$stats['media_files']}\n";
+echo "  Chiến dịch trống đã xóa: {$stats['campaigns']}\n";
 echo "  Rows DB đã dọn:         " . ($stats['scheduled_posts'] + $stats['posts_history']) . "\n";
 echo "  Thời gian:              " . date('Y-m-d H:i:s') . "\n";
 echo "========================================\n";

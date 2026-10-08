@@ -95,9 +95,44 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
 ?>
 
 <style>
+    /* evondev UI/UX Design System */
+    .container, button, input, select, textarea {
+        font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    }
+
     .page-container {
         max-width: 1200px;
         margin: 0 auto;
+    }
+
+    .buf-hero {
+        background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+        border: 1px solid rgba(99, 102, 241, 0.25);
+        border-radius: 16px;
+        padding: 24px 28px;
+        margin-bottom: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 20px;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+
+    .buf-hero-text h2 {
+        font-size: 22px;
+        font-weight: 700;
+        color: #ffffff;
+        margin: 0 0 4px;
+        letter-spacing: -0.02em;
+    }
+
+    .buf-hero-text p {
+        font-size: 13px;
+        color: #94a3b8;
+        margin: 0;
     }
     
     .composer-grid {
@@ -108,32 +143,33 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
     }
 
     .card-box {
-        background: #fff;
-        border-radius: 12px;
-        border: 1px solid #e5e7eb;
-        padding: 20px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        background: var(--card-bg, #ffffff);
+        border-radius: 16px;
+        border: 1px solid var(--border-color, #e2e8f0);
+        padding: 24px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }
 
     .card-title {
         font-size: 16px;
         font-weight: 700;
-        color: #1e293b;
+        color: var(--text-main, #1e293b);
         margin-bottom: 16px;
         display: flex;
         align-items: center;
         gap: 8px;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid var(--border-color, #e2e8f0);
         padding-bottom: 12px;
     }
 
     .acc-group-header {
         font-size: 13px;
         font-weight: 700;
-        color: #0f172a;
-        padding: 8px 10px;
-        background: #f8fafc;
-        border-radius: 6px;
+        color: var(--text-main, #1e293b);
+        padding: 8px 12px;
+        background: var(--bg-color, #f8fafc);
+        border: 1px solid var(--border-color, #e2e8f0);
+        border-radius: 8px;
         margin-top: 10px;
         margin-bottom: 6px;
         display: flex;
@@ -146,19 +182,20 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
         align-items: center;
         gap: 10px;
         padding: 8px 10px;
-        border-radius: 6px;
+        border-radius: 8px;
         transition: background 0.15s;
         cursor: pointer;
+        color: var(--text-main, #1e293b);
     }
 
     .channel-checkbox-item:hover {
-        background: #f0f7ff;
+        background: rgba(99, 102, 241, 0.08);
     }
 
     .channel-checkbox-item input[type="checkbox"] {
         width: 16px;
         height: 16px;
-        accent-color: #0284c7;
+        accent-color: #6366f1;
         cursor: pointer;
     }
 
@@ -170,87 +207,97 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
     }
 
     .form-group {
-        margin-bottom: 16px;
+        margin-bottom: 18px;
     }
 
     .form-group label {
         display: block;
         font-size: 13px;
         font-weight: 600;
-        color: #475569;
-        margin-bottom: 6px;
+        color: var(--text-muted, #64748b);
+        margin-bottom: 8px;
     }
 
     .form-group input, .form-group select, .form-group textarea {
         width: 100%;
-        padding: 10px 12px;
-        border: 1px solid #cbd5e1;
-        border-radius: 8px;
+        padding: 10px 14px;
+        border: 1px solid var(--border-color, #cbd5e1);
+        border-radius: 10px;
+        background: var(--card-bg, #ffffff);
+        color: var(--text-main, #1e293b);
         font-size: 14px;
         outline: none;
         box-sizing: border-box;
+        transition: border-color 0.2s, box-shadow 0.2s;
     }
 
     .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
-        border-color: #0284c7;
-        box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.1);
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    }
+
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
     }
 
     .btn-submit-post {
         width: 100%;
         padding: 12px;
-        background: #0284c7;
-        color: #fff;
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+        color: #ffffff;
         font-size: 15px;
         font-weight: 700;
         border: none;
-        border-radius: 8px;
+        border-radius: 10px;
         cursor: pointer;
-        transition: background 0.2s;
+        transition: transform .15s ease, box-shadow .15s ease;
+        box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
     }
 
     .btn-submit-post:hover {
-        background: #0369a1;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
     }
 
     .media-source-tabs {
         display: flex;
         gap: 8px;
         margin-bottom: 14px;
-        border-bottom: 1px solid #e2e8f0;
+        border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
         padding-bottom: 8px;
     }
     .media-tab-btn {
-        padding: 6px 14px;
+        padding: 8px 14px;
         font-size: 13px;
         font-weight: 600;
-        color: #64748b;
-        background: #f8fafc;
-        border: 1px solid #cbd5e1;
-        border-radius: 6px;
+        color: #94a3b8;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
         cursor: pointer;
         transition: all 0.2s;
     }
     .media-tab-btn.active {
-        background: #0284c7;
-        color: #fff;
-        border-color: #0284c7;
+        background: rgba(99, 102, 241, 0.15);
+        color: #818cf8;
+        border-color: #6366f1;
     }
 
     /* Channels Management UI */
     .api-header-card {
-        background: #fff;
-        border-radius: 12px;
-        border: 1px solid #e5e7eb;
+        background: var(--card-bg, #ffffff);
+        border-radius: 16px;
+        border: 1px solid var(--border-color, #e2e8f0);
         padding: 24px;
         margin-bottom: 24px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }
     
     .api-title {
         font-size: 20px;
         font-weight: 800;
-        color: #1e293b;
+        color: var(--text-main, #1e293b);
         margin-bottom: 8px;
         display: flex;
         align-items: center;
@@ -259,50 +306,53 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
 
     .api-subtitle {
         font-size: 14px;
-        color: #64748b;
+        color: var(--text-muted, #64748b);
         line-height: 1.5;
         margin-bottom: 20px;
     }
 
     .api-subtitle a {
-        color: #0284c7;
+        color: #4f46e5;
         font-weight: 600;
         text-decoration: underline;
     }
 
     .btn-add-connection {
-        background: #0284c7;
-        color: #fff;
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+        color: #ffffff;
         font-size: 14px;
         font-weight: 700;
         padding: 10px 20px;
-        border-radius: 8px;
+        border-radius: 10px;
         border: none;
         cursor: pointer;
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        transition: background 0.2s;
+        transition: transform .15s ease, box-shadow .15s ease;
         text-decoration: none;
+        box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
     }
 
     .btn-add-connection:hover {
-        background: #0369a1;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+        color: #ffffff;
     }
 
     .acc-block {
-        background: #fff;
-        border-radius: 12px;
-        border: 1px solid #e2e8f0;
+        background: var(--card-bg, #ffffff);
+        border-radius: 16px;
+        border: 1px solid var(--border-color, #e2e8f0);
         margin-bottom: 24px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
         overflow: hidden;
     }
 
     .acc-header {
         padding: 16px 20px;
-        background: #f8fafc;
-        border-bottom: 1px solid #e2e8f0;
+        background: var(--bg-color, #f8fafc);
+        border-bottom: 1px solid var(--border-color, #e2e8f0);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -313,19 +363,19 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
     .acc-email {
         font-size: 15px;
         font-weight: 700;
-        color: #0f172a;
+        color: var(--text-main, #1e293b);
     }
 
     .acc-token-snippet {
         font-size: 12px;
-        color: #94a3b8;
+        color: var(--text-muted, #64748b);
         font-family: monospace;
         margin-left: 6px;
     }
 
     .acc-sync-time {
         font-size: 12px;
-        color: #64748b;
+        color: var(--text-muted, #64748b);
         margin-top: 2px;
     }
 
@@ -336,32 +386,33 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
 
     .btn-action {
         padding: 6px 14px;
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 600;
-        border-radius: 6px;
-        border: 1px solid #cbd5e1;
-        background: #fff;
-        color: #334155;
+        border-radius: 8px;
+        border: 1px solid var(--border-color, #cbd5e1);
+        background: var(--card-bg, #ffffff);
+        color: var(--text-main, #1e293b);
         cursor: pointer;
         display: inline-flex;
         align-items: center;
         gap: 4px;
-        transition: all 0.15s;
+        transition: all 0.15s ease;
         text-decoration: none;
     }
 
     .btn-action:hover {
-        background: #f1f5f9;
-        border-color: #94a3b8;
+        background: rgba(99, 102, 241, 0.08);
+        color: #4f46e5;
     }
 
     .btn-action-danger {
         color: #dc2626;
-        border-color: #fecaca;
+        border-color: rgba(239, 68, 68, 0.3);
+        background: rgba(239, 68, 68, 0.08);
     }
     .btn-action-danger:hover {
-        background: #fef2f2;
-        border-color: #f87171;
+        background: rgba(239, 68, 68, 0.15);
+        color: #b91c1c;
     }
 
     .chan-table {
@@ -371,21 +422,21 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
     }
 
     .chan-table th {
-        background: #fafafa;
-        color: #64748b;
+        background: var(--bg-color, #f8fafc);
+        color: var(--text-muted, #64748b);
         font-size: 11px;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        padding: 10px 16px;
-        border-bottom: 1px solid #e2e8f0;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-color, #e2e8f0);
         text-align: left;
     }
 
     .chan-table td {
         padding: 12px 16px;
-        border-bottom: 1px solid #f1f5f9;
-        color: #334155;
+        border-bottom: 1px solid var(--border-color, #e2e8f0);
+        color: var(--text-main, #1e293b);
         vertical-align: middle;
     }
 
@@ -394,11 +445,11 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
     }
 
     .chan-table tr:hover td {
-        background: #f8fafc;
+        background: rgba(99, 102, 241, 0.04);
     }
 
     .channel-link {
-        color: #0284c7;
+        color: #4f46e5;
         font-weight: 600;
         text-decoration: none;
         display: inline-flex;
@@ -411,15 +462,15 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
         height: 36px;
         border-radius: 50%;
         object-fit: cover;
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--border-color, #e2e8f0);
     }
 
     .channel-avatar-placeholder {
         width: 36px;
         height: 36px;
         border-radius: 50%;
-        background: #e2e8f0;
-        color: #64748b;
+        background: #4f46e5;
+        color: #ffffff;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -444,7 +495,7 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
     .platform-facebook { background: #1877f2; color: #fff; }
     .platform-twitter { background: #000; color: #fff; }
     .platform-linkedin { background: #0a66c2; color: #fff; }
-    .platform-default { background: #e2e8f0; color: #475569; }
+    .platform-default { background: var(--bg-color, #f1f5f9); color: var(--text-muted, #64748b); }
 
     .modal-overlay {
         display: none;
@@ -457,27 +508,28 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
         justify-content: center;
     }
     .modal-card {
-        background: #fff;
-        border-radius: 12px;
+        background: var(--card-bg, #ffffff);
+        border: 1px solid var(--border-color, #e2e8f0);
+        border-radius: 16px;
         width: 100%;
         max-width: 500px;
-        padding: 24px;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        padding: 28px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
     }
     .modal-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 16px;
+        margin-bottom: 20px;
     }
     .modal-title {
         font-size: 18px;
         font-weight: 700;
-        color: #0f172a;
+        color: var(--text-main, #1e293b);
     }
     .modal-close {
         font-size: 20px;
-        color: #94a3b8;
+        color: var(--text-muted, #64748b);
         cursor: pointer;
         border: none;
         background: transparent;
@@ -485,8 +537,11 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
 </style>
 
 <div class="page-container">
-    <div class="page-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <div style="font-size: 22px; font-weight: 800; color: var(--text-main);">Hệ Thống Buffer AI Multi-Channel</div>
+    <div class="buf-hero">
+        <div class="buf-hero-text">
+            <h2>Hệ Thống Buffer AI Multi-Channel</h2>
+            <p>Đăng bài đa nền tảng (TikTok, Instagram, Pinterest, Threads, Facebook, YouTube Short...) thông qua Buffer API.</p>
+        </div>
         <?php if ($active_tab === 'channels'): ?>
             <button onclick="openModalAddConnection()" class="btn-add-connection">
                 <span>➕</span> THÊM KẾT NỐI BUFFER MỚI
@@ -495,25 +550,25 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
     </div>
 
     <!-- Navigation Tabs -->
-    <div style="display:flex; gap:10px; margin-bottom:20px; border-bottom:2px solid var(--border-color); padding-bottom:12px;">
-        <a href="buffer.php?tab=scheduler" style="padding:9px 18px; border-radius:8px; font-weight:600; font-size:14px; text-decoration:none; display:flex; align-items:center; gap:8px; transition:all 0.2s; <?php echo ($active_tab === 'scheduler') ? 'background:var(--primary-color, #0284c7); color:white;' : 'background:#f1f5f9; color:var(--text-main);'; ?>">
+    <div style="display:flex; gap:10px; margin-bottom:24px; border-bottom:2px solid var(--border-color, #e2e8f0); padding-bottom:4px;">
+        <a href="buffer.php?tab=scheduler" style="padding:10px 20px; border-radius:10px 10px 0 0; font-weight:600; font-size:14px; text-decoration:none; display:flex; align-items:center; gap:8px; transition:all 0.2s; <?php echo ($active_tab === 'scheduler') ? 'background:rgba(99,102,241,0.12); color:#4f46e5; border-bottom:3px solid #6366f1;' : 'color:var(--text-muted, #64748b);'; ?>">
             🚀 Đăng Bài &amp; Lịch Trình Buffer
         </a>
-        <a href="buffer.php?tab=channels" style="padding:9px 18px; border-radius:8px; font-weight:600; font-size:14px; text-decoration:none; display:flex; align-items:center; gap:8px; transition:all 0.2s; <?php echo ($active_tab === 'channels') ? 'background:var(--primary-color, #0284c7); color:white;' : 'background:#f1f5f9; color:var(--text-main);'; ?>">
+        <a href="buffer.php?tab=channels" style="padding:10px 20px; border-radius:10px 10px 0 0; font-weight:600; font-size:14px; text-decoration:none; display:flex; align-items:center; gap:8px; transition:all 0.2s; <?php echo ($active_tab === 'channels') ? 'background:rgba(99,102,241,0.12); color:#4f46e5; border-bottom:3px solid #6366f1;' : 'color:var(--text-muted, #64748b);'; ?>">
             📡 Quản Lý Kênh &amp; API Key (<?php echo $total_channels; ?> / <?php echo $max_buf_display; ?>)
         </a>
     </div>
 
     <!-- PHP Flash Notifications -->
     <?php if (!empty($global_flash_msg)): ?>
-        <div style="margin-bottom: 20px; padding: 14px 18px; background: #dcfce7; color: #15803d; border-radius: 8px; border: 1px solid #bbf7d0; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+        <div style="margin-bottom: 24px; padding: 14px 18px; background: rgba(16,185,129,0.15); color: #059669; border-radius: 12px; border: 1px solid rgba(16,185,129,0.3); font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px;">
             <span>✅</span>
             <div><?php echo htmlspecialchars($global_flash_msg); ?></div>
         </div>
     <?php endif; ?>
 
     <?php if (!empty($global_flash_error)): ?>
-        <div style="margin-bottom: 20px; padding: 14px 18px; background: #fef2f2; color: #dc2626; border-radius: 8px; border: 1px solid #fecaca; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+        <div style="margin-bottom: 24px; padding: 14px 18px; background: rgba(239,68,68,0.15); color: #dc2626; border-radius: 12px; border: 1px solid rgba(239,68,68,0.3); font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px;">
             <span>⚠️</span>
             <div><?php echo htmlspecialchars($global_flash_error); ?></div>
         </div>
@@ -537,7 +592,7 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
                 <form method="POST" action="actions/buffer_save_account.php" style="margin:0;">
                     <input type="hidden" name="action" value="sync_all">
                     <input type="hidden" name="redirect" value="1">
-                    <button type="submit" class="btn-action" style="background:#f8fafc; font-weight:700;">
+                    <button type="submit" class="btn-action" style="font-weight:700;">
                         <span>🔄</span> ĐỒNG BỘ TẤT CẢ KÊNH
                     </button>
                 </form>
@@ -545,11 +600,11 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
         </div>
 
         <?php if (empty($buffer_accounts)): ?>
-            <div class="acc-block" style="text-align: center; padding: 60px 20px; color: #94a3b8;">
+            <div class="acc-block" style="text-align: center; padding: 60px 20px; color: var(--text-muted, #64748b);">
                 <span style="font-size: 48px; display: block; margin-bottom: 12px;">📡</span>
-                <h3 style="margin: 0 0 8px 0; color: #475569;">Chưa có kết nối Buffer API nào</h3>
+                <h3 style="margin: 0 0 8px 0; color: var(--text-main, #1e293b);">Chưa có kết nối Buffer API nào</h3>
                 <p style="font-size: 14px; margin-bottom: 20px;">Vui lòng bấm nút <strong>+ THÊM KẾT NỐI</strong> ở trên để thêm Email &amp; Access Token của Buffer.</p>
-                <button onclick="openModalAddConnection()" class="btn-add-connection">➕ THÊM KẾT NỐI BUFFER MỚI</button>
+                <button onclick="openModalAddConnection()" class="btn-add-connection" style="margin: 0 auto;">➕ THÊM KẾT NỐI BUFFER MỚI</button>
             </div>
         <?php else: ?>
             <?php foreach ($buffer_accounts as $acc): ?>
@@ -607,15 +662,15 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
                         <tbody>
                             <?php if (empty($acc['channels'])): ?>
                                 <tr>
-                                    <td colspan="6" style="text-align: center; padding: 24px; color: #94a3b8;">
+                                    <td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted, #64748b);">
                                         Chưa quét thấy kênh nào thuộc tài khoản này. Bấm <strong>Đồng bộ lại</strong> để quét lại kênh từ Buffer.
                                     </td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($acc['channels'] as $idx => $chan): ?>
                                     <tr>
-                                        <td style="color: #94a3b8; font-weight: 600;"><?php echo ($idx + 1); ?></td>
-                                        <td style="font-weight: 600; color: #475569;"><?php echo htmlspecialchars($chan['organization'] ?: 'My Organization'); ?></td>
+                                        <td style="color: var(--text-muted, #64748b); font-weight: 600;"><?php echo ($idx + 1); ?></td>
+                                        <td style="font-weight: 600; color: var(--text-main, #1e293b);"><?php echo htmlspecialchars($chan['organization'] ?: 'My Organization'); ?></td>
                                         <td>
                                             <span class="channel-link">
                                                 <?php echo htmlspecialchars($chan['channel_name']); ?>
@@ -632,7 +687,7 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
                                                 <div class="channel-avatar-placeholder"><?php echo strtoupper(substr($chan['channel_name'], 0, 1)); ?></div>
                                             <?php endif; ?>
                                         </td>
-                                        <td style="font-family: monospace; font-size: 12px; color: #64748b; font-weight: 600;">
+                                        <td style="font-family: monospace; font-size: 12px; color: var(--text-muted, #64748b); font-weight: 600;">
                                             <?php echo htmlspecialchars($chan['channel_id']); ?>
                                         </td>
                                     </tr>
@@ -667,8 +722,8 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
                         <textarea name="access_token" id="form_access_token" rows="3" required placeholder="Dán Personal Access Token lấy từ publish.buffer.com/settings/api..."></textarea>
                     </div>
 
-                    <div style="text-align: right; margin-top: 20px;">
-                        <button type="button" onclick="closeModalConnection()" class="btn-action" style="margin-right: 8px;">Hủy</button>
+                    <div style="text-align: right; margin-top: 24px; display:flex; justify-content:flex-end; gap:10px;">
+                        <button type="button" onclick="closeModalConnection()" class="btn-action">Hủy</button>
                         <button type="submit" id="btn_save_conn" class="btn-add-connection">💾 Lưu &amp; Đồng Bộ Kênh</button>
                     </div>
                 </form>
@@ -702,11 +757,11 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
     <?php else: ?>
         <!-- ==================== TAB SCHEDULER: ĐĂNG BÀI BUFFER ==================== -->
         <?php if (!$has_channels): ?>
-            <div class="card-box" style="text-align: center; padding: 50px 20px; margin-bottom: 30px;">
+            <div class="card-box" style="text-align: center; padding: 60px 20px; margin-bottom: 30px;">
                 <span style="font-size: 48px; display: block; margin-bottom: 12px;">📡</span>
-                <h3 style="margin: 0 0 8px 0; color: #475569;">Chưa có kênh Buffer nào được quét</h3>
-                <p style="color: #64748b; margin-bottom: 20px;">Vui lòng chuyển sang tab <strong>Quản Lý Kênh &amp; API Key</strong> để đồng bộ kênh trước khi đăng bài.</p>
-                <a href="buffer.php?tab=channels" class="btn-add-connection">➕ Thêm &amp; Đồng Bộ Kênh Buffer</a>
+                <h3 style="margin: 0 0 8px 0; color: var(--text-main, #1e293b);">Chưa có kênh Buffer nào được quét</h3>
+                <p style="color: var(--text-muted, #64748b); margin-bottom: 20px;">Vui lòng chuyển sang tab <strong>Quản Lý Kênh &amp; API Key</strong> để đồng bộ kênh trước khi đăng bài.</p>
+                <a href="buffer.php?tab=channels" class="btn-add-connection" style="display:inline-flex;">➕ Thêm &amp; Đồng Bộ Kênh Buffer</a>
             </div>
         <?php else: ?>
             <form id="bufferPostForm" method="POST" action="actions/publish_buffer.php" enctype="multipart/form-data">
@@ -719,7 +774,7 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
                     <div class="card-box">
                         <div class="card-title">
                             <span>🎯</span> Chọn Kênh Đăng Bài
-                            <label style="margin-left: auto; font-size: 12px; font-weight: 500; cursor: pointer; color: #0284c7;">
+                            <label style="margin-left: auto; font-size: 12px; font-weight: 600; cursor: pointer; color: #4f46e5;">
                                 <input type="checkbox" onchange="toggleSelectAll(this)" style="vertical-align: middle;"> Chọn tất cả
                             </label>
                         </div>
@@ -728,7 +783,7 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
                             <?php foreach ($buffer_accounts as $acc): ?>
                                 <div class="acc-group-header">
                                     <span>📧 <?php echo htmlspecialchars($acc['email']); ?></span>
-                                    <small style="color: #64748b; font-weight: normal;"><?php echo count($acc['channels']); ?> kênh</small>
+                                    <small style="color: var(--text-muted, #64748b); font-weight: normal;"><?php echo count($acc['channels']); ?> kênh</small>
                                 </div>
                                 <?php foreach ($acc['channels'] as $c): ?>
                                     <label class="channel-checkbox-item">
@@ -736,11 +791,11 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
                                         <?php if ($c['avatar']): ?>
                                             <img src="<?php echo htmlspecialchars($c['avatar']); ?>" class="channel-mini-avatar" alt="Avatar">
                                         <?php else: ?>
-                                            <div class="channel-mini-avatar" style="background:#cbd5e1; text-align:center; line-height:28px; font-size:12px; font-weight:bold; color:#475569;"><?php echo strtoupper(substr($c['channel_name'],0,1)); ?></div>
+                                            <div class="channel-mini-avatar" style="background:#4f46e5; text-align:center; line-height:28px; font-size:12px; font-weight:bold; color:#ffffff;"><?php echo strtoupper(substr($c['channel_name'],0,1)); ?></div>
                                         <?php endif; ?>
                                         <div style="flex:1; min-width:0;">
-                                            <div style="font-size:13px; font-weight:600; color:#1e293b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"><?php echo htmlspecialchars($c['channel_name']); ?></div>
-                                            <div style="font-size:11px; color:#64748b;"><?php echo getPlatformBadgeShort($c['service']); ?></div>
+                                            <div style="font-size:13px; font-weight:600; color:var(--text-main, #1e293b); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"><?php echo htmlspecialchars($c['channel_name']); ?></div>
+                                            <div style="font-size:11px; color:var(--text-muted, #64748b);"><?php echo getPlatformBadgeShort($c['service']); ?></div>
                                         </div>
                                     </label>
                                 <?php endforeach; ?>
@@ -755,8 +810,8 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
                         </div>
 
                         <!-- Auto Options Box -->
-                        <div class="form-group" style="background: #fdf2f8; padding: 12px 15px; border-radius: 8px; border: 1px dashed #fbcfe8; margin-bottom: 16px;">
-                            <label style="color: #be185d; font-weight: 600; cursor: pointer; margin: 0;">
+                        <div class="form-group" style="background: rgba(236,72,153,0.08); padding: 14px 16px; border-radius: 12px; border: 1px dashed rgba(236,72,153,0.3); margin-bottom: 18px;">
+                            <label style="color: #db2777; font-weight: 600; cursor: pointer; margin: 0;">
                                 <input type="checkbox" id="auto_title" name="auto_title" value="1" checked style="width:16px; height:16px; vertical-align:middle;"> 
                                 Tự động lấy Tên File / Tiêu đề TikTok làm Tiêu đề &amp; Mô tả
                             </label>
@@ -778,93 +833,92 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
 
                         <!-- Media Source Selection (Tabs: Local, Drive, TikTok) -->
                         <div class="form-group">
-                            <label>Chọn Nguồn Media (Ảnh / Video / Link TikTok / Drive)</label>
+                            <label>Chọn Nguồn Media (Ảnh / Video / Drive / Kho Data)</label>
                             <div class="media-source-tabs">
                                 <button type="button" class="media-tab-btn active" onclick="switchMediaTab('local')">💻 Tải từ Máy Tính (Tự upload Drive)</button>
                                 <button type="button" class="media-tab-btn" onclick="switchMediaTab('drive')">📁 Google Drive</button>
-                                <button type="button" class="media-tab-btn" onclick="switchMediaTab('tiktok')">🎵 Link TikTok</button>
+                                <button type="button" class="media-tab-btn" onclick="switchMediaTab('tiktok')">📁 Kho Data</button>
                             </div>
 
                             <!-- 1. Local Computer File Upload Panel -->
-                            <div id="panel_local" style="display: block; background: #fafafa; padding: 14px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+                            <div id="panel_local" style="display: block; background: var(--bg-color, #f8fafc); padding: 16px; border-radius: 12px; border: 1px dashed var(--border-color, #cbd5e1);">
                                 <?php if ($disable_local_upload): ?>
-                                    <div style="color: #b45309; font-size: 13px; font-weight: 600;">🔒 Admin đã tắt tính năng tải file trực tiếp từ máy tính. Vui lòng chọn tệp từ Google Drive hoặc TikTok.</div>
+                                    <div style="color: #d97706; font-size: 13px; font-weight: 600;">🔒 Admin đã tắt tính năng tải file trực tiếp từ máy tính. Vui lòng chọn tệp từ Google Drive hoặc Kho Data.</div>
                                 <?php else: ?>
                                     <label style="font-size: 13px;">Chọn tệp từ máy tính (Ảnh / Video) - Hệ thống sẽ tự động tải lên Google Drive:</label>
-                                    <input type="file" id="media_files" name="media_files[]" multiple accept="image/*,video/*" style="margin-top: 6px;" onchange="clearDriveSelection()">
+                                    <input type="file" id="media_files" name="media_files[]" multiple accept="image/*,video/*" style="margin-top: 8px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 8px; padding: 8px; background: var(--card-bg, #ffffff); color: var(--text-main, #1e293b);" onchange="clearDriveSelection()">
                                 <?php endif; ?>
                             </div>
 
                             <!-- 2. Google Drive Picker Panel -->
-                            <div id="panel_drive" style="display: none; background: #f0f9ff; padding: 14px; border-radius: 8px; border: 1px dashed #bae6fd;">
-                                <button type="button" class="btn btn-secondary" onclick="openDriveModal('multiple')" style="background: #fff; border: 1px solid #cbd5e1; color: #0369a1; font-weight:700; display: flex; align-items: center; gap: 6px;">
+                            <div id="panel_drive" style="display: none; background: rgba(14,165,233,0.08); padding: 16px; border-radius: 12px; border: 1px dashed rgba(14,165,233,0.25);">
+                                <button type="button" onclick="openDriveModal('multiple')" style="background: var(--card-bg, #ffffff); border: 1px solid var(--border-color, #cbd5e1); color: #0284c7; font-weight:700; padding:9px 16px; border-radius:10px; cursor:pointer; display: flex; align-items: center; gap: 6px; font-size:13px;">
                                     📁 Chọn File / Thư Mục từ Google Drive
                                 </button>
                                 
-                                <div id="driveSelectionInfo" style="margin-top: 10px; display: none; padding: 10px 14px; background: #e0f2fe; border: 1px solid #7dd3fc; border-radius: 6px; font-size: 13px;">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; color: #0369a1; font-weight: bold;">
+                                <div id="driveSelectionInfo" style="margin-top: 12px; display: none; padding: 12px 16px; background: rgba(14,165,233,0.12); border: 1px solid rgba(14,165,233,0.25); border-radius: 10px; font-size: 13px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; color: #0284c7; font-weight: bold;">
                                         <span>Đã chọn <span id="driveSelectedCount">0</span> mục từ Drive:</span>
                                         <button type="button" onclick="clearDriveSelection()" style="background: none; border: none; color: #dc2626; cursor: pointer; text-decoration: underline; font-size: 12px;">Hủy chọn</button>
                                     </div>
-                                    <ul id="driveSelectedList" style="margin: 6px 0 0 0; padding-left: 20px; color: #0c4a6e; max-height: 100px; overflow-y: auto;"></ul>
+                                    <ul id="driveSelectedList" style="margin: 6px 0 0 0; padding-left: 20px; color: var(--text-main, #0369a1); max-height: 100px; overflow-y: auto;"></ul>
                                 </div>
 
-                                <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #bae6fd;">
+                                <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed rgba(14,165,233,0.2);">
                                     <label style="color: #0d9488; font-weight: 500; font-size: 13px; cursor: pointer;">
-                                        <input type="checkbox" name="delete_drive_file" value="1" style="width: 15px; height: 15px; accent-color: #0d9488;">
+                                        <input type="checkbox" name="delete_drive_file" value="1" style="width: 15px; height: 15px; accent-color: #14b8a6;">
                                         🛡️ Chống trùng bài và tự động xóa file sau khi đăng trên Google Drive
                                     </label>
                                 </div>
                             </div>
 
-                            <!-- 3. TikTok Bulk URLs Panel -->
-                            <div id="panel_tiktok" style="display: none; background: #fdf2f8; padding: 14px; border-radius: 8px; border: 1px dashed #fbcfe8;">
-                                <label style="color: #be185d; font-size: 13px;">Dán danh sách Link TikTok (Tự động tải Video không logo &amp; tiêu đề gốc):</label>
-                                <textarea name="tiktok_urls" id="tiktok_urls" rows="3" placeholder="https://www.tiktok.com/@user/video/123456789&#10;https://www.tiktok.com/@user/video/987654321..." style="margin-top: 6px; font-size: 13px;"></textarea>
+                            <!-- 3. TikTok / Kho Data Panel -->
+                            <div id="panel_tiktok" style="display: none;">
+                                <?php include __DIR__ . '/includes/kho_data_selector.php'; ?>
                             </div>
                         </div>
 
                         <!-- Uploading Status Alert Bar -->
-                        <div id="localUploadStatus" style="margin-top: 10px; display: none; padding: 10px 14px; border-radius: 6px; font-size: 13px;"></div>
+                        <div id="localUploadStatus" style="margin-top: 10px; display: none; padding: 10px 14px; border-radius: 8px; font-size: 13px;"></div>
 
                         <!-- Bulk Matrix Scheduler Box -->
-                        <div class="form-group" style="background: #faf5ff; padding: 16px; border-radius: 8px; border: 1px solid #e9d5ff; margin-top: 15px;">
-                            <label style="color: #6b21a8; font-size: 15px; font-weight: 700; display: block; margin-bottom: 6px;">
+                        <div class="form-group" style="background: var(--bg-color, #f8fafc); padding: 18px; border-radius: 12px; border: 1px solid var(--border-color, #e2e8f0); margin-top: 16px;">
+                            <label style="color: #4f46e5; font-size: 15px; font-weight: 700; display: block; margin-bottom: 6px;">
                                 5. Lên lịch tự động hàng loạt (Tùy chọn)
                             </label>
-                            <p style="font-size: 13px; color: #7e22ce; margin-top: 0; margin-bottom: 14px; line-height: 1.4;">
+                            <p style="font-size: 13px; color: var(--text-muted, #64748b); margin-top: 0; margin-bottom: 16px; line-height: 1.4;">
                                 Chọn khoảng ngày và các khung giờ, tối đa hẹn giờ 3 tháng một chiến dịch.
                             </p>
 
-                            <div style="display: flex; gap: 15px; margin-bottom: 12px;">
+                            <div style="display: flex; gap: 14px; margin-bottom: 12px;">
                                 <div style="flex: 1;">
-                                    <label style="font-size: 13px; font-weight: 600; color: #475569;">Từ ngày:</label>
-                                    <input type="date" name="start_date" id="start_date" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                                    <label style="font-size: 12px; font-weight: 600; color: var(--text-muted, #64748b);">Từ ngày:</label>
+                                    <input type="date" name="start_date" id="start_date">
                                 </div>
                                 <div style="flex: 1;">
-                                    <label style="font-size: 13px; font-weight: 600; color: #475569;">Đến ngày:</label>
-                                    <input type="date" name="end_date" id="end_date" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                                    <label style="font-size: 12px; font-weight: 600; color: var(--text-muted, #64748b);">Đến ngày:</label>
+                                    <input type="date" name="end_date" id="end_date">
                                 </div>
                             </div>
 
                             <div>
-                                <label style="font-size: 13px; font-weight: 600; color: #475569;">Các khung giờ đăng mỗi ngày (Cách nhau bởi dấu phẩy):</label>
-                                <input type="text" name="time_slots" id="time_slots" placeholder="VD: 07:00, 11:30, 15:00, 19:45" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                                <label style="font-size: 12px; font-weight: 600; color: var(--text-muted, #64748b);">Các khung giờ đăng mỗi ngày (Cách nhau bởi dấu phẩy):</label>
+                                <input type="text" name="time_slots" id="time_slots" placeholder="VD: 07:00, 11:30, 15:00, 19:45">
                             </div>
 
-                            <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed #d8b4fe; color: #6b21a8; font-size: 12px;">
+                            <div style="margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--border-color, #cbd5e1); color: #0284c7; font-size: 12px;">
                                 * Ghi chú: Nếu hệ thống tính toán ra cùng lịch cho nhiều video/bài đăng, chúng sẽ được xếp cách nhau 5 phút.
                             </div>
                         </div>
 
-                        <div class="form-group" style="margin-top: 14px;">
-                            <label style="cursor: pointer; font-weight: normal; color: #0284c7;">
-                                <input type="checkbox" name="use_ai" value="1" style="width: 16px; height: 16px; vertical-align: middle;">
+                        <div class="form-group" style="margin-top: 16px;">
+                            <label style="cursor: pointer; font-weight: normal; color: var(--text-main, #1e293b);">
+                                <input type="checkbox" name="use_ai" value="1" style="width: 16px; height: 16px; accent-color: #6366f1; vertical-align: middle;">
                                 🤖 Tự động viết lại nội dung / tiêu đề bằng AI trước khi xuất bản
                             </label>
                         </div>
 
-                        <div style="margin-top: 20px;">
+                        <div style="margin-top: 24px;">
                             <button type="submit" id="btn_submit" class="btn-submit-post">🚀 Gửi Bài Đăng Qua Buffer API</button>
                         </div>
                     </div>
@@ -984,15 +1038,19 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
 
                 const selectedChans = document.querySelectorAll('.chan-checkbox:checked');
                 if (selectedChans.length === 0) {
-                    alert('Vui lòng chọn ít nhất 1 kênh Buffer để đăng bài!');
+                    if (typeof window.showNotice === 'function') {
+                        window.showNotice('Vui lòng chọn ít nhất 1 kênh Buffer để đăng bài!', 'warning');
+                    } else {
+                        alert('Vui lòng chọn ít nhất 1 kênh Buffer để đăng bài!');
+                    }
                     return;
                 }
 
                 const mediaInput = document.getElementById('media_files');
                 const hasLocalFiles = mediaInput && mediaInput.files && mediaInput.files.length > 0;
                 const driveVal = document.getElementById('drive_file_id').value;
-                const tiktokVal = document.getElementById('tiktok_urls') ? document.getElementById('tiktok_urls').value.trim() : '';
-                const hasMedia = hasLocalFiles || driveVal || tiktokVal;
+                const dataGroupVal = document.getElementById('data_group_id') ? document.getElementById('data_group_id').value.trim() : '';
+                const hasMedia = hasLocalFiles || driveVal || dataGroupVal;
 
                 let hasIg = false;
                 let hasTiktok = false;
@@ -1003,12 +1061,20 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
                 });
 
                 if (hasIg && !hasMedia) {
-                    alert('📷 Kênh Instagram bắt buộc phải đính kèm ít nhất 1 hình ảnh hoặc video. Vui lòng chọn tệp media trước khi đăng!');
+                    if (typeof window.showNotice === 'function') {
+                        window.showNotice('📷 Kênh Instagram bắt buộc phải đính kèm ít nhất 1 hình ảnh hoặc video.', 'warning');
+                    } else {
+                        alert('📷 Kênh Instagram bắt buộc phải đính kèm ít nhất 1 hình ảnh hoặc video.');
+                    }
                     return;
                 }
 
                 if (hasTiktok && !hasMedia) {
-                    alert('🎵 Kênh TikTok bắt buộc phải đính kèm ít nhất 1 hình ảnh hoặc video. Vui lòng chọn tệp media trước khi đăng!');
+                    if (typeof window.showNotice === 'function') {
+                        window.showNotice('🎵 Kênh TikTok bắt buộc phải đính kèm ít nhất 1 hình ảnh hoặc video.', 'warning');
+                    } else {
+                        alert('🎵 Kênh TikTok bắt buộc phải đính kèm ít nhất 1 hình ảnh hoặc video.');
+                    }
                     return;
                 }
 
@@ -1022,9 +1088,9 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
                     if (localStatus) {
                         localStatus.style.display = 'block';
                         localStatus.className = 'alert alert-warning';
-                        localStatus.style.background = '#fef3cd';
-                        localStatus.style.color = '#856404';
-                        localStatus.style.border = '1px solid #ffeeba';
+                        localStatus.style.background = 'rgba(245,158,11,0.15)';
+                        localStatus.style.color = '#fbbf24';
+                        localStatus.style.border = '1px solid rgba(245,158,11,0.3)';
                         localStatus.innerText = msg;
                     }
                     btnSubmit.innerText = 'Đang tải file lên Google Drive...';
@@ -1041,6 +1107,12 @@ $active_tab = $_GET['tab'] ?? 'scheduler';
 
                     btnSubmit.innerText = 'Đang đẩy bài vào hàng đợi...';
                     const formData = new FormData(document.getElementById('bufferPostForm'));
+                    const kdGroup = document.getElementById('data_group_id') ? document.getElementById('data_group_id').value.trim() : '';
+                    const kdMode = document.getElementById('data_mode') ? document.getElementById('data_mode').value.trim() : 'dedup';
+                    if (kdGroup) {
+                        formData.set('data_group_id', kdGroup);
+                        formData.set('data_mode', kdMode);
+                    }
 
                     return fetch('actions/publish_buffer.php', {
                         method: 'POST',

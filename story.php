@@ -53,110 +53,354 @@ $stmt2->execute();
 $pages = $stmt2->fetchAll(PDO::FETCH_ASSOC);
 
 $pages_json = json_encode($pages);
+
+$page_groups = [];
+$page_group_items_map = [];
+try {
+    // Fetch page groups for account
+    $stmt_groups = $pdo->prepare("SELECT id, name FROM page_groups WHERE account_id = ? ORDER BY name ASC");
+    $stmt_groups->execute([$account_id]);
+    $page_groups = $stmt_groups->fetchAll(PDO::FETCH_ASSOC);
+
+    // Fetch group item mappings
+    if (!empty($page_groups)) {
+        $stmt_items = $pdo->prepare("
+            SELECT pgi.group_id, pgi.page_id 
+            FROM page_group_items pgi
+            JOIN page_groups pg ON pgi.group_id = pg.id
+            WHERE pg.account_id = ?
+        ");
+        $stmt_items->execute([$account_id]);
+        $items = $stmt_items->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($items as $item) {
+            $page_group_items_map[$item['group_id']][] = (string)$item['page_id'];
+        }
+    }
+} catch (Exception $e) {}
 ?>
 
-<div class="page-title">Publish Story</div>
+<style>
+/* Evondev Skill Styling for Story Publisher */
+.story-container,
+.story-container button,
+.story-container input,
+.story-container select,
+.story-container textarea {
+    font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
 
-<div class="card">
-    <h3 style="margin-bottom: 15px;">Đăng Story</h3>
-    <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
-        Chọn User quản lý (Token), sau đó chọn Fanpage tương ứng để chuẩn bị đăng Story.
-    </p>
+.story-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding-bottom: 40px;
+}
 
-    <form id="storyForm" enctype="multipart/form-data">
-        <div class="form-group">
-            <label>1. Chọn User Quản Lý Token</label>
-            <select id="user_select" name="user_id" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px;" required>
-                <option value="">-- Chọn User Đã Móc Nối --</option>
-                <?php foreach ($users as $user): ?>
-                    <option value="<?php echo $user['id']; ?>"><?php echo htmlspecialchars($user['name']); ?></option>
-                <?php endforeach; ?>
-            </select>
+.story-header-card {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+    border: 1px solid #312e81;
+    border-radius: 16px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 8px 32px rgba(15, 23, 42, 0.15);
+    color: #ffffff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.story-header-info h1 {
+    font-size: 22px;
+    font-weight: 800;
+    color: #ffffff;
+    margin: 0 0 6px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    letter-spacing: -0.02em;
+}
+
+.story-header-info p {
+    font-size: 13.5px;
+    color: #cbd5e1;
+    margin: 0;
+}
+
+.story-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 28px;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.04);
+}
+
+/* Mode toggle pills */
+.mode-toggle-group {
+    display: inline-flex;
+    gap: 4px;
+    background: #f1f5f9;
+    padding: 4px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+}
+
+.btn-mode {
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background: transparent;
+    color: #64748b;
+    transition: all 0.2s ease;
+}
+.btn-mode.active {
+    background: #ffffff;
+    color: #6366f1;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.story-section-title {
+    font-weight: 800;
+    font-size: 14.5px;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.story-input,
+.story-select,
+.story-textarea {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    font-size: 13.5px;
+    color: #0f172a;
+    background: #ffffff;
+    box-sizing: border-box;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.story-input:focus,
+.story-select:focus,
+.story-textarea:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.btn-story-submit {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    color: #ffffff;
+    font-weight: 800;
+    font-size: 15px;
+    padding: 14px 36px;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
+    transition: all 0.2s ease;
+}
+.btn-story-submit:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+}
+.btn-story-submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+</style>
+
+<div class="story-container">
+    <!-- Header Banner Card -->
+    <div class="story-header-card">
+        <div class="story-header-info">
+            <h1>
+                <svg width="26" height="26" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Hệ Thống Đăng & Lên Lịch Facebook Story
+            </h1>
+            <p>Đăng Ảnh/Video Story trực tiếp hoặc xếp lịch rải đều tự động cho danh sách Fanpage</p>
         </div>
-        <div class="form-group">
-            <label>2. Chọn Fanpage</label>
-            <?php include __DIR__ . '/includes/page_selector.php'; ?>
-        </div>
-        <div class="form-group">
-            <label>3. Tải lên Ảnh/Video cho Story <?php echo $disable_local_upload ? '(Drive)' : ''; ?></label>
-            <?php if ($disable_local_upload): ?>
-            <div style="padding: 10px 15px; background: #fef3cd; border: 1px solid #ffc107; border-radius: 6px; font-size: 13px; color: #856404; margin-bottom: 10px;">
-                🔒 Admin đã tắt tính năng tải tệp từ máy tính. Vui lòng sử dụng Google Drive.
+    </div>
+
+    <!-- Main Card -->
+    <div class="story-card">
+        <form id="storyForm" enctype="multipart/form-data">
+            <!-- 1. Select Mode -->
+            <div class="form-group" style="margin-bottom: 24px;">
+                <div class="story-section-title">
+                    <span>1. Chọn Fanpage Cần Đăng:</span>
+                    <div class="mode-toggle-group">
+                        <button type="button" class="btn-mode active" id="btn_mode_user" onclick="switchSelectMode('user')">👤 Theo User Token</button>
+                        <button type="button" class="btn-mode" id="btn_mode_group" onclick="switchSelectMode('group')">📂 Theo Nhóm Fanpage</button>
+                    </div>
+                </div>
+
+                <input type="hidden" id="select_mode" name="select_mode" value="user">
+                <div id="wrap_user_select">
+                    <select id="user_select" name="user_id" class="story-select">
+                        <option value="">-- Chọn User Quản Lý --</option>
+                        <?php foreach ($users as $user): ?>
+                            <option value="<?php echo $user['id']; ?>"><?php echo htmlspecialchars($user['name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div id="wrap_group_select" style="display: none;">
+                    <select id="group_select" name="group_id" class="story-select">
+                        <option value="">-- Chọn Nhóm Fanpage --</option>
+                        <?php foreach ($page_groups as $group): ?>
+                            <option value="<?php echo $group['id']; ?>"><?php echo htmlspecialchars($group['name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
             </div>
-            <?php endif; ?>
-            <div style="display: flex; gap: 10px; align-items: center; background: #f8fafc; padding: 10px; border: 1px dashed var(--border-color); border-radius: 6px;">
-                <?php if (!$disable_local_upload): ?>
-                <input type="file" id="media" name="media[]" multiple accept="image/*,video/mp4,video/x-m4v" style="width: 100%; max-width: 250px; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: #fff;" onchange="clearDriveSelection()">
-                <div style="font-weight: bold; color: #64748b;">HOẶC</div>
+
+            <!-- 2. Page Selector -->
+            <div class="form-group" style="margin-bottom: 24px;">
+                <label class="story-section-title">2. Chọn Fanpage Cụ Thể:</label>
+                <?php include __DIR__ . '/includes/page_selector.php'; ?>
+            </div>
+
+            <!-- 3. Story Media Upload -->
+            <div class="form-group" style="margin-bottom: 24px;">
+                <label class="story-section-title">3. Tải lên Ảnh / Video cho Story <?php echo $disable_local_upload ? '(Google Drive)' : '(Máy tính hoặc Drive)'; ?>:</label>
+                
+                <?php if ($disable_local_upload): ?>
+                <div style="padding: 12px 16px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; font-size: 13px; color: #c2410c; font-weight: 700; margin-bottom: 12px;">
+                    🔒 Admin đã tắt tính năng tải tệp từ máy tính. Vui lòng sử dụng Google Drive.
+                </div>
                 <?php endif; ?>
-                <button type="button" class="btn btn-secondary" onclick="openDriveModal()" style="background: #fff; border: 1px solid #cbd5e1; color: #334155; display: flex; align-items: center; gap: 5px;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                    Chọn từ Google Drive
-                </button>
-            </div>
-            <div id="localUploadStatus" style="margin-top: 10px; display: none; padding: 8px 12px; border-radius: 4px; font-size: 13px;"></div>
-            <div id="driveSelectionInfo" style="margin-top: 10px; display: none; padding: 10px 15px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 6px; font-size: 13px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; color: #0369a1; font-weight: bold;">
-                    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> Đã chọn <span id="driveSelectedCount">0</span> file từ Google Drive:</span>
-                    <button type="button" onclick="clearDriveSelection()" style="margin-left: 10px; background: none; border: none; color: #dc2626; cursor: pointer; text-decoration: underline; font-size: 12px;">Hủy / Xoá hết</button>
-                </div>
-                <ul id="driveSelectedList" style="margin: 0; padding-left: 20px; color: #0c4a6e; max-height: 120px; overflow-y: auto; line-height: 1.6;"></ul>
-            </div>
-            <input type="hidden" id="drive_file_id" name="drive_file_id" value="">
-            <input type="hidden" id="drive_file_names" name="drive_file_names" value="">
-        </div>
 
-        <div class="form-group" style="background: #f9fafb; padding: 15px; border-radius: 6px; border: 1px solid var(--border-color); margin-top: 4px;">
-            <label style="color: var(--primary-color);">Lên lịch tự động hàng loạt (Tùy chọn)</label>
-            <p style="font-size: 13px; color: var(--text-muted); margin-top: 5px; margin-bottom: 15px;">
-                Chọn khoảng ngày và các khung giờ, tối đa hẹn giờ 3 tháng một chiến dịch.
-            </p>
-            <div style="display: flex; gap: 15px; margin-bottom: 10px;">
-                <div style="flex: 1;">
-                    <label style="font-size: 13px;">Từ ngày:</label>
-                    <input type="date" id="start_date" name="start_date" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
+                <div style="display: flex; gap: 12px; align-items: center; background: #f8fafc; padding: 16px; border: 1px dashed #cbd5e1; border-radius: 12px; flex-wrap: wrap;">
+                    <?php if (!$disable_local_upload): ?>
+                    <input type="file" id="media" name="media[]" multiple accept="image/*,video/mp4,video/x-m4v" style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 8px; background: #ffffff; font-size: 13px;" onchange="clearDriveSelection()">
+                    <div style="font-weight: 800; color: #64748b; font-size: 12px;">HOẶC</div>
+                    <?php endif; ?>
+                    <button type="button" class="btn btn-secondary" onclick="openDriveModal()" style="background: #ffffff; border: 1px solid #cbd5e1; color: #334155; padding: 9px 18px; border-radius: 10px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                        Chọn từ Google Drive
+                    </button>
                 </div>
-                <div style="flex: 1;">
-                    <label style="font-size: 13px;">Đến ngày:</label>
-                    <input type="date" id="end_date" name="end_date" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
+                
+                <div id="localUploadStatus" style="margin-top: 10px; display: none; padding: 12px 16px; border-radius: 10px; font-size: 13px; font-weight: 700;"></div>
+                <div id="driveSelectionInfo" style="margin-top: 10px; display: none; padding: 14px 18px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 12px; font-size: 13px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; color: #0369a1; font-weight: 800;">
+                        <span>📁 Đã chọn <span id="driveSelectedCount">0</span> file từ Google Drive:</span>
+                        <button type="button" onclick="clearDriveSelection()" style="background: none; border: none; color: #dc2626; cursor: pointer; text-decoration: underline; font-size: 12.5px; font-weight: 800;">Hủy / Xoá hết</button>
+                    </div>
+                    <ul id="driveSelectedList" style="margin: 0; padding-left: 20px; color: #0c4a6e; max-height: 120px; overflow-y: auto; line-height: 1.6; font-weight: 600;"></ul>
+                </div>
+                <input type="hidden" id="drive_file_id" name="drive_file_id" value="">
+                <input type="hidden" id="drive_file_names" name="drive_file_names" value="">
+            </div>
+
+            <!-- Anti-dup card -->
+            <div class="form-group" style="background: #f0fdfa; padding: 18px; border-radius: 14px; border: 1px dashed #99f6e4; margin-bottom: 24px;">
+                <label style="color: #0d9488; font-weight: 800; font-size: 13.5px; display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 0;">
+                    <input type="checkbox" id="delete_drive_file" name="delete_drive_file" value="1" style="width: 17px; height: 17px; accent-color: #0d9488;">
+                    <span>🛡️ Chống trùng và xóa file đã đăng Story trên Google Drive</span>
+                </label>
+                <p style="font-size: 12.5px; color: #0f766e; margin-top: 6px; margin-bottom: 0;">
+                    Khi chọn, tệp story sẽ không trùng lặp và tự động xóa khỏi Google Drive sau khi đăng.
+                </p>
+            </div>
+
+            <!-- 4. Bulk Scheduling Card -->
+            <div class="form-group" style="background: #f8fafc; padding: 20px; border-radius: 14px; border: 1px solid #e2e8f0; margin-bottom: 24px;">
+                <label style="color: #4f46e5; font-weight: 800; font-size: 14px; display: block; margin-bottom: 4px;">4. Lên lịch tự động hàng loạt (Tùy chọn)</label>
+                <p style="font-size: 12.5px; color: #64748b; margin-top: 0; margin-bottom: 14px;">
+                    Chọn khoảng ngày và các khung giờ đăng, tối đa 3 tháng mỗi chiến dịch Story.
+                </p>
+                <div style="display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 150px;">
+                        <label style="font-size: 12px; font-weight: 700; color: #334155;">Từ ngày:</label>
+                        <input type="date" id="start_date" name="start_date" class="story-input" style="padding: 8px 12px; font-size: 13px;">
+                    </div>
+                    <div style="flex: 1; min-width: 150px;">
+                        <label style="font-size: 12px; font-weight: 700; color: #334155;">Đến ngày:</label>
+                        <input type="date" id="end_date" name="end_date" class="story-input" style="padding: 8px 12px; font-size: 13px;">
+                    </div>
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 700; color: #334155;">Các khung giờ đăng mỗi ngày (Cách nhau bởi dấu phẩy):</label>
+                    <input type="text" id="time_slots" name="time_slots" placeholder="VD: 07:00, 11:30, 15:00, 19:45" class="story-input" style="padding: 8px 12px; font-size: 13px;">
                 </div>
             </div>
+
+            <div id="storyResult" style="display: none; margin-bottom: 20px; padding: 14px 18px; border-radius: 12px; font-weight: 700; font-size: 13.5px;"></div>
+
             <div>
-                <label style="font-size: 13px;">Các khung giờ đăng mỗi ngày (Cách nhau bởi dấu phẩy):</label>
-                <input type="text" id="time_slots" name="time_slots" placeholder="VD: 07:00, 11:30, 15:00, 19:45" style="width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px;">
-            </div>
-        </div>
-        
-        <div class="form-group" style="background: #f0fdfa; padding: 15px; border-radius: 6px; border: 1px dashed #99f6e4; margin-top: 15px;">
-            <label style="color: #0d9488; font-weight: 500; display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 0;">
-                <input type="checkbox" id="delete_drive_file" name="delete_drive_file" value="1" style="width: 16px; height: 16px; accent-color: #0d9488;">
-                🛡️ Chống trùng và xóa file đã đăng drive
-            </label>
-            <p style="font-size: 12px; color: #0f766e; margin-top: 5px; margin-bottom: 0;">
-                Khi chọn, nội dung đăng sẽ không trùng lặp và tự động xóa khỏi Google Drive sau khi đăng.
-            </p>
-        </div>
-
-        <div id="storyResult" style="display: none; margin-top: 15px; padding: 10px; border-radius: 4px;"></div>
-
-            <div style="display: flex; gap: 10px; margin-top: 20px;">
-                <button id="btnSubmit" class="btn btn-primary" type="submit">Xác nhận Đăng / Lên Lịch</button>
+                <button id="btnSubmit" class="btn-story-submit" type="submit">
+                    🚀 Xác nhận Đăng / Lên Lịch Story
+                </button>
             </div>
         </form>
     </div>
+</div>
 
 <script>
     const allPages = <?php echo $pages_json; ?>;
+    const groupItemsMap = <?php echo json_encode($page_group_items_map); ?>;
     const userSelect = document.getElementById('user_select');
+    const groupSelect = document.getElementById('group_select');
     const storyForm = document.getElementById('storyForm');
     const btnSubmit = document.getElementById('btnSubmit');
     const storyResult = document.getElementById('storyResult');
 
+    function switchSelectMode(mode) {
+        const btnUser = document.getElementById('btn_mode_user');
+        const btnGroup = document.getElementById('btn_mode_group');
+        const wrapUser = document.getElementById('wrap_user_select');
+        const wrapGroup = document.getElementById('wrap_group_select');
+        const selectModeInput = document.getElementById('select_mode');
+        if (selectModeInput) selectModeInput.value = mode;
+
+        if (mode === 'user') {
+            btnUser.classList.add('active');
+            btnGroup.classList.remove('active');
+
+            wrapUser.style.display = 'block';
+            wrapGroup.style.display = 'none';
+            if (groupSelect) groupSelect.value = '';
+
+            window.pageSelectorFilterByUser(userSelect ? userSelect.value : '');
+        } else {
+            btnGroup.classList.add('active');
+            btnUser.classList.remove('active');
+
+            wrapUser.style.display = 'none';
+            wrapGroup.style.display = 'block';
+            if (userSelect) userSelect.value = '';
+
+            if (groupSelect && groupSelect.value) {
+                const pageIds = groupItemsMap[groupSelect.value] || [];
+                window.pageSelectorFilterByGroup(pageIds);
+            } else {
+                window.pageSelectorFilterByGroup([]);
+            }
+        }
+    }
+
+    if (groupSelect) {
+        groupSelect.addEventListener('change', function() {
+            const pageIds = groupItemsMap[this.value] || [];
+            window.pageSelectorFilterByGroup(pageIds);
+        });
+    }
+
     userSelect.addEventListener('change', function() {
         window.pageSelectorFilterByUser(this.value);
     });
-
-    const isDisableLocalUpload = <?php echo $disable_local_upload ? 'true' : 'false'; ?>;
 
     function uploadLocalFilesPromise(inputEl, progressCallback) {
         return new Promise((resolve, reject) => {
@@ -203,21 +447,18 @@ $pages_json = json_encode($pages);
                         uploadedResults.push(...data.files);
                         uploadNext(index + 1);
                     } else {
-                        if (!isDisableLocalUpload) {
-                            console.warn('Google Drive auto-upload skipped, falling back to direct upload:', data.msg);
-                            resolve(null);
-                        } else {
-                            reject(data.msg || `Lỗi tải file ${file.name} lên Google Drive.`);
+                        if (progressCallback) {
+                            progressCallback(`⚠️ Drive bận/lỗi khi tải ${file.name}. Tự động chuyển sang tải trực tiếp từ máy...`);
                         }
+                        uploadNext(index + 1);
                     }
                 })
                 .catch(error => {
-                    if (!isDisableLocalUpload) {
-                        console.warn('Google Drive auto-upload skipped, falling back to direct upload:', error);
-                        resolve(null);
-                    } else {
-                        reject(error.message || error || `Lỗi kết nối khi tải file ${file.name}.`);
+                    console.warn(`Drive upload error/timeout for ${file.name}:`, error);
+                    if (progressCallback) {
+                        progressCallback(`⚠️ Máy chủ Drive quá tải/timeout (504) khi tải ${file.name}. Tự động chuyển sang tải trực tiếp từ máy...`);
                     }
+                    uploadNext(index + 1);
                 });
             }
 
@@ -239,7 +480,7 @@ $pages_json = json_encode($pages);
         if (!window.pageSelectorValidate()) return;
         
         btnSubmit.disabled = true;
-        btnSubmit.textContent = 'Đang tải lên và thực hiện...';
+        btnSubmit.textContent = '⏳ Đang tải lên và thực hiện...';
         storyResult.style.display = 'none';
 
         const localStatus = document.getElementById('localUploadStatus');
@@ -251,21 +492,19 @@ $pages_json = json_encode($pages);
         uploadLocalFilesPromise(mediaEl, function(msg) {
             if (localStatus) {
                 localStatus.style.display = 'block';
-                localStatus.className = 'alert alert-warning';
-                localStatus.style.background = '#fef3cd';
-                localStatus.style.color = '#856404';
-                localStatus.style.border = '1px solid #ffeeba';
+                localStatus.style.background = '#fff7ed';
+                localStatus.style.color = '#c2410c';
+                localStatus.style.border = '1px solid #fed7aa';
                 localStatus.innerText = msg;
             }
-            btnSubmit.textContent = 'Đang tải file lên Google Drive...';
+            btnSubmit.textContent = '⏳ Đang tải file lên Google Drive...';
         })
         .then(uploadedFiles => {
             if (uploadedFiles && uploadedFiles.length > 0) {
                 if (localStatus) {
-                    localStatus.className = 'alert alert-success';
-                    localStatus.style.background = '#d4edda';
-                    localStatus.style.color = '#155724';
-                    localStatus.style.border = '1px solid #c3e6cb';
+                    localStatus.style.background = '#ecfdf5';
+                    localStatus.style.color = '#065f46';
+                    localStatus.style.border = '1px solid #a7f3d0';
                     localStatus.innerText = '✅ Tải lên Google Drive thành công! Đang tiến hành lên lịch...';
                 }
                 
@@ -278,7 +517,7 @@ $pages_json = json_encode($pages);
                 if (mediaEl) mediaEl.value = '';
             }
 
-            btnSubmit.textContent = 'Đang xử lý đăng bài (Có thể mất đến 1-2 phút)...';
+            btnSubmit.textContent = '⏳ Đang xử lý đăng bài (Có thể mất đến 1-2 phút)...';
             const formData = new FormData(storyForm);
 
             return fetch('actions/publish_story.php', {
@@ -295,31 +534,37 @@ $pages_json = json_encode($pages);
         .then(data => {
             storyResult.style.display = 'block';
             if (data.status === 'success') {
-                storyResult.className = 'alert alert-success';
+                storyResult.style.background = '#ecfdf5';
+                storyResult.style.color = '#065f46';
+                storyResult.style.border = '1px solid #a7f3d0';
                 storyResult.innerHTML = data.msg;
                 if (data.redirect) {
                     setTimeout(() => {
                         window.location.href = data.redirect;
                     }, 1500);
                 } else if (data.post_id) {
-                    storyResult.innerHTML += ' <a href="https://facebook.com/' + data.post_id + '" target="_blank">Xem Story</a>';
+                    storyResult.innerHTML += ' <a href="https://facebook.com/' + data.post_id + '" target="_blank" style="color:#059669; font-weight:700;">Xem Story</a>';
                 }
                 storyForm.reset();
                 window.pageSelectorFilterByUser('');
                 if (localStatus) localStatus.style.display = 'none';
             } else {
-                storyResult.className = 'alert alert-danger';
+                storyResult.style.background = '#fff7ed';
+                storyResult.style.color = '#c2410c';
+                storyResult.style.border = '1px solid #fed7aa';
                 storyResult.innerHTML = data.msg;
             }
             btnSubmit.disabled = false;
-            btnSubmit.textContent = 'Xác nhận Đăng / Lên Lịch';
+            btnSubmit.textContent = '🚀 Xác nhận Đăng / Lên Lịch Story';
         })
         .catch(error => {
             storyResult.style.display = 'block';
-            storyResult.className = 'alert alert-danger';
+            storyResult.style.background = '#fef2f2';
+            storyResult.style.color = '#dc2626';
+            storyResult.style.border = '1px solid #fecaca';
             storyResult.innerHTML = 'Lỗi: ' + (error.message || error || 'Lỗi mạng hoặc hệ thống.');
             btnSubmit.disabled = false;
-            btnSubmit.textContent = 'Xác nhận Đăng / Lên Lịch';
+            btnSubmit.textContent = '🚀 Xác nhận Đăng / Lên Lịch Story';
         });
     });
     
@@ -331,7 +576,7 @@ $pages_json = json_encode($pages);
         document.getElementById('drive_file_id').value = fileIds;
         document.getElementById('drive_file_names').value = fileNames;
         const mediaEl2 = document.getElementById('media');
-        if (mediaEl2) mediaEl2.value = ''; // Xóa local file
+        if (mediaEl2) mediaEl2.value = '';
         
         const listEl = document.getElementById('driveSelectedList');
         listEl.innerHTML = '';
@@ -351,7 +596,7 @@ $pages_json = json_encode($pages);
             document.getElementById('drive_file_names').value = 'folder:' + folderName;
         }
         const mediaEl2 = document.getElementById('media');
-        if (mediaEl2) mediaEl2.value = ''; // Xóa local file
+        if (mediaEl2) mediaEl2.value = '';
 
         const listEl = document.getElementById('driveSelectedList');
         if (listEl) {
@@ -374,7 +619,6 @@ $pages_json = json_encode($pages);
         }
     }
 
-    // Limit End Date to max 90 days (3 months) from Start Date
     document.addEventListener('DOMContentLoaded', function() {
         const startDateEl = document.getElementById('start_date');
         const endDateEl = document.getElementById('end_date');

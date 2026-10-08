@@ -182,6 +182,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Update last_sender to 'agent' in zalo_customers
             try {
+                require_once __DIR__ . '/../includes/bot_prompt_helper.php';
+                save_chat_history_log($pdo, 'zalo', $oa_id, $recipient_id, 'agent', 'Bạn (Cửa hàng)', $snippet);
                 $st_upd = $pdo->prepare("UPDATE zalo_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP WHERE oa_id = ? AND sender_id = ?");
                 $st_upd->execute([$oa_id, $recipient_id]);
             } catch (Exception $e) {}

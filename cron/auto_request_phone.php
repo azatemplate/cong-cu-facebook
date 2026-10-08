@@ -7,16 +7,20 @@
 ignore_user_abort(true);
 set_time_limit(300);
 
+$is_force = isset($_GET['force']) || (isset($argv) && (in_array('--force', $argv) || in_array('force', $argv)));
+
 require_once __DIR__ . '/../includes/redis_queue.php';
 $rq_lock = RedisQueue::getInstance();
-if (!$rq_lock->acquireLock('lock:cron:auto_request_phone', 300)) {
-    echo "Another instance of auto_request_phone.php is already running (Redis Lock). Exiting.\n";
-    return;
+if (!$is_force) {
+    if (!$rq_lock->acquireLock('lock:cron:auto_request_phone', 300)) {
+        echo "Another instance of auto_request_phone.php is already running (Redis Lock). Exiting.\n";
+        return;
+    }
 }
 
 $lock_file = __DIR__ . '/../locks/auto_request_phone.lock';
 $lock_fp = @fopen($lock_file, 'c');
-if ($lock_fp) {
+if ($lock_fp && !$is_force) {
     @flock($lock_fp, LOCK_EX | LOCK_NB);
 }
 
@@ -97,44 +101,46 @@ try {
 
 
 
-        // Truy vấn khách hàng tương tác (bỏ bớt điều kiện giờ để tính toán và in log thời gian chờ trong PHP)
+        $has_province_req = empty($province_request_text) ? 0 : 1;
+        $has_product_req = empty($product_request_text) ? 0 : 1;
+
+        $fb_conds = [];
+        if ($phone_request_enabled) {
+            $has_prov_sql = $has_province_req ? "AND (c.province IS NOT NULL AND c.province != '')" : "";
+            $has_prod_sql = $has_product_req ? "AND (c.notes IS NOT NULL AND c.notes != '')" : "";
+            $fb_conds[] = "(
+                NOT (c.phone IS NOT NULL AND c.phone != '' {$has_prov_sql} {$has_prod_sql})
+                AND COALESCE(c.customer_last_message_at, c.last_message_at) >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                AND (c.info_request_count IS NULL OR c.info_request_count < {$phone_request_limit})
+                AND c.consulted != 3
+            )";
+        }
+        if ($followup_request_enabled) {
+            $has_prov_sql = $has_province_req ? "AND (c.province IS NOT NULL AND c.province != '')" : "";
+            $has_prod_sql = $has_product_req ? "AND (c.notes IS NOT NULL AND c.notes != '')" : "";
+            $fb_conds[] = "(
+                (c.phone IS NOT NULL AND c.phone != '' {$has_prov_sql} {$has_prod_sql})
+                AND COALESCE(c.customer_last_message_at, c.last_message_at) >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                AND c.followup_requested_at IS NULL
+                AND c.consulted = 1
+            )";
+        }
+
+        if (empty($fb_conds)) continue;
+
+        $fb_where_sql = implode(" OR ", $fb_conds);
         $sql_fb_customers = "
             SELECT c.name, c.phone, c.province, c.notes, c.sender_id, c.last_message_at, c.customer_last_message_at, c.info_requested_at, c.followup_requested_at, c.sales_phone, c.consulted
             FROM fb_customers c
-            WHERE c.page_id = :page_id
+            WHERE c.page_id = ?
               AND NOT EXISTS (
                   SELECT 1 FROM bot_chat_locks l
                   WHERE l.page_id = c.page_id AND l.sender_id = c.sender_id AND l.expire_at > NOW()
               )
-              AND (
-                  -- Case 1: Cần tự động xin thông tin
-                  (
-                      :phone_request_enabled = 1
-                      AND NOT (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
-                      AND c.customer_last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) -- Chỉ gửi tin trong vòng 24h từ tương tác cuối của Khách hàng
-                      AND (c.info_request_count IS NULL OR c.info_request_count < :phone_request_limit)
-                      AND c.consulted != 3
-                  )
-                  OR
-                  -- Case 2: Cần tự động gửi tin CSKH/Follow-up
-                  (
-                      :followup_request_enabled = 1
-                      AND (c.phone IS NOT NULL AND c.phone != '' AND (:has_province_req = 0 OR (c.province IS NOT NULL AND c.province != '')) AND (:has_product_req = 0 OR (c.notes IS NOT NULL AND c.notes != '')))
-                      AND c.customer_last_message_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) -- Tuân thủ chính sách 24h của Facebook
-                      AND c.followup_requested_at IS NULL
-                      AND c.consulted = 1
-                  )
-              )
+              AND ({$fb_where_sql})
         ";
         $stmt_cust = $pdo->prepare($sql_fb_customers);
-        $stmt_cust->execute([
-            ':page_id' => $page_id,
-            ':phone_request_enabled' => $phone_request_enabled,
-            ':has_province_req' => empty($province_request_text) ? 0 : 1,
-            ':has_product_req' => empty($product_request_text) ? 0 : 1,
-            ':phone_request_limit' => $phone_request_limit,
-            ':followup_request_enabled' => $followup_request_enabled
-        ]);
+        $stmt_cust->execute([$page_id]);
         $customers = $stmt_cust->fetchAll(PDO::FETCH_ASSOC);
 
         if (count($customers) > 0) {
@@ -381,44 +387,46 @@ try {
             continue;
         }
 
-        // Truy vấn khách hàng tương tác (bỏ bớt điều kiện giờ để tính toán và in log thời gian chờ trong PHP)
+        $has_province_req = empty($province_request_text) ? 0 : 1;
+        $has_product_req = empty($product_request_text) ? 0 : 1;
+
+        $zalo_conds = [];
+        if ($phone_request_enabled) {
+            $has_prov_sql = $has_province_req ? "AND (province IS NOT NULL AND province != '')" : "";
+            $has_prod_sql = $has_product_req ? "AND (notes IS NOT NULL AND notes != '')" : "";
+            $zalo_conds[] = "(
+                NOT (phone IS NOT NULL AND phone != '' {$has_prov_sql} {$has_prod_sql})
+                AND COALESCE(customer_last_message_at, last_message_at) >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                AND (info_request_count IS NULL OR info_request_count < {$phone_request_limit})
+                AND consulted != 3
+            )";
+        }
+        if ($followup_request_enabled) {
+            $has_prov_sql = $has_province_req ? "AND (province IS NOT NULL AND province != '')" : "";
+            $has_prod_sql = $has_product_req ? "AND (notes IS NOT NULL AND notes != '')" : "";
+            $zalo_conds[] = "(
+                (phone IS NOT NULL AND phone != '' {$has_prov_sql} {$has_prod_sql})
+                AND COALESCE(customer_last_message_at, last_message_at) >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+                AND followup_requested_at IS NULL
+                AND consulted = 1
+            )";
+        }
+
+        if (empty($zalo_conds)) continue;
+
+        $zalo_where_sql = implode(" OR ", $zalo_conds);
         $sql_zalo_customers = "
             SELECT name, phone, province, notes, sender_id, last_message_at, customer_last_message_at, info_requested_at, followup_requested_at, sales_phone, consulted
             FROM zalo_customers
-            WHERE oa_id = :oa_id
+            WHERE oa_id = ?
               AND NOT EXISTS (
                   SELECT 1 FROM zalo_chat_locks l
                   WHERE l.oa_id = zalo_customers.oa_id AND l.sender_id = zalo_customers.sender_id AND l.expire_at > NOW()
               )
-              AND (
-                  -- Case 1: Cần tự động xin thông tin
-                  (
-                      :phone_request_enabled = 1
-                      AND NOT (phone IS NOT NULL AND phone != '' AND (:has_province_req = 0 OR (province IS NOT NULL AND province != '')) AND (:has_product_req = 0 OR (notes IS NOT NULL AND notes != '')))
-                      AND customer_last_message_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) -- Chỉ quét khách tương tác trong 7 ngày từ tương tác cuối của Khách hàng
-                      AND (info_request_count IS NULL OR info_request_count < :phone_request_limit)
-                      AND consulted != 3
-                  )
-                  OR
-                  -- Case 2: Cần tự động gửi tin CSKH/Follow-up
-                  (
-                      :followup_request_enabled = 1
-                      AND (phone IS NOT NULL AND phone != '' AND (:has_province_req = 0 OR (province IS NOT NULL AND province != '')) AND (:has_product_req = 0 OR (notes IS NOT NULL AND notes != '')))
-                      AND customer_last_message_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
-                      AND followup_requested_at IS NULL
-                      AND consulted = 1
-                  )
-              )
+              AND ({$zalo_where_sql})
         ";
         $stmt_cust = $pdo->prepare($sql_zalo_customers);
-        $stmt_cust->execute([
-            ':oa_id' => $oa_id,
-            ':phone_request_enabled' => $phone_request_enabled,
-            ':has_province_req' => empty($province_request_text) ? 0 : 1,
-            ':has_product_req' => empty($product_request_text) ? 0 : 1,
-            ':phone_request_limit' => $phone_request_limit,
-            ':followup_request_enabled' => $followup_request_enabled
-        ]);
+        $stmt_cust->execute([$oa_id]);
         $customers = $stmt_cust->fetchAll(PDO::FETCH_ASSOC);
 
         if (count($customers) > 0) {

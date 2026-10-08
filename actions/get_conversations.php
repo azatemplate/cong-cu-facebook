@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 {$folder_where}
             ";
             if ($search !== '') {
-                $sql .= " AND (c.sender_name LIKE :search OR cust.name LIKE :search OR c.snippet LIKE :search OR c.sender_id LIKE :search OR cust.phone LIKE :search2 OR REPLACE(REPLACE(REPLACE(cust.phone, ' ', ''), '.', ''), '-', '') LIKE :search_clean)";
+                $sql .= " AND (c.sender_name LIKE :search1 OR cust.name LIKE :search2 OR c.snippet LIKE :search3 OR c.sender_id LIKE :search4 OR cust.phone LIKE :search5 OR REPLACE(REPLACE(REPLACE(cust.phone, ' ', ''), '.', ''), '-', '') LIKE :search_clean)";
             }
             $sql .= " ORDER BY c.updated_time DESC LIMIT :limit OFFSET :offset";
 
@@ -88,8 +88,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
             $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
             if ($search !== '') {
-                $stmt->bindValue(':search', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search1', $search_param, PDO::PARAM_STR);
                 $stmt->bindValue(':search2', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search3', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search4', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search5', $search_param, PDO::PARAM_STR);
                 $stmt->bindValue(':search_clean', $search_clean, PDO::PARAM_STR);
             }
             $stmt->execute();
@@ -124,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 {$folder_where}
             ";
             if ($search !== '') {
-                $sql .= " AND (c.sender_name LIKE :search OR cust.name LIKE :search OR c.snippet LIKE :search OR c.sender_id LIKE :search OR cust.phone LIKE :search2 OR REPLACE(REPLACE(REPLACE(cust.phone, ' ', ''), '.', ''), '-', '') LIKE :search_clean)";
+                $sql .= " AND (c.sender_name LIKE :search1 OR cust.name LIKE :search2 OR c.snippet LIKE :search3 OR c.sender_id LIKE :search4 OR cust.phone LIKE :search5 OR REPLACE(REPLACE(REPLACE(cust.phone, ' ', ''), '.', ''), '-', '') LIKE :search_clean)";
             }
             $sql .= " ORDER BY c.updated_time DESC LIMIT :limit OFFSET :offset";
 
@@ -134,8 +137,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
             $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
             if ($search !== '') {
-                $stmt->bindValue(':search', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search1', $search_param, PDO::PARAM_STR);
                 $stmt->bindValue(':search2', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search3', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search4', $search_param, PDO::PARAM_STR);
+                $stmt->bindValue(':search5', $search_param, PDO::PARAM_STR);
                 $stmt->bindValue(':search_clean', $search_clean, PDO::PARAM_STR);
             }
             $stmt->execute();

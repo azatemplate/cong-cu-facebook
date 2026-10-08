@@ -201,15 +201,14 @@ function post_tiktok_video_direct($access_token, $video_url_or_file, $title, $op
     $auto_add_music = !empty($options['auto_add_music']) ? true : false;
 
     // Helper function for curling TikTok API
-    $send_request = function($p_level) use ($url, $access_token, $title, $video_url_or_file, $disable_comment, $disable_duet, $disable_stitch, $auto_add_music) {
+    $send_request = function($p_level) use ($url, $access_token, $title, $video_url_or_file, $disable_comment, $disable_duet, $disable_stitch) {
         $payload = [
             'post_info' => [
-                'title' => !empty($title) ? $title : 'TikTok Video',
+                'title' => !empty($title) ? mb_substr($title, 0, 2000) : 'TikTok Video',
                 'privacy_level' => $p_level,
-                'disable_comment' => $disable_comment,
-                'disable_duet' => $disable_duet,
-                'disable_stitch' => $disable_stitch,
-                'auto_add_music' => $auto_add_music
+                'disable_comment' => (bool)$disable_comment,
+                'disable_duet' => (bool)$disable_duet,
+                'disable_stitch' => (bool)$disable_stitch
             ],
             'source_info' => [
                 'source' => 'PULL_FROM_URL',
@@ -259,6 +258,7 @@ function post_tiktok_video_direct($access_token, $video_url_or_file, $title, $op
     }
 
     // Nếu gửi lần 1 bị TikTok từ chối (thường do TikTok App ở chế độ Sandbox/Draft giới hạn Public), tự động thử với các chế độ riêng tư khác
+    $last_res = $res;
     $fallback_levels = ['SELF_ONLY', 'MUTUAL_FOLLOW_FRIENDS', 'FOLLOWER_OF_CREATOR', 'PUBLIC_TO_EVERYONE'];
     foreach ($fallback_levels as $alt_lvl) {
         if ($alt_lvl === $target_privacy) continue;
@@ -270,11 +270,20 @@ function post_tiktok_video_direct($access_token, $video_url_or_file, $title, $op
                 'msg' => "🎉 Đã đăng video lên TikTok thành công ở chế độ '{$alt_lvl}'!"
             ];
         }
+        $last_res = $res_alt;
     }
 
-    $msg = $res['error']['message'] ?? ($res['message'] ?? 'Lỗi không đăng được bài TikTok');
-    if (stripos($msg, 'guidelines') !== false) {
-        $msg .= ' (Nếu App TikTok của bạn ở dạng Thử nghiệm/Draft, vui lòng vào TikTok App nâng cấp App lên Live/Production hoặc kiểm tra lại ủy quyền tài khoản).';
+    $err_code = $res['error']['code'] ?? ($res['code'] ?? ($last_res['error']['code'] ?? ($last_res['code'] ?? '')));
+    $msg = $res['error']['message'] ?? ($res['message'] ?? ($last_res['error']['message'] ?? ($last_res['message'] ?? 'Lỗi không đăng được bài TikTok')));
+
+    if (!empty($err_code)) {
+        $msg .= " [Mã lỗi TikTok: {$err_code}]";
+    }
+
+    if ($err_code === 'unaudited_client_can_only_post_to_private_accounts' || stripos($msg, 'unaudited_client_can_only_post_to_private_accounts') !== false) {
+        $msg .= ' 💡 (Giải thích: App TikTok trên TikTok Developer Portal của bạn đang ở dạng Thử nghiệm/Draft (Chưa duyệt Audit Live). Trong giai đoạn Thử nghiệm này, TikTok chỉ cho phép thử nghiệm đăng khi thỏa mãn 2 điều kiện: 1. Chọn chế độ Riêng tư "SELF_ONLY" và 2. Tài khoản TikTok thử nghiệm trên điện thoại phải bật "Tài khoản riêng tư / Private Account". Để đăng Công khai cho khán giả, bạn hãy vào TikTok Developer Portal chọn sản phẩm Direct Post API và nộp hồ sơ Nâng cấp App từ Draft lên Live).';
+    } elseif (stripos($msg, 'guidelines') !== false) {
+        $msg .= ' 💡 (Vui lòng kiểm tra TikTok Developer Portal xem App đã được duyệt "Direct Post API Audit" sang trạng thái Live chưa, hoặc kiểm tra đường dẫn video trên máy chủ có truy cập công khai được không).';
     }
 
     return ['status' => 'error', 'msg' => $msg];

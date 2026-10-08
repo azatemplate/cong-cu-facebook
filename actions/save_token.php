@@ -90,14 +90,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $user_db_id = $pdo->lastInsertId();
         }
 
+        // Clear checkpoint status when user re-logs in with fresh token
+        try {
+            $pdo->exec("ALTER TABLE users ADD COLUMN status VARCHAR(20) DEFAULT 'active'");
+        } catch (Exception $e) {}
+        try {
+            $pdo->prepare("UPDATE users SET status = 'active' WHERE id = ?")->execute([$user_db_id]);
+            $pdo->prepare("
+                UPDATE scheduled_posts 
+                SET status = 'failed', error_msg = 'Lỗi checkpoint cũ (Đã đăng nhập lại Token mới)'
+                WHERE status = 'checkpoint' 
+                  AND page_id IN (SELECT page_id FROM pages WHERE user_id = ?)
+            ")->execute([$user_db_id]);
+        } catch (Exception $e) {}
+
         $all_fb_pages = [];
         $after_cursor = null;
         $has_next = true;
 
         while ($has_next) {
-            $pages_response = get_fb_user_pages($token, $after_cursor);
+            $pages_response = get_fb_user_pages_with_retry($token, $after_cursor, 100, 3);
             if ($pages_response['status_code'] === 200 && isset($pages_response['data']['data'])) {
                 $pages = $pages_response['data']['data'];
+                if (empty($pages)) break;
                 foreach ($pages as $p) {
                     if (!empty($fb_user_id) && (string)$p['id'] === (string)$fb_user_id) {
                         continue;
@@ -256,6 +271,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $p_check_stmt = $pdo->prepare("SELECT p.id, u.account_id FROM pages p LEFT JOIN users u ON p.user_id = u.id WHERE p.page_id = ?");
     $p_update_stmt = $pdo->prepare("UPDATE pages SET name = ?, access_token = ?, category = ?, followers_count = ?, avatar = ?, user_id = ? WHERE page_id = ?");
     $p_insert_stmt = $pdo->prepare("INSERT INTO pages (page_id, name, access_token, category, followers_count, avatar, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $ig_clean_stmt = $pdo->prepare("DELETE FROM instagram_accounts WHERE fb_page_id = ? AND account_id != ?");
 
     $total_users_count = 0;
     $total_pages_count = 0;
@@ -290,25 +306,122 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $insert_stmt->execute([$fb_user_id, $fb_user_name, encryptData($token), $account_id]);
             $user_db_id = $pdo->lastInsertId();
         }
+
+        // Clear checkpoint status when user re-logs in with fresh token
+        try {
+            $pdo->prepare("UPDATE users SET status = 'active' WHERE id = ?")->execute([$user_db_id]);
+            $pdo->prepare("
+                UPDATE scheduled_posts 
+                SET status = 'failed', error_msg = 'Lỗi checkpoint cũ (Đã đăng nhập lại Token mới)'
+                WHERE status = 'checkpoint' 
+                  AND page_id IN (SELECT page_id FROM pages WHERE user_id = ?)
+            ")->execute([$user_db_id]);
+        } catch (Exception $e) {}
         $total_users_count++;
 
-        if (isset($pre_fetched_pages[$token])) {
-            $all_fb_pages = $pre_fetched_pages[$token];
-        } else {
-            $all_fb_pages = [];
-            $after_cursor = null;
-            $has_next = true;
+        $synced_pages_for_trigger = [];
+        $after_cursor = null;
+        $has_next = true;
 
-            while ($has_next) {
-                $pages_response = get_fb_user_pages($token, $after_cursor);
-                if ($pages_response['status_code'] === 200 && isset($pages_response['data']['data'])) {
-                    $pages = $pages_response['data']['data'];
-                    foreach ($pages as $p) {
-                        if (!empty($fb_user_id) && (string)$p['id'] === (string)$fb_user_id) {
+        if (isset($pre_fetched_pages[$token])) {
+            // Processing pre-fetched pages in batch transactions of 100
+            $pages_chunks = array_chunk($pre_fetched_pages[$token], 100);
+            foreach ($pages_chunks as $pages_batch) {
+                if (!empty($limit_reached_flag)) break;
+                $pdo->beginTransaction();
+                foreach ($pages_batch as $page) {
+                    $page_id = $page['id'];
+                    $page_name = $page['name'];
+                    $page_token = isset($page['access_token']) ? $page['access_token'] : '';
+                    $category = isset($page['category']) ? $page['category'] : '';
+                    $followers = isset($page['followers_count']) ? $page['followers_count'] : 0;
+                    $avatar = "avatar.php?id=" . $page_id;
+
+                    if (!empty($fb_user_id) && (string)$page_id === (string)$fb_user_id) {
+                        continue;
+                    }
+
+                    $p_check_stmt->execute([$page_id]);
+                    $existing_page = $p_check_stmt->fetch(PDO::FETCH_ASSOC);
+
+                    if ($existing_page) {
+                        if ($conflict_action === 'skip' && $existing_page['account_id'] != $account_id) {
                             continue;
                         }
-                        $all_fb_pages[] = $p;
+                        if ($existing_page['account_id'] != $account_id) {
+                            $ig_clean_stmt->execute([$page_id, $account_id]);
+                        }
+                        $p_update_stmt->execute([$page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id, $page_id]);
+                        $total_pages_count++;
+                        $synced_pages_for_trigger[] = $page;
+                    } else {
+                        if (!$is_admin) {
+                            $cnt_stmt = $pdo->prepare("SELECT COUNT(*) FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = ?");
+                            $cnt_stmt->execute([$account_id]);
+                            $curr_count = (int)$cnt_stmt->fetchColumn();
+                            if ($curr_count >= $max_fb_pages) {
+                                $limit_reached_flag = true;
+                                break;
+                            }
+                        }
+                        $p_insert_stmt->execute([$page_id, $page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id]);
+                        $total_pages_count++;
+                        $synced_pages_for_trigger[] = $page;
                     }
+                }
+                $pdo->commit();
+            }
+        } else {
+            // Streaming batch cursor pagination: fetch 100 pages -> retry 3x -> save 100 pages to MySQL immediately
+            while ($has_next && empty($limit_reached_flag)) {
+                $pages_response = get_fb_user_pages_with_retry($token, $after_cursor, 100, 3);
+                if ($pages_response['status_code'] === 200 && isset($pages_response['data']['data'])) {
+                    $pages = $pages_response['data']['data'];
+                    if (empty($pages)) break;
+
+                    $pdo->beginTransaction();
+                    foreach ($pages as $page) {
+                        $page_id = $page['id'];
+                        $page_name = $page['name'];
+                        $page_token = isset($page['access_token']) ? $page['access_token'] : '';
+                        $category = isset($page['category']) ? $page['category'] : '';
+                        $followers = isset($page['followers_count']) ? $page['followers_count'] : 0;
+                        $avatar = "avatar.php?id=" . $page_id;
+
+                        if (!empty($fb_user_id) && (string)$page_id === (string)$fb_user_id) {
+                            continue;
+                        }
+
+                        $p_check_stmt->execute([$page_id]);
+                        $existing_page = $p_check_stmt->fetch(PDO::FETCH_ASSOC);
+
+                        if ($existing_page) {
+                            if ($conflict_action === 'skip' && $existing_page['account_id'] != $account_id) {
+                                continue;
+                            }
+                            if ($existing_page['account_id'] != $account_id) {
+                                $ig_clean_stmt->execute([$page_id, $account_id]);
+                            }
+                            $p_update_stmt->execute([$page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id, $page_id]);
+                            $total_pages_count++;
+                            $synced_pages_for_trigger[] = $page;
+                        } else {
+                            if (!$is_admin) {
+                                $cnt_stmt = $pdo->prepare("SELECT COUNT(*) FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = ?");
+                                $cnt_stmt->execute([$account_id]);
+                                $curr_count = (int)$cnt_stmt->fetchColumn();
+                                if ($curr_count >= $max_fb_pages) {
+                                    $limit_reached_flag = true;
+                                    break;
+                                }
+                            }
+                            $p_insert_stmt->execute([$page_id, $page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id]);
+                            $total_pages_count++;
+                            $synced_pages_for_trigger[] = $page;
+                        }
+                    }
+                    $pdo->commit();
+
                     if (isset($pages_response['data']['paging']['cursors']['after']) && count($pages) > 0) {
                         $after_cursor = $pages_response['data']['paging']['cursors']['after'];
                     } else {
@@ -320,44 +433,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        foreach ($all_fb_pages as $page) {
-            $page_id = $page['id'];
-            $page_name = $page['name'];
-            $page_token = isset($page['access_token']) ? $page['access_token'] : '';
-            $category = isset($page['category']) ? $page['category'] : '';
-            $followers = isset($page['followers_count']) ? $page['followers_count'] : 0;
-            $avatar = "avatar.php?id=" . $page_id;
-
-            // Bỏ qua nếu page_id trùng với fb_user_id (Nick cá nhân của người dùng)
-            if (!empty($fb_user_id) && (string)$page_id === (string)$fb_user_id) {
-                continue;
-            }
-
-            $p_check_stmt->execute([$page_id]);
-            $existing_page = $p_check_stmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($existing_page) {
-                if ($conflict_action === 'skip' && $existing_page['account_id'] != $account_id) {
-                    continue;
-                }
-                $p_update_stmt->execute([$page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id, $page_id]);
-                $total_pages_count++;
-            } else {
-                // Kiểm tra hạn ngạch Fanpage FB được phép chèn mới
-                if (!$is_admin && $max_fb_pages > 0) {
-                    $cnt_stmt = $pdo->prepare("SELECT COUNT(*) FROM pages p JOIN users u ON p.user_id = u.id WHERE u.account_id = ?");
-                    $cnt_stmt->execute([$account_id]);
-                    $curr_count = (int)$cnt_stmt->fetchColumn();
-                    if ($curr_count >= $max_fb_pages) {
-                        $limit_reached_flag = true;
-                        continue; // Dừng không lưu thêm Fanpage vượt hạn ngạch vào CSDL
-                    }
-                }
-                $p_insert_stmt->execute([$page_id, $page_name, encryptData($page_token), $category, $followers, $avatar, $user_db_id]);
-                $total_pages_count++;
-            }
-        }
-
         // Tự động dọn dẹp bất kỳ nick cá nhân nào đã bị lưu nhầm vào bảng pages trước đây
         try {
             $pdo->exec("DELETE p FROM pages p JOIN users u ON p.page_id = u.fb_id");
@@ -365,7 +440,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Trigger conversation sync in parallel multi-curl (non-blocking)
         try {
-            if (!empty($all_fb_pages)) {
+            if (!empty($synced_pages_for_trigger)) {
                 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
                 $host = $_SERVER['HTTP_HOST'];
                 $base_url_path = $protocol . $host . dirname($_SERVER['REQUEST_URI']);
@@ -373,7 +448,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $mh = curl_multi_init();
                 $handles = [];
                 // Limit to max 20 pages per batch to prevent server overload
-                $page_chunks = array_chunk($all_fb_pages, 20);
+                $page_chunks = array_chunk($synced_pages_for_trigger, 20);
                 foreach ($page_chunks[0] as $page) {
                     $page_id = $page['id'];
                     $sync_url = $base_url_path . "/sync_fb_conversations.php?page_id=" . urlencode($page_id) . "&user_id=" . intval($user_db_id);
@@ -400,6 +475,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     curl_close($ch);
                 }
                 curl_multi_close($mh);
+        // Auto-subscribe Fanpages to Meta Webhooks (subscribed_apps)
+        try {
+            if (!empty($synced_pages_for_trigger)) {
+                foreach ($synced_pages_for_trigger as $spg) {
+                    $spg_id = $spg['id'] ?? '';
+                    $spg_tok = $spg['access_token'] ?? '';
+                    if (!empty($spg_id) && !empty($spg_tok)) {
+                        $sub_url = FB_API_BASE . $spg_id . "/subscribed_apps";
+                        $post_fields = http_build_query([
+                            'subscribed_fields' => 'messages,messaging_postbacks,messaging_referrals,feed',
+                            'access_token' => $spg_tok
+                        ]);
+                        $ch_sub = curl_init($sub_url);
+                        curl_setopt_array($ch_sub, [
+                            CURLOPT_POST => true,
+                            CURLOPT_POSTFIELDS => $post_fields,
+                            CURLOPT_RETURNTRANSFER => true,
+                            CURLOPT_TIMEOUT => 4,
+                            CURLOPT_CONNECTTIMEOUT => 2
+                        ]);
+                        apply_proxy_to_curl($ch_sub, $spg_tok);
+                        fb_curl_setssl($ch_sub);
+                        curl_exec($ch_sub);
+                        curl_close($ch_sub);
+                    }
+                }
             }
         } catch (Exception $e) {}
     }

@@ -139,6 +139,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($file_success || $text_success) {
         try {
+            require_once __DIR__ . '/../includes/bot_prompt_helper.php';
+            save_chat_history_log($pdo, 'facebook', $page_id, $recipient_id, 'agent', 'Bạn (Cửa hàng)', $message);
             $st_upd = $pdo->prepare("UPDATE fb_customers SET last_sender = 'agent', last_message_at = CURRENT_TIMESTAMP WHERE page_id = ? AND sender_id = ?");
             $st_upd->execute([$page_id, $recipient_id]);
         } catch (Exception $e) {}

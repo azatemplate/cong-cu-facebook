@@ -1,854 +1,926 @@
 <?php
-// ─── Normal page load — include header ────────────────────────────────────────
+// ─── Kho Data Manager (Replacement for tiktok_search.php) ───────────────────
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+require_once __DIR__ . '/includes/db.php';
+
+$account_id = $_SESSION['account_id'] ?? 0;
+
+// Auto-ensure tables exist
+try {
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS media_data_groups (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            account_id INT NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_acc (account_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+        CREATE TABLE IF NOT EXISTS media_data_items (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            group_id INT NOT NULL,
+            url TEXT NOT NULL,
+            url_hash VARCHAR(32) NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_group_url (group_id, url_hash),
+            INDEX idx_group (group_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+} catch (Exception $e) {}
+
+// ─── Handle AJAX Requests (Fast Return JSON without outputting HTML) ─────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (!$account_id) {
+        echo json_encode(['success' => false, 'message' => 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!']);
+        exit;
+    }
+
+    try {
+        $action = $_POST['action'];
+
+        // 1. Tạo Nhóm Data mới
+        if ($action === 'create_group') {
+            $name = trim($_POST['name'] ?? '');
+            $urls_raw = $_POST['urls'] ?? '';
+
+            if (empty($name)) {
+                echo json_encode(['success' => false, 'message' => 'Vui lòng nhập tên nhóm Data!']);
+                exit;
+            }
+
+            // Tách danh sách URL theo dòng / khoảng trắng
+            $urls = preg_split('/[\r\n\s]+/', $urls_raw, -1, PREG_SPLIT_NO_EMPTY);
+            $valid_urls = [];
+            foreach ($urls as $u) {
+                $u = trim($u);
+                if (filter_var($u, FILTER_VALIDATE_URL) || preg_match('/https?:\/\//i', $u)) {
+                    $valid_urls[] = $u;
+                }
+            }
+
+            $total_input = count($valid_urls);
+            $unique_urls = array_values(array_unique($valid_urls));
+            $input_dedup_count = $total_input - count($unique_urls);
+
+            // Khởi tạo Nhóm Data
+            $stmt = $pdo->prepare("INSERT INTO media_data_groups (account_id, name) VALUES (?, ?)");
+            $stmt->execute([$account_id, $name]);
+            $group_id = $pdo->lastInsertId();
+
+            $saved_count = 0;
+            if (!empty($unique_urls)) {
+                $stmt_item = $pdo->prepare("INSERT IGNORE INTO media_data_items (group_id, url, url_hash) VALUES (?, ?, ?)");
+                foreach ($unique_urls as $u) {
+                    $hash = md5($u);
+                    $stmt_item->execute([$group_id, $u, $hash]);
+                    if ($stmt_item->rowCount() > 0) {
+                        $saved_count++;
+                    }
+                }
+            }
+
+            $db_dedup_count = count($unique_urls) - $saved_count;
+            $total_dedup = $input_dedup_count + $db_dedup_count;
+
+            $msg = "Đã tạo nhóm '{$name}' thành công! Đã lưu {$saved_count} link";
+            if ($total_dedup > 0) {
+                $msg .= " (Đã tự động lọc trùng {$total_dedup} link lặp lại).";
+            } else {
+                $msg .= ".";
+            }
+
+            echo json_encode([
+                'success' => true,
+                'message' => $msg,
+                'group_id' => $group_id,
+                'saved_count' => $saved_count,
+                'dedup_count' => $total_dedup
+            ]);
+            exit;
+        }
+
+        // 2. Thêm link vào nhóm đã có
+        if ($action === 'add_items') {
+            $group_id = intval($_POST['group_id'] ?? 0);
+            $urls_raw = $_POST['urls'] ?? '';
+
+            $stmt = $pdo->prepare("SELECT id, name FROM media_data_groups WHERE id = ? AND account_id = ?");
+            $stmt->execute([$group_id, $account_id]);
+            $group = $stmt->fetch();
+            if (!$group) {
+                echo json_encode(['success' => false, 'message' => 'Nhóm Data không tồn tại hoặc không thuộc quyền quản lý.']);
+                exit;
+            }
+
+            $urls = preg_split('/[\r\n\s]+/', $urls_raw, -1, PREG_SPLIT_NO_EMPTY);
+            $valid_urls = [];
+            foreach ($urls as $u) {
+                $u = trim($u);
+                if (filter_var($u, FILTER_VALIDATE_URL) || preg_match('/https?:\/\//i', $u)) {
+                    $valid_urls[] = $u;
+                }
+            }
+
+            $total_input = count($valid_urls);
+            $unique_urls = array_values(array_unique($valid_urls));
+            $input_dedup_count = $total_input - count($unique_urls);
+
+            $saved_count = 0;
+            if (!empty($unique_urls)) {
+                $stmt_item = $pdo->prepare("INSERT IGNORE INTO media_data_items (group_id, url, url_hash) VALUES (?, ?, ?)");
+                foreach ($unique_urls as $u) {
+                    $hash = md5($u);
+                    $stmt_item->execute([$group_id, $u, $hash]);
+                    if ($stmt_item->rowCount() > 0) {
+                        $saved_count++;
+                    }
+                }
+            }
+
+            $db_dedup_count = count($unique_urls) - $saved_count;
+            $total_dedup = $input_dedup_count + $db_dedup_count;
+
+            $msg = "Đã thêm {$saved_count} link mới vào nhóm!";
+            if ($total_dedup > 0) {
+                $msg .= " (Đã lọc bỏ {$total_dedup} link trùng lặp).";
+            }
+
+            echo json_encode([
+                'success' => true,
+                'message' => $msg,
+                'saved_count' => $saved_count,
+                'dedup_count' => $total_dedup
+            ]);
+            exit;
+        }
+
+        // 3. Đổi tên nhóm
+        if ($action === 'rename_group') {
+            $group_id = intval($_POST['group_id'] ?? 0);
+            $name = trim($_POST['name'] ?? '');
+            if (empty($name)) {
+                echo json_encode(['success' => false, 'message' => 'Vui lòng nhập tên nhóm!']);
+                exit;
+            }
+
+            $stmt = $pdo->prepare("UPDATE media_data_groups SET name = ? WHERE id = ? AND account_id = ?");
+            $stmt->execute([$name, $group_id, $account_id]);
+            echo json_encode(['success' => true, 'message' => 'Đã cập nhật tên nhóm thành công!']);
+            exit;
+        }
+
+        // 4. Xóa nhóm
+        if ($action === 'delete_group') {
+            $group_id = intval($_POST['group_id'] ?? 0);
+            $stmt = $pdo->prepare("DELETE FROM media_data_groups WHERE id = ? AND account_id = ?");
+            $stmt->execute([$group_id, $account_id]);
+            echo json_encode(['success' => true, 'message' => 'Đã xóa nhóm Data thành công!']);
+            exit;
+        }
+
+        // 5. Xóa link lẻ
+        if ($action === 'delete_item') {
+            $item_id = intval($_POST['item_id'] ?? 0);
+            $stmt = $pdo->prepare("DELETE i FROM media_data_items i JOIN media_data_groups g ON i.group_id = g.id WHERE i.id = ? AND g.account_id = ?");
+            $stmt->execute([$item_id, $account_id]);
+            echo json_encode(['success' => true, 'message' => 'Đã xóa link thành công!']);
+            exit;
+        }
+
+        // 6. Xóa tất cả link trong nhóm
+        if ($action === 'clear_items') {
+            $group_id = intval($_POST['group_id'] ?? 0);
+            $stmt = $pdo->prepare("DELETE i FROM media_data_items i JOIN media_data_groups g ON i.group_id = g.id WHERE g.id = ? AND g.account_id = ?");
+            $stmt->execute([$group_id, $account_id]);
+            echo json_encode(['success' => true, 'message' => 'Đã xóa toàn bộ link trong nhóm!']);
+            exit;
+        }
+
+        // 7. Lấy danh sách link trong nhóm
+        if ($action === 'get_items') {
+            $group_id = intval($_POST['group_id'] ?? 0);
+            $stmt = $pdo->prepare("SELECT i.id, i.url FROM media_data_items i JOIN media_data_groups g ON i.group_id = g.id WHERE g.id = ? ORDER BY i.id DESC LIMIT 1000");
+            $stmt->execute([$group_id]);
+            $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            echo json_encode(['success' => true, 'items' => $items]);
+            exit;
+        }
+    } catch (Throwable $ex) {
+        echo json_encode(['success' => false, 'message' => 'Lỗi máy chủ DB: ' . $ex->getMessage()]);
+        exit;
+    }
+}
+
+// ─── Render Page Layout ──────────────────────────────────────────────────────
 $current_page = 'tiktok_search';
 require_once __DIR__ . '/includes/header.php';
+
+// Fetch All Data Groups
+$groups = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT g.id, g.account_id, g.name, g.created_at,
+               (SELECT COUNT(*) FROM media_data_items i WHERE i.group_id = g.id) AS total_items
+        FROM media_data_groups g
+        WHERE g.account_id = ?
+        ORDER BY g.id DESC
+    ");
+    $stmt->execute([$account_id]);
+    $groups = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    $groups = [];
+}
 ?>
 
 <style>
-/* ─── TikTok Search & Extension Integration ──────────────────────────────────── */
-.tiktok-hero {
-    background: linear-gradient(135deg, #010101 0%, #1a0533 40%, #2d0b55 100%);
-    border-radius: 16px; padding: 28px 32px; margin-bottom: 24px;
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;
-    position: relative; overflow: hidden;
+/* ── Design Tokens & Refactored Styling for Kho Data ── */
+:root {
+    --kd-primary: #4f46e5;
+    --kd-primary-hover: #4338ca;
+    --kd-primary-glow: rgba(79, 70, 229, 0.15);
+    --kd-surface: #ffffff;
+    --kd-border: #e2e8f0;
+    --kd-text-main: #0f172a;
+    --kd-text-muted: #64748b;
+    --kd-radius: 16px;
 }
-.tiktok-hero::before {
-    content: ''; position: absolute; top: -30px; right: -30px;
-    width: 180px; height: 180px;
-    background: radial-gradient(circle, rgba(105,0,210,0.4) 0%, transparent 70%);
-    pointer-events: none;
-}
-.tiktok-hero::after {
-    content: ''; position: absolute; bottom: -20px; left: 40%;
-    width: 120px; height: 120px;
-    background: radial-gradient(circle, rgba(254,44,85,0.3) 0%, transparent 70%);
-    pointer-events: none;
-}
-.tiktok-hero-left { display: flex; align-items: center; gap: 20px; }
-.tiktok-logo-wrap {
-    width: 56px; height: 56px;
-    background: linear-gradient(135deg, #fe2c55, #25f4ee);
-    border-radius: 14px; display: flex; align-items: center; justify-content: center;
-    font-size: 28px; flex-shrink: 0; box-shadow: 0 4px 16px rgba(254,44,85,0.5);
-}
-.tiktok-hero-text h1 { font-size: 22px; font-weight: 700; color: #fff; margin: 0 0 4px; }
-.tiktok-hero-text p  { font-size: 13px; color: rgba(255,255,255,0.65); margin: 0; }
 
-.btn-download-ext {
-    padding: 12px 22px; background: linear-gradient(135deg, #25f4ee, #0dcfca);
-    color: #010101; border-radius: 10px; font-size: 14px; font-weight: 700;
-    text-decoration: none; display: inline-flex; align-items: center; gap: 8px;
-    box-shadow: 0 4px 16px rgba(37,244,238,0.4); transition: transform 0.2s, box-shadow 0.2s;
-    white-space: nowrap; z-index: 2;
-}
-.btn-download-ext:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(37,244,238,0.6); color: #000; }
-
-/* Extension Status Banner */
-.ext-status-banner {
-    background: var(--card-bg); border: 1px solid var(--border-color);
-    border-radius: 12px; padding: 16px 22px; margin-bottom: 20px;
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;
-    transition: all 0.3s ease;
-}
-.ext-status-banner.banner-warning {
-    background: linear-gradient(135deg, rgba(239,68,68,0.12), rgba(185,28,28,0.08));
-    border-color: rgba(239,68,68,0.4);
-}
-.ext-status-info { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; }
-.ext-badge {
-    display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px;
-    border-radius: 20px; font-size: 12px; font-weight: 700;
-}
-.ext-badge.active { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
-.ext-badge.inactive { background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.4); }
-.ext-badge.scanning { background: rgba(254,44,85,0.15); color: #fe2c55; border: 1px solid rgba(254,44,85,0.3); }
-
-/* Extension Warning Callout Box */
-.ext-warning-box {
-    background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(220,38,38,0.1));
-    border: 1px solid rgba(239,68,68,0.4); border-radius: 14px; padding: 20px 24px;
-    margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;
-    flex-wrap: wrap; gap: 16px;
-}
-.ext-warning-text h3 { font-size: 16px; font-weight: 700; color: #ef4444; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
-.ext-warning-text p { font-size: 13px; color: rgba(255,255,255,0.8); margin: 0; }
-
-/* Disabled Overlay / States for Search Form */
-.search-form-card.ext-disabled {
-    opacity: 0.55;
-    pointer-events: none;
-    user-select: none;
+.kd-header-banner {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+    border-radius: var(--kd-radius);
+    padding: 26px 30px;
+    color: #ffffff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    box-shadow: 0 10px 25px -5px rgba(30, 27, 75, 0.2);
     position: relative;
+    overflow: hidden;
 }
-.search-form-card.ext-disabled::after {
-    content: '⚠️ Bạn cần cài đặt Extension "Cào URL TikTok" để nhập dữ liệu và sử dụng';
-    position: absolute; inset: 0; background: rgba(15, 15, 20, 0.65);
-    backdrop-filter: blur(2px); border-radius: 14px;
+.kd-header-banner::before {
+    content: '';
+    position: absolute;
+    top: -50%; right: -10%;
+    width: 350px; height: 350px;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.3) 0%, rgba(99, 102, 241, 0) 70%);
+    pointer-events: none;
+}
+.kd-header-title { display: flex; align-items: center; gap: 16px; }
+.kd-icon-badge {
+    width: 50px; height: 50px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(10px);
     display: flex; align-items: center; justify-content: center;
-    color: #ef4444; font-weight: 700; font-size: 14px; pointer-events: auto; cursor: not-allowed;
-    text-align: center; padding: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #a5b4fc; flex-shrink: 0;
+}
+.kd-header-text h2 {
+    font-family: 'Be Vietnam Pro', sans-serif;
+    font-size: 24px; font-weight: 800;
+    margin: 0 0 4px; color: #ffffff;
+    letter-spacing: -0.01em;
+}
+.kd-header-text p { font-size: 13px; color: #cbd5e1; margin: 0; }
+
+.btn-create-group {
+    padding: 12px 22px;
+    background: linear-gradient(135deg, var(--kd-primary) 0%, var(--kd-primary-hover) 100%);
+    color: #ffffff; border: none; border-radius: 12px;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+    box-shadow: 0 8px 20px var(--kd-primary-glow);
+    transition: all 0.2s ease; font-family: inherit;
+}
+.btn-create-group:hover { transform: translateY(-1px); box-shadow: 0 12px 25px var(--kd-primary-glow); }
+
+/* Search Toolbar for Data File Names (User Request) */
+.kd-toolbar {
+    background: var(--kd-surface);
+    border: 1px solid var(--kd-border);
+    border-radius: var(--kd-radius);
+    padding: 18px 24px;
+    margin-bottom: 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 16px;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03);
 }
 
-/* ─── Mode Tabs ─── */
-.mode-tabs {
-    display: flex; gap: 6px; margin-bottom: 20px;
-    background: var(--card-bg); border: 1px solid var(--border-color);
-    border-radius: 12px; padding: 6px; width: fit-content; flex-wrap: wrap;
+.search-box-wrapper { position: relative; flex: 1; min-width: 280px; }
+.search-box-wrapper input {
+    width: 100%; padding: 12px 16px 12px 42px;
+    background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 12px;
+    font-size: 14px; font-weight: 500; color: var(--kd-text-main);
+    transition: all 0.2s; box-sizing: border-box; font-family: inherit;
 }
-.mode-tab {
-    padding: 10px 20px; border-radius: 8px;
-    border: none; background: transparent; color: var(--text-muted);
-    font-size: 14px; font-weight: 600; cursor: pointer;
-    display: flex; align-items: center; gap: 8px; transition: all 0.2s;
+.search-box-wrapper input:focus {
+    outline: none; border-color: var(--kd-primary); background: #ffffff;
+    box-shadow: 0 0 0 4px var(--kd-primary-glow);
 }
-.mode-tab.active-profile {
-    background: linear-gradient(135deg, #06b6d4, #0891b2);
-    color: #fff; box-shadow: 0 4px 12px rgba(6,182,212,0.35);
-}
-.mode-tab.active-keyword {
-    background: linear-gradient(135deg, #fe2c55, #c9134c);
-    color: #fff; box-shadow: 0 4px 12px rgba(254,44,85,0.35);
-}
-.mode-tab.active-hashtag {
-    background: linear-gradient(135deg, #6d28d9, #4c1d95);
-    color: #fff; box-shadow: 0 4px 12px rgba(109,40,217,0.35);
-}
-.mode-tab:not([class*="active-"]):hover { color: var(--text-main); }
-
-/* ─── Search Card ─── */
-.search-form-card {
-    background: var(--card-bg); border: 1px solid var(--border-color);
-    border-radius: 14px; padding: 24px; margin-bottom: 20px;
-    transition: opacity 0.3s;
-}
-.search-row  { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
-.search-field { display: flex; flex-direction: column; gap: 6px; }
-.search-field label {
-    font-size: 12px; font-weight: 600; color: var(--text-muted);
-    text-transform: uppercase; letter-spacing: 0.5px;
-}
-.search-field input[type="text"],
-.search-field input[type="number"] {
-    padding: 11px 16px; border: 1px solid var(--border-color); border-radius: 8px;
-    background: var(--bg-color); color: var(--text-main);
-    font-size: 14px; outline: none; transition: border-color 0.2s, box-shadow 0.2s;
-}
-.search-field input:focus { border-color: #fe2c55; box-shadow: 0 0 0 3px rgba(254,44,85,0.12); }
-.search-field.grow { flex: 1; min-width: 260px; }
-
-.btn-start-scan {
-    padding: 11px 26px; background: linear-gradient(135deg,#fe2c55,#c9134c);
-    color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:700;
-    cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:8px;
-    transition: transform .15s, box-shadow .15s; box-shadow:0 4px 14px rgba(254,44,85,.4);
-}
-.btn-start-scan:hover { transform:translateY(-1px); box-shadow:0 6px 18px rgba(254,44,85,.55); }
-.btn-start-scan.profile { background:linear-gradient(135deg,#06b6d4,#0891b2); box-shadow:0 4px 14px rgba(6,182,212,.4); }
-.btn-start-scan.hashtag { background:linear-gradient(135deg,#7c3aed,#5b21b6); box-shadow:0 4px 14px rgba(124,58,237,.4); }
-.btn-start-scan:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-
-.btn-stop-scan {
-    padding: 11px 20px; background: linear-gradient(135deg, #ef4444, #dc2626);
-    color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:700;
-    cursor:pointer; display:none; align-items:center; gap:8px;
+.search-box-wrapper svg {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    width: 18px; height: 18px; color: #94a3b8; pointer-events: none;
 }
 
-/* ─── Column Filter ─── */
-.col-filter-wrap {
-    margin-bottom: 16px; background: var(--card-bg);
-    border: 1px solid var(--border-color); border-radius: 10px; padding: 14px 18px;
+.kd-group-count-badge {
+    background: #eef2ff; color: var(--kd-primary); border: 1px solid #c7d2fe;
+    padding: 6px 14px; border-radius: 20px; font-size: 12.5px; font-weight: 700;
 }
-.col-filter-label { font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
-.col-filter-list  { display:flex; flex-wrap:wrap; gap:8px; }
-.col-chip {
-    display:flex; align-items:center; gap:5px; padding:5px 12px;
-    border:1px solid var(--border-color); border-radius:20px;
-    font-size:12px; cursor:pointer; background:var(--bg-color); color:var(--text-main);
-    transition:all .15s; user-select:none;
-}
-.col-chip.active { background:linear-gradient(135deg,#1a0533,#2d0b55); border-color:#8b5cf6; color:#fff; }
-.col-chip input[type="checkbox"] { display:none; }
 
-/* ─── Results toolbar ─── */
-.results-toolbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
-.results-info { font-size:13px; color:var(--text-muted); }
-.results-info strong { color:var(--text-main); }
-.toolbar-btns { display: flex; gap: 8px; flex-wrap: wrap; }
-
-.btn-action-tool {
-    padding:8px 16px; background:var(--card-bg); color:var(--text-main);
-    border:1px solid var(--border-color); border-radius:8px; font-size:13px; font-weight:600;
-    cursor:pointer; display:flex; align-items:center; gap:6px; transition:all .15s;
+/* Grid Nhóm Data */
+.groups-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 20px;
+    margin-bottom: 30px;
 }
-.btn-action-tool:hover { border-color:#25f4ee; color:#25f4ee; }
-.btn-action-tool.primary {
-    background: linear-gradient(135deg, #fe2c55, #c9134c); color:#fff; border:none;
-    box-shadow: 0 3px 10px rgba(254,44,85,0.3);
+.group-card {
+    background: var(--kd-surface); border: 1px solid var(--kd-border); border-radius: var(--kd-radius);
+    padding: 24px; display: flex; flex-direction: column; justify-content: space-between;
+    transition: all 0.25s ease; position: relative; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03);
 }
-.btn-action-tool.primary:hover { box-shadow: 0 5px 14px rgba(254,44,85,0.5); }
-.btn-action-tool:disabled { opacity:.5; cursor:not-allowed; }
-
-/* ─── Table ─── */
-.tiktok-table-wrap { overflow-x:auto; border:1px solid var(--border-color); border-radius:12px; background:var(--card-bg); }
-.tiktok-table { width:100%; border-collapse:collapse; min-width:700px; font-size:13px; }
-.tiktok-table thead th {
-    padding:12px 14px; background:linear-gradient(135deg,#0f0f0f,#1e0340);
-    color:#ccc; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
-    border-bottom:1px solid var(--border-color); white-space:nowrap; cursor:pointer; user-select:none;
+.group-card:hover {
+    border-color: #cbd5e1; transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08);
 }
-.tiktok-table thead th:hover { color:#fe2c55; }
-.tiktok-table thead th.sort-asc::after  { content:' ▲'; color:#fe2c55; font-size:10px; }
-.tiktok-table thead th.sort-desc::after { content:' ▼'; color:#fe2c55; font-size:10px; }
-.tiktok-table tbody tr { border-bottom:1px solid var(--border-color); transition:background .1s; }
-.tiktok-table tbody tr:hover { background:rgba(254,44,85,.04); }
-.tiktok-table tbody tr:last-child { border-bottom:none; }
-.tiktok-table td { padding:11px 14px; color:var(--text-main); vertical-align:middle; }
-.tiktok-table td.col-checkbox { width:38px; text-align:center; }
-.tiktok-table td.col-title { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.tiktok-table td.col-title a { color:var(--primary-color); text-decoration:none; font-weight:500; }
-.tiktok-table td.col-title a:hover { text-decoration:underline; }
-.tiktok-badge { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600; }
-.badge-views    { background:rgba(139,92,246,.15); color:#8b5cf6; }
-.badge-likes    { background:rgba(254,44,85,.13);  color:#fe2c55; }
-.badge-comments { background:rgba(59,130,246,.13); color:#3b82f6; }
-.badge-shares   { background:rgba(16,185,129,.13); color:#10b981; }
-
-.empty-state { text-align:center; padding:50px 20px; color:var(--text-muted); }
-.empty-state .empty-icon { font-size:48px; margin-bottom:12px; }
-
-#copy-toast {
-    position:fixed; bottom:28px; right:20px; background:#10b981; color:#fff;
-    padding:12px 22px; border-radius:10px; font-size:14px; font-weight:600;
-    box-shadow:0 4px 18px rgba(16,185,129,.45); display:none; z-index:9999;
+.group-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.group-card-title { font-family: 'Be Vietnam Pro', sans-serif; font-size: 16px; font-weight: 800; color: var(--kd-text-main); margin: 0; word-break: break-word; }
+.group-badge {
+    background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;
+    padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; white-space: nowrap;
 }
+.group-card-meta { font-size: 12px; color: var(--kd-text-muted); margin-bottom: 18px; font-weight: 500; }
+.group-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.btn-card-action {
+    flex: 1; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 700;
+    border: 1px solid var(--kd-border); background: #f8fafc; color: var(--kd-text-main);
+    cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    transition: all 0.2s; white-space: nowrap; font-family: inherit;
+}
+.btn-card-action:hover { border-color: var(--kd-primary); color: var(--kd-primary); background: #ffffff; }
+.btn-card-action.danger { color: #ef4444; border-color: #fecaca; background: #fff1f2; }
+.btn-card-action.danger:hover { border-color: #ef4444; color: #ffffff; background: #ef4444; }
+
+/* Glassmorphism Modal Design */
+.kd-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(6px);
+    display: none; align-items: center; justify-content: center; z-index: 9999; padding: 20px;
+}
+.kd-modal-content {
+    background: #ffffff; border-radius: 20px;
+    width: 100%; max-width: 660px; max-height: 90vh; display: flex; flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25); animation: modalFadeIn 0.25s ease-out; overflow: hidden;
+}
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+.kd-modal-header {
+    padding: 20px 26px; border-bottom: 1px solid #f1f5f9;
+    display: flex; align-items: center; justify-content: space-between;
+}
+.kd-modal-header h3 { font-family: 'Be Vietnam Pro', sans-serif; font-size: 18px; font-weight: 800; margin: 0; color: var(--kd-text-main); }
+.kd-modal-close {
+    background: #f1f5f9; border: none; font-size: 16px; font-weight: bold; color: var(--kd-text-muted);
+    width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.2s;
+}
+.kd-modal-close:hover { color: #ef4444; background: #fee2e2; }
+.kd-modal-body { padding: 26px; overflow-y: auto; flex: 1; }
+.kd-modal-footer {
+    padding: 16px 26px; border-top: 1px solid #f1f5f9;
+    display: flex; justify-content: flex-end; gap: 12px; background: #f8fafc;
+}
+
+.kd-form-group { margin-bottom: 20px; }
+.kd-form-group label { display: block; font-size: 12px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.kd-form-group input[type="text"], .kd-form-group textarea {
+    width: 100%; padding: 12px 14px; border: 1.5px solid #cbd5e1; border-radius: 10px;
+    background: #f8fafc; color: var(--kd-text-main); font-size: 14px; font-weight: 500; font-family: inherit;
+    box-sizing: border-box; transition: all 0.2s ease;
+}
+.kd-form-group input:focus, .kd-form-group textarea:focus {
+    outline: none; border-color: var(--kd-primary); background: #ffffff;
+    box-shadow: 0 0 0 4px var(--kd-primary-glow);
+}
+
+.items-list-wrap { max-height: 400px; overflow-y: auto; border: 1.5px solid #e2e8f0; border-radius: 12px; background: #ffffff; }
+.item-row {
+    padding: 12px 16px; border-bottom: 1px solid #f1f5f9;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13.5px;
+}
+.item-row:last-child { border-bottom: none; }
+.item-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; color: var(--kd-primary); font-weight: 600; text-decoration: none; }
+.item-url:hover { text-decoration: underline; }
+
+.empty-groups {
+    text-align: center; padding: 60px 20px; background: var(--kd-surface); border: 1.5px dashed var(--kd-border);
+    border-radius: 20px; color: var(--kd-text-muted);
+}
+.empty-groups .icon { font-size: 48px; margin-bottom: 12px; }
 </style>
 
-<!-- Hero -->
-<div class="tiktok-hero">
-    <div class="tiktok-hero-left">
-        <div class="tiktok-logo-wrap">🎵</div>
-        <div class="tiktok-hero-text">
-            <h1>TikTok URL Collector & Search</h1>
-            <p>Tự động mở trình duyệt & cuộn trang thu thập URL video TikTok (Kênh, Từ khóa, Hashtag) · Quản lý & Xuất dữ liệu</p>
+<!-- Banner Header -->
+<div class="kd-header-banner">
+    <div class="kd-header-title">
+        <div class="kd-icon-badge">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <div class="kd-header-text">
+            <h2>Kho Data (Quản Lý Danh Sách URL Media)</h2>
+            <p>Tạo &amp; quản lý các Nhóm Data chứa URL Video (TikTok, Instagram, YouTube, Facebook...) · Tự động lọc trùng thông minh</p>
         </div>
     </div>
-    <a href="https://fbweb.hongdolab.com/caourltiktok.zip" target="_blank" class="btn-download-ext">
-        <span>📥</span> Tải Extension "Cào URL TikTok"
-    </a>
+    <button class="btn-create-group" onclick="openCreateModal()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>Tạo Nhóm Data Mới</span>
+    </button>
 </div>
 
-<!-- Extension Status Banner -->
-<div class="ext-status-banner" id="ext-banner">
-    <div class="ext-status-info">
-        <span>Trạng thái Extension:</span>
-        <span id="ext-status-badge" class="ext-badge inactive">⚪ Đang kiểm tra kết nối Extension...</span>
+<!-- Dynamic Alert Container -->
+<div id="kd-alert-container"></div>
+
+<!-- Search Toolbar for Data File / Group Names (User Request) -->
+<div class="kd-toolbar">
+    <div class="search-box-wrapper">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="groupSearchInput" onkeyup="filterGroupList()" placeholder="🔍 Tìm kiếm tên file / nhóm Data...">
     </div>
-    <div id="ext-help-text" style="font-size:13px;">
-        Đang kiểm tra kết nối Extension...
+    <div class="kd-group-count-badge">
+        Hiển thị: <strong id="visibleGroupCount"><?php echo count($groups); ?></strong> / <strong><?php echo count($groups); ?></strong> Nhóm Data
     </div>
 </div>
 
-<!-- Extension Warning Box (shown when extension is NOT installed) -->
-<div class="ext-warning-box" id="ext-warning-box" style="display:none;">
-    <div class="ext-warning-text">
-        <h3>⚠️ Bạn chưa cài đặt Extension "Cào URL TikTok"!</h3>
-        <p>Tính năng thu thập URL tự động yêu cầu phải cài đặt Extension. Hãy tải và cài đặt Extension vào trình duyệt để mở khóa nhập dữ liệu và quét tự động.</p>
+<!-- Groups Grid -->
+<?php if (empty($groups)): ?>
+    <div class="empty-groups">
+        <div class="icon">📁</div>
+        <h3 style="font-size:18px; font-weight:800; color:#0f172a; margin:0 0 6px;">Chưa có Nhóm Data nào!</h3>
+        <p style="margin:0;">Bấm nút <strong>"Tạo Nhóm Data Mới"</strong> phía trên để nhập danh sách URL video tự động lọc trùng.</p>
     </div>
-    <a href="https://fbweb.hongdolab.com/caourltiktok.zip" target="_blank" class="btn-download-ext">
-        <span>📥</span> Tải Extension Ngay (caourltiktok.zip)
-    </a>
-</div>
-
-<!-- Mode Tabs -->
-<div class="mode-tabs">
-    <button class="mode-tab active-profile" id="tab-profile" onclick="switchMode('profile')">👤 1. Kênh (Profile)</button>
-    <button class="mode-tab" id="tab-keyword" onclick="switchMode('keyword')">🔍 2. Từ khóa (Search)</button>
-    <button class="mode-tab" id="tab-hashtag" onclick="switchMode('hashtag')">🏷️ 3. Hashtag</button>
-</div>
-
-<!-- Search Card: PROFILE -->
-<div class="search-form-card ext-disabled" id="form-profile">
-    <div class="search-row">
-        <div class="search-field grow">
-            <label for="profile-input">Username Kênh TikTok</label>
-            <input type="text" id="profile-input" placeholder="Nhập username kênh TikTok..." value="" autocomplete="off" disabled>
-        </div>
-        <div class="search-field">
-            <label for="profile-limit">Số bài viết / URL muốn quét</label>
-            <input type="number" id="profile-limit" value="50" min="1" max="500" style="width:140px;" disabled>
-        </div>
-        <div style="display:flex; align-items:flex-end; gap:8px;">
-            <button class="btn-start-scan profile" id="btn-start-profile" onclick="startScan('profile')" disabled>
-                <span>🚀</span> Bắt đầu quét URL
-            </button>
-            <button class="btn-stop-scan" id="btn-stop-profile" onclick="stopScan()">
-                <span>⏸</span> Dừng quét
-            </button>
-        </div>
+<?php else: ?>
+    <div class="groups-grid" id="groupsGridContainer">
+        <?php foreach ($groups as $g): ?>
+            <div class="group-card" id="group-card-<?php echo $g['id']; ?>" data-group-name="<?php echo htmlspecialchars(mb_strtolower($g['name'] ?? '', 'UTF-8')); ?>">
+                <div>
+                    <div class="group-card-header">
+                        <h3 class="group-card-title"><?php echo htmlspecialchars($g['name']); ?></h3>
+                        <span class="group-badge"><?php echo number_format($g['total_items']); ?> link</span>
+                    </div>
+                    <div class="group-card-meta">
+                        📅 Ngày tạo: <?php echo date('d/m/Y H:i', strtotime($g['created_at'])); ?>
+                    </div>
+                </div>
+                <div class="group-card-actions">
+                    <button class="btn-card-action" style="background: #be185d; color: #fff; border-color: #be185d; font-weight: 700;" onclick="openAddFastModal(<?php echo $g['id']; ?>, '<?php echo htmlspecialchars(addslashes($g['name'])); ?>')">
+                        <span>➕</span> Thêm Data
+                    </button>
+                    <button class="btn-card-action" onclick="openDetailModal(<?php echo $g['id']; ?>, '<?php echo htmlspecialchars(addslashes($g['name'])); ?>')">
+                        <span>👁️</span> Xem / Sửa
+                    </button>
+                    <button class="btn-card-action" onclick="openRenameModal(<?php echo $g['id']; ?>, '<?php echo htmlspecialchars(addslashes($g['name'])); ?>')">
+                        <span>✏️</span> Đổi tên
+                    </button>
+                    <button class="btn-card-action danger" onclick="deleteGroup(<?php echo $g['id']; ?>, '<?php echo htmlspecialchars(addslashes($g['name'])); ?>')">
+                        <span>🗑️</span> Xóa
+                    </button>
+                </div>
+            </div>
+        <?php endforeach; ?>
     </div>
-    <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0;">
-        Link quét mục tiêu: <code id="profile-url-preview" style="color:#06b6d4;">https://www.tiktok.com/@...</code>
-    </p>
-</div>
-
-<!-- Search Card: KEYWORD -->
-<div class="search-form-card ext-disabled" id="form-keyword" style="display:none;">
-    <div class="search-row">
-        <div class="search-field grow">
-            <label for="kw-input">Từ khóa tìm kiếm</label>
-            <input type="text" id="kw-input" placeholder="Nhập từ khóa tìm kiếm TikTok..." value="" autocomplete="off" disabled>
-        </div>
-        <div class="search-field">
-            <label for="kw-limit">Số bài viết / URL muốn quét</label>
-            <input type="number" id="kw-limit" value="50" min="1" max="500" style="width:140px;" disabled>
-        </div>
-        <div style="display:flex; align-items:flex-end; gap:8px;">
-            <button class="btn-start-scan" id="btn-start-keyword" onclick="startScan('keyword')" disabled>
-                <span>🚀</span> Bắt đầu quét URL
-            </button>
-            <button class="btn-stop-scan" id="btn-stop-keyword" onclick="stopScan()">
-                <span>⏸</span> Dừng quét
-            </button>
-        </div>
+    <div id="noMatchGroupRow" style="display:none;" class="empty-groups">
+        <div class="icon">🔍</div>
+        <h3 style="font-size:16px; font-weight:800; color:#0f172a; margin:0 0 6px;">Không tìm thấy nhóm Data nào phù hợp</h3>
+        <p style="margin:0;">Thử tìm kiếm từ khóa tên file/nhóm Data khác.</p>
     </div>
-    <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0;">
-        Link quét mục tiêu: <code id="kw-url-preview" style="color:#fe2c55;">https://www.tiktok.com/search/video?q=...</code>
-    </p>
-</div>
+<?php endif; ?>
 
-<!-- Search Card: HASHTAG -->
-<div class="search-form-card ext-disabled" id="form-hashtag" style="display:none;">
-    <div class="search-row">
-        <div class="search-field grow">
-            <label for="ht-input">Tên Hashtag (không cần #)</label>
-            <input type="text" id="ht-input" placeholder="Nhập tên hashtag..." value="" autocomplete="off" disabled>
+<!-- MODAL: Nhanh Thêm Data Vào Nhóm -->
+<div class="kd-modal-backdrop" id="modal-add-fast">
+    <div class="kd-modal-content">
+        <div class="kd-modal-header">
+            <h3 id="add-fast-modal-title" style="color: #be185d;">➕ Thêm Data Vào Nhóm</h3>
+            <button class="kd-modal-close" onclick="closeModal('modal-add-fast')">✕</button>
         </div>
-        <div class="search-field">
-            <label for="ht-limit">Số bài viết / URL muốn quét</label>
-            <input type="number" id="ht-limit" value="50" min="1" max="500" style="width:140px;" disabled>
+        <div class="kd-modal-body">
+            <input type="hidden" id="add-fast-group-id">
+            <div class="kd-form-group">
+                <label for="add-fast-urls" style="color: #be185d; font-weight: 700;">Danh Sách Link Video Bổ Sung (Mỗi link một dòng)</label>
+                <textarea id="add-fast-urls" rows="9" placeholder="Dán danh sách 1000+ URL video mới bổ sung vào đây (TikTok, Instagram, YouTube, Facebook...).&#10;Hệ thống sẽ tự động lọc trùng bỏ bớt các link đã có sẵn trong nhóm này!"></textarea>
+            </div>
+            <p style="font-size:12px; color:var(--kd-text-muted); margin:0;">
+                💡 <em>Hệ thống sẽ giữ nguyên các link cũ và tự động thêm các link chưa bị trùng vào nhóm.</em>
+            </p>
         </div>
-        <div style="display:flex; align-items:flex-end; gap:8px;">
-            <button class="btn-start-scan hashtag" id="btn-start-hashtag" onclick="startScan('hashtag')" disabled>
-                <span>🚀</span> Bắt đầu quét URL
-            </button>
-            <button class="btn-stop-scan" id="btn-stop-hashtag" onclick="stopScan()">
-                <span>⏸</span> Dừng quét
+        <div class="kd-modal-footer">
+            <button class="btn-card-action" onclick="closeModal('modal-add-fast')">Hủy</button>
+            <button class="btn-create-group" id="btn-submit-add-fast" onclick="submitAddFast()">
+                <span>📥 Bổ Sung Vào Nhóm</span>
             </button>
         </div>
     </div>
-    <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0;">
-        Link quét mục tiêu: <code id="ht-url-preview" style="color:#8b5cf6;">https://www.tiktok.com/tag/...</code>
-    </p>
 </div>
 
-<!-- Column Filter Chips -->
-<div class="col-filter-wrap" id="col-filter-wrap" style="display:none;">
-    <div class="col-filter-label">🎛 Hiển thị cột</div>
-    <div class="col-filter-list" id="col-chips"></div>
-</div>
-
-<!-- Results Toolbar & Table -->
-<div id="results-section" style="display:none;">
-    <div class="results-toolbar">
-        <div class="results-info" id="result-count">Đã quét <strong>0</strong> video</div>
-        <div class="toolbar-btns">
-            <button class="btn-action-tool primary" id="btn-copy" onclick="copySelectedUrls()" disabled>
-                📋 Copy URL đã chọn (<span id="selected-count">0</span>)
+<!-- MODAL: Tạo Nhóm Data -->
+<div class="kd-modal-backdrop" id="modal-create">
+    <div class="kd-modal-content">
+        <div class="kd-modal-header">
+            <h3>➕ Tạo Nhóm Data Mới</h3>
+            <button class="kd-modal-close" onclick="closeModal('modal-create')">✕</button>
+        </div>
+        <div class="kd-modal-body">
+            <div class="kd-form-group">
+                <label for="create-group-name">Tên Nhóm Data / File Data</label>
+                <input type="text" id="create-group-name" placeholder="Ví dụ: Nhóm Data 1, Video Hot TikTok, Reels Quần Áo..." autocomplete="off">
+            </div>
+            <div class="kd-form-group">
+                <label for="create-group-urls">Danh Sách Link Video (Mỗi link một dòng)</label>
+                <textarea id="create-group-urls" rows="9" placeholder="Dán danh sách 1000+ URL video vào đây (TikTok, Instagram, YouTube, Facebook...).&#10;Hệ thống sẽ tự động lọc trùng bỏ bớt các link lặp lại!"></textarea>
+            </div>
+            <p style="font-size:12px; color:var(--kd-text-muted); margin:0;">
+                💡 <em>Hệ thống hỗ trợ nhận diện link tự động và loại bỏ tất cả các link bị trùng lặp.</em>
+            </p>
+        </div>
+        <div class="kd-modal-footer">
+            <button class="btn-card-action" onclick="closeModal('modal-create')">Hủy</button>
+            <button class="btn-create-group" id="btn-submit-create" onclick="submitCreateGroup()">
+                <span>💾 Lưu Nhóm Data</span>
             </button>
-            <button class="btn-action-tool" onclick="exportTXT()">📥 Xuất TXT</button>
-            <button class="btn-action-tool" onclick="exportCSV()">📊 Xuất CSV</button>
-            <button class="btn-action-tool" onclick="clearAllTableData()" style="color:#ef4444;">🗑️ Xóa tất cả</button>
         </div>
     </div>
-    <div class="tiktok-table-wrap">
-        <table class="tiktok-table" id="tiktok-table">
-            <thead id="table-head"></thead>
-            <tbody id="table-body"></tbody>
-        </table>
+</div>
+
+<!-- MODAL: Xem / Quản Lý Link Trong Nhóm -->
+<div class="kd-modal-backdrop" id="modal-detail">
+    <div class="kd-modal-content" style="max-width: 740px;">
+        <div class="kd-modal-header">
+            <h3 id="detail-modal-title">📁 Chi Tiết Nhóm Data</h3>
+            <button class="kd-modal-close" onclick="closeModal('modal-detail')">✕</button>
+        </div>
+        <div class="kd-modal-body">
+            <!-- Form thêm link vào nhóm -->
+            <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 14px; padding: 18px; margin-bottom: 20px;">
+                <label style="font-weight: 700; font-size: 12px; text-transform:uppercase; color:#334155; margin-bottom: 8px; display: block;">➕ Thêm Link Mới Vào Nhóm Này</label>
+                <textarea id="add-more-urls" rows="3" placeholder="Dán các link video mới cần bổ sung vào nhóm... (Tự động lọc trùng với link đã có)" style="width:100%; box-sizing:border-box; margin-bottom: 12px;"></textarea>
+                <div style="display: flex; justify-content: flex-end;">
+                    <button class="btn-create-group" style="padding: 8px 16px; font-size: 13px;" onclick="submitAddItems()">
+                        <span>📥 Thêm Vào Nhóm</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- List items -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <span style="font-size: 13px; font-weight: 700; color: var(--kd-text-muted);" id="detail-items-count">Danh sách URL (0 link):</span>
+                <button class="btn-card-action danger" style="padding: 6px 12px; font-size: 12px; flex: none;" onclick="clearGroupItems()">
+                    <span>🗑️ Xóa toàn bộ link</span>
+                </button>
+            </div>
+            <div class="items-list-wrap" id="detail-items-list">
+                <div style="text-align:center; padding: 24px; color: var(--kd-text-muted);">Đang tải dữ liệu...</div>
+            </div>
+        </div>
+        <div class="kd-modal-footer">
+            <button class="btn-card-action" onclick="closeModal('modal-detail')">Đóng</button>
+        </div>
     </div>
 </div>
 
-<!-- Empty State -->
-<div id="empty-state" class="empty-state">
-    <div class="empty-icon">🎵</div>
-    <p id="empty-state-desc">Bạn cần phải cài đặt Extension <strong>"Cào URL TikTok"</strong> trước để thực hiện tính năng này.</p>
+<!-- MODAL: Đổi Tên Nhóm -->
+<div class="kd-modal-backdrop" id="modal-rename">
+    <div class="kd-modal-content" style="max-width: 460px;">
+        <div class="kd-modal-header">
+            <h3>✏️ Đổi Tên Nhóm Data</h3>
+            <button class="kd-modal-close" onclick="closeModal('modal-rename')">✕</button>
+        </div>
+        <div class="kd-modal-body">
+            <input type="hidden" id="rename-group-id">
+            <div class="kd-form-group">
+                <label for="rename-group-name">Tên Nhóm Data / File Data Mới</label>
+                <input type="text" id="rename-group-name" placeholder="Nhập tên nhóm mới..." autocomplete="off">
+            </div>
+        </div>
+        <div class="kd-modal-footer">
+            <button class="btn-card-action" onclick="closeModal('modal-rename')">Hủy</button>
+            <button class="btn-create-group" style="padding: 10px 18px; font-size: 13px;" onclick="submitRenameGroup()">Lưu Thay Đổi</button>
+        </div>
+    </div>
 </div>
-
-<!-- Toast -->
-<div id="copy-toast">✅ Đã copy URL vào clipboard!</div>
 
 <script>
-// ─── Column definitions ────────────────────────────────────────────────────────
-const COLUMNS = [
-    { key: 'checkbox',      label: '☑',                  sortable: false, visible: true, special: 'checkbox' },
-    { key: 'title',         label: 'Tiêu đề / Nội dung', sortable: true,  visible: true },
-    { key: 'author',        label: 'Tác giả',            sortable: true,  visible: true },
-    { key: 'play_count',    label: '▶ Views',             sortable: true,  visible: true },
-    { key: 'digg_count',    label: '❤ Thích',            sortable: true,  visible: true },
-    { key: 'comment_count', label: '💬 Bình luận',        sortable: true,  visible: true },
-    { key: 'share_count',   label: '🔗 Chia sẻ',         sortable: true,  visible: true },
-    { key: 'url',           label: 'Link Video',         sortable: false, visible: true },
-    { key: 'create_time',   label: '📅 Ngày đăng',       sortable: true,  visible: true },
-];
+let currentDetailGroupId = 0;
 
-// ─── State ────────────────────────────────────────────────────────────────────
-let videoMap     = new Map(); // video_id -> object
-let sortKey      = null;
-let sortDir      = 'desc';
-let colVisible   = {};
-let currentMode  = 'profile'; // 'profile' | 'keyword' | 'hashtag'
-let isExtConnected = false;
-let isScanning     = false;
+function filterGroupList() {
+    const input = document.getElementById('groupSearchInput');
+    const filter = input ? (input.value || '').trim().toLowerCase() : '';
+    const cards = document.querySelectorAll('#groupsGridContainer .group-card');
+    let visible = 0;
 
-COLUMNS.forEach(c => { colVisible[c.key] = c.visible; });
-
-// ─── Check Extension Connection & Lock/Unlock Inputs ───────────────────────────
-function checkExtensionConnection() {
-    window.postMessage({ source: 'TIKTOK_SEARCH_PAGE', type: 'CHECK_EXT' }, '*');
-
-    let checks = 0;
-    const interval = setInterval(() => {
-        checks++;
-        const hasAttr = document.documentElement.getAttribute('data-tiktok-ext-installed') === 'true';
-        if (hasAttr || isExtConnected) {
-            setExtensionStatus(true);
-            clearInterval(interval);
-        } else if (checks >= 6) {
-            setExtensionStatus(false);
-            clearInterval(interval);
+    cards.forEach(card => {
+        const name = (card.getAttribute('data-group-name') || '').toLowerCase();
+        if (!filter || name.includes(filter)) {
+            card.style.display = 'flex';
+            visible++;
+        } else {
+            card.style.display = 'none';
         }
-    }, 150);
+    });
+
+    const countLabel = document.getElementById('visibleGroupCount');
+    if (countLabel) countLabel.textContent = visible;
+
+    const noMatch = document.getElementById('noMatchGroupRow');
+    if (noMatch) {
+        noMatch.style.display = (visible === 0 && cards.length > 0) ? 'block' : 'none';
+    }
 }
 
-function setExtensionStatus(connected, scanning = false) {
-    isExtConnected = connected;
-    const badge = document.getElementById('ext-status-badge');
-    const help = document.getElementById('ext-help-text');
-    const warningBox = document.getElementById('ext-warning-box');
-    const banner = document.getElementById('ext-banner');
-
-    const inputs = document.querySelectorAll('.search-form-card input');
-    const startBtns = document.querySelectorAll('.btn-start-scan');
-    const formCards = document.querySelectorAll('.search-form-card');
-
-    if (scanning) {
-        banner.className = 'ext-status-banner';
-        warningBox.style.display = 'none';
-        badge.className = 'ext-badge scanning';
-        badge.innerHTML = '🟢 ĐANG QUÉT URL TIKTOK TỰ ĐỘNG...';
-        help.textContent = 'Extension đang tự động cuộn trang TikTok để thu thập danh sách URL...';
-
-        formCards.forEach(c => c.classList.remove('ext-disabled'));
-        inputs.forEach(i => i.disabled = true);
-    } else if (connected) {
-        banner.className = 'ext-status-banner';
-        warningBox.style.display = 'none';
-        badge.className = 'ext-badge active';
-        badge.innerHTML = '🟢 Extension "Cào URL TikTok" Đã Kết Nối';
-        help.textContent = 'Extension đã kết nối sẵn sàng. Nhập thông tin và bấm Bắt đầu quét!';
-
-        // UNLOCK INPUTS & BUTTONS
-        formCards.forEach(c => c.classList.remove('ext-disabled'));
-        inputs.forEach(i => i.disabled = false);
-        startBtns.forEach(b => b.disabled = false);
-        document.getElementById('empty-state-desc').innerHTML = 'Chưa có URL video nào trong danh sách. Hãy nhập thông tin và bấm <strong>🚀 Bắt đầu quét URL</strong>.';
+function notify(msg, type = 'info') {
+    if (typeof window.showNotice === 'function') {
+        window.showNotice(msg, type);
     } else {
-        // LOCK INPUTS & BUTTONS - SHOW WARNING
-        banner.className = 'ext-status-banner banner-warning';
-        warningBox.style.display = 'flex';
-        badge.className = 'ext-badge inactive';
-        badge.innerHTML = '🔴 CHƯA CÀI EXTENSION';
-        help.innerHTML = '<strong style="color:#ef4444;">Bạn cần phải cài đặt Extension "Cào URL TikTok" để thực hiện tính năng này.</strong>';
-
-        formCards.forEach(c => c.classList.add('ext-disabled'));
-        inputs.forEach(i => i.disabled = true);
-        startBtns.forEach(b => b.disabled = true);
-        document.getElementById('empty-state-desc').innerHTML = '⚠️ Bạn cần phải cài đặt Extension <strong>"Cào URL TikTok"</strong> trước khi có thể nhập và quét dữ liệu.';
+        alert(msg);
     }
 }
 
-window.addEventListener('message', (event) => {
-    if (!event.data || event.data.source !== 'EX_TIKTOK_EXTENSION') return;
-
-    if (event.data.type === 'EXT_PONG') {
-        setExtensionStatus(true, isScanning);
-    }
-
-    if (event.data.type === 'LIVE_VIDEOS_UPDATE') {
-        const liveList = event.data.videos || [];
-        updateVideosFromList(liveList);
-        setExtensionStatus(true, true);
-    }
-
-    if (event.data.type === 'SCAN_FINISHED') {
-        isScanning = false;
-        const finalContent = event.data.videos || [];
-        updateVideosFromList(finalContent);
-        setExtensionStatus(true, false);
-        toggleScanButtons(false);
-        showToast(`🎉 Đã quét xong ${videoMap.size} URL bài viết TikTok và tự động đóng tab!`);
-    }
-});
-
-// ─── Mode Switcher ─────────────────────────────────────────────────────────────
-function switchMode(mode) {
-    currentMode = mode;
-    document.getElementById('form-profile').style.display = mode === 'profile' ? 'block' : 'none';
-    document.getElementById('form-keyword').style.display = mode === 'keyword' ? 'block' : 'none';
-    document.getElementById('form-hashtag').style.display = mode === 'hashtag' ? 'block' : 'none';
-
-    document.getElementById('tab-profile').className = 'mode-tab' + (mode === 'profile' ? ' active-profile' : '');
-    document.getElementById('tab-keyword').className = 'mode-tab' + (mode === 'keyword' ? ' active-keyword' : '');
-    document.getElementById('tab-hashtag').className = 'mode-tab' + (mode === 'hashtag' ? ' active-hashtag' : '');
+function openModal(id) {
+    document.getElementById(id).style.display = 'flex';
+}
+function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
 }
 
-// Dynamic preview text
-document.getElementById('profile-input').addEventListener('input', e => {
-    let val = e.target.value.trim().replace(/^@/, '');
-    document.getElementById('profile-url-preview').textContent = val ? `https://www.tiktok.com/@${val}` : 'https://www.tiktok.com/@...';
-});
-document.getElementById('kw-input').addEventListener('input', e => {
-    let val = e.target.value.trim();
-    document.getElementById('kw-url-preview').textContent = val ? `https://www.tiktok.com/search/video?q=${encodeURIComponent(val)}` : 'https://www.tiktok.com/search/video?q=...';
-});
-document.getElementById('ht-input').addEventListener('input', e => {
-    let val = e.target.value.trim().replace(/^#/, '');
-    document.getElementById('ht-url-preview').textContent = val ? `https://www.tiktok.com/tag/${encodeURIComponent(val)}` : 'https://www.tiktok.com/tag/...';
-});
+function openCreateModal() {
+    document.getElementById('create-group-name').value = '';
+    document.getElementById('create-group-urls').value = '';
+    openModal('modal-create');
+}
 
-// ─── Start / Stop Scan via Extension ──────────────────────────────────────────
-function startScan(mode) {
-    if (!isExtConnected) {
-        alert('⚠️ Bạn cần phải tải và cài đặt Extension "Cào URL TikTok" trước mới có thể quét!');
-        window.open('https://fbweb.hongdolab.com/caourltiktok.zip', '_blank');
+function openAddFastModal(groupId, groupName) {
+    document.getElementById('add-fast-group-id').value = groupId;
+    document.getElementById('add-fast-modal-title').textContent = `➕ Thêm Data Vào Nhóm: ${groupName}`;
+    document.getElementById('add-fast-urls').value = '';
+    openModal('modal-add-fast');
+}
+
+function submitAddFast() {
+    const groupId = document.getElementById('add-fast-group-id').value;
+    const urls = document.getElementById('add-fast-urls').value.trim();
+
+    if (!urls) {
+        notify('Vui lòng dán danh sách link cần thêm!', 'warning');
         return;
     }
 
-    let targetUrl = '';
-    let limit = 50;
+    const btn = document.getElementById('btn-submit-add-fast');
+    btn.disabled = true;
+    btn.innerHTML = '⌛ Đang xử lý & lọc trùng...';
 
-    if (mode === 'profile') {
-        let val = document.getElementById('profile-input').value.trim().replace(/^@/, '');
-        if (!val) { alert('Vui lòng nhập Username Kênh TikTok cần quét!'); document.getElementById('profile-input').focus(); return; }
-        targetUrl = `https://www.tiktok.com/@${encodeURIComponent(val)}`;
-        limit = parseInt(document.getElementById('profile-limit').value) || 50;
-    } else if (mode === 'keyword') {
-        let val = document.getElementById('kw-input').value.trim();
-        if (!val) { alert('Vui lòng nhập Từ khóa tìm kiếm!'); document.getElementById('kw-input').focus(); return; }
-        targetUrl = `https://www.tiktok.com/search/video?q=${encodeURIComponent(val)}`;
-        limit = parseInt(document.getElementById('kw-limit').value) || 50;
-    } else if (mode === 'hashtag') {
-        let val = document.getElementById('ht-input').value.trim().replace(/^#/, '');
-        if (!val) { alert('Vui lòng nhập tên Hashtag!'); document.getElementById('ht-input').focus(); return; }
-        targetUrl = `https://www.tiktok.com/tag/${encodeURIComponent(val)}`;
-        limit = parseInt(document.getElementById('ht-limit').value) || 50;
-    }
+    const formData = new FormData();
+    formData.append('action', 'add_items');
+    formData.append('group_id', groupId);
+    formData.append('urls', urls);
 
-    // Reset old data for new scan session
-    videoMap.clear();
-    renderTable();
-
-    isScanning = true;
-    toggleScanButtons(true);
-    setExtensionStatus(true, true);
-
-    // Send START_SCAN message to bridge.js
-    window.postMessage({
-        source: 'TIKTOK_SEARCH_PAGE',
-        type: 'START_SCAN',
-        mode: mode,
-        targetUrl: targetUrl,
-        limit: limit
-    }, '*');
-
-    showToast(`🚀 Extension đang mở tab TikTok và quét tự động...`);
-}
-
-function stopScan() {
-    isScanning = false;
-    toggleScanButtons(false);
-    setExtensionStatus(true, false);
-
-    window.postMessage({
-        source: 'TIKTOK_SEARCH_PAGE',
-        type: 'STOP_SCAN'
-    }, '*');
-
-    showToast('⏸ Đã dừng quét và đóng tab TikTok.');
-}
-
-function toggleScanButtons(scanning) {
-    const startBtns = document.querySelectorAll('.btn-start-scan');
-    const stopBtns = document.querySelectorAll('.btn-stop-scan');
-
-    startBtns.forEach(b => b.style.display = scanning ? 'none' : 'flex');
-    stopBtns.forEach(b => b.style.display = scanning ? 'flex' : 'none');
-}
-
-// ─── Update Table Videos (Strict deduplication by video_id) ────────────────────
-function updateVideosFromList(list) {
-    if (!Array.isArray(list) || list.length === 0) return;
-
-    let addedOrUpdated = false;
-
-    list.forEach(v => {
-        if (!v) return;
-        const vId = v.video_id || extractVideoId(v.url);
-        if (!vId) return;
-
-        const prev = videoMap.get(vId);
-        if (!prev) {
-            videoMap.set(vId, v);
-            addedOrUpdated = true;
+    fetch('tiktok_search.php', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(res => {
+        btn.disabled = false;
+        btn.innerHTML = '<span>📥 Bổ Sung Vào Nhóm</span>';
+        if (res.success) {
+            notify(res.message, 'success');
+            closeModal('modal-add-fast');
+            setTimeout(() => location.reload(), 1200);
         } else {
-            // Merge & refine author/title/stats
-            const prevAuthor = prev.author?.unique_id || '';
-            const newAuthor = v.author?.unique_id || '';
-            const useAuthor = (/^\d{12,}$/.test(prevAuthor) && !/^\d{12,}$/.test(newAuthor)) ? newAuthor : (prevAuthor || newAuthor);
-
-            const merged = {
-                video_id: vId,
-                url: useAuthor ? `https://www.tiktok.com/@${useAuthor}/video/${vId}` : (v.url || prev.url),
-                title: (v.title && !v.title.startsWith('TikTok Video')) ? v.title : prev.title,
-                author: {
-                    unique_id: useAuthor,
-                    nickname: v.author?.nickname || prev.author?.nickname || useAuthor
-                },
-                play_count: Math.max(v.play_count || 0, prev.play_count || 0),
-                digg_count: Math.max(v.digg_count || 0, prev.digg_count || 0),
-                comment_count: Math.max(v.comment_count || 0, prev.comment_count || 0),
-                share_count: Math.max(v.share_count || 0, prev.share_count || 0),
-                create_time: v.create_time || prev.create_time || Math.floor(Date.now() / 1000)
-            };
-
-            videoMap.set(vId, merged);
-            addedOrUpdated = true;
+            notify(res.message, 'error');
         }
-    });
-
-    if (videoMap.size > 0 && addedOrUpdated) {
-        document.getElementById('empty-state').style.display = 'none';
-        document.getElementById('col-filter-wrap').style.display = 'block';
-        document.getElementById('results-section').style.display = 'block';
-        buildChips();
-        renderTable();
-    }
-}
-
-function extractVideoId(url) {
-    if (!url) return '';
-    const m = url.match(/\/video\/(\d+)/i);
-    return m ? m[1] : '';
-}
-
-// ─── Table & Column Management ────────────────────────────────────────────────
-function buildChips() {
-    const wrap = document.getElementById('col-chips');
-    wrap.innerHTML = '';
-    COLUMNS.forEach(col => {
-        if (col.special === 'checkbox') return;
-
-        const chip = document.createElement('label');
-        chip.className = 'col-chip' + (colVisible[col.key] ? ' active' : '');
-
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.checked = !!colVisible[col.key];
-
-        cb.addEventListener('change', () => {
-            colVisible[col.key] = cb.checked;
-            chip.classList.toggle('active', cb.checked);
-            renderTable();
-        });
-
-        chip.appendChild(cb);
-        chip.appendChild(document.createTextNode(col.label));
-        wrap.appendChild(chip);
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = '<span>📥 Bổ Sung Vào Nhóm</span>';
+        notify('Lỗi xử lý phản hồi từ máy chủ!', 'error');
     });
 }
 
-function buildHeader() {
-    const thead = document.getElementById('table-head');
-    let html = '<tr>';
-    COLUMNS.forEach(col => {
-        if (!colVisible[col.key]) return;
-        if (col.special === 'checkbox') {
-            html += `<th class="col-checkbox">
-                <label class="check-all-wrap" title="Chọn tất cả">
-                    <input type="checkbox" id="check-all" onchange="toggleAll(this.checked)">
-                </label></th>`;
-        } else {
-            const cls = col.sortable ? (sortKey === col.key ? (sortDir === 'asc' ? 'sort-asc' : 'sort-desc') : '') : '';
-            html += `<th class="${cls}" onclick="${col.sortable ? `doSort('${col.key}')` : ''}">${col.label}</th>`;
-        }
-    });
-    html += '</tr>';
-    thead.innerHTML = html;
-}
+function submitCreateGroup() {
+    const name = document.getElementById('create-group-name').value.trim();
+    const urls = document.getElementById('create-group-urls').value.trim();
 
-function renderTable() {
-    buildHeader();
-    let videos = Array.from(videoMap.values());
-
-    if (sortKey) {
-        videos.sort((a, b) => {
-            let va = a[sortKey], vb = b[sortKey];
-            if (sortKey === 'author') { va = a.author?.nickname || a.author?.unique_id || ''; vb = b.author?.nickname || b.author?.unique_id || ''; }
-            if (typeof va === 'string') return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-            return sortDir === 'asc' ? va - vb : vb - va;
-        });
-    }
-
-    const tbody = document.getElementById('table-body');
-    if (videos.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${getVisibleCount()}" style="text-align:center;padding:30px;color:var(--text-muted);">Danh sách trống.</td></tr>`;
-        document.getElementById('result-count').innerHTML = `Danh sách <strong>0</strong> video`;
+    if (!name) {
+        notify('Vui lòng nhập tên nhóm Data!', 'warning');
+        document.getElementById('create-group-name').focus();
         return;
     }
 
-    document.getElementById('result-count').innerHTML = `Đã thu thập <strong>${videos.length}</strong> video TikTok`;
+    const btn = document.getElementById('btn-submit-create');
+    btn.disabled = true;
+    btn.innerHTML = '⌛ Đang xử lý & lọc trùng...';
 
-    let html = '';
-    videos.forEach((v, idx) => {
-        const videoId    = v.video_id || extractVideoId(v.url);
-        let rawAuthor    = v.author?.unique_id || v.author?.nickname || 'user';
-        if (/^\d{12,}$/.test(rawAuthor) && v.author?.nickname && !/^\d{12,}$/.test(v.author.nickname)) {
-            rawAuthor = v.author.nickname.replace(/\s+/g, '').toLowerCase();
+    const formData = new FormData();
+    formData.append('action', 'create_group');
+    formData.append('name', name);
+    formData.append('urls', urls);
+
+    fetch('tiktok_search.php', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(res => {
+        btn.disabled = false;
+        btn.innerHTML = '<span>💾 Lưu Nhóm Data</span>';
+        if (res.success) {
+            notify(res.message, 'success');
+            closeModal('modal-create');
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            notify(res.message || 'Có lỗi xảy ra.', 'error');
         }
-        const authorName = rawAuthor;
-        const tiktokUrl  = `https://www.tiktok.com/@${authorName}/video/${videoId}`;
-        const title      = (v.title || '').trim() || `TikTok Video ${videoId}`;
-        const dateStr    = v.create_time ? new Date(v.create_time * 1000).toLocaleDateString('vi-VN') : '—';
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = '<span>💾 Lưu Nhóm Data</span>';
+        notify('Lỗi xử lý phản hồi từ máy chủ!', 'error');
+    });
+}
 
-        html += `<tr data-idx="${idx}">`;
-        COLUMNS.forEach(col => {
-            if (!colVisible[col.key]) return;
-            if (col.special === 'checkbox') {
-                html += `<td class="col-checkbox"><input type="checkbox" class="row-check" data-url="${escHtml(tiktokUrl)}" onchange="updateSelectedCount()"></td>`;
-            } else if (col.key === 'title') {
-                html += `<td class="col-title">${tiktokUrl ? `<a href="${escHtml(tiktokUrl)}" target="_blank" title="${escHtml(title)}">${escHtml(title)}</a>` : escHtml(title)}</td>`;
-            } else if (col.key === 'author') {
-                html += `<td>@${escHtml(authorName)}</td>`;
-            } else if (col.key === 'play_count') {
-                html += `<td><span class="tiktok-badge badge-views">${fmtNum(v.play_count)}</span></td>`;
-            } else if (col.key === 'digg_count') {
-                html += `<td><span class="tiktok-badge badge-likes">${fmtNum(v.digg_count)}</span></td>`;
-            } else if (col.key === 'comment_count') {
-                html += `<td><span class="tiktok-badge badge-comments">${fmtNum(v.comment_count)}</span></td>`;
-            } else if (col.key === 'share_count') {
-                html += `<td><span class="tiktok-badge badge-shares">${fmtNum(v.share_count)}</span></td>`;
-            } else if (col.key === 'url') {
-                html += `<td><a href="${escHtml(tiktokUrl)}" target="_blank" style="color:var(--primary-color);">Xem ↗</a></td>`;
-            } else if (col.key === 'create_time') {
-                html += `<td style="white-space:nowrap;font-size:12px;color:var(--text-muted);">${dateStr}</td>`;
-            } else {
-                html += `<td>—</td>`;
+function openDetailModal(groupId, groupName) {
+    currentDetailGroupId = groupId;
+    document.getElementById('detail-modal-title').textContent = `📁 Nhóm: ${groupName}`;
+    document.getElementById('add-more-urls').value = '';
+    openModal('modal-detail');
+    loadGroupItems(groupId);
+}
+
+function loadGroupItems(groupId) {
+    const wrap = document.getElementById('detail-items-list');
+    wrap.innerHTML = '<div style="text-align:center; padding: 24px; color: var(--kd-text-muted);">⌛ Đang tải danh sách link...</div>';
+
+    const formData = new FormData();
+    formData.append('action', 'get_items');
+    formData.append('group_id', groupId);
+
+    fetch('tiktok_search.php', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(res => {
+        if (res.success) {
+            const items = res.items || [];
+            document.getElementById('detail-items-count').textContent = `Danh sách URL (${items.length} link):`;
+            if (items.length === 0) {
+                wrap.innerHTML = '<div style="text-align:center; padding: 30px; color: var(--kd-text-muted);">Nhóm này chưa có URL nào. Hãy dán link vào ô phía trên để thêm.</div>';
+                return;
             }
-        });
-        html += '</tr>';
-    });
 
-    tbody.innerHTML = html;
-    updateSelectedCount();
-}
-
-function getVisibleCount() { return COLUMNS.filter(c => colVisible[c.key]).length; }
-
-function doSort(key) {
-    if (sortKey === key) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; }
-    else { sortKey = key; sortDir = 'desc'; }
-    renderTable();
-}
-
-function toggleAll(checked) {
-    document.querySelectorAll('.row-check').forEach(cb => cb.checked = checked);
-    updateSelectedCount();
-}
-
-function updateSelectedCount() {
-    const n = document.querySelectorAll('.row-check:checked').length;
-    document.getElementById('selected-count').textContent = n;
-    document.getElementById('btn-copy').disabled = n === 0;
-}
-
-// ─── Export Utilities ────────────────────────────────────────────────────────
-function copySelectedUrls() {
-    const urls = [];
-    document.querySelectorAll('.row-check:checked').forEach(cb => { if (cb.dataset.url) urls.push(cb.dataset.url); });
-    if (!urls.length) return;
-    const text = urls.join('\n');
-    navigator.clipboard.writeText(text).then(() => {
-        showToast(`✅ Đã copy ${urls.length} URL vào clipboard!`);
-    }).catch(() => {
-        showToast('Lỗi truy cập clipboard!');
+            let html = '';
+            items.forEach((item, idx) => {
+                html += `<div class="item-row" id="item-row-${item.id}">
+                    <span style="color:var(--kd-text-muted); font-size:12px; font-weight:700; min-width:32px;">#${items.length - idx}</span>
+                    <a href="${escapeHtml(item.url)}" target="_blank" class="item-url" title="${escapeHtml(item.url)}">${escapeHtml(item.url)}</a>
+                    <button class="btn-card-action danger" style="padding: 4px 10px; font-size: 11px; flex: none;" onclick="deleteItem(${item.id})">Xóa</button>
+                </div>`;
+            });
+            wrap.innerHTML = html;
+        } else {
+            wrap.innerHTML = `<div style="text-align:center; padding: 20px; color: #ef4444;">${res.message}</div>`;
+        }
     });
 }
 
-function exportTXT() {
-    const videos = Array.from(videoMap.values());
-    if (!videos.length) { showToast('Chưa có dữ liệu để xuất!'); return; }
-    const text = videos.map(v => v.url).join('\n');
-    downloadBlob(text, 'tiktok_urls.txt', 'text/plain');
-}
-
-function exportCSV() {
-    const videos = Array.from(videoMap.values());
-    if (!videos.length) { showToast('Chưa có dữ liệu để xuất!'); return; }
-    let csv = 'STT,URL,Title,Author,Views,Likes,Comments,Shares\n';
-    videos.forEach((v, idx) => {
-        const title = `"${(v.title || '').replace(/"/g, '""')}"`;
-        const author = `"${(v.author?.unique_id || '').replace(/"/g, '""')}"`;
-        csv += `${idx + 1},"${v.url}",${title},${author},${v.play_count || 0},${v.digg_count || 0},${v.comment_count || 0},${v.share_count || 0}\n`;
-    });
-    downloadBlob('\uFEFF' + csv, 'tiktok_videos.csv', 'text/csv;charset=utf-8');
-}
-
-function clearAllTableData() {
-    if (confirm('Bạn có chắc muốn xóa tất cả bài viết trong danh sách?')) {
-        videoMap.clear();
-        renderTable();
-        document.getElementById('results-section').style.display = 'none';
-        document.getElementById('col-filter-wrap').style.display = 'none';
-        document.getElementById('empty-state').style.display = 'block';
-        showToast('Đã xóa dữ liệu!');
+function submitAddItems() {
+    const urls = document.getElementById('add-more-urls').value.trim();
+    if (!urls) {
+        notify('Vui lòng dán danh sách link cần thêm!', 'warning');
+        return;
     }
+
+    const formData = new FormData();
+    formData.append('action', 'add_items');
+    formData.append('group_id', currentDetailGroupId);
+    formData.append('urls', urls);
+
+    fetch('tiktok_search.php', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(res => {
+        if (res.success) {
+            notify(res.message, 'success');
+            document.getElementById('add-more-urls').value = '';
+            loadGroupItems(currentDetailGroupId);
+            const cardBadge = document.querySelector(`#group-card-${currentDetailGroupId} .group-badge`);
+            if (cardBadge) {
+                let currentCount = parseInt(cardBadge.textContent) || 0;
+                cardBadge.textContent = `${currentCount + res.saved_count} link`;
+            }
+        } else {
+            notify(res.message, 'error');
+        }
+    });
 }
 
-function downloadBlob(content, fileName, mimeType) {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+function deleteItem(itemId) {
+    const formData = new FormData();
+    formData.append('action', 'delete_item');
+    formData.append('item_id', itemId);
+
+    fetch('tiktok_search.php', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(res => {
+        if (res.success) {
+            notify(res.message, 'success');
+            const row = document.getElementById(`item-row-${itemId}`);
+            if (row) row.remove();
+            const countEl = document.getElementById('detail-items-count');
+            let m = countEl.textContent.match(/\((\d+)/);
+            if (m) {
+                let newC = Math.max(0, parseInt(m[1]) - 1);
+                countEl.textContent = `Danh sách URL (${newC} link):`;
+            }
+        } else {
+            notify(res.message, 'error');
+        }
+    });
 }
 
-function showToast(msg) {
-    const t = document.getElementById('copy-toast');
-    t.textContent = msg; t.style.display = 'block';
-    setTimeout(() => { t.style.display = 'none'; }, 3500);
+function clearGroupItems() {
+    if (!confirm('Bạn có chắc chắn muốn xóa toàn bộ link trong nhóm này?')) return;
+    const formData = new FormData();
+    formData.append('action', 'clear_items');
+    formData.append('group_id', currentDetailGroupId);
+
+    fetch('tiktok_search.php', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(res => {
+        if (res.success) {
+            notify(res.message, 'success');
+            loadGroupItems(currentDetailGroupId);
+        } else {
+            notify(res.message, 'error');
+        }
+    });
 }
 
-function fmtNum(n) {
-    if (n == null) return '—';
-    n = parseInt(n) || 0;
-    if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
-    if (n >= 1000)    return (n/1000).toFixed(1) + 'K';
-    return n.toLocaleString();
+function openRenameModal(groupId, currentName) {
+    document.getElementById('rename-group-id').value = groupId;
+    document.getElementById('rename-group-name').value = currentName;
+    openModal('modal-rename');
 }
 
-function escHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function submitRenameGroup() {
+    const groupId = document.getElementById('rename-group-id').value;
+    const name = document.getElementById('rename-group-name').value.trim();
+
+    if (!name) { notify('Vui lòng nhập tên nhóm!', 'warning'); return; }
+
+    const formData = new FormData();
+    formData.append('action', 'rename_group');
+    formData.append('group_id', groupId);
+    formData.append('name', name);
+
+    fetch('tiktok_search.php', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(res => {
+        if (res.success) {
+            notify(res.message, 'success');
+            closeModal('modal-rename');
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            notify(res.message, 'error');
+        }
+    });
 }
 
-// Initialize Extension check
-document.addEventListener('DOMContentLoaded', () => {
-    checkExtensionConnection();
+function deleteGroup(groupId, groupName) {
+    if (!confirm(`Bạn có chắc chắn muốn xóa nhóm Data "${groupName}"?`)) return;
+    const formData = new FormData();
+    formData.append('action', 'delete_group');
+    formData.append('group_id', groupId);
+
+    fetch('tiktok_search.php', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(res => {
+        if (res.success) {
+            const card = document.getElementById(`group-card-${groupId}`);
+            if (card) card.remove();
+            notify(res.message, 'success');
+            filterGroupList();
+        } else {
+            notify(res.message, 'error');
+        }
+    });
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeModal('modal-add-fast');
+        closeModal('modal-create');
+        closeModal('modal-detail');
+        closeModal('modal-rename');
+    }
 });
 </script>
 
-<?php include 'includes/footer.php'; ?>
+<?php require_once __DIR__ . '/includes/footer.php'; ?>

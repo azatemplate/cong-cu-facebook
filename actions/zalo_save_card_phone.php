@@ -28,7 +28,7 @@ try {
                 province IS NOT NULL AND TRIM(province) != '' AND 
                 notes IS NOT NULL AND TRIM(notes) != '',
                 IF(consulted = 0, 4, consulted),
-                IF(consulted = 4, 0, consulted)
+                consulted
             ) 
         WHERE oa_id = ? AND sender_id = ?
     ");

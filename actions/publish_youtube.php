@@ -14,6 +14,7 @@ if (!isset($_SESSION['account_id'])) {
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/drive_utils.php';
 require_once __DIR__ . '/../includes/ai_rewriter.php';
+require_once __DIR__ . '/../includes/kho_data_helper.php';
 
 ob_end_clean();
 header('Content-Type: application/json');
@@ -41,6 +42,8 @@ $desc_input      = clean_markdown(trim($_POST['description'] ?? ''));
 $tags_input      = implode(', ', sanitize_youtube_tags($_POST['tags'] ?? ''));
 $use_ai          = isset($_POST['use_ai']) && $_POST['use_ai'] == '1';
 $auto_title      = isset($_POST['auto_title']) && $_POST['auto_title'] == '1';
+$data_group_id   = intval($_POST['data_group_id'] ?? ($_REQUEST['data_group_id'] ?? 0));
+$data_mode       = trim($_POST['data_mode'] ?? ($_REQUEST['data_mode'] ?? 'dedup'));
 $tiktok_urls_str = trim($_POST['tiktok_urls'] ?? '');
 $drive_file_ids_str = trim($_POST['drive_file_id'] ?? '');
 $comment_lines   = isset($_POST['enable_comment']) && !empty(trim($_POST['comment_lines'] ?? ''))
@@ -53,7 +56,9 @@ $is_drive_folder     = (strpos($drive_file_ids_str, 'folder:') === 0);
 $media_pool = [];
 $drive_token = null;
 
-if (!empty($tiktok_urls_str)) {
+if ($data_group_id > 0) {
+    $media_pool[] = ['type' => 'kho_data', 'group_id' => $data_group_id, 'mode' => $data_mode];
+} elseif (!empty($tiktok_urls_str)) {
     foreach (array_filter(array_map('trim', explode("\n", $tiktok_urls_str))) as $url) {
         $media_pool[] = ['type' => 'tiktok', 'url' => $url, 'title' => ''];
     }
@@ -105,13 +110,20 @@ if (empty($media_pool) && !$is_drive_folder) {
 $upload_dir = __DIR__ . '/../uploads/';
 if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
 
-function resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input) {
+function resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input, $pdo = null, $account_id = 0) {
     $t_title = $title_input;
     $t_desc  = $desc_input;
     $media_path = null;
     $original_source = null;
 
-    if ($media['type'] === 'drive') {
+    if ($media['type'] === 'kho_data') {
+        $url = get_url_from_kho_data($pdo, $account_id, $media['group_id'], $media['mode']);
+        if (!$url) {
+            throw new Exception("Nhóm Data trong Kho Data đã hết URL khả dụng.");
+        }
+        $media_path = 'tiktok:' . $url;
+        $original_source = $url;
+    } elseif ($media['type'] === 'drive') {
         $media_path = 'drive:' . $media['id'];
         $original_source = isset($media['original_name']) && !empty($media['original_name']) ? $media['original_name'] : $media['title'];
         if ($auto_title && empty($t_title)) { $t_title = $media['title']; $t_desc = $media['title'] . ($desc_input ? "\n\n" . $desc_input : ''); }
@@ -224,6 +236,7 @@ if ($delete_drive_file) {
 }
 
 $success_count = 0;
+$media_pool_idx = 0;
 
 if (!empty($schedule_dates)) {
     // Scheduled matrix mode
@@ -235,12 +248,13 @@ if (!empty($schedule_dates)) {
                 $t_desc = $desc_input;
                 $original_source = 'Google Drive Folder';
             } else {
-                if ($delete_drive_file) {
+                if ($delete_drive_file && !empty($drive_pool)) {
                     $media = array_shift($drive_pool);
                 } else {
-                    $media = $media_pool[array_rand($media_pool)];
+                    $media = $media_pool[$media_pool_idx % count($media_pool)];
+                    $media_pool_idx++;
                 }
-                [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input);
+                [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input, $pdo, $account_id);
             }
             $content_arr = ['description' => $t_desc, 'title' => $t_title, 'tags' => $tags_input, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source];
             if ($delete_drive_file) {
@@ -262,12 +276,13 @@ if (!empty($schedule_dates)) {
             $t_desc = $desc_input;
             $original_source = 'Google Drive Folder';
         } else {
-            if ($delete_drive_file) {
+            if ($delete_drive_file && !empty($drive_pool)) {
                 $media = array_shift($drive_pool);
             } else {
-                $media = $media_pool[array_rand($media_pool)];
+                $media = $media_pool[$media_pool_idx % count($media_pool)];
+                $media_pool_idx++;
             }
-            [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input);
+            [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input, $pdo, $account_id);
         }
         $content_arr = ['description' => $t_desc, 'title' => $t_title, 'tags' => $tags_input, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source];
         if ($delete_drive_file) {

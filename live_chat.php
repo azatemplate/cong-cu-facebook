@@ -126,9 +126,6 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
     <a href="live-chat-oa.php" class="platform-tab-btn <?php echo ($current_page === 'live_chat_zalo') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'live_chat_zalo') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'live_chat_zalo') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>💬</span> Zalo Official Account
     </a>
-    <a href="live-chat-tiktok.php" class="platform-tab-btn <?php echo ($current_page === 'live_chat_tiktok') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'live_chat_tiktok') ? '#fe2c55' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'live_chat_tiktok') ? '#fe2c55' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
-        <span>🎵</span> TikTok
-    </a>
     <a href="website.php" class="platform-tab-btn <?php echo ($current_page === 'website') ? 'active' : ''; ?>" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: <?php echo ($current_page === 'website') ? '#0068ff' : '#4b5563'; ?>; border-bottom: 3px solid <?php echo ($current_page === 'website') ? '#0068ff' : 'transparent'; ?>; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>🌐</span> Live Chat Website
     </a>
@@ -317,9 +314,9 @@ $selected_sender_id = $_GET['sender_id'] ?? '';
                         <div style="font-size:11px; color:#6b7280; margin-top:4px;">Chờ X giây để gom nhiều tin nhắn. Mặc định 10s. Để 0 để trả lời ngay.</div>
                     </div>
                     <div style="flex:1;">
-                        <label style="display:block; font-size:13px; font-weight:600; margin-bottom:5px;">Lịch sử cuộc gọi (Tin nhắn)</label>
-                        <input type="number" id="rule_history_count" min="0" max="20" value="6" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;">
-                        <div style="font-size:11px; color:#6b7280; margin-top:4px;">Lấy X tin nhắn gần nhất làm ngữ cảnh. Mặc định 6 tin.</div>
+                        <label style="display:block; font-size:13px; font-weight:600; margin-bottom:5px;">Lịch sử trò chuyện (Tin)</label>
+                        <input type="number" id="rule_history_count" min="0" max="50" value="10" style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;">
+                        <div style="font-size:11px; color:#6b7280; margin-top:4px;">Lấy X tin nhắn gần nhất làm ngữ cảnh (Tối đa 50 tin).</div>
                     </div>
                 </div>
             </div>
@@ -861,6 +858,7 @@ function savePhoneRequestSettings(e) {
         <div style="display:flex;gap:4px;padding:8px 10px;border-bottom:1px solid var(--border-color);background:#fff;flex-wrap:wrap;">
             <button class="filter-btn active" data-filter="all">Tất cả</button>
             <button class="filter-btn" data-filter="unread">Chưa đọc</button>
+            <button class="filter-btn" data-filter="pending">⏳ Chờ xử lý</button>
             <button class="filter-btn" data-filter="return">🔄 Quay lại</button>
             <button class="filter-btn" data-filter="phone">SĐT</button>
         </div>
@@ -1511,6 +1509,8 @@ function renderConversations() {
         filtered = filtered.filter(c => c.has_phone === true);
     } else if (currentFilter === 'return') {
         filtered = filtered.filter(c => parseInt(c.consulted || 0) === 2);
+    } else if (currentFilter === 'pending') {
+        filtered = filtered.filter(c => parseInt(c.consulted || 0) === 4);
     } else if (currentFilter === 'spam') {
         filtered = filtered.filter(c => c.folder === 'spam');
     }
@@ -2440,6 +2440,15 @@ function saveCustomerInfo(e) {
     .then(res => {
         if (res.status === 'success') {
             document.getElementById('info_name_display').innerText = name || 'Khách hàng';
+            const updatedConsulted = parseInt(res.consulted !== undefined ? res.consulted : consulted);
+            document.getElementById('info_consulted').value = String(updatedConsulted);
+            const convItem = currentConversations.find(c => c.sender_id === senderId);
+            if (convItem) {
+                convItem.cust_name = name;
+                convItem.consulted = updatedConsulted;
+                if (phone) convItem.has_phone = true;
+            }
+            renderConversations();
             // Refresh conversation list to show name updates and label if phone was added
             if (currentPageId && currentUserId) {
                 let url = 'actions/get_conversations.php?page_id=' + currentPageId + '&user_id=' + currentUserId;

@@ -80,8 +80,7 @@ try {
         $yest_followers = intval($yest_row['total_followers'] ?? 0);
         $yest_pages = intval($yest_row['total_pages'] ?? 0);
         $yest_accounts = intval($yest_row['total_accounts'] ?? 0);
-        $yest_reels = intval($yest_row['total_reels'] ?? 0);
-        $yest_posts = intval($yest_row['total_posts'] ?? 0);
+        // yest_reels và yest_posts sẽ được tính toán trực tiếp bên dưới (vì snapshot có thể bị kẹt/lỗi)
     }
 } catch (Exception $e) {}
 
@@ -98,7 +97,8 @@ try {
         $yest_accounts = intval($stmt_yest_acc->fetchColumn() ?: 0);
     }
     
-    if ($yest_reels <= 0) {
+    // Always calculate yest_reels dynamically because it's fast (<1ms) and snapshot might be stuck
+    if (true) {
         if ($is_admin) {
             $stmt_yest_reels = $pdo->prepare("SELECT COUNT(id) FROM scheduled_posts WHERE post_type = 'Reel' AND scheduled_time >= ? AND scheduled_time <= ?");
             $stmt_yest_reels->execute([$yesterday_start, $yesterday_end]);
@@ -109,7 +109,8 @@ try {
         $yest_reels = intval($stmt_yest_reels->fetchColumn() ?: 0);
     }
     
-    if ($yest_posts <= 0) {
+    // Always calculate yest_posts dynamically because it's fast (<1ms) and snapshot might be stuck
+    if (true) {
         if ($is_admin) {
             $stmt_yest_posts = $pdo->prepare("SELECT COUNT(id) FROM scheduled_posts WHERE status = 'published' AND scheduled_time >= ? AND scheduled_time <= ?");
             $stmt_yest_posts->execute([$yesterday_start, $yesterday_end]);

@@ -79,14 +79,14 @@ function ensure_db_schema_ready($pdo) {
     static $already_checked = false;
     if ($already_checked) return;
 
-    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v16.done';
+    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v18.done';
     if (file_exists($flag_file)) {
         $already_checked = true;
         return;
     }
 
     try {
-        $chk = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'schema_init_v16_done'");
+        $chk = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'schema_init_v18_done'");
         if ($chk && $chk->fetchColumn() === '1') {
             @file_put_contents($flag_file, date('Y-m-d H:i:s'));
             $already_checked = true;
@@ -184,6 +184,7 @@ function ensure_db_schema_ready($pdo) {
                 post_type VARCHAR(50) DEFAULT 'Mixed',
                 total_posts INT DEFAULT 0,
                 scheduled_time DATETIME DEFAULT NULL,
+                group_id INT DEFAULT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (account_id) REFERENCES system_accounts(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -474,6 +475,7 @@ function ensure_db_schema_ready($pdo) {
         $add_idx($pdo, 'scheduled_posts', 'idx_acc_page_status', 'account_id, page_id, status');
         $add_idx($pdo, 'scheduled_posts', 'idx_camp_sched_id', 'campaign_id, scheduled_time, id');
         $add_idx($pdo, 'scheduled_posts', 'idx_camp_type_page', 'campaign_id, post_type, page_id');
+        $add_idx($pdo, 'scheduled_posts', 'idx_acc_camp_stat_cmt', 'account_id, campaign_id, status, comment_done');
         $add_idx($pdo, 'scheduled_posts', 'idx_sched_status_acc', 'scheduled_time, status, account_id');
         $add_idx($pdo, 'scheduled_posts', 'idx_acc_status_sched', 'account_id, status, scheduled_time');
         $add_idx($pdo, 'scheduled_posts', 'idx_status_sched', 'status, scheduled_time');
@@ -496,6 +498,9 @@ function ensure_db_schema_ready($pdo) {
         } catch (Exception $e) {}
         try {
             $pdo->exec("ALTER TABLE scheduled_posts ADD INDEX IF NOT EXISTS idx_comment_queue (status, comment_at, comment_done)");
+        } catch (Exception $e) {}
+        try {
+            $pdo->exec("ALTER TABLE post_campaigns ADD COLUMN group_id INT DEFAULT NULL");
         } catch (Exception $e) {}
 
         try {
@@ -686,6 +691,21 @@ function ensure_db_schema_ready($pdo) {
         ");
 
         $pdo->exec("
+            CREATE TABLE IF NOT EXISTS chat_history_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                platform VARCHAR(20) NOT NULL DEFAULT 'facebook',
+                page_id VARCHAR(100) NOT NULL,
+                sender_id VARCHAR(100) NOT NULL,
+                sender_type ENUM('user', 'bot', 'agent') NOT NULL DEFAULT 'user',
+                sender_name VARCHAR(255) DEFAULT NULL,
+                message TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_plat_page_send (platform, page_id, sender_id),
+                INDEX idx_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
             CREATE TABLE IF NOT EXISTS zalo_oas (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 oa_id VARCHAR(100) UNIQUE NOT NULL,
@@ -820,6 +840,56 @@ function ensure_db_schema_ready($pdo) {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ");
 
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS media_data_groups (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                account_id INT NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_acc (account_id),
+                FOREIGN KEY (account_id) REFERENCES system_accounts(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS media_data_items (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                group_id INT NOT NULL,
+                url TEXT NOT NULL,
+                url_hash VARCHAR(32) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_group_url (group_id, url_hash),
+                INDEX idx_group (group_id),
+                FOREIGN KEY (group_id) REFERENCES media_data_groups(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS page_groups (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                account_id INT NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_acc (account_id),
+                FOREIGN KEY (account_id) REFERENCES system_accounts(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS page_group_items (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                group_id INT NOT NULL,
+                page_id VARCHAR(255) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_group_page (group_id, page_id),
+                INDEX idx_group (group_id),
+                INDEX idx_page (page_id),
+                FOREIGN KEY (group_id) REFERENCES page_groups(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
         try {
             $col = $pdo->query("SHOW COLUMNS FROM users LIKE 'proxy_id'");
             if ($col->rowCount() === 0) {
@@ -828,7 +898,7 @@ function ensure_db_schema_ready($pdo) {
         } catch (Exception $e) {}
 
         try {
-            $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('schema_init_v16_done', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
+            $pdo->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('schema_init_v17_done', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
         } catch (Exception $e) {}
         @file_put_contents($flag_file, date('Y-m-d H:i:s'));
         $already_checked = true;

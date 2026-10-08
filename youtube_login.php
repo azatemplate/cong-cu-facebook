@@ -9,12 +9,26 @@ if (!isset($_SESSION['account_id'])) {
 
 $account_id = $_SESSION['account_id'];
 
-// Check user privilege and Client ID
-$stmt = $pdo->prepare("SELECT gg_client_id, youtube_multi_api FROM system_accounts WHERE id = ?");
+// Check user privilege, Client ID, and Channel Limits
+$stmt = $pdo->prepare("SELECT role, max_yt_channels, gg_client_id, youtube_multi_api FROM system_accounts WHERE id = ?");
 $stmt->execute([$account_id]);
 $account = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$youtube_multi_api = (!empty($account['youtube_multi_api']) || $_SESSION['role'] === 'admin') ? 1 : 0;
+$is_admin = (($account['role'] ?? '') === 'admin');
+$max_yt_channels = (int)($account['max_yt_channels'] ?? 10);
+
+if (!$is_admin && !isset($_REQUEST['reauth_channel_id'])) {
+    $cnt_stmt = $pdo->prepare("SELECT COUNT(*) FROM youtube_channels WHERE account_id = ?");
+    $cnt_stmt->execute([$account_id]);
+    $curr_yt_count = (int)$cnt_stmt->fetchColumn();
+    if ($curr_yt_count >= $max_yt_channels) {
+        $_SESSION['flash_msg'] = "⚠️ Tài khoản của bạn đã đạt/vượt giới hạn tối đa {$max_yt_channels} Kênh YouTube (Hiện tại: {$curr_yt_count}/{$max_yt_channels}). Vui lòng liên hệ Admin để nâng cấp hạn ngạch!";
+        header("Location: youtube.php?tab=channels");
+        exit;
+    }
+}
+
+$youtube_multi_api = (!empty($account['youtube_multi_api']) || $is_admin) ? 1 : 0;
 $client_id = '';
 
 if ($youtube_multi_api === 1 && isset($_REQUEST['reauth_channel_id'])) {

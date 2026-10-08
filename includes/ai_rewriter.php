@@ -88,6 +88,36 @@ function ai_log($msg) {
     file_put_contents(__DIR__ . '/../error_log', date('Y-m-d H:i:s') . " - AI DEBUG: " . $msg . "\n", FILE_APPEND);
 }
 
+if (!function_exists('is_ai_refusal')) {
+    function is_ai_refusal($text) {
+        if (empty($text)) return false;
+        $refusal_patterns = [
+            'mô hình ngôn ngữ',
+            'không thể trợ giúp',
+            'không được thiết kế',
+            'không được lập trình',
+            'trí tuệ nhân tạo',
+            'bắt buộc của gmail',
+            'workspace',
+            'tôi không thể',
+            'tôi là một ai',
+            'tôi không được',
+            'as an ai',
+            'i cannot',
+            'i am sorry',
+            'sorry, but',
+            'language model'
+        ];
+        $lower = mb_strtolower($text, 'UTF-8');
+        foreach ($refusal_patterns as $pattern) {
+            if (strpos($lower, $pattern) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
 function rewrite_content_with_gemini($prompt, $api_keys, $endpoint, $prompt_vaitro, $selected_model, $max_retries = 2, $timeout_seconds = 120) {
     $base_url = rtrim($endpoint ?: "https://generativelanguage.googleapis.com/v1beta/models", '/');
     
@@ -815,6 +845,13 @@ function rewrite_youtube_with_ai($content, $account_id, $channel_name = '') {
             sleep(2);
             $ai_desc = $run_ai_step($final_desc_prompt, $content);
             $ai_desc = clean_markdown($ai_desc);
+        }
+
+        // Kiểm tra nếu AI trả về thông báo từ chối / lỗi
+        if (is_ai_refusal($ai_title) || is_ai_refusal($ai_desc)) {
+            ai_log("AI returned refusal/error text for Youtube: Title = '$ai_title'");
+            log_ai_usage($account_id, $selected_ai, 'YouTube SEO (3-step)', strlen($content), 0, "failed", "AI returned refusal message: $ai_title");
+            return null;
         }
 
         // Trả kết quả trực tiếp mà không cần giải mã JSON rủi ro

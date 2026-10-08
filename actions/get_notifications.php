@@ -170,10 +170,24 @@ try {
     @file_put_contents(__DIR__ . '/../notif_error.txt', date('Y-m-d H:i:s') . ' ' . $e->getMessage() . "\n", FILE_APPEND);
 }
 
+// Calculate total unread count for header bell badge
+$unread_count = 0;
+if (!empty($my_page_ids)) {
+    try {
+        $in_clause = implode(',', array_fill(0, count($my_page_ids), '?'));
+        $stmt_cnt = $pdo->prepare("SELECT COUNT(*) FROM page_notifications WHERE page_id IN ($in_clause) AND (is_read = 0 OR is_read IS NULL) AND type != 'auto_replied'");
+        $stmt_cnt->execute(array_values($my_page_ids));
+        $unread_count = (int)$stmt_cnt->fetchColumn();
+    } catch (Exception $e) {}
+}
+$unread_count += count($failed_posts);
+
 echo json_encode([
     'status'       => 'success',
     'failed_posts' => $failed_posts,
     'live_notifs'  => $live_notifs,
     'has_more'     => $has_more,
     'offset'       => $offset,
+    'unread_count' => $unread_count,
 ]);
+

@@ -216,7 +216,9 @@ function loadDriveFiles(folderId, folderName) {
                     div.onclick = function(e) {
                         if (e.target.closest('.select-folder-row-btn')) {
                             e.stopPropagation();
-                            if (typeof onDriveFolderSelected === 'function') {
+                            if (typeof window.onDriveFolderSelected === 'function') {
+                                window.onDriveFolderSelected(file.id, file.name);
+                            } else if (typeof onDriveFolderSelected === 'function') {
                                 onDriveFolderSelected(file.id, file.name);
                             }
                             closeDriveModal();
@@ -358,8 +360,12 @@ function confirmDriveSelection() {
     if (driveSelectedFiles.length === 0) return;
     
     // Support backward compatibility for components expecting 1 file
-    if (typeof onDriveFilesSelected === 'function') {
+    if (typeof window.onDriveFilesSelected === 'function') {
+        window.onDriveFilesSelected(driveSelectedFiles);
+    } else if (typeof onDriveFilesSelected === 'function') {
         onDriveFilesSelected(driveSelectedFiles);
+    } else if (typeof window.onDriveFileSelected === 'function') {
+        window.onDriveFileSelected(driveSelectedFiles[0].id, driveSelectedFiles[0].name);
     } else if (typeof onDriveFileSelected === 'function') {
         onDriveFileSelected(driveSelectedFiles[0].id, driveSelectedFiles[0].name);
     }
@@ -367,12 +373,23 @@ function confirmDriveSelection() {
 }
 
 function driveSelectCurrentFolder() {
+    console.log("[DriveModal] driveSelectCurrentFolder called. currentFolderId:", currentFolderId, "folderPathNames:", folderPathNames);
     if (currentFolderId === 'root') {
-        return; // Don't allow root folder selection
+        console.warn("[DriveModal] Root folder selection is blocked.");
+        return;
     }
     const folderName = folderPathNames[folderPathNames.length - 1];
-    if (typeof onDriveFolderSelected === 'function') {
+    console.log("[DriveModal] Selecting folder:", currentFolderId, folderName);
+    
+    if (typeof window.onDriveFolderSelected === 'function') {
+        console.log("[DriveModal] Invoking window.onDriveFolderSelected...");
+        window.onDriveFolderSelected(currentFolderId, folderName);
+    } else if (typeof onDriveFolderSelected === 'function') {
+        console.log("[DriveModal] Invoking local onDriveFolderSelected...");
         onDriveFolderSelected(currentFolderId, folderName);
+    } else {
+        console.error("[DriveModal] ERROR: onDriveFolderSelected is NOT defined on this page!");
+        alert("⚠️ Không tìm thấy hàm xử lý chọn thư mục (onDriveFolderSelected) trên trang này!");
     }
     closeDriveModal();
 }

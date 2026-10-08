@@ -342,11 +342,6 @@ $total_customers = count($customers);
         <span>💬</span> Zalo Official Account
     </a>
     <?php endif; ?>
-    <?php if ($enable_live_chat_tiktok): ?>
-    <a href="live-chat-tiktok.php" class="platform-tab-btn" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: #4b5563; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
-        <span>🎵</span> TikTok
-    </a>
-    <?php endif; ?>
     <?php if ($enable_website): ?>
     <a href="website.php" class="platform-tab-btn" style="padding: 10px 15px; font-size: 16px; font-weight: 600; text-decoration: none; color: #4b5563; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
         <span>🌐</span> Live Chat Website

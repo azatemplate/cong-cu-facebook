@@ -17,6 +17,7 @@ require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/drive_utils.php';
 require_once __DIR__ . '/../includes/ai_rewriter.php';
 require_once __DIR__ . '/../includes/instagram_api.php';
+require_once __DIR__ . '/../includes/kho_data_helper.php';
 
 ob_end_clean();
 header('Content-Type: application/json');
@@ -41,25 +42,6 @@ if (empty($ig_user_ids)) {
     exit;
 }
 
-// Enforce daily posting limit (page_limit from system_accounts)
-$acc_stmt = $pdo->prepare("SELECT role, page_limit FROM system_accounts WHERE id = ?");
-$acc_stmt->execute([$account_id]);
-$user_acc_info = $acc_stmt->fetch(PDO::FETCH_ASSOC);
-$user_page_limit = intval($user_acc_info['page_limit'] ?? 500);
-$user_role = $user_acc_info['role'] ?? 'user';
-
-if ($user_role !== 'admin' && $user_page_limit > 0) {
-    $today_start = date('Y-m-d 00:00:00');
-    $today_end = date('Y-m-d 23:59:59');
-    $chk_stmt = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE account_id = ? AND created_at >= ? AND created_at <= ?");
-    $chk_stmt->execute([$account_id, $today_start, $today_end]);
-    $posts_created_today = intval($chk_stmt->fetchColumn());
-    if ($posts_created_today >= $user_page_limit) {
-        echo json_encode(['status' => 'error', 'msg' => "⚠️ Bạn đã đạt giới hạn tối đa {$user_page_limit} bài đăng/ngày (Đã tạo hôm nay: {$posts_created_today}/{$user_page_limit}). Vui lòng liên hệ Admin để nâng hạn ngạch."]);
-        exit;
-    }
-}
-
 $post_sub_type = $_POST['post_sub_type'] ?? 'Instagram'; // Instagram, Instagram_Reels, Instagram_Story
 $caption       = clean_markdown(trim($_POST['caption'] ?? $_POST['message'] ?? $_POST['description'] ?? ''));
 $use_ai          = isset($_POST['use_ai']) && $_POST['use_ai'] == '1';
@@ -70,14 +52,18 @@ $enable_random_images = isset($_POST['enable_random_images']) && $_POST['enable_
 $random_image_count   = isset($_POST['random_image_count']) ? max(1, intval($_POST['random_image_count'])) : 5;
 $delete_drive_file    = isset($_POST['delete_drive_file']) && $_POST['delete_drive_file'] == '1';
 
+$data_group_id      = intval($_POST['data_group_id'] ?? ($_REQUEST['data_group_id'] ?? 0));
+$data_mode          = trim($_POST['data_mode'] ?? ($_REQUEST['data_mode'] ?? 'dedup'));
 $tiktok_urls_str    = trim($_POST['tiktok_urls'] ?? '');
 $drive_file_ids_str = trim($_POST['drive_file_id'] ?? '');
 $is_drive_folder    = (strpos($drive_file_ids_str, 'folder:') === 0);
 
 $media_pool = [];
 
-// 1. TikTok Links
-if (!empty($tiktok_urls_str)) {
+// 1. Kho Data or TikTok Links
+if ($data_group_id > 0) {
+    $media_pool[] = ['type' => 'kho_data', 'group_id' => $data_group_id, 'mode' => $data_mode];
+} elseif (!empty($tiktok_urls_str)) {
     foreach (array_filter(array_map('trim', explode("\n", $tiktok_urls_str))) as $url) {
         $media_pool[] = ['type' => 'tiktok', 'url' => $url, 'title' => ''];
     }
@@ -105,11 +91,6 @@ if (isset($_FILES['images']) && is_array($_FILES['images']['name'])) {
             $media_pool[] = ['type' => 'local', 'saved_path' => 'uploads/' . $filename, 'name' => $_FILES['images']['name'][$i]];
         }
     }
-} elseif (isset($_FILES['images']) && !is_array($_FILES['images']['name']) && $_FILES['images']['error'] === UPLOAD_ERR_OK) {
-    $ext = pathinfo($_FILES['images']['name'], PATHINFO_EXTENSION) ?: 'jpg';
-    $filename = uniqid('ig_img_') . '.' . $ext;
-    copy($_FILES['images']['tmp_name'], $upload_dir . $filename);
-    $media_pool[] = ['type' => 'local', 'saved_path' => 'uploads/' . $filename, 'name' => $_FILES['images']['name']];
 }
 
 // Video / Reels
@@ -122,11 +103,6 @@ if (isset($_FILES['video']) && is_array($_FILES['video']['name'])) {
             $media_pool[] = ['type' => 'local', 'saved_path' => 'uploads/' . $filename, 'name' => $_FILES['video']['name'][$i]];
         }
     }
-} elseif (isset($_FILES['video']) && !is_array($_FILES['video']['name']) && $_FILES['video']['error'] === UPLOAD_ERR_OK) {
-    $ext = pathinfo($_FILES['video']['name'], PATHINFO_EXTENSION) ?: 'mp4';
-    $filename = uniqid('ig_vid_') . '.' . $ext;
-    copy($_FILES['video']['tmp_name'], $upload_dir . $filename);
-    $media_pool[] = ['type' => 'local', 'saved_path' => 'uploads/' . $filename, 'name' => $_FILES['video']['name']];
 }
 
 if (empty($media_pool) && !$is_drive_folder && empty($drive_file_ids_str)) {
@@ -198,7 +174,7 @@ $success_count = 0;
 try {
     $pdo->beginTransaction();
 
-    function resolve_ig_media_path(&$drive_pool, $media_pool, $drive_file_ids_str, $is_drive_folder, $delete_drive_file, $post_sub_type, $enable_random_images, $random_image_count) {
+    function resolve_ig_media_path(&$drive_pool, $media_pool, $drive_file_ids_str, $is_drive_folder, $delete_drive_file, $post_sub_type, $enable_random_images, $random_image_count, $pdo = null, $account_id = 0) {
         if ($is_drive_folder) return $drive_file_ids_str;
         if (empty($media_pool)) return null;
 
@@ -214,21 +190,33 @@ try {
             }
         }
 
-        // Standard random fallback
-        if ($post_sub_type === 'Instagram' && $enable_random_images && count($media_pool) > 1) {
+        // Random lấy X ảnh từ pool (khi bật tính năng Random)
+        if ($post_sub_type === 'Instagram' && $enable_random_images) {
             $pool_copy = $media_pool;
             shuffle($pool_copy);
-            $picked = array_slice($pool_copy, 0, min(count($pool_copy), $random_image_count));
+            $take_count = min(count($pool_copy), $random_image_count);
+            $picked = array_slice($pool_copy, 0, $take_count);
             $paths = [];
             foreach ($picked as $pm) {
-                if ($pm['type'] === 'drive') $paths[] = 'drive:' . $pm['id'];
+                if ($pm['type'] === 'kho_data') {
+                    $url = get_url_from_kho_data($pdo, $account_id, $pm['group_id'], $pm['mode']);
+                    if ($url) $paths[] = 'tiktok:' . $url;
+                } elseif ($pm['type'] === 'drive') $paths[] = 'drive:' . $pm['id'];
                 elseif ($pm['type'] === 'tiktok') $paths[] = 'tiktok:' . $pm['url'];
                 elseif ($pm['type'] === 'local') $paths[] = $pm['saved_path'];
             }
             return (count($paths) === 1) ? $paths[0] : json_encode($paths);
         }
 
+        // Fallback: lấy ngẫu nhiên 1 item (cho Reels, Story, hoặc khi không bật Random)
         $m = $media_pool[array_rand($media_pool)];
+        if ($m['type'] === 'kho_data') {
+            $url = get_url_from_kho_data($pdo, $account_id, $m['group_id'], $m['mode']);
+            if (!$url) {
+                throw new Exception("Nhóm Data trong Kho Data đã hết URL khả dụng.");
+            }
+            return 'tiktok:' . $url;
+        }
         if ($m['type'] === 'drive') return 'drive:' . $m['id'];
         if ($m['type'] === 'tiktok') return 'tiktok:' . $m['url'];
         if ($m['type'] === 'local') return $m['saved_path'];
@@ -241,12 +229,16 @@ try {
         'auto_title'  => $auto_title
     ];
     if ($delete_drive_file) $content_arr['delete_drive_file'] = 1;
+    if ($enable_random_images) {
+        $content_arr['enable_random_images'] = 1;
+        $content_arr['random_image_count'] = $random_image_count;
+    }
     $content_data = json_encode($content_arr);
 
     if (!empty($schedule_dates)) {
         foreach ($schedule_dates as $datetime) {
             foreach ($ig_user_ids as $ig_id) {
-                $media_path = resolve_ig_media_path($drive_pool, $media_pool, $drive_file_ids_str, $is_drive_folder, $delete_drive_file, $post_sub_type, $enable_random_images, $random_image_count);
+                $media_path = resolve_ig_media_path($drive_pool, $media_pool, $drive_file_ids_str, $is_drive_folder, $delete_drive_file, $post_sub_type, $enable_random_images, $random_image_count, $pdo, $account_id);
                 if ($has_extra_cols && $s_stmt_with) {
                     $s_stmt_with->execute([$account_id, $ig_id, $post_sub_type, $content_data, $media_path, $datetime, $campaign_id, $comment_lines]);
                 } else {
@@ -258,7 +250,7 @@ try {
     } else {
         $now = date('Y-m-d H:i:s');
         foreach ($ig_user_ids as $ig_id) {
-            $media_path = resolve_ig_media_path($drive_pool, $media_pool, $drive_file_ids_str, $is_drive_folder, $delete_drive_file, $post_sub_type, $enable_random_images, $random_image_count);
+            $media_path = resolve_ig_media_path($drive_pool, $media_pool, $drive_file_ids_str, $is_drive_folder, $delete_drive_file, $post_sub_type, $enable_random_images, $random_image_count, $pdo, $account_id);
             if ($has_extra_cols && $s_stmt_with) {
                 $s_stmt_with->execute([$account_id, $ig_id, $post_sub_type, $content_data, $media_path, $now, $campaign_id, $comment_lines]);
             } else {

@@ -52,7 +52,7 @@ if (is_array($raw_selected_pages)) {
 } elseif (!empty($raw_selected_pages)) {
     $filter_page_ids = [(string)$raw_selected_pages];
 } else {
-    $filter_page_ids = []; // Default: Unchecked!
+    $filter_page_ids = [];
 }
 
 $filter_sort    = $_GET['sort'] ?? 'newest';
@@ -123,49 +123,213 @@ $notice_type = $_SESSION['notice_type'] ?? $_GET['msg_type'] ?? 'success';
 unset($_SESSION['notice_msg'], $_SESSION['notice_type']);
 ?>
 
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:15px;">
-    <div>
-        <h2 style="margin:0; font-size:22px; font-weight:700; color:var(--text-main);">💬 Comment Post (Quản lý Bài viết & Seeding)</h2>
-        <p style="margin:4px 0 0 0; font-size:13px; color:#6b7280;">Quét bài viết từ Fanpage, lọc tương tác và tự động khởi tạo chiến dịch seeding bình luận.</p>
+<style>
+    /* evondev UI/UX Design System - Light & Dark Theme Dual-Compatible */
+    .container, button, input, select, textarea {
+        font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    }
+
+    .cp-hero {
+        background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%);
+        border-radius: 16px;
+        padding: 24px 28px;
+        margin-bottom: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 20px;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 10px 25px -5px rgba(49, 46, 129, 0.4);
+    }
+
+    .cp-hero-text h2 {
+        font-size: 22px;
+        font-weight: 700;
+        color: #ffffff !important;
+        margin: 0 0 4px;
+        letter-spacing: -0.02em;
+    }
+
+    .cp-hero-text p {
+        font-size: 13px;
+        color: #c7d2fe !important;
+        margin: 0;
+    }
+
+    .cp-action-group {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .cp-compact-box {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #ffffff;
+        padding: 6px 12px;
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .cp-compact-box label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #475569 !important;
+    }
+
+    .cp-compact-box input[type="number"] {
+        width: 55px;
+        padding: 4px 6px;
+        border-radius: 6px;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        color: #0f172a !important;
+        font-weight: 700;
+        font-size: 12px;
+        text-align: center;
+    }
+
+    .btn-evon-primary {
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+        color: #ffffff !important;
+        font-weight: 600;
+        border: none;
+        border-radius: 10px;
+        padding: 9px 18px;
+        font-size: 13px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        transition: transform .15s ease, box-shadow .15s ease, opacity .15s;
+        box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+    }
+
+    .btn-evon-primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+    }
+
+    .btn-evon-primary:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+
+    .btn-evon-secondary {
+        background: #e0f2fe;
+        color: #0369a1 !important;
+        border: 1px solid #bae6fd;
+        font-weight: 600;
+        border-radius: 10px;
+        padding: 8px 14px;
+        font-size: 13px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.2s ease;
+    }
+
+    .btn-evon-secondary:hover:not(:disabled) {
+        background: #bae6fd;
+    }
+
+    .filter-card {
+        background: var(--card-bg, #ffffff);
+        padding: 20px;
+        border-radius: 14px;
+        border: 1px solid var(--border-color, #e2e8f0);
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    .table-container-card {
+        background: var(--card-bg, #ffffff);
+        border-radius: 14px;
+        border: 1px solid var(--border-color, #e2e8f0);
+        overflow: hidden;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    .evon-input, .evon-select {
+        width: 100%;
+        padding: 9px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border-color, #cbd5e1);
+        font-size: 13px;
+        background: var(--card-bg, #ffffff);
+        color: var(--text-main, #1e293b) !important;
+        outline: none;
+        box-sizing: border-box;
+    }
+
+    .evon-input:focus, .evon-select:focus {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+
+    body.dark-mode .cp-compact-box {
+        background: #1e293b;
+        border-color: #334155;
+    }
+    body.dark-mode .cp-compact-box label {
+        color: #94a3b8 !important;
+    }
+    body.dark-mode .cp-compact-box input[type="number"] {
+        background: #0f172a;
+        color: #f8fafc !important;
+        border-color: #334155;
+    }
+</style>
+
+<div class="cp-hero">
+    <div class="cp-hero-text">
+        <h2>💬 Comment Post (Quản lý Bài viết & Seeding)</h2>
+        <p>Quét bài viết từ Fanpage, lọc tương tác và tự động khởi tạo chiến dịch seeding bình luận.</p>
     </div>
     
-    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+    <div class="cp-action-group">
         <!-- Compact Scan Box -->
-        <div style="display:flex; align-items:center; gap:6px; background:var(--card-bg, #fff); padding:4px 8px; border-radius:8px; border:1px solid var(--border-color, #cbd5e1); box-shadow:0 1px 2px rgba(0,0,0,0.04);">
-            <span style="font-size:12px; font-weight:600; color:#475569;">Limit/page:</span>
-            <input type="number" id="sync_limit" value="10" min="1" max="1000" style="width:60px; padding:4px; border-radius:6px; border:1px solid #cbd5e1; font-weight:700; font-size:12px; text-align:center;">
+        <div class="cp-compact-box">
+            <label for="sync_limit">Limit/page:</label>
+            <input type="number" id="sync_limit" value="10" min="1" max="1000">
             
-            <label style="display:flex; align-items:center; gap:4px; font-size:12px; font-weight:500; color:#475569; cursor:pointer; padding-left:6px; border-left:1px solid #e2e8f0;">
+            <label style="display:flex; align-items:center; gap:4px; cursor:pointer; padding-left:6px; border-left:1px solid #e2e8f0; color:#334155 !important;">
                 <input type="checkbox" id="chk_only_has_text" checked style="width:14px; height:14px; cursor:pointer;">
-                <span>Chỉ bài có chữ</span>
+                <span style="color:#334155 !important; font-weight:600;">Chỉ bài có chữ</span>
             </label>
 
-            <button onclick="syncPosts()" id="btn_sync" class="btn" style="background:#0284c7; color:#fff; font-weight:600; display:flex; align-items:center; gap:5px; padding:6px 12px; margin-left:4px; font-size:13px;">
+            <button onclick="syncPosts()" id="btn_sync" class="btn-evon-secondary">
                 <span>🔄</span> <span>Quét Bài Viết</span>
             </button>
         </div>
 
         <!-- Primary Action: Campaign Button -->
-        <button onclick="openCampaignModal()" id="btn_campaign" class="btn btn-primary" style="font-weight:600; display:flex; align-items:center; gap:6px; padding:8px 16px; font-size:13px;" disabled>
+        <button onclick="openCampaignModal()" id="btn_campaign" class="btn-evon-primary" disabled>
             <span>🚀</span> <span>Tạo Chiến Dịch (<span id="sel_cnt">0</span>)</span>
         </button>
 
         <!-- Dropdown Menu: Manage / Delete Actions -->
         <div style="position:relative; display:inline-block;">
-            <button type="button" id="btn_action_menu" onclick="toggleActionMenu(event)" class="btn" style="background:#f8fafc; color:#334155; border:1px solid #cbd5e1; font-weight:600; display:flex; align-items:center; gap:6px; padding:8px 14px; font-size:13px; border-radius:8px; cursor:pointer;">
-                <span>⚙️ Quản lý bài</span> <span style="font-size:10px;">▼</span>
+            <button type="button" id="btn_action_menu" onclick="toggleActionMenu(event)" style="background:#ffffff; color:#1e293b !important; border:1px solid #cbd5e1; font-weight:600; display:flex; align-items:center; gap:6px; padding:9px 14px; font-size:13px; border-radius:10px; cursor:pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                <span style="color:#1e293b !important;">⚙️ Quản lý bài</span> <span style="font-size:10px; color:#64748b;">▼</span>
             </button>
 
-            <div id="action_dropdown_menu" style="display:none; position:absolute; right:0; top:100%; min-width:270px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.15); z-index:999; padding:6px 0; margin-top:4px;">
-                <button type="button" id="btn_delete_selected" onclick="deleteSelectedPosts()" disabled style="width:100%; text-align:left; background:transparent; border:none; padding:9px 14px; font-size:13px; font-weight:600; color:#dc2626; display:flex; align-items:center; gap:8px; cursor:pointer; transition:background 0.15s;" onmouseover="if(!this.disabled) this.style.background='#fef2f2'" onmouseout="this.style.background='transparent'">
+            <div id="action_dropdown_menu" style="display:none; position:absolute; right:0; top:100%; min-width:280px; background:var(--card-bg, #ffffff); border:1px solid var(--border-color, #cbd5e1); border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.15); z-index:999; padding:6px 0; margin-top:6px;">
+                <button type="button" id="btn_delete_selected" onclick="deleteSelectedPosts()" disabled style="width:100%; text-align:left; background:transparent; border:none; padding:10px 16px; font-size:13px; font-weight:600; color:#dc2626; display:flex; align-items:center; gap:8px; cursor:pointer; transition:background 0.15s;" onmouseover="if(!this.disabled) this.style.background='var(--bg-color, #fef2f2)'" onmouseout="this.style.background='transparent'">
                     <span>🗑️</span> <span>Xóa bài đã chọn khỏi Fanpage (<span id="del_sel_cnt">0</span>)</span>
                 </button>
-                <div style="border-top:1px solid #f1f5f9; margin:4px 0;"></div>
-                <button type="button" onclick="scanAndDeleteEmptyPosts()" style="width:100%; text-align:left; background:transparent; border:none; padding:9px 14px; font-size:13px; font-weight:600; color:#ea580c; display:flex; align-items:center; gap:8px; cursor:pointer; transition:background 0.15s;" onmouseover="this.style.background='#fff7ed'" onmouseout="this.style.background='transparent'">
+                <div style="border-top:1px solid var(--border-color, #f1f5f9); margin:4px 0;"></div>
+                <button type="button" onclick="scanAndDeleteEmptyPosts()" style="width:100%; text-align:left; background:transparent; border:none; padding:10px 16px; font-size:13px; font-weight:600; color:#ea580c; display:flex; align-items:center; gap:8px; cursor:pointer; transition:background 0.15s;" onmouseover="this.style.background='var(--bg-color, #fff7ed)'" onmouseout="this.style.background='transparent'">
                     <span>🧹</span> <span>Quét & Xóa bài KHÔNG chữ khỏi Fanpage</span>
                 </button>
-                <div style="border-top:1px solid #f1f5f9; margin:4px 0;"></div>
-                <button type="button" onclick="clearFetchedPosts()" style="width:100%; text-align:left; background:transparent; border:none; padding:9px 14px; font-size:13px; font-weight:500; color:#64748b; display:flex; align-items:center; gap:8px; cursor:pointer; transition:background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                <div style="border-top:1px solid var(--border-color, #f1f5f9); margin:4px 0;"></div>
+                <button type="button" onclick="clearFetchedPosts()" style="width:100%; text-align:left; background:transparent; border:none; padding:10px 16px; font-size:13px; font-weight:500; color:var(--text-muted, #64748b); display:flex; align-items:center; gap:8px; cursor:pointer; transition:background 0.15s;" onmouseover="this.style.background='var(--bg-color, #f8fafc)'" onmouseout="this.style.background='transparent'">
                     <span>🗑️</span> <span>Xóa danh sách bài đã quét tạm</span>
                 </button>
             </div>
@@ -174,30 +338,30 @@ unset($_SESSION['notice_msg'], $_SESSION['notice_type']);
 </div>
 
 <!-- Thẻ thông báo trên giao diện PHP -->
-<div id="notice_banner" style="<?php echo !empty($notice_msg) ? 'display:block;' : 'display:none;'; ?> margin-bottom:20px; padding:14px 18px; border-radius:8px; font-size:14px; font-weight:500; box-shadow:0 2px 4px rgba(0,0,0,0.05); <?php echo ($notice_type === 'success') ? 'background:#dcfce7; color:#15803d; border:1px solid #86efac;' : 'background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5;'; ?>">
+<div id="notice_banner" style="<?php echo !empty($notice_msg) ? 'display:block;' : 'display:none;'; ?> margin-bottom:20px; padding:14px 18px; border-radius:10px; font-size:14px; font-weight:500; box-shadow:0 2px 4px rgba(0,0,0,0.05); <?php echo ($notice_type === 'success') ? 'background:#dcfce7; color:#15803d; border:1px solid #86efac;' : 'background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5;'; ?>">
     <?php echo htmlspecialchars($notice_msg); ?>
 </div>
 
 <!-- Bộ lọc tìm kiếm -->
-<div style="background:var(--card-bg, #fff); padding:16px; border-radius:10px; border:1px solid var(--border-color, #e5e7eb); margin-bottom:20px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+<div class="filter-card">
     <form method="GET" action="comment_posts.php" id="frm_filter" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
         
         <!-- Multi-select Fanpage Dropdown -->
         <div style="position:relative; flex:1; min-width:240px;">
-            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Fanpage được chọn</label>
-            <button type="button" id="btn_page_dropdown" onclick="togglePageDropdown(event)" style="width:100%; padding:8px 12px; border-radius:6px; border:1px solid #d1d5db; font-size:13px; background:#fff; text-align:left; display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
-                <span id="txt_page_selected_summary">-- Chọn Fanpage --</span>
-                <span style="font-size:10px; color:#6b7280;">▼</span>
+            <label style="display:block; font-size:12px; font-weight:700; margin-bottom:6px; color:var(--text-muted, #64748b); text-transform:uppercase; letter-spacing:0.5px;">Fanpage được chọn</label>
+            <button type="button" id="btn_page_dropdown" onclick="togglePageDropdown(event)" class="evon-select" style="text-align:left; display:flex; justify-content:space-between; align-items:center; cursor:pointer; color:var(--text-main, #1e293b);">
+                <span id="txt_page_selected_summary" style="color:var(--text-main, #1e293b); font-weight:500;">-- Chọn Fanpage --</span>
+                <span style="font-size:10px; color:var(--text-muted, #6b7280);">▼</span>
             </button>
             
             <!-- Menu xổ xuống chứa Checkbox danh sách Fanpage -->
-            <div id="menu_page_dropdown" style="display:none; position:absolute; top:100%; left:0; width:100%; min-width:280px; max-height:320px; overflow-y:auto; background:#fff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.15); z-index:999; padding:0; margin-top:4px;">
+            <div id="menu_page_dropdown" style="display:none; position:absolute; top:100%; left:0; width:100%; min-width:280px; max-height:320px; overflow-y:auto; background:var(--card-bg, #ffffff); border:1px solid var(--border-color, #cbd5e1); border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.15); z-index:999; padding:0; margin-top:6px;">
                 <!-- Ô tìm kiếm Fanpage -->
-                <div style="padding:8px 12px; border-bottom:1px solid #f1f5f9; background:#fff; position:sticky; top:0; z-index:10;">
-                    <input type="text" id="search_fanpage_input" onkeyup="filterFanpageList()" placeholder="🔍 Tìm kiếm tên Fanpage..." style="width:100%; padding:6px 10px; border-radius:6px; border:1px solid #cbd5e1; font-size:12px; outline:none; box-sizing:border-box;">
+                <div style="padding:10px 12px; border-bottom:1px solid var(--border-color, #f1f5f9); background:var(--card-bg, #ffffff); position:sticky; top:0; z-index:10;">
+                    <input type="text" id="search_fanpage_input" onkeyup="filterFanpageList()" placeholder="🔍 Tìm kiếm tên Fanpage..." class="evon-input" style="padding:6px 10px; font-size:12px;">
                 </div>
 
-                <label style="display:flex; align-items:center; gap:8px; padding:8px 12px; font-weight:600; cursor:pointer; color:#0284c7; font-size:13px; border-bottom:1px solid #f1f5f9; background:#f8fafc;">
+                <label style="display:flex; align-items:center; gap:8px; padding:10px 14px; font-weight:600; cursor:pointer; color:#0284c7; font-size:13px; border-bottom:1px solid var(--border-color, #f1f5f9); background:var(--bg-color, #f8fafc);">
                     <input type="checkbox" id="chk_page_all" onchange="toggleAllPageCbs(this)" <?php echo in_array('ALL', $filter_page_ids, true) ? 'checked' : ''; ?> style="width:16px; height:16px; margin:0;">
                     <span>Tất cả Fanpage</span>
                 </label>
@@ -205,10 +369,10 @@ unset($_SESSION['notice_msg'], $_SESSION['notice_type']);
                     <?php if(!empty($pages)): foreach($pages as $p): 
                         $is_checked = !empty($filter_page_ids) && (in_array('ALL', $filter_page_ids, true) || in_array((string)$p['page_id'], $filter_page_ids, true));
                     ?>
-                        <label class="fanpage-item" style="display:flex; align-items:center; gap:8px; padding:6px 12px; cursor:pointer; font-size:13px; transition:background 0.15s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+                        <label class="fanpage-item" style="display:flex; align-items:center; gap:8px; padding:8px 14px; cursor:pointer; font-size:13px; transition:background 0.15s; color:var(--text-main, #1e293b);" onmouseover="this.style.background='var(--bg-color, #f1f5f9)'" onmouseout="this.style.background='transparent'">
                             <input type="checkbox" name="page_ids[]" class="filter_page_cb" value="<?php echo htmlspecialchars($p['page_id']); ?>" onchange="updatePageSelectText()" <?php echo $is_checked ? 'checked' : ''; ?> style="width:16px; height:16px; margin:0;">
-                            <img src="<?php echo htmlspecialchars($p['avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($p['name']).'&background=random'); ?>" style="width:20px; height:20px; border-radius:50%; object-fit:cover;">
-                            <span class="fanpage-name" style="color:#334155; font-weight:500;"><?php echo htmlspecialchars($p['name']); ?></span>
+                            <img src="<?php echo htmlspecialchars($p['avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($p['name']).'&background=random'); ?>" style="width:22px; height:22px; border-radius:50%; object-fit:cover;">
+                            <span class="fanpage-name" style="color:var(--text-main, #1e293b) !important; font-weight:500;"><?php echo htmlspecialchars($p['name']); ?></span>
                         </label>
                     <?php endforeach; endif; ?>
                 </div>
@@ -216,8 +380,8 @@ unset($_SESSION['notice_msg'], $_SESSION['notice_type']);
         </div>
 
         <div style="flex:1; min-width:200px;">
-            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Sắp xếp & Tương tác</label>
-            <select name="sort" onchange="this.form.submit()" style="width:100%; padding:8px 12px; border-radius:6px; border:1px solid #d1d5db; font-size:13px;">
+            <label style="display:block; font-size:12px; font-weight:700; margin-bottom:6px; color:var(--text-muted, #64748b); text-transform:uppercase; letter-spacing:0.5px;">Sắp xếp & Tương tác</label>
+            <select name="sort" onchange="this.form.submit()" class="evon-select">
                 <option value="newest" <?php echo ($filter_sort === 'newest') ? 'selected' : ''; ?>>📅 Mới nhất xếp trước</option>
                 <option value="oldest" <?php echo ($filter_sort === 'oldest') ? 'selected' : ''; ?>>📅 Cũ nhất xếp trước</option>
                 <option value="likes_desc" <?php echo ($filter_sort === 'likes_desc') ? 'selected' : ''; ?>>👍 Lượt Thích cao nhất</option>
@@ -229,94 +393,94 @@ unset($_SESSION['notice_msg'], $_SESSION['notice_type']);
         </div>
 
         <div style="flex:1.5; min-width:200px;">
-            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:#4b5563;">Tìm bài viết</label>
-            <input type="text" name="keyword" value="<?php echo htmlspecialchars($filter_keyword); ?>" placeholder="Nhập từ khóa nội dung..." style="width:100%; padding:7px 12px; border-radius:6px; border:1px solid #d1d5db; font-size:13px;">
+            <label style="display:block; font-size:12px; font-weight:700; margin-bottom:6px; color:var(--text-muted, #64748b); text-transform:uppercase; letter-spacing:0.5px;">Tìm bài viết</label>
+            <input type="text" name="keyword" value="<?php echo htmlspecialchars($filter_keyword); ?>" placeholder="Nhập từ khóa nội dung..." class="evon-input">
         </div>
 
-        <div>
-            <button type="submit" class="btn btn-secondary" style="padding:8px 16px;">Lọc bài viết</button>
+        <div style="display:flex; gap:8px;">
+            <button type="submit" class="btn-evon-primary">Lọc bài viết</button>
             <?php if(!in_array('ALL', $filter_page_ids, true) || $filter_sort !== 'newest' || $filter_keyword !== ''): ?>
-                <a href="comment_posts.php" class="btn" style="background:#f3f4f6; color:#374151; padding:8px 12px; text-decoration:none;">Xóa lọc</a>
+                <a href="comment_posts.php" class="btn-evon-secondary" style="text-decoration:none;">Xóa lọc</a>
             <?php endif; ?>
         </div>
     </form>
 </div>
 
 <!-- Danh sách bài viết -->
-<div style="background:var(--card-bg, #fff); border-radius:10px; border:1px solid var(--border-color, #e5e7eb); overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-    <div style="padding:12px 16px; background:#f9fafb; border-bottom:1px solid #e5e7eb; display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:13px; font-weight:600; color:#374151;">Danh sách bài viết (Hiển thị tối đa <?php echo count($posts); ?> bài)</span>
-        <label style="font-size:13px; font-weight:600; color:#0284c7; cursor:pointer; display:flex; align-items:center; gap:6px;">
+<div class="table-container-card">
+    <div style="padding:14px 20px; background:var(--bg-color, #f8fafc); border-bottom:1px solid var(--border-color, #e5e7eb); display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:13px; font-weight:700; color:var(--text-main, #374151);">Danh sách bài viết (Hiển thị tối đa <?php echo count($posts); ?> bài)</span>
+        <label style="font-size:13px; font-weight:600; color:#4f46e5; cursor:pointer; display:flex; align-items:center; gap:8px;">
             <input type="checkbox" id="chk_select_all" onchange="toggleSelectAll(this)" style="width:16px; height:16px;"> Chọn tất cả bài viết trên trang
         </label>
     </div>
 
     <?php if(empty($posts)): ?>
-        <div style="text-align:center; padding:50px 20px; color:#9ca3af;">
-            <span style="font-size:40px;">📭</span>
-            <p style="margin-top:10px; font-size:14px;">Chưa có bài viết nào được quét hoặc không tìm thấy bài khớp bộ lọc.</p>
-            <button onclick="syncPosts()" class="btn" style="background:#0284c7; color:#fff; margin-top:10px;">Bấm vào đây để quét bài viết từ các Fanpage đã chọn</button>
+        <div style="text-align:center; padding:60px 20px; color:var(--text-muted, #64748b);">
+            <span style="font-size:48px; display:block; margin-bottom:12px;">📭</span>
+            <p style="margin:0 0 16px 0; font-size:14px; color:var(--text-muted, #64748b);">Chưa có bài viết nào được quét hoặc không tìm thấy bài khớp bộ lọc.</p>
+            <button onclick="syncPosts()" class="btn-evon-primary" style="margin:0 auto;">Bấm vào đây để quét bài viết từ các Fanpage đã chọn</button>
         </div>
     <?php else: ?>
         <div style="overflow-x:auto;">
             <table style="width:100%; border-collapse:collapse; text-align:left; font-size:13px;">
                 <thead>
-                    <tr style="background:#f9fafb; border-bottom:1px solid #e5e7eb; color:#6b7280; font-weight:600;">
-                        <th style="padding:12px; width:40px; text-align:center;"></th>
-                        <th style="padding:12px; width:180px;">Fanpage</th>
-                        <th style="padding:12px;">Nội dung Bài viết</th>
-                        <th style="padding:12px; width:90px; text-align:center;">👍 Thích</th>
-                        <th style="padding:12px; width:90px; text-align:center;">💬 Cmt</th>
-                        <th style="padding:12px; width:140px;">📅 Ngày đăng</th>
-                        <th style="padding:12px; width:120px; text-align:center;">Trạng thái</th>
+                    <tr style="background:var(--bg-color, #f9fafb); border-bottom:1px solid var(--border-color, #e5e7eb); color:var(--text-muted, #6b7280); font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:0.5px;">
+                        <th style="padding:12px 14px; width:40px; text-align:center;"></th>
+                        <th style="padding:12px 14px; width:180px;">Fanpage</th>
+                        <th style="padding:12px 14px;">Nội dung Bài viết</th>
+                        <th style="padding:12px 14px; width:90px; text-align:center;">👍 Thích</th>
+                        <th style="padding:12px 14px; width:90px; text-align:center;">💬 Cmt</th>
+                        <th style="padding:12px 14px; width:140px;">📅 Ngày đăng</th>
+                        <th style="padding:12px 14px; width:120px; text-align:center;">Trạng thái</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach($posts as $p): ?>
-                        <tr style="border-bottom:1px solid #f3f4f6; transition:background 0.15s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='transparent'">
-                            <td style="padding:12px; text-align:center;">
+                        <tr style="border-bottom:1px solid var(--border-color, #f3f4f6); transition:background 0.15s;" onmouseover="this.style.background='rgba(99,102,241,0.04)'" onmouseout="this.style.background='transparent'">
+                            <td style="padding:12px 14px; text-align:center;">
                                 <input type="checkbox" class="post_cb" value="<?php echo htmlspecialchars($p['fb_post_id']); ?>" onchange="updateSelectedCount()" style="width:16px; height:16px; cursor:pointer;">
                             </td>
-                            <td style="padding:12px;">
+                            <td style="padding:12px 14px;">
                                 <div style="display:flex; align-items:center; gap:8px;">
-                                    <img src="<?php echo htmlspecialchars($p['page_avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($p['page_name'] ?: 'P')); ?>" style="width:28px; height:28px; border-radius:50%; object-fit:cover; border:1px solid #e5e7eb;">
-                                    <span style="font-weight:600; color:#1f2937; line-height:1.2; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?php echo htmlspecialchars($p['page_name']); ?>">
+                                    <img src="<?php echo htmlspecialchars($p['page_avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($p['page_name'] ?: 'P')); ?>" style="width:30px; height:30px; border-radius:50%; object-fit:cover; border:1px solid #e5e7eb;">
+                                    <span style="font-weight:600; color:var(--text-main, #1f2937); line-height:1.2; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?php echo htmlspecialchars($p['page_name']); ?>">
                                         <?php echo htmlspecialchars($p['page_name'] ?: $p['page_id']); ?>
                                     </span>
                                 </div>
                             </td>
-                            <td style="padding:12px;">
+                            <td style="padding:12px 14px;">
                                 <div style="display:flex; gap:12px; align-items:flex-start;">
                                     <?php if(!empty($p['picture'])): ?>
-                                        <img src="<?php echo htmlspecialchars($p['picture']); ?>" style="width:50px; height:50px; border-radius:6px; object-fit:cover; border:1px solid #e5e7eb; flex-shrink:0;">
+                                        <img src="<?php echo htmlspecialchars($p['picture']); ?>" style="width:52px; height:52px; border-radius:8px; object-fit:cover; border:1px solid #e5e7eb; flex-shrink:0;">
                                     <?php endif; ?>
                                     <div style="flex:1;">
-                                        <div style="color:#374151; font-size:13px; line-height:1.4; max-height:42px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">
+                                        <div style="color:var(--text-main, #374151); font-size:13px; line-height:1.4; max-height:42px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">
                                             <?php echo htmlspecialchars($p['message'] ?: '[Không có nội dung văn bản]'); ?>
                                         </div>
-                                        <a href="<?php echo htmlspecialchars($p['permalink_url'] ?: "https://facebook.com/{$p['fb_post_id']}"); ?>" target="_blank" style="font-size:11px; color:#0284c7; text-decoration:none; display:inline-flex; align-items:center; gap:3px; margin-top:3px;">
+                                        <a href="<?php echo htmlspecialchars($p['permalink_url'] ?: "https://facebook.com/{$p['fb_post_id']}"); ?>" target="_blank" style="font-size:11px; color:#0284c7; text-decoration:none; display:inline-flex; align-items:center; gap:3px; margin-top:4px; font-weight:600;">
                                             <span>Xem trên Facebook</span> <span>↗</span>
                                         </a>
                                     </div>
                                 </div>
                             </td>
-                            <td style="padding:12px; text-align:center; font-weight:600; color:#1d4ed8;">
+                            <td style="padding:12px 14px; text-align:center; font-weight:600; color:#1d4ed8;">
                                 <?php echo number_format($p['likes_count']); ?>
                             </td>
-                            <td style="padding:12px; text-align:center; font-weight:600; color:#059669;">
+                            <td style="padding:12px 14px; text-align:center; font-weight:600; color:#059669;">
                                 <?php echo number_format($p['comments_count']); ?>
                             </td>
-                            <td style="padding:12px; font-size:12px; color:#6b7280; white-space:nowrap;">
+                            <td style="padding:12px 14px; font-size:12px; color:var(--text-muted, #6b7280); white-space:nowrap;">
                                 <?php echo date('d/m/Y H:i', strtotime($p['post_created_at'])); ?>
                             </td>
-                            <td style="padding:12px; text-align:center;">
+                            <td style="padding:12px 14px; text-align:center;">
                                 <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
                                     <?php if($p['has_scheduled_cmt'] > 0): ?>
-                                        <span style="font-size:11px; padding:3px 8px; background:#dcfce7; color:#15803d; border-radius:12px; font-weight:600;">Đã có lịch Cmt</span>
+                                        <span style="font-size:11px; padding:4px 10px; background:#dcfce7; color:#15803d; border:1px solid #86efac; border-radius:12px; font-weight:600;">Đã có lịch Cmt</span>
                                     <?php else: ?>
-                                        <span style="font-size:11px; padding:3px 8px; background:#f3f4f6; color:#6b7280; border-radius:12px;">Chưa cmt</span>
+                                        <span style="font-size:11px; padding:4px 10px; background:#f3f4f6; color:#6b7280; border-radius:12px;">Chưa cmt</span>
                                     <?php endif; ?>
-                                    <button type="button" onclick="deleteSinglePost('<?php echo htmlspecialchars($p['fb_post_id']); ?>')" class="btn" style="background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; font-size:11px; padding:2px 6px; border-radius:4px; cursor:pointer;" title="Xóa bài viết này trực tiếp khỏi Fanpage">🗑️ Xóa bài</button>
+                                    <button type="button" onclick="deleteSinglePost('<?php echo htmlspecialchars($p['fb_post_id']); ?>')" style="background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; cursor:pointer;" title="Xóa bài viết này trực tiếp khỏi Fanpage">🗑️ Xóa bài</button>
                                 </div>
                             </td>
                         </tr>
@@ -328,65 +492,65 @@ unset($_SESSION['notice_msg'], $_SESSION['notice_type']);
 </div>
 
 <!-- Modal Tạo Chiến Dịch Bình Luận -->
-<div id="campaignModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
-    <div style="background:#fff; padding:25px; border-radius:10px; width:100%; max-width:650px; max-height:90vh; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
-        <h3 style="margin-top:0; border-bottom:1px solid #e5e7eb; padding-bottom:10px; color:#1f2937; display:flex; justify-content:space-between; align-items:center;">
+<div id="campaignModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.6); backdrop-filter:blur(4px); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:var(--card-bg, #ffffff); padding:28px; border-radius:16px; width:100%; max-width:650px; max-height:90vh; overflow-y:auto; border:1px solid var(--border-color, #e5e7eb); box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+        <h3 style="margin-top:0; border-bottom:1px solid var(--border-color, #e5e7eb); padding-bottom:14px; color:var(--text-main, #1f2937); font-size:18px; font-weight:700; display:flex; justify-content:space-between; align-items:center;">
             <span>🚀 Tạo Chiến Dịch Bình Luận Seeding</span>
-            <span style="font-size:13px; background:#e0f2fe; color:#0369a1; padding:3px 10px; border-radius:12px; font-weight:600;" id="modal_sel_badge">0 bài viết</span>
+            <span style="font-size:12px; background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; padding:4px 12px; border-radius:12px; font-weight:600;" id="modal_sel_badge">0 bài viết</span>
         </h3>
         
         <form id="frm_campaign" onsubmit="submitCampaign(event)">
-            <div style="margin-bottom:15px;">
-                <label style="display:block; font-weight:bold; font-size:13px; margin-bottom:6px; color:#374151;">Nội dung bình luận mẫu</label>
+            <div style="margin-bottom:18px;">
+                <label style="display:block; font-weight:700; font-size:12px; margin-bottom:8px; color:var(--text-muted, #4b5563); text-transform:uppercase; letter-spacing:0.5px;">Nội dung bình luận mẫu</label>
                 <textarea id="txt_comment_lines" rows="6" placeholder="Nhập mẫu bình luận (mỗi dòng một câu)...
 Ví dụ:
 Chào shop, sản phẩm này còn hàng không ạ?
 Em muốn tư vấn mẫu này với ạ!
-{Chào|Xin chào} shop, check inbox giúp mình nhé!" style="width:100%; padding:10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; resize:vertical;" required></textarea>
-                <div style="font-size:11px; color:#6b7280; margin-top:4px;">Nhập <b>mỗi dòng một câu</b> để hệ thống chọn ngẫu nhiên. Hỗ trợ cú pháp tráo câu Spintax: <code>{Nội dung 1|Nội dung 2}</code>.</div>
+{Chào|Xin chào} shop, check inbox giúp mình nhé!" class="evon-textarea" required></textarea>
+                <div style="font-size:11px; color:var(--text-muted, #6b7280); margin-top:6px;">Nhập <b>mỗi dòng một câu</b> để hệ thống chọn ngẫu nhiên. Hỗ trợ cú pháp tráo câu Spintax: <code>{Nội dung 1|Nội dung 2}</code>.</div>
             </div>
 
-            <div style="display:flex; gap:15px; margin-bottom:20px; flex-wrap:wrap;">
+            <div style="display:flex; gap:16px; margin-bottom:24px; flex-wrap:wrap;">
                 <div style="flex:1; min-width:200px;">
-                    <label style="display:block; font-weight:bold; font-size:13px; margin-bottom:6px; color:#374151;">Giãn cách giữa các bài (phút)</label>
-                    <input type="number" id="num_delay_minutes" value="5" min="0" max="1440" style="width:100%; padding:8px 12px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;">
-                    <div style="font-size:11px; color:#6b7280; margin-top:4px;">Giúp các bài viết không bị cmt dồn dập cùng lúc.</div>
+                    <label style="display:block; font-weight:700; font-size:12px; margin-bottom:8px; color:var(--text-muted, #4b5563); text-transform:uppercase; letter-spacing:0.5px;">Giãn cách giữa các bài (phút)</label>
+                    <input type="number" id="num_delay_minutes" value="5" min="0" max="1440" class="evon-input">
+                    <div style="font-size:11px; color:var(--text-muted, #6b7280); margin-top:6px;">Giúp các bài viết không bị cmt dồn dập cùng lúc.</div>
                 </div>
 
                 <div style="flex:1; min-width:200px;">
-                    <label style="display:block; font-weight:bold; font-size:13px; margin-bottom:6px; color:#374151;">Thời gian bắt đầu</label>
-                    <input type="datetime-local" id="dt_start_time" style="width:100%; padding:7px 12px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;">
-                    <div style="font-size:11px; color:#6b7280; margin-top:4px;">Để trống nếu muốn hệ thống kích hoạt ngay.</div>
+                    <label style="display:block; font-weight:700; font-size:12px; margin-bottom:8px; color:var(--text-muted, #4b5563); text-transform:uppercase; letter-spacing:0.5px;">Thời gian bắt đầu</label>
+                    <input type="datetime-local" id="dt_start_time" class="evon-input">
+                    <div style="font-size:11px; color:var(--text-muted, #6b7280); margin-top:6px;">Để trống nếu muốn hệ thống kích hoạt ngay.</div>
                 </div>
             </div>
 
-            <div style="text-align:right; border-top:1px solid #e5e7eb; padding-top:15px;">
-                <button type="button" onclick="document.getElementById('campaignModal').style.display='none';" class="btn" style="background:#f3f4f6; color:#374151; margin-right:10px;">Hủy</button>
-                <button type="submit" class="btn btn-primary" id="btn_submit_campaign" style="font-weight:600;">Lưu & Kích Hoạt Seeding</button>
+            <div style="text-align:right; border-top:1px solid var(--border-color, #e5e7eb); padding-top:18px; display:flex; justify-content:flex-end; gap:12px;">
+                <button type="button" onclick="document.getElementById('campaignModal').style.display='none';" class="btn-evon-secondary">Hủy</button>
+                <button type="submit" class="btn-evon-primary" id="btn_submit_campaign">Lưu & Kích Hoạt Seeding</button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Custom Confirmation Modal (Thay thế hoàn toàn pop-up confirm của trình duyệt) -->
-<div id="customConfirmModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.65); backdrop-filter:blur(4px); z-index:99999; align-items:center; justify-content:center;">
-    <div style="background:#fff; padding:24px 28px; border-radius:14px; max-width:440px; width:90%; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); border:1px solid #e2e8f0; text-align:center;">
-        <div style="font-size:38px; margin-bottom:12px;" id="confirm_modal_icon">⚠️</div>
-        <h4 style="margin:0 0 10px 0; font-size:18px; font-weight:700; color:#0f172a;" id="confirm_modal_title">Xác nhận thao tác</h4>
-        <p style="margin:0 0 22px 0; font-size:13px; color:#475569; line-height:1.50;" id="confirm_modal_msg">Bạn có chắc chắn muốn thực hiện thao tác này không?</p>
+<!-- Custom Confirmation Modal -->
+<div id="customConfirmModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.6); backdrop-filter:blur(4px); z-index:99999; align-items:center; justify-content:center;">
+    <div style="background:var(--card-bg, #ffffff); padding:28px; border-radius:16px; max-width:440px; width:90%; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); border:1px solid var(--border-color, #e5e7eb); text-align:center;">
+        <div style="font-size:42px; margin-bottom:12px;" id="confirm_modal_icon">⚠️</div>
+        <h4 style="margin:0 0 10px 0; font-size:18px; font-weight:700; color:var(--text-main, #0f172a);" id="confirm_modal_title">Xác nhận thao tác</h4>
+        <p style="margin:0 0 24px 0; font-size:13px; color:var(--text-muted, #475569); line-height:1.5;" id="confirm_modal_msg">Bạn có chắc chắn muốn thực hiện thao tác này không?</p>
         <div style="display:flex; justify-content:center; gap:12px;">
-            <button type="button" onclick="closeCustomConfirm()" class="btn" style="background:#f1f5f9; color:#475569; font-weight:600; padding:9px 20px; border-radius:8px; border:1px solid #cbd5e1; cursor:pointer;">Hủy bỏ</button>
-            <button type="button" onclick="executeCustomConfirm()" class="btn" style="background:#dc2626; color:#fff; font-weight:600; padding:9px 22px; border-radius:8px; border:none; cursor:pointer;">Xác nhận xóa</button>
+            <button type="button" onclick="closeCustomConfirm()" class="btn-evon-secondary">Hủy bỏ</button>
+            <button type="button" onclick="executeCustomConfirm()" style="background:#dc2626; color:#fff !important; font-weight:600; padding:10px 22px; border-radius:10px; border:none; cursor:pointer; box-shadow:0 4px 14px rgba(220,38,38,0.35);">Xác nhận xóa</button>
         </div>
     </div>
 </div>
 
 <!-- Modal Loading Quét Bài Viết -->
-<div id="syncLoadingModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.65); backdrop-filter:blur(4px); z-index:99999; align-items:center; justify-content:center;">
-    <div style="background:#fff; padding:30px 40px; border-radius:16px; text-align:center; max-width:440px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); border:1px solid #e2e8f0;">
-        <div style="display:inline-block; width:48px; height:48px; border:4px solid #e2e8f0; border-top-color:#0284c7; border-radius:50%; animation:spin_loader 0.8s linear infinite; margin-bottom:16px;"></div>
-        <h4 id="sync_loading_title" style="margin:0 0 8px 0; font-size:18px; font-weight:700; color:#0f172a;">Đang quét bài viết từ Fanpage...</h4>
-        <p id="sync_loading_desc" style="margin:0; font-size:13px; color:#64748b; line-height:1.5;">Hệ thống đang kết nối với Facebook Graph API để tải bài viết mới nhất. Vui lòng giữ màn hình và chờ trong giây lát...</p>
+<div id="syncLoadingModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.6); backdrop-filter:blur(4px); z-index:99999; align-items:center; justify-content:center;">
+    <div style="background:var(--card-bg, #ffffff); padding:32px 40px; border-radius:16px; text-align:center; max-width:440px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); border:1px solid var(--border-color, #e5e7eb);">
+        <div style="display:inline-block; width:48px; height:48px; border:4px solid #cbd5e1; border-top-color:#6366f1; border-radius:50%; animation:spin_loader 0.8s linear infinite; margin-bottom:16px;"></div>
+        <h4 id="sync_loading_title" style="margin:0 0 8px 0; font-size:18px; font-weight:700; color:var(--text-main, #0f172a);">Đang quét bài viết từ Fanpage...</h4>
+        <p id="sync_loading_desc" style="margin:0; font-size:13px; color:var(--text-muted, #64748b); line-height:1.5;">Hệ thống đang kết nối với Facebook Graph API để tải bài viết mới nhất. Vui lòng giữ màn hình và chờ trong giây lát...</p>
     </div>
 </div>
 
