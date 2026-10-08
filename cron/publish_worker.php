@@ -1437,19 +1437,26 @@ do {
         if ($res_lim !== false && $res_lim !== null && $res_lim !== '') $sys_max_proc = max(1, (int)$res_lim);
     } catch (Exception $e) {}
 
-    $curr_proc_cnt = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
-    if ($curr_proc_cnt >= $sys_max_proc) {
-        echo "   → Hệ thống đang đạt trần Processing ({$curr_proc_cnt}/{$sys_max_proc}). Tạm dừng bài ID {$post['id']} chờ lượt cron sau.\n";
-        break;
-    }
-
-    $update_processing = $pdo->prepare("UPDATE scheduled_posts SET status = 'processing', error_msg = '⚙️ Đang xử lý...' WHERE id = ? AND status IN ('pending', 'failed')");
-    $update_processing->execute([$post['id']]);
+    // Atomic update: Chỉ chuyển bài sang 'processing' NẾU tổng số bài processing thực tế hiện tại < $sys_max_proc
+    $update_processing = $pdo->prepare("
+        UPDATE scheduled_posts 
+        SET status = 'processing', error_msg = '⚙️ Đang xử lý...' 
+        WHERE id = ? 
+          AND status IN ('pending', 'failed')
+          AND (SELECT cnt FROM (SELECT COUNT(*) AS cnt FROM scheduled_posts WHERE status = 'processing') AS _t) < ?
+    ");
+    $update_processing->execute([$post['id'], $sys_max_proc]);
     if ($update_processing->rowCount() === 0) {
-        echo "   → Bài ID {$post['id']} không ở trạng thái có thể xử lý. Bỏ qua.\n";
-        if (ob_get_level() > 0) @ob_flush();
-        @flush();
-        continue;
+        $curr_proc_cnt = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+        if ($curr_proc_cnt >= $sys_max_proc) {
+            echo "   → Hệ thống đang đạt trần Processing ({$curr_proc_cnt}/{$sys_max_proc}). Tạm dừng bài ID {$post['id']} chờ lượt cron sau.\n";
+            break;
+        } else {
+            echo "   → Bài ID {$post['id']} không ở trạng thái có thể xử lý. Bỏ qua.\n";
+            if (ob_get_level() > 0) @ob_flush();
+            @flush();
+            continue;
+        }
     }
 
     // ── XỬ LÝ RIÊNG DÀNH CHO YOUTUBE ──────────────────────────────────────────
