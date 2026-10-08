@@ -187,7 +187,7 @@ try {
     }
 } catch (Exception $e) {}
 
-// Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động (Kiểm tra khoá OS thực tế)
+// Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động và số bài đang ở trạng thái 'processing'
 $lock_dir = dirname(__DIR__) . '/locks';
 $active_workers = 0;
 if (is_dir($lock_dir)) {
@@ -207,11 +207,18 @@ if (is_dir($lock_dir)) {
     }
 }
 
-echo "  [THROTTLE] Hien dang co $active_workers luong dang xu ly (Max: $MAX_WORKERS).\n";
+$curr_processing_posts = 0;
+try {
+    $curr_processing_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+} catch (Exception $e) {}
 
-$available_slots = max(0, $MAX_WORKERS - $active_workers);
+$effective_active = max($active_workers, $curr_processing_posts);
+
+echo "  [THROTTLE] Hiện có $active_workers luồng (và $curr_processing_posts bài PROCESSING) đang xử lý. Trực tiếp giới hạn Max: $MAX_WORKERS.\n";
+
+$available_slots = max(0, $MAX_WORKERS - $effective_active);
 if ($available_slots <= 0) {
-    echo "He thong dang dat gioi han MAX_WORKERS ($MAX_WORKERS). Cho luot cron ke tiep...\n";
+    echo "Hệ thống đang đạt trần giới hạn Throttling ($effective_active/$MAX_WORKERS). Chờ lượt cron kế tiếp...\n";
     $rq_pub->releaseLock('lock:cron:start_publish');
     exit;
 }
