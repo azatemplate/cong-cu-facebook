@@ -1257,9 +1257,9 @@ if (!empty($user_id_lock)) {
 }
 
 if ($is_campaign_run && !empty($campaign_id)) {
-    // Reset ONLY orphaned processing posts (stuck > 15 mins), NEVER force reset failed posts back to pending
+    // Reset ONLY orphaned processing posts (stuck > 10 mins), NEVER force reset failed posts back to pending
     try {
-        $pdo->prepare("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = ? AND status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 60 MINUTE) AND (fb_post_id IS NULL OR fb_post_id = '')")
+        $pdo->prepare("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = ? AND status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 10 MINUTE) AND (fb_post_id IS NULL OR fb_post_id = '')")
             ->execute([$campaign_id]);
     } catch (Exception $e) {}
 }
@@ -1437,16 +1437,40 @@ do {
         if ($res_lim !== false && $res_lim !== null && $res_lim !== '') $sys_max_proc = max(1, (int)$res_lim);
     } catch (Exception $e) {}
 
-    // Atomic update: Chỉ chuyển bài sang 'processing' NẾU tổng số bài processing thực tế hiện tại < $sys_max_proc
-    $update_processing = $pdo->prepare("
-        UPDATE scheduled_posts 
-        SET status = 'processing', error_msg = '⚙️ Đang xử lý...' 
-        WHERE id = ? 
-          AND status IN ('pending', 'failed')
-          AND (SELECT cnt FROM (SELECT COUNT(*) AS cnt FROM scheduled_posts WHERE status = 'processing') AS _t) < ?
-    ");
-    $update_processing->execute([$post['id'], $sys_max_proc]);
+    // Atomic update:
+    // 1. Tổng số bài processing thực tế toàn hệ thống < $sys_max_proc
+    // 2. NẾU bài thuộc Campaign ($curr_cid > 0): Tổng số bài processing trong Campaign này ĐÃ PHẢI = 0 (chưa có bài nào trong camp đang đăng)
+    $curr_cid = !empty($post['campaign_id']) ? (int)$post['campaign_id'] : 0;
+
+    if ($curr_cid > 0) {
+        $update_processing = $pdo->prepare("
+            UPDATE scheduled_posts 
+            SET status = 'processing', error_msg = '⚙️ Đang xử lý...' 
+            WHERE id = ? 
+              AND status IN ('pending', 'failed')
+              AND (SELECT cnt FROM (SELECT COUNT(*) AS cnt FROM scheduled_posts WHERE status = 'processing') AS _t) < ?
+              AND (SELECT camp_cnt FROM (SELECT COUNT(*) AS camp_cnt FROM scheduled_posts WHERE campaign_id = ? AND status = 'processing' AND id != ?) AS _c) = 0
+        ");
+        $update_processing->execute([$post['id'], $sys_max_proc, $curr_cid, $post['id']]);
+    } else {
+        $update_processing = $pdo->prepare("
+            UPDATE scheduled_posts 
+            SET status = 'processing', error_msg = '⚙️ Đang xử lý...' 
+            WHERE id = ? 
+              AND status IN ('pending', 'failed')
+              AND (SELECT cnt FROM (SELECT COUNT(*) AS cnt FROM scheduled_posts WHERE status = 'processing') AS _t) < ?
+        ");
+        $update_processing->execute([$post['id'], $sys_max_proc]);
+    }
+
     if ($update_processing->rowCount() === 0) {
+        if ($curr_cid > 0) {
+            $active_in_camp = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE campaign_id = $curr_cid AND status = 'processing' AND id != {$post['id']}")->fetchColumn();
+            if ($active_in_camp > 0) {
+                echo "   → Campaign #$curr_cid đã có 1 bài đang đăng (processing). Tạm dừng bài ID {$post['id']} để đảm bảo duy nhất 1 bài/camp.\n";
+                break; // Tạm ngưng luồng worker cho Campaign này, nhường lượt cho bài đang chạy xong!
+            }
+        }
         $curr_proc_cnt = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
         if ($curr_proc_cnt >= $sys_max_proc) {
             echo "   → Hệ thống đang đạt trần Processing ({$curr_proc_cnt}/{$sys_max_proc}). Tạm dừng bài ID {$post['id']} chờ lượt cron sau.\n";

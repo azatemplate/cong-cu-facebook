@@ -173,9 +173,30 @@ try {
     echo "Loi tu dong quet SĐT: " . $e->getMessage() . "\n";
 }
 
-// --- TỰ ĐỘNG RESET BÀI BỊ KẸT PROCESSING VỀ PENDING (>15 PHÚT) ---
+// --- TỰ ĐỘNG RESET BÀI BỊ KẸT PROCESSING VỀ PENDING (>10 PHÚT) ---
 try {
-    $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 10 MINUTE)");
+    
+    // --- ĐẢM BẢO CHỈ 1 BÀI PROCESSING PER CAMPAIGN ---
+    // Nếu 1 campaign có nhiều bài processing cùng lúc, giữ lại bài mới nhất và trả bài thừa về pending
+    $multi_camps = $pdo->query("
+        SELECT campaign_id, COUNT(*) as cnt 
+        FROM scheduled_posts 
+        WHERE campaign_id IS NOT NULL AND campaign_id > 0 AND status = 'processing' 
+        GROUP BY campaign_id 
+        HAVING cnt > 1
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($multi_camps as $mc) {
+        $cid = (int)$mc['campaign_id'];
+        $latest_id = (int)$pdo->query("SELECT id FROM scheduled_posts WHERE campaign_id = $cid AND status = 'processing' ORDER BY updated_at DESC, id DESC LIMIT 1")->fetchColumn();
+        if ($latest_id > 0) {
+            $reset_cnt = $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = $cid AND status = 'processing' AND id != $latest_id");
+            if ($reset_cnt > 0) {
+                echo "  [STRICT 1-POST/CAMP] Đã đưa $reset_cnt bài dư thừa ở Campaign #$cid từ 'processing' về 'pending'.\n";
+            }
+        }
+    }
 } catch (Exception $e) {}
 
 // Cấu hình giới hạn luồng cho máy chủ (Lấy trực tiếp từ ⚙️ Throttling Máy Chủ ở settings.php)
