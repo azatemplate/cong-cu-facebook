@@ -141,12 +141,12 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
-    curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024); // Ngắt nếu tốc độ truyền tải < 1KB/s
-    curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);    // trong 60s liên tục (chống cURL treo vô hạn)
     fb_curl_setssl($ch);
 
     // Dùng proxy cho API thường, nhưng BỎ PROXY khi upload file binary (CURLFile) để tận dụng 100% băng thông VPS
     if (!$has_file) {
+        curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024); // Ngắt nếu tốc độ truyền tải < 1KB/s
+        curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);    // trong 60s liên tục (chống cURL treo vô hạn)
         $token_for_proxy = (is_array($params) ? ($params['access_token'] ?? null) : null) ?? (is_array($post_data) ? ($post_data['access_token'] ?? null) : null);
         if (!empty($token_for_proxy)) {
             apply_proxy_to_curl($ch, $token_for_proxy);
@@ -535,8 +535,6 @@ function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $
             "Expect:"
         ]);
         curl_setopt($ch, CURLOPT_TIMEOUT, 600);
-        curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
-        curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
         fb_curl_setssl($ch);
         apply_proxy_to_curl($ch, $page_access_token);
 
@@ -598,7 +596,7 @@ if (!function_exists('fb_echo_log')) {
 /**
  * Real Meta Resumable Chunked Uploader (Slices file into 20MB chunks, zero RAM overhead via fopen/fread, per-chunk retry)
  */
-function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title = '', $description = '', $is_reel = false, $sp_post_id = 0, $chunk_size_mb = 20) {
+function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title = '', $description = '', $is_reel = false, $sp_post_id = 0, $chunk_size_mb = 4) {
     @ob_implicit_flush(1);
 
     $is_remote_url = (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0);
@@ -768,11 +766,11 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
 }
 
 function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = '', $description = '', $sp_post_id = 0) {
-    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, true, $sp_post_id, 20);
+    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, true, $sp_post_id, 4);
 }
 
 function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $title, $description, $is_reel = false, $sp_post_id = 0) {
-    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, $is_reel, $sp_post_id, 20);
+    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, $is_reel, $sp_post_id, 4);
 }
 
 function fb_exchange_token($short_token, $app_id, $app_secret) {
