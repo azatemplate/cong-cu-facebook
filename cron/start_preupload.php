@@ -37,7 +37,7 @@ try {
         FROM scheduled_posts sp
         WHERE sp.status = 'pending'
           AND (sp.preupload_status IS NULL OR sp.preupload_status IN ('none', 'failed'))
-          AND sp.scheduled_time BETWEEN DATE_ADD(NOW(), INTERVAL 15 MINUTE) AND DATE_ADD(NOW(), INTERVAL 24 HOUR)
+          AND sp.scheduled_time BETWEEN DATE_ADD(NOW(), INTERVAL 2 MINUTE) AND DATE_ADD(NOW(), INTERVAL 24 HOUR)
           AND sp.media_path IS NOT NULL AND sp.media_path != ''
           AND (sp.post_type IN ('Video', 'Reel', 'Photo', 'Facebook', 'Facebook Reel') OR sp.post_type LIKE 'Facebook%')
         ORDER BY sp.scheduled_time ASC
