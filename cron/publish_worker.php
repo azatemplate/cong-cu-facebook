@@ -1638,27 +1638,13 @@ do {
         curl_setopt($ch_upload, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
         curl_setopt($ch_upload, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch_upload, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($ch_upload, CURLOPT_TIMEOUT, 1800);
+        curl_setopt($ch_upload, CURLOPT_BUFFERSIZE, 1048576); // 1MB buffer cho upload siêu tốc
+        curl_setopt($ch_upload, CURLOPT_TCP_KEEPALIVE, 1);
+        curl_setopt($ch_upload, CURLOPT_CONNECTTIMEOUT, 15);
         curl_setopt($ch_upload, CURLOPT_HTTPHEADER, [
             "Content-Type: video/*",
             "Content-Length: $file_size"
         ]);
-
-        if (function_exists('update_post_progress') && isset($pdo) && !empty($post['id'])) {
-            $sp_id = $post['id'];
-            curl_setopt($ch_upload, CURLOPT_NOPROGRESS, false);
-            curl_setopt($ch_upload, CURLOPT_PROGRESSFUNCTION, function($resource, $download_size, $downloaded, $upload_size, $uploaded) use ($pdo, $sp_id) {
-                if ($upload_size > 0 && $uploaded > 0) {
-                    static $last_pct = -1;
-                    $pct = (int)floor(($uploaded / $upload_size) * 100);
-                    if ($pct >= $last_pct + 10 && $pct <= 100) {
-                        $last_pct = $pct;
-                        update_post_progress($pdo, $sp_id, "📤 Đang upload YouTube ({$pct}%)...");
-                    }
-                }
-                return 0;
-            });
-        }
 
         $upload_response = curl_exec($ch_upload);
         $upload_code = curl_getinfo($ch_upload, CURLINFO_HTTP_CODE);
