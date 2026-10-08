@@ -179,10 +179,10 @@ try {
 } catch (Exception $e) {}
 
 // Cấu hình giới hạn luồng cho máy chủ (Throttling an toàn cho RAM & CPU)
-$MAX_WORKERS = 10;
+$MAX_WORKERS = 30;
 try {
     $res_limit = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_publish_workers'")->fetchColumn();
-    if ($res_limit) $MAX_WORKERS = min(25, max(3, (int)$res_limit));
+    if ($res_limit) $MAX_WORKERS = min(200, max(3, (int)$res_limit));
 } catch (Exception $e) {}
 
 // Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động

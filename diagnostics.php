@@ -38,12 +38,24 @@ $db_insights_queue_len = 0;
 if (isset($pdo)) {
     try {
         $db_publish_queue_len = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing') AND scheduled_time <= NOW()")->fetchColumn();
-        $db_insights_queue_len = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'published' AND comment_mode = 'insights' AND comment_done = 0 AND (scheduled_time >= NOW() - INTERVAL 24 HOUR OR scheduled_time IS NULL)")->fetchColumn();
+        $db_insights_queue_len = (int)$pdo->query("
+            SELECT COUNT(*) 
+            FROM scheduled_posts sp
+            JOIN system_accounts sa ON sp.account_id = sa.id
+            WHERE sp.status = 'published' 
+              AND sp.comment_mode = 'insights' 
+              AND (sp.comment_status = 'waiting_insights' OR sp.comment_status IS NULL OR sp.comment_status = '' OR sp.comment_status = 'pending')
+              AND sp.comment_done = 0
+              AND sp.fb_post_id IS NOT NULL AND sp.fb_post_id != ''
+              AND sp.comment_lines IS NOT NULL AND sp.comment_lines != ''
+              AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
+              AND COALESCE(sp.scheduled_time, sp.created_at) >= NOW() - INTERVAL 48 HOUR
+        ")->fetchColumn();
     } catch (Exception $e) {}
 }
 
 $display_publish_queue_len = ($redis_active && $redis_queue_len > 0) ? $redis_queue_len : $db_publish_queue_len;
-$display_insights_queue_len = ($redis_active && $redis_insights_len > 0 && $redis_insights_len <= $db_insights_queue_len) ? $redis_insights_len : $db_insights_queue_len;
+$display_insights_queue_len = $db_insights_queue_len;
 
 
 $now_php   = date('Y-m-d H:i:s');
@@ -75,7 +87,9 @@ try {
 } catch (Exception $e) {}
 
 // ── Đếm số worker đang thực sự chạy (active) ────────────────────────────────
-$active_publish = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+$lock_dir_diag = __DIR__ . '/locks';
+$active_locks_diag = is_dir($lock_dir_diag) ? count(glob($lock_dir_diag . '/publish_user_*.lock')) : 0;
+$active_publish = max($active_locks_diag, (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn());
 $active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
 
 // ── Kích hoạt thủ công nếu có ?run=1 ─────────────────────────────────────────
@@ -88,6 +102,7 @@ if (isset($_GET['run'])) {
     } elseif ($type === 'comment') {
         require __DIR__ . '/cron/start_comment.php';
     } elseif ($type === 'insights') {
+        $_GET['force'] = 1;
         require __DIR__ . '/cron/comment_insights_worker.php';
     }
     $run_msg = nl2br(htmlspecialchars(ob_get_clean()));
@@ -220,14 +235,7 @@ $processing_posts = $pdo->query("
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Bài chờ điều kiện Insights ──────────────────────────────────────────────
-$insights_total_count = (int)$pdo->query("
-    SELECT COUNT(*)
-    FROM scheduled_posts
-    WHERE status = 'published' 
-      AND comment_mode = 'insights' 
-      AND comment_done = 0
-      AND (scheduled_time >= NOW() - INTERVAL 24 HOUR OR scheduled_time IS NULL)
-")->fetchColumn();
+$insights_total_count = $db_insights_queue_len;
 
 $insights_waiting = $pdo->query("
     SELECT sp.id, sp.page_id, sp.fb_post_id, sp.comment_threshold_views, 
@@ -238,8 +246,9 @@ $insights_waiting = $pdo->query("
     LEFT JOIN system_accounts sa ON sp.account_id = sa.id
     WHERE sp.status = 'published' 
       AND sp.comment_mode = 'insights' 
+      AND (sp.comment_status = 'waiting_insights' OR sp.comment_status IS NULL OR sp.comment_status = '' OR sp.comment_status = 'pending')
       AND sp.comment_done = 0
-      AND (sp.scheduled_time >= NOW() - INTERVAL 24 HOUR OR sp.scheduled_time IS NULL)
+      AND COALESCE(sp.scheduled_time, sp.created_at) >= NOW() - INTERVAL 48 HOUR
     ORDER BY sp.id DESC
     LIMIT 20
 ")->fetchAll(PDO::FETCH_ASSOC);
@@ -360,6 +369,15 @@ if (isset($_GET['clear_locks'])) {
     --color-info: #06b6d4;
     --color-info-bg: rgba(6, 182, 212, 0.08);
     --color-info-border: rgba(6, 182, 212, 0.15);
+
+    /* Semantic accent palette (bám chuẩn evondevKit) */
+    --color-purple: #a78bfa;
+    --color-yellow: #facc15;
+    --color-sky: #38bdf8;
+    --color-emerald: #34d399;
+    --color-blue: #60a5fa;
+    --color-rose: #f87171;
+    --color-indigo: #a5b4fc;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -906,9 +924,9 @@ code {
             </h1>
         </div>
         <div class="header-actions">
-            <a href="diagnostics.php" class="btn btn-secondary" style="padding: 6px 14px; font-size: 12px;">
-                🔄 Tải lại trang
-            </a>
+            <button onclick="smoothRefresh(this)" class="btn btn-secondary" style="padding: 6px 14px; font-size: 12px; cursor: pointer;">
+                <span class="refresh-icon" style="display:inline-block; transition: transform 0.4s ease;">🔄</span> Tải lại trang
+            </button>
             <div class="system-pulse">
                 <span class="pulse-dot"></span>
                 Hệ thống đang hoạt động
@@ -969,23 +987,23 @@ code {
                     </div>
                     <div class="info-item">
                         <span class="info-label">Queue Đăng bài:</span>
-                        <span class="info-value mono" style="font-weight: 700; color: #a78bfa;"><?= number_format($display_publish_queue_len) ?> bài</span>
+                        <span class="info-value mono" style="font-weight: 700; color: var(--color-purple);"><?= number_format($display_publish_queue_len) ?> bài</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Queue Comment (Theo giờ):</span>
-                        <span class="info-value mono" style="font-weight: 700; color: #facc15;"><?= number_format($redis_comment_len) ?> bài</span>
+                        <span class="info-value mono" style="font-weight: 700; color: var(--color-yellow);"><?= number_format($redis_comment_len) ?> bài</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Queue Insights Comment:</span>
-                        <span class="info-value mono" style="font-weight: 700; color: #38bdf8;"><?= number_format($display_insights_queue_len) ?> bài</span>
+                        <span class="info-value mono" style="font-weight: 700; color: var(--color-sky);"><?= number_format($display_insights_queue_len) ?> bài</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Queue Messaging FB:</span>
-                        <span class="info-value mono" style="font-weight: 700; color: #34d399;"><?= number_format($redis_fb_msg_len) ?> tin nhắn</span>
+                        <span class="info-value mono" style="font-weight: 700; color: var(--color-emerald);"><?= number_format($redis_fb_msg_len) ?> tin nhắn</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Queue Messaging Zalo:</span>
-                        <span class="info-value mono" style="font-weight: 700; color: #60a5fa;"><?= number_format($redis_zalo_msg_len) ?> tin nhắn</span>
+                        <span class="info-value mono" style="font-weight: 700; color: var(--color-blue);"><?= number_format($redis_zalo_msg_len) ?> tin nhắn</span>
                     </div>
 
                 </div>
@@ -1141,19 +1159,27 @@ code {
 
             <!-- Table: Bài đến/quá hạn cần đăng ngay -->
             <div class="card">
-                <h3 class="card-title" style="color: var(--color-danger);">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 22 22 22 12 2"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    Bài đến/quá giờ — Cần đăng ngay (<?= $ready_total_count ?> bài<?= $ready_total_count > 20 ? ', hiển thị 20 mới nhất' : '' ?>)
-                </h3>
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color);">
+                    <h3 class="card-title" style="color: var(--color-rose); margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 22 22 22 12 2"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        Bài đến/quá giờ — Cần đăng ngay (<?= $ready_total_count ?> bài<?= $ready_total_count > 20 ? ', hiển thị 20 mới nhất' : '' ?>)
+                    </h3>
+                    <?php if (!empty($ready_posts)): ?>
+                    <input type="text" placeholder="🔍 Tìm ID, tài khoản, lỗi..." onkeyup="filterTable(this, 'table-ready-posts')" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); color: var(--text-primary); padding: 6px 12px; border-radius: 8px; font-size: 12px; outline: none; width: 220px;">
+                    <?php endif; ?>
+                </div>
                 
                 <?php if (empty($ready_posts)): ?>
-                <div style="padding: 16px; color: var(--color-success); font-weight: 500; font-size:14px; display: flex; align-items: center; gap: 8px;">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    Tất cả các bài đăng đều đúng giờ, không có bài nào bị quá hạn.
+                <div style="padding: 24px; text-align: center; background: rgba(16, 185, 129, 0.03); border: 1px dashed var(--color-success-border); border-radius: 12px; margin: 8px 0;">
+                    <div style="margin-bottom: 10px; display: inline-flex; padding: 12px; background: var(--color-success-bg); border-radius: 50%; color: var(--color-success);">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    </div>
+                    <div style="font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Tất cả các bài đăng đều đúng giờ!</div>
+                    <div style="font-size: 13px; color: var(--text-secondary);">Hiện không có bài viết nào bị trễ hẹn hoặc chờ xử lý khẩn cấp.</div>
                 </div>
                 <?php else: ?>
                 <div class="table-responsive table-mobile-cards">
-                    <table>
+                    <table id="table-ready-posts">
                         <thead>
                             <tr>
                                 <th>ID</th>
@@ -1465,34 +1491,26 @@ code {
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                         Thông tin hệ thống tự động phát hiện:
                     </div>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
-                        <div>
-                            <span style="color: var(--text-secondary)">PHP Binary:</span>
-                            <div class="mono" style="margin-top: 4px; font-size:11px; background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius:4px; word-break: break-all;"><?= htmlspecialchars($php_bin_full) ?></div>
+                    <div class="info-list">
+                        <div class="info-item">
+                            <span class="info-label">Lệnh PHP CLI tiêu chuẩn:</span>
+                            <span class="info-value mono" style="color: var(--color-success); font-weight:700;"><?= htmlspecialchars($php_bin_simple) ?></span>
                         </div>
-                        <div>
-                            <span style="color: var(--text-secondary)">PHP Version:</span>
-                            <div class="mono" style="margin-top: 4px; font-size:11px; background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius:4px; width: fit-content;"><?= phpversion() ?></div>
+                        <div class="info-item">
+                            <span class="info-label">Đường dẫn PHP CLI đầy đủ:</span>
+                            <span class="info-value mono"><?= htmlspecialchars($php_bin_full) ?> <?= $php_bin_note ? "($php_bin_note)" : '' ?></span>
                         </div>
-                        <div style="grid-column: 1 / -1;">
-                            <span style="color: var(--text-secondary)">Đường dẫn thư mục Cron:</span>
-                            <div class="mono" style="margin-top: 4px; font-size:11px; background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius:4px; word-break: break-all;"><?= htmlspecialchars($cron_dir_path) ?></div>
+                        <div class="info-item">
+                            <span class="info-label">Thư mục Cron tuyệt đối:</span>
+                            <span class="info-value mono"><?= htmlspecialchars($cron_dir_path) ?></span>
                         </div>
                     </div>
                 </div>
 
-                <p style="font-size:13px; color: var(--text-secondary); margin-bottom:12px;">
-                    Hệ thống yêu cầu cài đặt **2 Cron Job** riêng biệt để chạy tự động:
-                </p>
-
-                <!-- Switch tabs control -->
+                <!-- Tab Switcher -->
                 <div class="tabs-control">
-                    <button id="tab-aapanel" class="tab-btn active" onclick="switchTab('aapanel')">
-                        AaPanel (Dạng Shell Script)
-                    </button>
-                    <button id="tab-fullpath" class="tab-btn" onclick="switchTab('fullpath')">
-                        Linux System Crontab (Đường dẫn đầy đủ)
-                    </button>
+                    <button id="tab-aapanel" class="tab-btn active" onclick="switchTab('aapanel')">AaPanel / Lệnh đơn giản (php)</button>
+                    <button id="tab-fullpath" class="tab-btn" onclick="switchTab('fullpath')">Đường dẫn đầy đủ CLI (Full Path)</button>
                 </div>
 
                 <!-- Tab content: AaPanel -->
@@ -1509,11 +1527,11 @@ php <?= htmlspecialchars($cron_dir_path) ?>/start_comment.php >> /tmp/fb_comment
 
                     <div>
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
-                            <span style="font-size:13px; font-weight:600; color:#c4b5fd;">② Cron 2 — Đọc Insights & Bình luận tự động (Tần suất: 5 phút / lần)</span>
+                            <span style="font-size:13px; font-weight:600; color:#c4b5fd;">② Cron 2 — Đọc Insights & Bình luận tự động (Đa luồng 5 workers song song - Khuyên dùng)</span>
                             <button class="btn btn-secondary" style="padding: 4px 10px; font-size:11px;" onclick="copyText('cron2a')">Copy Command</button>
                         </div>
-                        <pre id="cron2a">php <?= htmlspecialchars($cron_dir_path) ?>/comment_insights_worker.php >> /tmp/fb_comment_insights.log 2>&1</pre>
-                        <span style="font-size:11px; color: var(--text-muted)">Cấu hình trên AaPanel: <b>N Minutes → 5 Minutes</b> | Type: Shell Script</span>
+                        <pre id="cron2a">php <?= htmlspecialchars($cron_dir_path) ?>/start_insights_workers.php 5 >> /tmp/fb_comment_insights.log 2>&1</pre>
+                        <span style="font-size:11px; color: var(--text-muted)">Cấu hình trên AaPanel: <b>N Minutes → 5 Minutes</b> | Type: Shell Script (Hoặc đơn luồng: <code>php <?= htmlspecialchars($cron_dir_path) ?>/comment_insights_worker.php</code>)</span>
                     </div>
                 </div>
 
@@ -1531,10 +1549,10 @@ php <?= htmlspecialchars($cron_dir_path) ?>/start_comment.php >> /tmp/fb_comment
 
                     <div>
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
-                            <span style="font-size:13px; font-weight:600; color:#c4b5fd;">② Cron 2 — Đọc Insights & Bình luận tự động (Tần suất: 5 phút / lần)</span>
+                            <span style="font-size:13px; font-weight:600; color:#c4b5fd;">② Cron 2 — Đọc Insights & Bình luận tự động (Đa luồng 5 workers song song)</span>
                             <button class="btn btn-secondary" style="padding: 4px 10px; font-size:11px;" onclick="copyText('cron2b')">Copy Command</button>
                         </div>
-                        <pre id="cron2b"><?= htmlspecialchars($php_bin_full) ?> <?= htmlspecialchars($cron_dir_path) ?>/comment_insights_worker.php >> /tmp/fb_comment_insights.log 2>&1</pre>
+                        <pre id="cron2b"><?= htmlspecialchars($php_bin_full) ?> <?= htmlspecialchars($cron_dir_path) ?>/start_insights_workers.php 5 >> /tmp/fb_comment_insights.log 2>&1</pre>
                         <span style="font-size:11px; color: var(--text-muted)">Hệ thống Crontab: <code>*/5 * * * *</code> (Chạy mỗi 5 phút)</span>
                     </div>
                 </div>
@@ -1550,6 +1568,25 @@ php <?= htmlspecialchars($cron_dir_path) ?>/start_comment.php >> /tmp/fb_comment
 </div>
 
 <script>
+function smoothRefresh(btn) {
+    var icon = btn.querySelector('.refresh-icon');
+    if (icon) icon.style.transform = 'rotate(360deg)';
+    setTimeout(function() {
+        window.location.reload();
+    }, 250);
+}
+
+function filterTable(input, tableId) {
+    var filter = input.value.toLowerCase();
+    var table = document.getElementById(tableId);
+    if (!table) return;
+    var rows = table.getElementsByTagName('tr');
+    for (var i = 1; i < rows.length; i++) {
+        var text = rows[i].textContent.toLowerCase();
+        rows[i].style.display = text.includes(filter) ? '' : 'none';
+    }
+}
+
 function switchTab(tab) {
     document.getElementById('content-aapanel').style.display  = (tab === 'aapanel')  ? '' : 'none';
     document.getElementById('content-fullpath').style.display = (tab === 'fullpath') ? '' : 'none';
