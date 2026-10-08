@@ -1024,171 +1024,7 @@ class TokenLocker {
     }
 }
 
-if (!function_exists('check_youtube_resumable_status')) {
-    function check_youtube_resumable_status($upload_url, $access_token, $file_size) {
-        if (empty($upload_url) || empty($access_token)) return null;
-        $ch_check = curl_init($upload_url);
-        curl_setopt($ch_check, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch_check, CURLOPT_CUSTOMREQUEST, 'PUT');
-        curl_setopt($ch_check, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-        curl_setopt($ch_check, CURLOPT_TIMEOUT, 15);
-        curl_setopt($ch_check, CURLOPT_HTTPHEADER, [
-            "Authorization: Bearer $access_token",
-            "Content-Length: 0",
-            "Content-Range: bytes */$file_size"
-        ]);
-        $check_res = curl_exec($ch_check);
-        $check_code = curl_getinfo($ch_check, CURLINFO_HTTP_CODE);
-        curl_close($ch_check);
 
-        if (in_array($check_code, [200, 201])) {
-            $res_data = json_decode($check_res, true);
-            if (!empty($res_data['id'])) {
-                return $res_data['id'];
-            }
-        }
-        return null;
-    }
-}
-
-if (!function_exists('upload_youtube_video_chunked')) {
-    function upload_youtube_video_chunked($upload_url, $access_token, $abs_media_path, $file_size, $chunk_size = 8388608, $pdo = null, $post_id = 0) {
-        if (empty($upload_url) || empty($access_token) || !file_exists($abs_media_path)) {
-            return ['code' => 400, 'response' => 'Tham số hoặc file upload không hợp lệ.'];
-        }
-
-        $handle = @fopen($abs_media_path, 'rb');
-        if (!$handle) {
-            return ['code' => 500, 'response' => 'Không thể mở file media local.'];
-        }
-
-        $byte_start = 0;
-        $last_code = 0;
-        $last_response = '';
-
-        while ($byte_start < $file_size) {
-            set_time_limit(300);
-            $byte_end = min($byte_start + $chunk_size - 1, $file_size - 1);
-            $length = $byte_end - $byte_start + 1;
-
-            fseek($handle, $byte_start);
-            $chunk_data = fread($handle, $length);
-            if ($chunk_data === false) {
-                fclose($handle);
-                return ['code' => 500, 'response' => "Lỗi đọc file tại byte $byte_start"];
-            }
-
-            // Heartbeat: cập nhật updated_at và % tiến độ upload vào CSDL để không bao giờ bị coi là orphan (kẹt > 15p)
-            if ($pdo && $post_id > 0) {
-                $percent = min(99, round(($byte_start / max(1, $file_size)) * 100));
-                $msg = "⚙️ Đang tải lên YouTube ({$percent}%)...";
-                try {
-                    $stmt_hb = $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW(), error_msg = ? WHERE id = ? AND status = 'processing'");
-                    $stmt_hb->execute([$msg, $post_id]);
-                    if ($stmt_hb->rowCount() === 0) {
-                        fclose($handle);
-                        return ['code' => 409, 'response' => 'Quá trình upload bị hủy do bài viết đã bị thay đổi trạng thái.'];
-                    }
-                } catch (Exception $e) {}
-            }
-
-            $ch = curl_init($upload_url);
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HEADER, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $chunk_data);
-            curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 300);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                "Authorization: Bearer $access_token",
-                "Content-Type: video/*",
-                "Content-Length: $length",
-                "Content-Range: bytes $byte_start-$byte_end/$file_size"
-            ]);
-
-            $raw_response = curl_exec($ch);
-            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-            $headers = substr($raw_response, 0, $header_size);
-            $body = substr($raw_response, $header_size);
-            $curl_err = curl_error($ch);
-            curl_close($ch);
-
-            $last_code = $http_code;
-            $last_response = $body;
-
-            if ($http_code == 308) {
-                $next_start = $byte_end + 1;
-                foreach (explode("\n", $headers) as $h_line) {
-                    if (stripos(trim($h_line), 'Range:') === 0) {
-                        $range_val = trim(substr(trim($h_line), 6));
-                        if (preg_match('/bytes=0-(\d+)/i', $range_val, $matches)) {
-                            $next_start = (int)$matches[1] + 1;
-                        }
-                    }
-                }
-                $byte_start = $next_start;
-            } elseif (in_array($http_code, [200, 201])) {
-                fclose($handle);
-                return ['code' => $http_code, 'response' => $body];
-            } else {
-                $recovered_id = check_youtube_resumable_status($upload_url, $access_token, $file_size);
-                if (!empty($recovered_id)) {
-                    fclose($handle);
-                    return ['code' => 200, 'response' => json_encode(['id' => $recovered_id])];
-                }
-
-                $ch_inq = curl_init($upload_url);
-                curl_setopt($ch_inq, CURLOPT_CUSTOMREQUEST, 'PUT');
-                curl_setopt($ch_inq, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch_inq, CURLOPT_HEADER, true);
-                curl_setopt($ch_inq, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-                curl_setopt($ch_inq, CURLOPT_TIMEOUT, 15);
-                curl_setopt($ch_inq, CURLOPT_HTTPHEADER, [
-                    "Authorization: Bearer $access_token",
-                    "Content-Length: 0",
-                    "Content-Range: bytes */$file_size"
-                ]);
-                $inq_raw = curl_exec($ch_inq);
-                $inq_code = curl_getinfo($ch_inq, CURLINFO_HTTP_CODE);
-                $inq_hsize = curl_getinfo($ch_inq, CURLINFO_HEADER_SIZE);
-                $inq_headers = substr($inq_raw, 0, $inq_hsize);
-                $inq_body = substr($inq_raw, $inq_hsize);
-                curl_close($ch_inq);
-
-                if (in_array($inq_code, [200, 201])) {
-                    $inq_json = json_decode($inq_body, true);
-                    if (!empty($inq_json['id'])) {
-                        fclose($handle);
-                        return ['code' => 200, 'response' => json_encode(['id' => $inq_json['id']])];
-                    }
-                } elseif ($inq_code == 308) {
-                    $resumed_start = null;
-                    foreach (explode("\n", $inq_headers) as $h_line) {
-                        if (stripos(trim($h_line), 'Range:') === 0) {
-                            $range_val = trim(substr(trim($h_line), 6));
-                            if (preg_match('/bytes=0-(\d+)/i', $range_val, $matches)) {
-                                $resumed_start = (int)$matches[1] + 1;
-                            }
-                        }
-                    }
-                    if ($resumed_start !== null && $resumed_start > $byte_start) {
-                        echo "   → [RESUMED] Tiếp tục upload YouTube từ byte $resumed_start (thay vì $byte_start)\n";
-                        $byte_start = $resumed_start;
-                        continue;
-                    }
-                }
-
-                fclose($handle);
-                return ['code' => $http_code, 'response' => !empty($body) ? $body : "cURL Error: $curl_err (HTTP $http_code)"];
-            }
-        }
-
-        fclose($handle);
-        return ['code' => $last_code, 'response' => $last_response];
-    }
-}
 
 // 1. Fetch pending posts for ALL page_ids of this Token User
 $retry_clause = $has_retry_count
@@ -1725,91 +1561,70 @@ do {
             $metadata['snippet']['tags'] = $yt_tags;
         }
 
-        // --- DEDUP GUARD: Kiểm tra xem video đã đăng trên Studio chưa trước khi upload ---
-        $dedup_found = false;
-        if (!empty($yt_title) && !empty($access_token)) {
-            $ch_search = curl_init("https://www.googleapis.com/youtube/v3/search?part=snippet&forMine=true&type=video&order=date&maxResults=5");
-            curl_setopt($ch_search, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch_search, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-            curl_setopt($ch_search, CURLOPT_TIMEOUT, 15);
-            curl_setopt($ch_search, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
-            $s_res = curl_exec($ch_search);
-            $s_code = curl_getinfo($ch_search, CURLINFO_HTTP_CODE);
-            curl_close($ch_search);
+        // --- RESUMABLE UPLOAD PROCESS ---
+        $file_size = filesize($abs_media_path);
 
-            if ($s_code === 200) {
-                $s_json = json_decode($s_res, true);
-                if (!empty($s_json['items'])) {
-                    foreach ($s_json['items'] as $s_item) {
-                        $item_title = $s_item['snippet']['title'] ?? '';
-                        $item_vid = $s_item['id']['videoId'] ?? '';
-                        $pub_at = strtotime($s_item['snippet']['publishedAt'] ?? '');
-                        
-                        if (!empty($item_vid) && !empty($pub_at) && (time() - $pub_at < 7200)) {
-                            if (trim(mb_strtolower($item_title)) === trim(mb_strtolower($yt_title))) {
-                                echo "   → [DEDUP GUARD] Video YouTube '$yt_title' đã tồn tại trên Studio (Video ID: $item_vid)! Đánh dấu thành công, không đăng đè.\n";
-                                $upload_code = 200;
-                                $upload_response = json_encode(['id' => $item_vid]);
-                                $dedup_found = true;
-                                break;
-                            }
-                        }
-                    }
-                }
+        $ch_init = curl_init('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status');
+        curl_setopt($ch_init, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch_init, CURLOPT_POST, true);
+        curl_setopt($ch_init, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch_init, CURLOPT_POSTFIELDS, json_encode($metadata));
+        curl_setopt($ch_init, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer $access_token",
+            "Content-Type: application/json; charset=UTF-8",
+            "X-Upload-Content-Length: $file_size"
+        ]);
+        curl_setopt($ch_init, CURLOPT_HEADER, true);
+        curl_setopt($ch_init, CURLOPT_TIMEOUT, 30);
+        $init_response = curl_exec($ch_init);
+        $init_code = curl_getinfo($ch_init, CURLINFO_HTTP_CODE);
+        $init_header_size = curl_getinfo($ch_init, CURLINFO_HEADER_SIZE);
+        $init_headers = substr($init_response, 0, $init_header_size);
+        $init_body = substr($init_response, $init_header_size);
+        curl_close($ch_init);
+
+        if ($init_code !== 200) {
+            marKAsFailed($pdo, $post['id'], "Lỗi khởi tạo upload YouTube: HTTP $init_code - $init_body", $sys_max_retries, $sys_retry_interval);
+            if ($temp_drive_file && file_exists($temp_drive_file))
+                @unlink($temp_drive_file);
+            continue;
+        }
+
+        // Tìm Location url
+        $upload_url = '';
+        foreach (explode("\n", $init_headers) as $header_line) {
+            if (stripos(trim($header_line), 'Location:') === 0) {
+                $upload_url = trim(substr(trim($header_line), 9));
+                break;
             }
         }
 
-        if (!$dedup_found) {
-            // --- RESUMABLE UPLOAD PROCESS ---
-            $file_size = filesize($abs_media_path);
-
-            $ch_init = curl_init('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status');
-            curl_setopt($ch_init, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch_init, CURLOPT_POST, true);
-            curl_setopt($ch_init, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-            curl_setopt($ch_init, CURLOPT_POSTFIELDS, json_encode($metadata));
-            curl_setopt($ch_init, CURLOPT_HTTPHEADER, [
-                "Authorization: Bearer $access_token",
-                "Content-Type: application/json; charset=UTF-8",
-                "X-Upload-Content-Length: $file_size"
-            ]);
-            curl_setopt($ch_init, CURLOPT_HEADER, true);
-            curl_setopt($ch_init, CURLOPT_TIMEOUT, 30);
-            $init_response = curl_exec($ch_init);
-            $init_code = curl_getinfo($ch_init, CURLINFO_HTTP_CODE);
-            $init_header_size = curl_getinfo($ch_init, CURLINFO_HEADER_SIZE);
-            $init_headers = substr($init_response, 0, $init_header_size);
-            $init_body = substr($init_response, $init_header_size);
-            curl_close($ch_init);
-
-            if ($init_code !== 200) {
-                marKAsFailed($pdo, $post['id'], "Lỗi khởi tạo upload YouTube: HTTP $init_code - $init_body", $sys_max_retries, $sys_retry_interval);
-                if ($temp_drive_file && file_exists($temp_drive_file))
-                    @unlink($temp_drive_file);
-                continue;
-            }
-
-            // Tìm Location url
-            $upload_url = '';
-            foreach (explode("\n", $init_headers) as $header_line) {
-                if (stripos(trim($header_line), 'Location:') === 0) {
-                    $upload_url = trim(substr(trim($header_line), 9));
-                    break;
-                }
-            }
-
-            if (empty($upload_url)) {
-                marKAsFailed($pdo, $post['id'], "Lỗi lấy Location URL để upload lên YouTube.", $sys_max_retries, $sys_retry_interval);
-                if ($temp_drive_file && file_exists($temp_drive_file))
-                    @unlink($temp_drive_file);
-                continue;
-            }
-
-            // 2. Tải File Lên (Resumable Chunked Upload - 8MB / chunk với Heartbeat liên tục vào DB)
-            $chunk_res = upload_youtube_video_chunked($upload_url, $access_token, $abs_media_path, $file_size, 8388608, $pdo, $post['id']);
-            $upload_code = $chunk_res['code'];
-            $upload_response = $chunk_res['response'];
+        if (empty($upload_url)) {
+            marKAsFailed($pdo, $post['id'], "Lỗi lấy Location URL để upload lên YouTube.", $sys_max_retries, $sys_retry_interval);
+            if ($temp_drive_file && file_exists($temp_drive_file))
+                @unlink($temp_drive_file);
+            continue;
         }
+
+        // 2. Tải File Lên
+        set_time_limit(3600); // 1 giờ cho upload file to
+        $file_handle = fopen($abs_media_path, 'r');
+
+        $ch_upload = curl_init($upload_url);
+        curl_setopt($ch_upload, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch_upload, CURLOPT_PUT, true);
+        curl_setopt($ch_upload, CURLOPT_INFILE, $file_handle);
+        curl_setopt($ch_upload, CURLOPT_INFILESIZE, $file_size);
+        curl_setopt($ch_upload, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch_upload, CURLOPT_TIMEOUT, 1800);
+        curl_setopt($ch_upload, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer $access_token",
+            "Content-Type: video/*"
+        ]);
+        $upload_response = curl_exec($ch_upload);
+        $upload_code = curl_getinfo($ch_upload, CURLINFO_HTTP_CODE);
+        curl_close($ch_upload);
+        fclose($file_handle);
 
         if (in_array($upload_code, [200, 201])) {
             $youtube_res = json_decode($upload_response, true);
