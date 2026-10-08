@@ -671,10 +671,11 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
 
         fb_echo_log("   → [Bước 2/Chunk {$chunk_index}/{$total_chunks}] Uploading {$chunk_mb} MB ({$pct}% - {$up_mb}/{$total_mb} MB) từ offset {$start_offset}...\n");
 
-        if ($sp_post_id > 0 && function_exists('update_post_progress')) {
+        if ($sp_post_id > 0 && function_exists('update_post_progress') && ($pct === 0 || $pct >= ($last_fb_pct ?? -30) + 30 || $pct >= 90)) {
+            $last_fb_pct = $pct;
             global $pdo;
             if (isset($pdo)) {
-                update_post_progress($pdo, $sp_post_id, "📤 Đang upload Chunk {$chunk_index}/{$total_chunks} ({$pct}%)...");
+                update_post_progress($pdo, $sp_post_id, "📤 Đang upload {$type_name} ({$pct}%)...");
             }
         }
 

@@ -1725,7 +1725,7 @@ do {
 
             // Cập nhật % tiến trình
             $pct = (int)floor((($byte_end + 1) / $file_size) * 100);
-            if ($pct > $yt_last_pct && $pct < 100) {
+            if (($pct >= $yt_last_pct + 30 || $pct >= 95) && $pct < 100) {
                 $yt_last_pct = $pct;
                 if (function_exists('update_post_progress')) {
                     update_post_progress($pdo, $post['id'], "⚡ 📤 Đang upload YouTube ({$pct}%)...");
