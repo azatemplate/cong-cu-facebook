@@ -1629,52 +1629,102 @@ do {
             continue;
         }
 
-        // 2. Tải File Lên
-        set_time_limit(3600); // 1 giờ cho upload file to
-        $file_handle = fopen($abs_media_path, 'r');
+        // 2. Tải File Lên - CHUNKED RESUMABLE UPLOAD (Chuẩn Google API Client)
+        set_time_limit(3600); // 1 giờ cho upload file lớn
+        $file_handle = fopen($abs_media_path, 'rb');
 
-        $ch_upload = curl_init($upload_url);
-        curl_setopt($ch_upload, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch_upload, CURLOPT_UPLOAD, true);
-        curl_setopt($ch_upload, CURLOPT_INFILE, $file_handle);
-        curl_setopt($ch_upload, CURLOPT_INFILESIZE, $file_size);
-        curl_setopt($ch_upload, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-        curl_setopt($ch_upload, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-        curl_setopt($ch_upload, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch_upload, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($ch_upload, CURLOPT_BUFFERSIZE, 1048576); // 1MB buffer cho upload siêu tốc
-        curl_setopt($ch_upload, CURLOPT_TCP_KEEPALIVE, 1);
-        curl_setopt($ch_upload, CURLOPT_CONNECTTIMEOUT, 15);
-        curl_setopt($ch_upload, CURLOPT_TIMEOUT, 1800);
-        curl_setopt($ch_upload, CURLOPT_LOW_SPEED_LIMIT, 1024);
-        curl_setopt($ch_upload, CURLOPT_LOW_SPEED_TIME, 120);
-        curl_setopt($ch_upload, CURLOPT_HTTPHEADER, [
-            "Content-Type: video/*",
-            "Content-Length: $file_size"
-        ]);
+        // Chunk size: 10MB (10,485,760 bytes = 40 * 256KB - bội số 256KB theo chuẩn YouTube API)
+        $chunk_size = 10485760;
+        $byte_start = 0;
+        $upload_code = 0;
+        $upload_response = '';
+        $upload_err = '';
+        $yt_last_pct = -1;
 
-        $yt_last_pct = -10;
-        curl_setopt($ch_upload, CURLOPT_NOPROGRESS, false);
-        curl_setopt($ch_upload, CURLOPT_PROGRESSFUNCTION, function() use ($pdo, $post, &$yt_last_pct) {
-            $args = func_get_args();
-            $uploaded = (count($args) >= 5) ? $args[4] : ($args[3] ?? 0);
-            $total = (count($args) >= 5) ? $args[3] : ($args[2] ?? 0);
-            if ($total > 0 && $uploaded > 0) {
-                $pct = (int)floor(($uploaded / $total) * 100);
-                if ($pct >= $yt_last_pct + 10 || $pct === 99 || $pct === 100) {
-                    $yt_last_pct = $pct;
-                    if (function_exists('update_post_progress')) {
-                        update_post_progress($pdo, $post['id'], "⚡ 📤 Đang upload YouTube ({$pct}%)...");
-                    }
+        while ($byte_start < $file_size) {
+            $byte_end = min($byte_start + $chunk_size - 1, $file_size - 1);
+            $current_chunk_length = ($byte_end - $byte_start) + 1;
+
+            fseek($file_handle, $byte_start);
+            $chunk_data = fread($file_handle, $current_chunk_length);
+
+            $chunk_success = false;
+            $max_chunk_retries = 3;
+
+            for ($attempt = 1; $attempt <= $max_chunk_retries; $attempt++) {
+                $ch_upload = curl_init($upload_url);
+                curl_setopt($ch_upload, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch_upload, CURLOPT_CUSTOMREQUEST, 'PUT');
+                curl_setopt($ch_upload, CURLOPT_POSTFIELDS, $chunk_data);
+                curl_setopt($ch_upload, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+                curl_setopt($ch_upload, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+                curl_setopt($ch_upload, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch_upload, CURLOPT_SSL_VERIFYHOST, false);
+                curl_setopt($ch_upload, CURLOPT_TCP_KEEPALIVE, 1);
+                curl_setopt($ch_upload, CURLOPT_CONNECTTIMEOUT, 15);
+                curl_setopt($ch_upload, CURLOPT_TIMEOUT, 300); // 5 phút / 10MB chunk
+                curl_setopt($ch_upload, CURLOPT_HTTPHEADER, [
+                    "Content-Type: video/*",
+                    "Content-Length: $current_chunk_length",
+                    "Content-Range: bytes {$byte_start}-{$byte_end}/{$file_size}"
+                ]);
+
+                $upload_response = curl_exec($ch_upload);
+                $upload_code = curl_getinfo($ch_upload, CURLINFO_HTTP_CODE);
+                $upload_err = curl_error($ch_upload);
+                curl_close($ch_upload);
+
+                // HTTP 308 (Resume Incomplete) = Chunk thành công, YouTube chờ chunk tiếp theo
+                // HTTP 200/201 = Chunk cuối thành công, video đã xuất bản
+                if ($upload_code === 308 || in_array($upload_code, [200, 201])) {
+                    $chunk_success = true;
+                    break;
+                }
+
+                echo "   → YouTube Upload Chunk bytes $byte_start-$byte_end lỗi (HTTP $upload_code / $upload_err). Lần thử $attempt/$max_chunk_retries...\n";
+                sleep(2);
+            }
+
+            if (!$chunk_success) {
+                // Nếu thử 3 lần thất bại, hỏi YouTube xem đã nhận được tới byte nào để khôi phục
+                $ch_check = curl_init($upload_url);
+                curl_setopt($ch_check, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch_check, CURLOPT_CUSTOMREQUEST, 'PUT');
+                curl_setopt($ch_check, CURLOPT_HEADER, true);
+                curl_setopt($ch_check, CURLOPT_HTTPHEADER, [
+                    "Content-Length: 0",
+                    "Content-Range: bytes */{$file_size}"
+                ]);
+                $check_res = curl_exec($ch_check);
+                $check_code = curl_getinfo($ch_check, CURLINFO_HTTP_CODE);
+                curl_close($ch_check);
+
+                if ($check_code === 308 && preg_match('/Range:\s*bytes=0-(\d+)/i', $check_res, $m_range)) {
+                    $last_saved = (int)$m_range[1];
+                    echo "   → YouTube khôi phục vị trí upload từ byte: $last_saved\n";
+                    $byte_start = $last_saved + 1;
+                    continue;
+                } else {
+                    break; // Không thể tiếp tục chunk này
                 }
             }
-            return 0; // Explicitly return 0 to prevent cURL abort
-        });
 
-        $upload_response = curl_exec($ch_upload);
-        $upload_code = curl_getinfo($ch_upload, CURLINFO_HTTP_CODE);
-        $upload_err = curl_error($ch_upload);
-        curl_close($ch_upload);
+            // Cập nhật % tiến trình
+            $pct = (int)floor((($byte_end + 1) / $file_size) * 100);
+            if ($pct > $yt_last_pct && $pct < 100) {
+                $yt_last_pct = $pct;
+                if (function_exists('update_post_progress')) {
+                    update_post_progress($pdo, $post['id'], "⚡ 📤 Đang upload YouTube ({$pct}%)...");
+                }
+            }
+
+            if (in_array($upload_code, [200, 201])) {
+                break; // Đã hoàn thành toàn bộ file
+            }
+
+            $byte_start = $byte_end + 1;
+        }
+
         fclose($file_handle);
 
         if (in_array($upload_code, [200, 201])) {
