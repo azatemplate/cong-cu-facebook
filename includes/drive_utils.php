@@ -281,32 +281,7 @@ function download_drive_file_temp($access_token, $file_id) {
     curl_setopt($ch2, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
 
-    $last_printed_pct = -20;
-    curl_setopt($ch2, CURLOPT_NOPROGRESS, false);
-    curl_setopt($ch2, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct) {
-        try {
-            $args = func_get_args();
-            if (count($args) >= 5) {
-                $downloaded = $args[2];
-                $total = $args[1];
-            } else {
-                $downloaded = $args[1] ?? 0;
-                $total = $args[0] ?? 0;
-            }
-            if ($total > 0 && $downloaded > 0) {
-                $pct = (int) floor(($downloaded / $total) * 100);
-                if ($pct >= $last_printed_pct + 20 || $pct === 100) {
-                    $last_printed_pct = $pct;
-                    $dl_mb = round($downloaded / 1024 / 1024, 2);
-                    $tot_mb = round($total / 1024 / 1024, 2);
-                    echo "   → Tiến trình tải từ Drive: {$pct}% ({$dl_mb} MB / {$tot_mb} MB)\n";
-                    if (ob_get_level() > 0) @ob_flush();
-                    @flush();
-                }
-            }
-        } catch (Throwable $e) {}
-        return 0;
-    });
+
 
     $success = curl_exec($ch2);
     $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
