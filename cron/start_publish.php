@@ -386,7 +386,7 @@ foreach ($dispatch_list as $dispatch) {
     // Kiểm tra và giải phóng lock cũ trước khi spawn worker
     // Nếu lock > 5 phút → worker cũ đã crash hoặc account vừa được gia hạn
     $lock_dir = dirname(__DIR__) . '/locks';
-    $lock_key = md5('uid_' . $uid);
+    $lock_key = (strpos($uid, 'camp_') === 0) ? md5($uid) : md5('uid_' . $uid);
     $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
     if (file_exists($lock_file)) {
         $lock_age = time() - filemtime($lock_file);
