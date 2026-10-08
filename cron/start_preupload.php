@@ -85,14 +85,17 @@ try {
 
 $active_publish = max($active_publish_locks, $active_publish_db);
 
-// ── 3. ĐẾM BÀI SẼ ĐẮNG TRONG 10 PHÚT TỚI ĐỂ DÀNH SLOT TRỐNG ──
+// ── 3. ĐẾM BÀI SẼ ĐĂNG TRONG 10 PHÚT TỚI ĐỂ DÀNH SLOT TRỐNG ──
+// Chỉ đếm các bài 'pending' THỰC SỰ SẼ ĐĂNG trong 10m tới (bỏ qua bài failed / quá retries)
 $upcoming_publish_count_10m = 0;
 try {
     $upcoming_publish_count_10m = (int)$pdo->query("
-        SELECT COUNT(*) 
-        FROM scheduled_posts 
-        WHERE status IN ('pending', 'failed')
-          AND scheduled_time <= DATE_ADD(NOW(), INTERVAL 10 MINUTE)
+        SELECT COUNT(DISTINCT sp.id) 
+        FROM scheduled_posts sp
+        LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+        WHERE sp.status = 'pending'
+          AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3))
+          AND sp.scheduled_time <= DATE_ADD(NOW(), INTERVAL 10 MINUTE)
     ")->fetchColumn();
 } catch (Exception $e) {}
 
