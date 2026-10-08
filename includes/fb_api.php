@@ -174,26 +174,28 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
                     $last_printed_pct = -10;
                     curl_setopt($ch, CURLOPT_NOPROGRESS, false);
                     curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct) {
-                        $args = func_get_args();
-                        if (count($args) >= 5) {
-                            $uploaded = $args[4];
-                            $total = $args[3];
-                        } else {
-                            $uploaded = $args[3] ?? 0;
-                            $total = $args[2] ?? 0;
-                        }
-                        if ($total > 0 && $uploaded > 0) {
-                            $pct = (int) floor(($uploaded / $total) * 100);
-                            if ($pct >= $last_printed_pct + 10 || $pct === 100) {
-                                $last_printed_pct = $pct;
-                                $up_mb = round($uploaded / 1024 / 1024, 2);
-                                $tot_mb = round($total / 1024 / 1024, 2);
-                                fb_echo_log("   → Tiến trình upload: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
-                                if ($pct === 100) {
-                                    fb_echo_log("   ⏳ Đã truyền xong 100% dữ liệu sang Facebook, đang chờ Facebook xác nhận...\n");
+                        try {
+                            $args = func_get_args();
+                            if (count($args) >= 5) {
+                                $uploaded = $args[4];
+                                $total = $args[3];
+                            } else {
+                                $uploaded = $args[3] ?? 0;
+                                $total = $args[2] ?? 0;
+                            }
+                            if ($total > 0 && $uploaded > 0) {
+                                $pct = (int) floor(($uploaded / $total) * 100);
+                                if ($pct >= $last_printed_pct + 10 || $pct === 100) {
+                                    $last_printed_pct = $pct;
+                                    $up_mb = round($uploaded / 1024 / 1024, 2);
+                                    $tot_mb = round($total / 1024 / 1024, 2);
+                                    fb_echo_log("   → Tiến trình upload: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
+                                    if ($pct === 100) {
+                                        fb_echo_log("   ⏳ Đã truyền xong 100% dữ liệu sang Facebook, đang chờ Facebook xác nhận...\n");
+                                    }
                                 }
                             }
-                        }
+                        } catch (Throwable $e) {}
                         return 0;
                     });
                 }
@@ -719,18 +721,20 @@ function fb_upload_reel_official($page_id, $page_access_token, $file_path, $titl
     $last_printed_pct = -10;
     curl_setopt($ch, CURLOPT_NOPROGRESS, false);
     curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct) {
-        $args = func_get_args();
-        $uploaded = (count($args) >= 5) ? $args[4] : ($args[3] ?? 0);
-        $total    = (count($args) >= 5) ? $args[3] : ($args[2] ?? 0);
-        if ($total > 0 && $uploaded > 0) {
-            $pct = (int) floor(($uploaded / $total) * 100);
-            if ($pct >= $last_printed_pct + 20 || $pct === 100) {
-                $last_printed_pct = $pct;
-                $up_mb = round($uploaded / 1024 / 1024, 2);
-                $tot_mb = round($total / 1024 / 1024, 2);
-                fb_echo_log("   → Upload Reels progress: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
+        try {
+            $args = func_get_args();
+            $uploaded = (count($args) >= 5) ? $args[4] : ($args[3] ?? 0);
+            $total    = (count($args) >= 5) ? $args[3] : ($args[2] ?? 0);
+            if ($total > 0 && $uploaded > 0) {
+                $pct = (int) floor(($uploaded / $total) * 100);
+                if ($pct >= $last_printed_pct + 20 || $pct === 100) {
+                    $last_printed_pct = $pct;
+                    $up_mb = round($uploaded / 1024 / 1024, 2);
+                    $tot_mb = round($total / 1024 / 1024, 2);
+                    fb_echo_log("   → Upload Reels progress: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
+                }
             }
-        }
+        } catch (Throwable $e) {}
         return 0;
     });
 

@@ -88,13 +88,6 @@ try {
 
 // ── Đếm số bài đang xử lý (PROCESSING) đồng bộ 1-1 làm chỉ số Đang Chạy ──────────────
 $active_publish = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
-if ($active_publish > $max_publish_workers) {
-    $excess = $active_publish - $max_publish_workers;
-    try {
-        $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' ORDER BY updated_at ASC LIMIT " . (int)$excess);
-        $active_publish = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
-    } catch (Exception $e) {}
-}
 $active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
 
 // ── Kích hoạt thủ công nếu có ?run=1 ─────────────────────────────────────────
