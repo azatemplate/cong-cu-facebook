@@ -226,6 +226,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $alert_message = 'Đã cập nhật danh sách SaveAPI Key hệ thống thành công.';
     }
 
+    if (isset($_POST['retry_all_failed']) && $_SESSION['role'] === 'admin') {
+        $stmt_retry = $pdo->prepare("UPDATE scheduled_posts SET status = 'pending', retry_count = 0, error_msg = NULL WHERE status IN ('failed', 'checkpoint')");
+        $stmt_retry->execute();
+        $affected = $stmt_retry->rowCount();
+        $alert_type = 'success';
+        $alert_message = "Đã chuyển toàn bộ {$affected} bài viết bị lỗi/checkpoint về trạng thái Chờ đăng thành công!";
+    }
+
     if (isset($_POST['test_telegram'])) {
         require_once __DIR__ . '/includes/telegram.php';
         $ok = send_telegram_notification($pdo, $_SESSION['account_id'], "<b>🔔 Thông báo thử nghiệm</b>\nHệ thống Facebook Automation đã kết nối Telegram thành công!\n\n🕐 Thời gian: " . date('d/m/Y H:i:s'), 'general');
@@ -601,10 +609,19 @@ $gg_callback_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "ht
         </div>
     </div>
     <?php if ($is_admin): ?>
-        <a href="diagnostics.php" target="_blank" class="diag-btn">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            Chẩn đoán Cronjob
-        </a>
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <a href="diagnostics.php" target="_blank" class="diag-btn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                Chẩn đoán Cronjob
+            </a>
+            <form method="POST" action="settings.php" style="margin:0;" onsubmit="return confirm('Bạn có chắc chắn muốn thử lại (Retry) cho TOÀN BỘ bài bị lỗi trên hệ thống?');">
+                <?php echo csrf_field(); ?>
+                <button type="submit" name="retry_all_failed" class="diag-btn" style="background: rgba(220, 38, 38, 0.85); border-color: rgba(255, 255, 255, 0.3); cursor: pointer;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    Retry All Bài Lỗi
+                </button>
+            </form>
+        </div>
     <?php endif; ?>
 </div>
 
