@@ -3884,11 +3884,15 @@ do {
         }
         
         if ((int)$status_code === 413 || stripos($error_msg, '413') !== false) {
-            $friendly_err = "Lỗi tải video từ Google Drive";
+            $friendly_err = "Lỗi tải video từ Google Drive (HTTP 413 Payload Too Large)";
             marKAsFailed($pdo, $post['id'], $friendly_err, $sys_max_retries, $sys_retry_interval, $has_error_msg, $has_retry_count);
         } else {
+            $step_label = !empty($post['post_type']) ? "[{$post['post_type']}] " : "";
+            if (stripos($error_msg, 'operation aborted by callback') !== false) {
+                $error_msg .= " (Tiến trình cURL bị ngắt kết nối giữa chừng)";
+            }
             $full_msg = "HTTP $status_code - $error_msg";
-            marKAsFailed($pdo, $post['id'], "Lỗi API: $full_msg", $sys_max_retries, $sys_retry_interval, $has_error_msg, $has_retry_count);
+            marKAsFailed($pdo, $post['id'], "Lỗi API {$step_label}: $full_msg", $sys_max_retries, $sys_retry_interval, $has_error_msg, $has_retry_count);
         }
     }
 

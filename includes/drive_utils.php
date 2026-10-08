@@ -770,17 +770,10 @@ if (!function_exists('upload_file_to_drive_resumable')) {
             return ['error' => true, 'msg' => 'Could not retrieve upload Location header from Drive API.'];
         }
         
-        $fp = fopen($file_path, 'rb');
-        if (!$fp) {
-            return ['error' => true, 'msg' => 'Cannot open local file for reading.'];
-        }
-        
         $ch = curl_init($location);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
-        curl_setopt($ch, CURLOPT_INFILE, $fp);
-        curl_setopt($ch, CURLOPT_INFILESIZE, $file_size);
-        curl_setopt($ch, CURLOPT_UPLOAD, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, file_get_contents($file_path));
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer $access_token",
             "Content-Type: $mime_type",
@@ -789,7 +782,6 @@ if (!function_exists('upload_file_to_drive_resumable')) {
         
         $upload_response = curl_exec($ch);
         $upload_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        fclose($fp);
         curl_close($ch);
         
         $data = json_decode($upload_response, true);

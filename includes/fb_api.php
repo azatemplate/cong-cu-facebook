@@ -216,7 +216,8 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     curl_close($ch);
 
     if ($response === false) {
-        return ['status_code' => 0, 'data' => ['error' => ['message' => $curl_err]]];
+        $err_txt = !empty($curl_err) ? $curl_err : 'cURL connection failed';
+        return ['status_code' => 0, 'data' => ['error' => ['message' => "[FB Endpoint /{$endpoint}] $err_txt"]]];
     }
 
     return [
@@ -702,8 +703,7 @@ function fb_upload_reel_official($page_id, $page_access_token, $file_path, $titl
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-    curl_setopt($ch, CURLOPT_INFILE, $fp);
-    curl_setopt($ch, CURLOPT_INFILESIZE, $file_size);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, file_get_contents($file_path));
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         "Authorization: OAuth {$page_access_token}",
         "Content-Type: application/octet-stream",
