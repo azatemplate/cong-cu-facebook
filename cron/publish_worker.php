@@ -1359,10 +1359,14 @@ do {
         $token_data = json_decode($token_res, true);
 
         if (empty($token_data['access_token'])) {
-            marKAsFailed($pdo, $post['id'], "Lỗi cấp mới Access Token YouTube: " . ($token_data['error'] ?? 'Unknown'), $sys_max_retries, $sys_retry_interval);
+            $err_reason = $token_data['error_description'] ?? ($token_data['error'] ?? 'Unknown');
+            if (stripos($err_reason, 'invalid_grant') !== false || stripos($err_reason, 'revoked') !== false || stripos($err_reason, 'expired') !== false) {
+                $err_reason = "Kênh YouTube đã bị hết hạn/hủy ủy quyền Google (invalid_grant). Vui lòng vào trang Quản Lý Kênh YouTube và bấm kết nối lại Kênh.";
+            }
+            marKAsFailed($pdo, $post['id'], "Lỗi cấp mới Access Token YouTube: " . $err_reason, $sys_max_retries, $sys_retry_interval);
             continue;
         }
-        $access_token = $token_data['access_token'];
+        $access_token = trim($token_data['access_token']);
 
         // Khởi tạo Lock cho YouTube API dựa trên ID Kênh (Channel ID)
         $yt_delay_sec = 15;
@@ -2365,19 +2369,18 @@ do {
 
             $yt_category = !empty($content_data['category']) ? (string)$content_data['category'] : '22';
 
-            $yt_type = 'VIDEO';
-            if (isset($content_data['post_mode']) && strtolower($content_data['post_mode']) === 'shorts') {
-                $yt_type = 'SHORTS';
-            } elseif (strpos(strtolower($post['post_type']), 'shorts') !== false) {
-                $yt_type = 'SHORTS';
+            $yt_is_short = (isset($content_data['post_mode']) && strtolower($content_data['post_mode']) === 'shorts') || (strpos(strtolower($post['post_type']), 'shorts') !== false);
+
+            $yt_meta = [
+                'title' => $yt_title,
+                'categoryId' => $yt_category
+            ];
+            if ($yt_is_short) {
+                $yt_meta['short'] = true;
             }
 
             $input['metadata'] = [
-                'youtube' => [
-                    'title' => $yt_title,
-                    'categoryId' => $yt_category,
-                    'type' => $yt_type
-                ]
+                'youtube' => $yt_meta
             ];
         }
 
@@ -2501,15 +2504,10 @@ do {
                             'categoryId' => '22'
                         ];
                     }
-                    $input['metadata']['youtube']['type'] = 'VIDEO';
+                    unset($input['metadata']['youtube']['type']);
+                    $input['metadata']['youtube']['short'] = true;
                     $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
                     $create_res = $res['data']['createPost'] ?? null;
-
-                    if (!isset($create_res['post']['id'])) {
-                        $input['metadata']['youtube']['type'] = 'video';
-                        $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
-                        $create_res = $res['data']['createPost'] ?? null;
-                    }
                 } elseif (stripos($err_msg, 'cannot exceed') !== false || stripos($err_msg, 'characters') !== false) {
                     // Nếu Buffer API phản hồi lỗi độ dài ký tự (do emojis/surrogate pairs/hashtags), tự động cắt về 1500 ký tự và thử lại ngay lập tức
                     if (!empty($input['text'])) {
