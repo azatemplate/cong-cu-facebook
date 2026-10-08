@@ -1048,21 +1048,39 @@ code {
                 
                 <div class="info-list">
                     <!-- Publish workers -->
-                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px;">
-                        <span class="info-label" style="font-weight: 600; color: var(--text-primary);">🚀 Publish Workers (Đăng bài)</span>
-                        <div style="width: 100%; display: flex; justify-content: space-between; font-size: 13px;">
-                            <span>Đang chạy: <strong class="text-warning"><?= $active_publish ?></strong> Worker <?php if ($total_proc_posts > 0): ?><small style="opacity:0.75;">(<?= $total_proc_posts ?> bài)</small><?php endif; ?></span>
-                            <span>Tối đa: <strong><?= $max_publish_workers ?></strong> Worker</span>
-                            <span>Trống: <strong class="text-success"><?= max(0, $max_publish_workers - $active_publish) ?></strong></span>
+                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px 0;">
+                        <span class="info-label" style="font-weight: 700; color: var(--text-primary); font-size: 14px;">🚀 Publish Workers (Đăng bài)</span>
+                        <div style="width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; font-size: 13px; background: rgba(255,255,255,0.03); padding: 12px 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); box-sizing: border-box;">
+                            <div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Đang chạy</div>
+                                <strong class="text-warning" style="font-size: 16px;"><?= $active_publish ?></strong> <span style="font-size: 12px; color: var(--text-muted);">luồng</span>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Giới hạn tối đa</div>
+                                <strong style="font-size: 16px; color: var(--text-primary);"><?= $max_publish_workers ?></strong> <span style="font-size: 12px; color: var(--text-muted);">luồng</span>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Còn trống</div>
+                                <strong class="text-success" style="font-size: 16px;"><?= max(0, $max_publish_workers - $active_publish) ?></strong>
+                            </div>
                         </div>
                     </div>
                     <!-- Comment workers -->
-                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px; border:none; padding: 0;">
-                        <span class="info-label" style="font-weight: 600; color: var(--text-primary);">💬 Comment Workers (Bình luận)</span>
-                        <div style="width: 100%; display: flex; justify-content: space-between; font-size: 13px;">
-                            <span>Đang chạy: <strong class="text-warning"><?= $active_comment ?></strong></span>
-                            <span>Tối đa: <strong><?= $max_comment_workers ?></strong></span>
-                            <span>Trống: <strong class="text-success"><?= max(0, $max_comment_workers - $active_comment) ?></strong></span>
+                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 10px; border:none; padding: 12px 0 0 0;">
+                        <span class="info-label" style="font-weight: 700; color: var(--text-primary); font-size: 14px;">💬 Comment Workers (Bình luận)</span>
+                        <div style="width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; font-size: 13px; background: rgba(255,255,255,0.03); padding: 12px 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); box-sizing: border-box;">
+                            <div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Đang chạy</div>
+                                <strong class="text-warning" style="font-size: 16px;"><?= $active_comment ?></strong> <span style="font-size: 12px; color: var(--text-muted);">luồng</span>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Giới hạn tối đa</div>
+                                <strong style="font-size: 16px; color: var(--text-primary);"><?= $max_comment_workers ?></strong> <span style="font-size: 12px; color: var(--text-muted);">luồng</span>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Còn trống</div>
+                                <strong class="text-success" style="font-size: 16px;"><?= max(0, $max_comment_workers - $active_comment) ?></strong>
+                            </div>
                         </div>
                     </div>
                 </div>
