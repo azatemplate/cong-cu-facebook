@@ -618,7 +618,7 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
     fb_echo_log("   🚀 BẮT ĐẦU ĐĂNG {$type_name} CHUNKED ({$total_mb} MB - Chunk Size: {$chunk_size_mb} MB)\n");
     fb_echo_log("   ----------------------------------------------------\n");
 
-    $endpoint = $is_reel ? ($page_id . '/video_reels') : ($page_id . '/videos');
+    $endpoint = $page_id . '/videos';
 
     // ── BƯỚC 1: START UPLOAD SESSION ─────────────────────────────────
     fb_echo_log("   → [Bước 1/3] Khởi tạo phiên upload (POST /{$endpoint}?upload_phase=start)...\n");
@@ -630,13 +630,13 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
 
     $res1 = fb_api_request($endpoint, $start_params, 'POST', [], 60);
 
-    if ($res1['status_code'] !== 200 || empty($res1['data']['video_id'])) {
+    if ($res1['status_code'] !== 200 || empty($res1['data']['video_id']) || empty($res1['data']['upload_session_id'])) {
         fb_echo_log("   ❌ [Bước 1 Thất Bại] HTTP " . ($res1['status_code'] ?? 0) . " - " . json_encode($res1['data'] ?? []) . "\n");
         return $res1;
     }
 
     $video_id          = $res1['data']['video_id'];
-    $upload_session_id = $res1['data']['upload_session_id'] ?? $res1['data']['video_id'];
+    $upload_session_id = $res1['data']['upload_session_id'];
     $start_offset      = (int)($res1['data']['start_offset'] ?? 0);
 
     fb_echo_log("   ✅ [Bước 1 Thành Công] Video ID: {$video_id} - Session ID: {$upload_session_id}\n");
@@ -749,7 +749,6 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
     ];
 
     if ($is_reel) {
-        $finish_params['video_state']          = 'PUBLISHED';
         $finish_params['post_video_as_reels'] = 'true';
     }
 
