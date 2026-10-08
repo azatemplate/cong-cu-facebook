@@ -76,7 +76,7 @@ try {
 } catch (Exception $e) {}
 
 // ── Lấy cấu hình Throttling từ settings ─────────────────────────────────────
-$max_publish_workers = 30;
+$max_publish_workers = 15;
 $max_comment_workers = 15;
 try {
     $stmt_throttle = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('max_publish_workers', 'max_comment_workers')");

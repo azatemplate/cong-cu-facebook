@@ -245,7 +245,7 @@ try {
 }
 
 // Cấu hình giới hạn luồng cho máy chủ (Lấy trực tiếp từ ⚙️ Throttling Máy Chủ ở settings.php)
-$MAX_WORKERS = 30;
+$MAX_WORKERS = 15;
 try {
     $res_limit = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_publish_workers'")->fetchColumn();
     if ($res_limit !== false && $res_limit !== null && $res_limit !== '') {
