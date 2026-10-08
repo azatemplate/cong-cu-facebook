@@ -227,11 +227,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (isset($_POST['retry_all_failed']) && $_SESSION['role'] === 'admin') {
-        $stmt_retry = $pdo->prepare("UPDATE scheduled_posts SET status = 'pending', retry_count = 0, error_msg = NULL WHERE status IN ('failed', 'checkpoint')");
+        $stmt_retry = $pdo->prepare("UPDATE scheduled_posts SET status = 'pending', retry_count = 0, error_msg = NULL WHERE status IN ('failed', 'checkpoint', 'processing')");
         $stmt_retry->execute();
         $affected = $stmt_retry->rowCount();
         $alert_type = 'success';
-        $alert_message = "Đã chuyển toàn bộ {$affected} bài viết bị lỗi/checkpoint về trạng thái Chờ đăng thành công!";
+        $alert_message = "Đã chuyển toàn bộ {$affected} bài viết bị lỗi/checkpoint/treo về trạng thái Chờ đăng thành công!";
     }
 
     if (isset($_POST['test_telegram'])) {
