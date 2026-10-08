@@ -88,23 +88,20 @@ try {
 
 // ── Đếm số bài đang xử lý (PROCESSING) đồng bộ 1-1 làm chỉ số Đang Chạy ──────────────
 try {
-    // Tự động dọn dẹp bài thừa: Mỗi Fanpage / Kênh chỉ giữ duy nhất 1 bài đang processing mới nhất
-    $multi_pages = $pdo->query("
-        SELECT page_id, COUNT(*) as cnt 
+    // Tự động dọn dẹp bài thừa: Mỗi Campaign chỉ giữ duy nhất 1 bài đang processing mới nhất
+    $multi_camps = $pdo->query("
+        SELECT campaign_id, COUNT(*) as cnt 
         FROM scheduled_posts 
-        WHERE page_id IS NOT NULL AND status = 'processing' 
-        GROUP BY page_id 
+        WHERE campaign_id IS NOT NULL AND campaign_id > 0 AND status = 'processing' 
+        GROUP BY campaign_id 
         HAVING cnt > 1
     ")->fetchAll(PDO::FETCH_ASSOC);
 
-    foreach ($multi_pages as $mp) {
-        $pid = $mp['page_id'];
-        $stmt_latest = $pdo->prepare("SELECT id FROM scheduled_posts WHERE page_id = ? AND status = 'processing' ORDER BY updated_at DESC, id DESC LIMIT 1");
-        $stmt_latest->execute([$pid]);
-        $latest_id = (int)$stmt_latest->fetchColumn();
+    foreach ($multi_camps as $mc) {
+        $cid = (int)$mc['campaign_id'];
+        $latest_id = (int)$pdo->query("SELECT id FROM scheduled_posts WHERE campaign_id = $cid AND status = 'processing' ORDER BY updated_at DESC, id DESC LIMIT 1")->fetchColumn();
         if ($latest_id > 0) {
-            $stmt_reset = $pdo->prepare("UPDATE scheduled_posts SET status = 'pending' WHERE page_id = ? AND status = 'processing' AND id != ?");
-            $stmt_reset->execute([$pid, $latest_id]);
+            $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = $cid AND status = 'processing' AND id != $latest_id");
         }
     }
 } catch (Exception $e) {}

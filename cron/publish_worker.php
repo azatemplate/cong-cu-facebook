@@ -1275,19 +1275,19 @@ do {
 
     // Atomic update:
     // 1. Tổng số bài processing thực tế toàn hệ thống < $sys_max_proc
-    // 2. NẾU bài thuộc Fanpage / Channel ($curr_pid): Tổng số bài processing trên Fanpage này ĐÃ PHẢI = 0 (chưa có bài nào trên cùng Fanpage đang đăng)
-    $curr_pid = !empty($post['page_id']) ? $post['page_id'] : '';
+    // 2. NẾU bài thuộc Campaign ($curr_cid > 0): Tổng số bài processing trong Campaign này ĐÃ PHẢI = 0 (chưa có bài nào trong camp đang đăng)
+    $curr_cid = !empty($post['campaign_id']) ? (int)$post['campaign_id'] : 0;
 
-    if (!empty($curr_pid)) {
+    if ($curr_cid > 0) {
         $update_processing = $pdo->prepare("
             UPDATE scheduled_posts 
             SET status = 'processing', error_msg = '⚙️ Đang xử lý...' 
             WHERE id = ? 
               AND status IN ('pending', 'failed')
               AND (SELECT cnt FROM (SELECT COUNT(*) AS cnt FROM scheduled_posts WHERE status = 'processing') AS _t) < ?
-              AND (SELECT page_cnt FROM (SELECT COUNT(*) AS page_cnt FROM scheduled_posts WHERE page_id = ? AND status = 'processing' AND id != ?) AS _c) = 0
+              AND (SELECT camp_cnt FROM (SELECT COUNT(*) AS camp_cnt FROM scheduled_posts WHERE campaign_id = ? AND status = 'processing' AND id != ?) AS _c) = 0
         ");
-        $update_processing->execute([$post['id'], $sys_max_proc, $curr_pid, $post['id']]);
+        $update_processing->execute([$post['id'], $sys_max_proc, $curr_cid, $post['id']]);
     } else {
         $update_processing = $pdo->prepare("
             UPDATE scheduled_posts 
@@ -1300,13 +1300,11 @@ do {
     }
 
     if ($update_processing->rowCount() === 0) {
-        if (!empty($curr_pid)) {
-            $stmt_act = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE page_id = ? AND status = 'processing' AND id != ?");
-            $stmt_act->execute([$curr_pid, $post['id']]);
-            $active_in_page = (int)$stmt_act->fetchColumn();
-            if ($active_in_page > 0) {
-                echo "   → Fanpage #$curr_pid đã có 1 bài đang đăng (processing). Tạm dừng bài ID {$post['id']} để đảm bảo duy nhất 1 bài/fanpage.\n";
-                break; // Tạm ngưng luồng worker cho Fanpage này, nhường lượt cho bài đang chạy xong!
+        if ($curr_cid > 0) {
+            $active_in_camp = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE campaign_id = $curr_cid AND status = 'processing' AND id != {$post['id']}")->fetchColumn();
+            if ($active_in_camp > 0) {
+                echo "   → Campaign #$curr_cid đã có 1 bài đang đăng (processing). Tạm dừng bài ID {$post['id']} để đảm bảo duy nhất 1 bài/camp.\n";
+                break; // Tạm ngưng luồng worker cho Campaign này, nhường lượt cho bài đang chạy xong!
             }
         }
         $curr_proc_cnt = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
