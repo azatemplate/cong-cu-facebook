@@ -1537,8 +1537,21 @@ do {
             }
         }
 
-        $yt_title = !empty($content_data['title']) ? mb_substr(clean_markdown($content_data['title']), 0, 98, 'UTF-8') : (!empty($t_title_override) ? mb_substr($t_title_override, 0, 98, 'UTF-8') : 'YouTube Video');
-        $yt_desc = !empty($content_data['description']) ? clean_markdown($content_data['description']) : (!empty($yt_title) ? $yt_title : 'YouTube Video');
+        if (!function_exists('sanitize_youtube_text')) {
+            function sanitize_youtube_text($text) {
+                if (empty($text)) return '';
+                $text = strip_tags($text);
+                $text = str_replace(['<', '>'], '', $text);
+                $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', $text);
+                return trim($text);
+            }
+        }
+
+        $yt_title = !empty($content_data['title']) ? mb_substr(sanitize_youtube_text(clean_markdown($content_data['title'])), 0, 98, 'UTF-8') : (!empty($t_title_override) ? mb_substr(sanitize_youtube_text($t_title_override), 0, 98, 'UTF-8') : 'YouTube Video');
+        $yt_desc = !empty($content_data['description']) ? mb_substr(sanitize_youtube_text(clean_markdown($content_data['description'])), 0, 4900, 'UTF-8') : (!empty($yt_title) ? $yt_title : 'YouTube Video');
+        if (empty($yt_desc)) $yt_desc = $yt_title;
+        if (empty($yt_title)) $yt_title = 'YouTube Video';
+
         $yt_tags_str = $content_data['tags'] ?? '';
         $yt_tags = sanitize_youtube_tags($yt_tags_str);
 
@@ -1570,6 +1583,7 @@ do {
         curl_setopt($ch_init, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch_init, CURLOPT_POST, true);
         curl_setopt($ch_init, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch_init, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
         curl_setopt($ch_init, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch_init, CURLOPT_SSL_VERIFYHOST, false);
         curl_setopt($ch_init, CURLOPT_POSTFIELDS, json_encode($metadata));
@@ -1619,6 +1633,7 @@ do {
         curl_setopt($ch_upload, CURLOPT_INFILE, $file_handle);
         curl_setopt($ch_upload, CURLOPT_INFILESIZE, $file_size);
         curl_setopt($ch_upload, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch_upload, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
         curl_setopt($ch_upload, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch_upload, CURLOPT_SSL_VERIFYHOST, false);
         curl_setopt($ch_upload, CURLOPT_TIMEOUT, 1800);
