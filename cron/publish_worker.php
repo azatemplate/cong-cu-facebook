@@ -1672,10 +1672,11 @@ do {
                 curl_setopt($ch_upload, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
                 curl_setopt($ch_upload, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
                 curl_setopt($ch_upload, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch_upload, CURLOPT_SSL_VERIFYHOST, false);
                 curl_setopt($ch_upload, CURLOPT_TCP_KEEPALIVE, 1);
-                curl_setopt($ch_upload, CURLOPT_CONNECTTIMEOUT, 15);
-                curl_setopt($ch_upload, CURLOPT_TIMEOUT, 300); // 5 phút / 10MB chunk
+                curl_setopt($ch_upload, CURLOPT_CONNECTTIMEOUT, 10);
+                curl_setopt($ch_upload, CURLOPT_TIMEOUT, 60); // Max 60s / 10MB chunk (ngăn cURL treo 5 phút)
+                curl_setopt($ch_upload, CURLOPT_LOW_SPEED_LIMIT, 10240); // 10 KB/s
+                curl_setopt($ch_upload, CURLOPT_LOW_SPEED_TIME, 15);    // Tự động ngắt và thử lại nếu nghẽn < 10KB/s trong 15s
                 curl_setopt($ch_upload, CURLOPT_HTTPHEADER, [
                     "Content-Type: video/*",
                     "Content-Length: $current_chunk_length",

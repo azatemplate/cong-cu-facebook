@@ -695,7 +695,7 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
         $t_start = microtime(true);
         while ($retry_count < 3 && !$chunk_success) {
             $retry_count++;
-            $res2 = fb_api_request($endpoint, [], 'POST', $chunk_params, 300);
+            $res2 = fb_api_request($endpoint, [], 'POST', $chunk_params, 60); // 60s timeout / 10MB chunk (ngăn cURL treo 5 phút)
             
             if ($res2['status_code'] === 200 || $res2['status_code'] === 206) {
                 $chunk_success = true;
