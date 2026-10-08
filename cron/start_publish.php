@@ -253,15 +253,19 @@ try {
     }
 } catch (Exception $e) {}
 
-// Đếm số luồng thực tế đang chạy dựa trên số bài đang ở trạng thái 'processing' trong CSDL
+// Đếm số Worker/Campaign thực tế đang chạy (1 Campaign/Kênh = 1 Worker độc lập)
+$active_camp_workers = 0;
+$active_uncamp_workers = 0;
 $curr_processing_posts = 0;
 try {
+    $active_camp_workers = (int)$pdo->query("SELECT COUNT(DISTINCT campaign_id) FROM scheduled_posts WHERE status = 'processing' AND campaign_id IS NOT NULL AND campaign_id > 0")->fetchColumn();
+    $active_uncamp_workers = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing' AND (campaign_id IS NULL OR campaign_id = 0)")->fetchColumn();
     $curr_processing_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 } catch (Exception $e) {}
 
-$effective_active = $curr_processing_posts;
+$effective_active = $active_camp_workers + $active_uncamp_workers;
 
-echo "  [THROTTLE] Hiện có $curr_processing_posts bài PROCESSING thực tế. Giới hạn Throttling Max: $MAX_WORKERS.\n";
+echo "  [THROTTLE] Hiện có $effective_active Worker đang chạy (chứa $curr_processing_posts bài PROCESSING). Giới hạn Throttling Max: $MAX_WORKERS.\n";
 
 $available_slots = max(0, $MAX_WORKERS - $effective_active);
 if ($available_slots <= 0) {

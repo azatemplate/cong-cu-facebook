@@ -86,8 +86,11 @@ try {
     }
 } catch (Exception $e) {}
 
-// ── Đếm số worker đang thực sự chạy (active) ────────────────────────────────
-$active_publish = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+// ── Đếm số worker đang thực sự chạy (1 Campaign/Kênh = 1 Worker độc lập) ─────
+$active_camp_w = (int)$pdo->query("SELECT COUNT(DISTINCT campaign_id) FROM scheduled_posts WHERE status = 'processing' AND campaign_id IS NOT NULL AND campaign_id > 0")->fetchColumn();
+$active_uncamp_w = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing' AND (campaign_id IS NULL OR campaign_id = 0)")->fetchColumn();
+$active_publish = $active_camp_w + $active_uncamp_w;
+$total_proc_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 $active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
 
 // ── Kích hoạt thủ công nếu có ?run=1 ─────────────────────────────────────────
@@ -1044,8 +1047,8 @@ code {
                     <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px;">
                         <span class="info-label" style="font-weight: 600; color: var(--text-primary);">🚀 Publish Workers (Đăng bài)</span>
                         <div style="width: 100%; display: flex; justify-content: space-between; font-size: 13px;">
-                            <span>Đang chạy: <strong class="text-warning"><?= $active_publish ?></strong></span>
-                            <span>Tối đa: <strong><?= $max_publish_workers ?></strong></span>
+                            <span>Đang chạy: <strong class="text-warning"><?= $active_publish ?></strong> Worker <?php if ($total_proc_posts > 0): ?><small style="opacity:0.75;">(<?= $total_proc_posts ?> bài)</small><?php endif; ?></span>
+                            <span>Tối đa: <strong><?= $max_publish_workers ?></strong> Worker</span>
                             <span>Trống: <strong class="text-success"><?= max(0, $max_publish_workers - $active_publish) ?></strong></span>
                         </div>
                     </div>
