@@ -618,7 +618,7 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
     fb_echo_log("   🚀 BẮT ĐẦU ĐĂNG {$type_name} CHUNKED ({$total_mb} MB - Chunk Size: {$chunk_size_mb} MB)\n");
     fb_echo_log("   ----------------------------------------------------\n");
 
-    $endpoint = $page_id . '/videos';
+    $endpoint = $is_reel ? ($page_id . '/video_reels') : ($page_id . '/videos');
 
     // ── BƯỚC 1: START UPLOAD SESSION ─────────────────────────────────
     fb_echo_log("   → [Bước 1/3] Khởi tạo phiên upload (POST /{$endpoint}?upload_phase=start)...\n");
@@ -749,6 +749,7 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
     ];
 
     if ($is_reel) {
+        $finish_params['video_state']          = 'PUBLISHED';
         $finish_params['post_video_as_reels'] = 'true';
     }
 
