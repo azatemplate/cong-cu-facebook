@@ -1629,7 +1629,7 @@ do {
 
         $ch_upload = curl_init($upload_url);
         curl_setopt($ch_upload, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch_upload, CURLOPT_CUSTOMREQUEST, 'PUT');
+        curl_setopt($ch_upload, CURLOPT_UPLOAD, true);
         curl_setopt($ch_upload, CURLOPT_INFILE, $file_handle);
         curl_setopt($ch_upload, CURLOPT_INFILESIZE, $file_size);
         curl_setopt($ch_upload, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
