@@ -126,7 +126,7 @@ try {
           AND (sp.preupload_status IS NULL OR sp.preupload_status = 'none')
           AND sp.scheduled_time >= DATE_ADD(NOW(), INTERVAL 10 MINUTE)
           AND sp.media_path IS NOT NULL AND sp.media_path != ''
-          AND (LOWER(sp.post_type) IN ('video', 'reel', 'photo', 'facebook', 'facebook reel') OR sp.post_type LIKE '%Facebook%' OR sp.post_type LIKE '%Reel%' OR sp.post_type LIKE '%Video%')
+          AND (LOWER(sp.post_type) IN ('video', 'reel', 'photo', 'image', 'facebook', 'facebook reel') OR sp.post_type LIKE '%Facebook%' OR sp.post_type LIKE '%Reel%' OR sp.post_type LIKE '%Video%' OR sp.post_type LIKE '%Photo%' OR sp.post_type LIKE '%Image%')
         ORDER BY sp.scheduled_time ASC
         LIMIT {$fetch_limit}
     ";

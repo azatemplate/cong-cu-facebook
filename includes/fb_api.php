@@ -959,7 +959,7 @@ function fb_preupload_media($page_id, $page_access_token, $file_path, $post_type
         return ['status' => false, 'error' => 'Missing page_id, token, or file_path'];
     }
 
-    $is_photo = ($post_type === 'Photo' || strpos($post_type, 'Photo') !== false || preg_match('/\.(jpg|jpeg|png|webp|gif)$/i', $file_path));
+    $is_photo = ($post_type === 'Photo' || strpos($post_type, 'Photo') !== false || strpos($post_type, 'Image') !== false || preg_match('/\.(jpg|jpeg|png|webp|gif)$/i', $file_path));
 
     // ── 1. PRE-UPLOAD PHOTO ───────────────────────────────────────────
     if ($is_photo) {
@@ -979,7 +979,7 @@ function fb_preupload_media($page_id, $page_access_token, $file_path, $post_type
                 $file_path = __DIR__ . '/../' . ltrim($file_path, '/');
             }
             if (!file_exists($file_path)) {
-                return ['status' => false, 'error' => 'Local photo file not found'];
+                return ['status' => false, 'error' => 'Local photo file not found: ' . $file_path];
             }
             $post_data = [
                 'published'    => 'false',
@@ -995,7 +995,8 @@ function fb_preupload_media($page_id, $page_access_token, $file_path, $post_type
                 'media_id' => (string)$res['data']['id']
             ];
         }
-        return ['status' => false, 'error' => json_encode($res['data'] ?? [])];
+        $err_msg = $res['data']['error']['message'] ?? json_encode($res['data'] ?? []);
+        return ['status' => false, 'error' => "Photo pre-upload failed (HTTP {$res['status_code']}): " . $err_msg];
     }
 
     // ── 2. PRE-UPLOAD VIDEO / REEL (Phase 1 Start + Phase 2 Transfer Chunks) ──
@@ -1005,13 +1006,13 @@ function fb_preupload_media($page_id, $page_access_token, $file_path, $post_type
             $file_path = __DIR__ . '/../' . ltrim($file_path, '/');
         }
         if (!file_exists($file_path)) {
-            return ['status' => false, 'error' => 'Local video file not found'];
+            return ['status' => false, 'error' => 'Local video file not found: ' . $file_path];
         }
     }
 
-    $file_size = filesize($file_path);
-    if ($file_size <= 0) {
-        return ['status' => false, 'error' => 'Invalid video file size'];
+    $file_size = @filesize($file_path);
+    if (!$file_size || $file_size <= 0) {
+        return ['status' => false, 'error' => 'Invalid video file size (' . ($file_size === false ? 'cannot read filesize' : '0 bytes') . ')'];
     }
 
     $endpoint = $page_id . '/videos';
@@ -1024,8 +1025,9 @@ function fb_preupload_media($page_id, $page_access_token, $file_path, $post_type
     ];
 
     $res1 = fb_api_request($endpoint, $start_params, 'POST', [], 60);
-    if ($res1['status_code'] !== 200 || empty($res1['data']['video_id']) || empty($res1['data']['upload_session_id'])) {
-        return ['status' => false, 'error' => 'Phase 1 Start failed: ' . json_encode($res1['data'] ?? [])];
+    if (($res1['status_code'] !== 200 && $res1['status_code'] !== 201) || empty($res1['data']['video_id']) || empty($res1['data']['upload_session_id'])) {
+        $err_msg = $res1['data']['error']['message'] ?? json_encode($res1['data'] ?? []);
+        return ['status' => false, 'error' => "Phase 1 Start failed (HTTP {$res1['status_code']}): " . $err_msg];
     }
 
     $video_id          = (string)$res1['data']['video_id'];
@@ -1035,7 +1037,7 @@ function fb_preupload_media($page_id, $page_access_token, $file_path, $post_type
     // Phase 2: Transfer Chunks
     $handle = @fopen($file_path, 'rb');
     if (!$handle) {
-        return ['status' => false, 'error' => 'Cannot open video file'];
+        return ['status' => false, 'error' => 'Cannot open video file for reading'];
     }
 
     $chunk_size_bytes = 10 * 1024 * 1024; // 10MB chunk
@@ -1043,6 +1045,7 @@ function fb_preupload_media($page_id, $page_access_token, $file_path, $post_type
     if (!is_dir($temp_dir)) @mkdir($temp_dir, 0777, true);
 
     $chunk_index = 0;
+    $last_chunk_err = '';
     while ($start_offset < $file_size) {
         $chunk_index++;
         fseek($handle, $start_offset);
@@ -1079,6 +1082,7 @@ function fb_preupload_media($page_id, $page_access_token, $file_path, $post_type
                     $start_offset += $current_chunk_len;
                 }
             } else {
+                $last_chunk_err = "HTTP {$res2['status_code']} - " . ($res2['data']['error']['message'] ?? json_encode($res2['data'] ?? []));
                 sleep(2);
             }
         }
@@ -1086,7 +1090,7 @@ function fb_preupload_media($page_id, $page_access_token, $file_path, $post_type
         @unlink($chunk_file_path);
         if (!$chunk_success) {
             fclose($handle);
-            return ['status' => false, 'error' => "Phase 2 Chunk {$chunk_index} failed"];
+            return ['status' => false, 'error' => "Phase 2 Chunk {$chunk_index} failed: " . $last_chunk_err];
         }
     }
 
