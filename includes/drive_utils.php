@@ -303,6 +303,7 @@ function download_drive_file_temp($access_token, $file_id) {
                 @flush();
             }
         }
+        return 0;
     });
 
     $success = curl_exec($ch2);

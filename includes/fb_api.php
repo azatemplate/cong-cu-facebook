@@ -194,6 +194,7 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
                                 }
                             }
                         }
+                        return 0;
                     });
                 }
             } else if (is_string($post_data) && (strpos($post_data, '{') === 0 || strpos($post_data, '[') === 0)) {
@@ -730,6 +731,7 @@ function fb_upload_reel_official($page_id, $page_access_token, $file_path, $titl
                 fb_echo_log("   → Upload Reels progress: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
             }
         }
+        return 0;
     });
 
     set_time_limit(1800);
