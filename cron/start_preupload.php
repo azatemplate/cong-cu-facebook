@@ -17,7 +17,12 @@ if (!function_exists('get_php_cli_bin')) {
 $php_bin = get_php_cli_bin();
 $is_win = (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN');
 
-// ── BỘ KIỂM TRA THROTTLING SLOTS: CHỈ PRE-UPLOAD KHI THROTTLING CÒN SLOT TRỐNG ──
+// ── TỰ ĐỘNG DỌN PRE-UPLOAD BỊ TREO (>15 PHÚT) ──
+try {
+    $pdo->exec("UPDATE scheduled_posts SET preupload_status = 'none' WHERE preupload_status = 'uploading' AND updated_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+} catch (Exception $e) {}
+
+// ── BỘ KIỂM TRA THROTTLING SLOTS: TỔNG (PUBLISH + PREUPLOAD) KHÔNG ĐƯỢC VƯỢT MAX ──
 $MAX_WORKERS = 30;
 try {
     $res_limit = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_publish_workers'")->fetchColumn();
@@ -27,14 +32,14 @@ try {
 } catch (Exception $e) {}
 
 $lock_dir = dirname(__DIR__) . '/locks';
-$active_workers = 0;
+$active_lock_workers = 0;
 if (is_dir($lock_dir)) {
     foreach (glob($lock_dir . '/publish_user_*.lock') ?: [] as $lf) {
         if (!file_exists($lf)) continue;
         $fp = @fopen($lf, 'c+');
         if ($fp) {
             if (!@flock($fp, LOCK_EX | LOCK_NB)) {
-                $active_workers++;
+                $active_lock_workers++;
                 @fclose($fp);
             } else {
                 @flock($fp, LOCK_UN);
@@ -45,10 +50,20 @@ if (is_dir($lock_dir)) {
     }
 }
 
-$available_slots = max(0, $MAX_WORKERS - $active_workers);
+$active_publish_db   = 0;
+$active_preupload_db = 0;
+try {
+    $active_publish_db   = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+    $active_preupload_db = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE preupload_status = 'uploading'")->fetchColumn();
+} catch (Exception $e) {}
+
+$active_publish = max($active_lock_workers, $active_publish_db);
+$total_active   = $active_publish + $active_preupload_db;
+
+$available_slots = max(0, $MAX_WORKERS - $total_active);
 
 if ($available_slots <= 0) {
-    echo "[" . date('H:i:s') . "] ⚠ Throttling đang hết slot trống ($active_workers/$MAX_WORKERS luồng). Tạm dừng Pre-upload.\n";
+    echo "[" . date('H:i:s') . "] ⚠ Throttling đã đạt trần ($active_publish Đăng + $active_preupload_db Preupload = $total_active/$MAX_WORKERS luồng). Tạm dừng Pre-upload.\n";
     $rq_pre->releaseLock('lock:cron:start_preupload');
     exit;
 }

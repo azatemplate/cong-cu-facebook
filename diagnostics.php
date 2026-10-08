@@ -109,6 +109,7 @@ try {
 $active_publish = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 $active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
 $active_preupload = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE preupload_status = 'uploading'")->fetchColumn();
+$total_active_publish_group = $active_publish + $active_preupload;
 $preupload_uploaded_count = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE preupload_status = 'uploaded' AND status = 'pending'")->fetchColumn();
 
 // ── Kích hoạt thủ công nếu có ?run=1 ─────────────────────────────────────────
@@ -1074,13 +1075,26 @@ code {
                 </h3>
                 
                 <div class="info-list">
+                    <!-- Total publish + preupload throttling bar -->
+                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px; background: rgba(99, 102, 241, 0.05); padding: 12px; border-radius: 10px; border: 1px solid rgba(99, 102, 241, 0.2);">
+                        <div style="width: 100%; display: flex; justify-content: space-between; align-items: center;">
+                            <span class="info-label" style="font-weight: 700; color: #a5b4fc;">⚡ Tổng Luồng Đang Chạy (Đăng + Preupload)</span>
+                            <span class="mono" style="font-weight: 700; font-size: 14px; color: <?= $total_active_publish_group >= $max_publish_workers ? 'var(--color-danger)' : 'var(--color-success)' ?>;">
+                                <?= $total_active_publish_group ?> / <?= $max_publish_workers ?>
+                            </span>
+                        </div>
+                        <div style="width: 100%; display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
+                            <span>Slot Trống Khả Dụng: <strong class="text-success"><?= max(0, $max_publish_workers - $total_active_publish_group) ?></strong></span>
+                            <span>Trần Throttling: <strong><?= $max_publish_workers ?></strong></span>
+                        </div>
+                    </div>
+
                     <!-- Publish workers -->
-                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px;">
-                        <span class="info-label" style="font-weight: 600; color: var(--text-primary);">🚀 Publish Workers (Đăng bài)</span>
+                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 4px;">
+                        <span class="info-label" style="font-weight: 600; color: var(--text-primary);">🚀 Publish Workers (Đang xuất bản)</span>
                         <div style="width: 100%; display: flex; justify-content: space-between; font-size: 13px;">
                             <span>Đang chạy: <strong class="text-warning"><?= $active_publish ?></strong></span>
-                            <span>Tối đa: <strong><?= $max_publish_workers ?></strong></span>
-                            <span>Trống: <strong class="text-success"><?= max(0, $max_publish_workers - $active_publish) ?></strong></span>
+                            <span>Trạng thái: <strong><?= $active_publish > 0 ? 'Hoạt động' : 'Rảnh rỗi' ?></strong></span>
                         </div>
                     </div>
                     <!-- Pre-upload workers -->

@@ -230,16 +230,16 @@ try {
     }
 } catch (Exception $e) {}
 
-// Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động và số bài đang ở trạng thái 'processing'
+// Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động, bài đang processing và bài đang preupload
 $lock_dir = dirname(__DIR__) . '/locks';
-$active_workers = 0;
+$active_lock_workers = 0;
 if (is_dir($lock_dir)) {
     foreach (glob($lock_dir . '/publish_user_*.lock') ?: [] as $lf) {
         if (!file_exists($lf)) continue;
         $fp = @fopen($lf, 'c+');
         if ($fp) {
             if (!@flock($fp, LOCK_EX | LOCK_NB)) {
-                $active_workers++;
+                $active_lock_workers++;
                 @fclose($fp);
             } else {
                 @flock($fp, LOCK_UN);
@@ -251,17 +251,20 @@ if (is_dir($lock_dir)) {
 }
 
 $curr_processing_posts = 0;
+$curr_preuploading_posts = 0;
 try {
-    $curr_processing_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+    $curr_processing_posts   = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+    $curr_preuploading_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE preupload_status = 'uploading'")->fetchColumn();
 } catch (Exception $e) {}
 
-$effective_active = $active_workers;
+$active_publish = max($active_lock_workers, $curr_processing_posts);
+$total_active   = $active_publish + $curr_preuploading_posts;
 
-echo "  [THROTTLE] Hiện có $active_workers luồng chạy thực tế ($curr_processing_posts bài PROCESSING). Giới hạn Throttling Max: $MAX_WORKERS.\n";
+echo "  [THROTTLE] Luồng chạy: $active_publish Đăng bài + $curr_preuploading_posts Pre-upload = $total_active/$MAX_WORKERS luồng.\n";
 
-$available_slots = max(0, $MAX_WORKERS - $effective_active);
+$available_slots = max(0, $MAX_WORKERS - $total_active);
 if ($available_slots <= 0) {
-    echo "Hệ thống đang đạt trần giới hạn Throttling ($effective_active/$MAX_WORKERS). Chờ lượt cron kế tiếp...\n";
+    echo "Hệ thống đang đạt trần giới hạn Throttling ($total_active/$MAX_WORKERS). Chờ lượt cron kế tiếp...\n";
     $rq_pub->releaseLock('lock:cron:start_publish');
     exit;
 }
