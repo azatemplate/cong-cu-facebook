@@ -177,23 +177,27 @@ try {
 try {
     $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 10 MINUTE)");
     
-    // --- ĐẢM BẢO CHỈ 1 BÀI PROCESSING PER CAMPAIGN ---
-    // Nếu 1 campaign có nhiều bài processing cùng lúc, giữ lại bài mới nhất và trả bài thừa về pending
-    $multi_camps = $pdo->query("
-        SELECT campaign_id, COUNT(*) as cnt 
+    // --- ĐẢM BẢO CHỈ 1 BÀI PROCESSING PER FANPAGE / CHANNEL ---
+    // Nếu 1 Fanpage có nhiều bài processing cùng lúc, giữ lại bài mới nhất và trả bài thừa về pending
+    $multi_pages = $pdo->query("
+        SELECT page_id, COUNT(*) as cnt 
         FROM scheduled_posts 
-        WHERE campaign_id IS NOT NULL AND campaign_id > 0 AND status = 'processing' 
-        GROUP BY campaign_id 
+        WHERE page_id IS NOT NULL AND status = 'processing' 
+        GROUP BY page_id 
         HAVING cnt > 1
     ")->fetchAll(PDO::FETCH_ASSOC);
 
-    foreach ($multi_camps as $mc) {
-        $cid = (int)$mc['campaign_id'];
-        $latest_id = (int)$pdo->query("SELECT id FROM scheduled_posts WHERE campaign_id = $cid AND status = 'processing' ORDER BY updated_at DESC, id DESC LIMIT 1")->fetchColumn();
+    foreach ($multi_pages as $mp) {
+        $pid = $mp['page_id'];
+        $stmt_latest = $pdo->prepare("SELECT id FROM scheduled_posts WHERE page_id = ? AND status = 'processing' ORDER BY updated_at DESC, id DESC LIMIT 1");
+        $stmt_latest->execute([$pid]);
+        $latest_id = (int)$stmt_latest->fetchColumn();
         if ($latest_id > 0) {
-            $reset_cnt = $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = $cid AND status = 'processing' AND id != $latest_id");
+            $stmt_reset = $pdo->prepare("UPDATE scheduled_posts SET status = 'pending' WHERE page_id = ? AND status = 'processing' AND id != ?");
+            $stmt_reset->execute([$pid, $latest_id]);
+            $reset_cnt = $stmt_reset->rowCount();
             if ($reset_cnt > 0) {
-                echo "  [STRICT 1-POST/CAMP] Đã đưa $reset_cnt bài dư thừa ở Campaign #$cid từ 'processing' về 'pending'.\n";
+                echo "  [STRICT 1-POST/PAGE] Đã đưa $reset_cnt bài dư thừa ở Page #$pid từ 'processing' về 'pending'.\n";
             }
         }
     }
@@ -304,9 +308,9 @@ $owner_channels = [];
 foreach ($raw_pages as $row) {
     $owner_id = !empty($row['account_id']) ? ('acc_' . $row['account_id']) : (!empty($row['user_id']) ? ('usr_' . $row['user_id']) : 'system');
     
-    // Gom theo campaign_id. Nếu không có campaign_id (bài viết cũ/lẻ), dùng lại logic phân nền tảng cũ.
+    // Gom theo Fanpage / Kênh (page_id). Nếu có campaign_id, phân tách theo từng Fanpage thuộc Campaign để các Fanpage khác nhau chạy song song tối đa Max Workers
     if (!empty($row['campaign_id'])) {
-        $chan_key = 'camp_' . $row['campaign_id'];
+        $chan_key = 'camp_' . $row['campaign_id'] . '_p_' . $row['page_id'];
     } else {
         if ($row['post_type'] === 'YouTube') {
             $chan_key = 'yt_chan_' . (!empty($row['page_id']) ? $row['page_id'] : $row['account_id']);
@@ -328,7 +332,7 @@ foreach ($raw_pages as $row) {
         $owner_channels[$owner_id][$chan_key] = [];
     }
     
-    $page_val = !empty($row['campaign_id']) ? $chan_key : $row['page_id'];
+    $page_val = $row['page_id'];
     if (!in_array($page_val, $owner_channels[$owner_id][$chan_key])) {
         $owner_channels[$owner_id][$chan_key][] = $page_val;
     }
