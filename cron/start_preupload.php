@@ -64,7 +64,7 @@ try {
 try {
     $fetch_limit = min(10, $available_slots);
     $sql = "
-        SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time
+        SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time, sp.campaign_id
         FROM scheduled_posts sp
         WHERE sp.status = 'pending'
           AND (sp.preupload_status IS NULL OR sp.preupload_status IN ('none', 'failed'))
@@ -88,6 +88,8 @@ try {
     $script_worker = __DIR__ . '/preupload_worker.php';
     foreach ($posts as $p) {
         $pid = (int)$p['id'];
+        $cid = (int)($p['campaign_id'] ?? 0);
+        $time_str = date('H:i d/m', strtotime($p['scheduled_time']));
         
         // Đánh dấu status 'uploading' tạm thời để tránh duplicate run
         $pdo->exec("UPDATE scheduled_posts SET preupload_status = 'uploading' WHERE id = {$pid}");
@@ -97,7 +99,7 @@ try {
         } else {
             @exec("nohup \"$php_bin\" \"$script_worker\" \"$pid\" > /dev/null 2>&1 &");
         }
-        echo "   -> Dispatched Pre-upload Worker cho Post #{$pid}\n";
+        echo "   -> Dispatched Pre-upload Worker cho Post #{$pid} (Campaign #{$cid} - Hẹn: {$time_str})\n";
     }
 
 } catch (Exception $e) {
