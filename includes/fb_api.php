@@ -596,7 +596,7 @@ if (!function_exists('fb_echo_log')) {
 /**
  * Real Meta Resumable Chunked Uploader (Slices file into 20MB chunks, zero RAM overhead via fopen/fread, per-chunk retry)
  */
-function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title = '', $description = '', $is_reel = false, $sp_post_id = 0, $chunk_size_mb = 10) {
+function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title = '', $description = '', $is_reel = false, $sp_post_id = 0, $chunk_size_mb = 20) {
     @ob_implicit_flush(1);
 
     $is_remote_url = (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0);
@@ -766,11 +766,11 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
 }
 
 function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = '', $description = '', $sp_post_id = 0) {
-    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, true, $sp_post_id, 10);
+    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, true, $sp_post_id, 20);
 }
 
 function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $title, $description, $is_reel = false, $sp_post_id = 0) {
-    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, $is_reel, $sp_post_id, 10);
+    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, $is_reel, $sp_post_id, 20);
 }
 
 function fb_exchange_token($short_token, $app_id, $app_secret) {
