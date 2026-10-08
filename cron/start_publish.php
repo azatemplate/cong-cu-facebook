@@ -196,6 +196,8 @@ try {
                 echo "  [STRICT 1-POST/CAMP] Đã đưa $reset_cnt bài dư thừa ở Campaign #$cid từ 'processing' về 'pending'.\n";
             }
         }
+    }
+} catch (Exception $e) {}
 // --- TỰ ĐỘNG DỌN DẸP BÀI MỒ CÔI (KHI CAMPAIGN ĐÃ BỊ XÓA NGHĨA LÀ BÀI KHÔNG CÒN CAMPAIGN TỒN TẠI) ---
 try {
     $del_orphaned = $pdo->exec("
