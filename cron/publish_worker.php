@@ -1596,13 +1596,10 @@ do {
             continue;
         }
 
-        // Tìm Location url
+        // Tìm Location url chuẩn bằng regex
         $upload_url = '';
-        foreach (explode("\n", $init_headers) as $header_line) {
-            if (stripos(trim($header_line), 'Location:') === 0) {
-                $upload_url = trim(substr(trim($header_line), 9));
-                break;
-            }
+        if (preg_match_all('/^Location:\s*(.+)$/mi', $init_headers, $matches)) {
+            $upload_url = trim(end($matches[1]));
         }
 
         if (empty($upload_url)) {
@@ -1618,7 +1615,7 @@ do {
 
         $ch_upload = curl_init($upload_url);
         curl_setopt($ch_upload, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch_upload, CURLOPT_PUT, true);
+        curl_setopt($ch_upload, CURLOPT_CUSTOMREQUEST, 'PUT');
         curl_setopt($ch_upload, CURLOPT_INFILE, $file_handle);
         curl_setopt($ch_upload, CURLOPT_INFILESIZE, $file_size);
         curl_setopt($ch_upload, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
@@ -1626,8 +1623,8 @@ do {
         curl_setopt($ch_upload, CURLOPT_SSL_VERIFYHOST, false);
         curl_setopt($ch_upload, CURLOPT_TIMEOUT, 1800);
         curl_setopt($ch_upload, CURLOPT_HTTPHEADER, [
-            "Authorization: Bearer $access_token",
-            "Content-Type: video/*"
+            "Content-Type: video/*",
+            "Content-Length: $file_size"
         ]);
         $upload_response = curl_exec($ch_upload);
         $upload_code = curl_getinfo($ch_upload, CURLINFO_HTTP_CODE);
