@@ -67,6 +67,8 @@ if (!is_dir($lock_dir)) {
 // Lock theo Campaign ID (nếu là campaign run) hoặc Token User ID để ngăn 2 worker cùng campaign/user chạy đồng thời
 if ($is_campaign_run && !empty($campaign_id)) {
     $lock_key = md5('camp_' . $campaign_id);
+} elseif (!empty($user_id_lock) && strpos($user_id_lock, 'camp_') === 0) {
+    $lock_key = md5($user_id_lock);
 } else {
     $lock_key = !empty($user_id_lock) ? md5('uid_' . $user_id_lock) : md5($raw_page_input);
 }

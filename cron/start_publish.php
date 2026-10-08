@@ -228,14 +228,41 @@ if (is_dir($lock_dir)) {
     }
 }
 
+// Tự động kiểm tra và giải phóng bài 'processing' mồ côi (khi worker đã bị kill hoặc ngắt ngầm)
+try {
+    $proc_list = $pdo->query("SELECT id, campaign_id, page_id FROM scheduled_posts WHERE status = 'processing'")->fetchAll(PDO::FETCH_ASSOC);
+    if (!empty($proc_list)) {
+        foreach ($proc_list as $p_item) {
+            $ckey = !empty($p_item['campaign_id']) ? ('camp_' . $p_item['campaign_id']) : ('uid_' . $p_item['page_id']);
+            $lfile = $lock_dir . "/publish_user_" . md5($ckey) . ".lock";
+            $is_running = false;
+            if (file_exists($lfile)) {
+                $fp = @fopen($lfile, 'c+');
+                if ($fp) {
+                    if (!@flock($fp, LOCK_EX | LOCK_NB)) {
+                        $is_running = true;
+                        @fclose($fp);
+                    } else {
+                        @flock($fp, LOCK_UN);
+                        @fclose($fp);
+                    }
+                }
+            }
+            if (!$is_running) {
+                $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE id = " . (int)$p_item['id']);
+            }
+        }
+    }
+} catch (Exception $e) {}
+
 $curr_processing_posts = 0;
 try {
     $curr_processing_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 } catch (Exception $e) {}
 
-$effective_active = max($active_workers, $curr_processing_posts);
+$effective_active = $active_workers;
 
-echo "  [THROTTLE] Hiện có $active_workers luồng (và $curr_processing_posts bài PROCESSING) đang xử lý. Trực tiếp giới hạn Max: $MAX_WORKERS.\n";
+echo "  [THROTTLE] Hiện có $active_workers luồng chạy thực tế ($curr_processing_posts bài PROCESSING). Giới hạn Throttling Max: $MAX_WORKERS.\n";
 
 $available_slots = max(0, $MAX_WORKERS - $effective_active);
 if ($available_slots <= 0) {
