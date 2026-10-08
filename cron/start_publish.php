@@ -251,40 +251,15 @@ try {
     }
 } catch (Exception $e) {}
 
-// Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động và số bài đang ở trạng thái 'processing'
-$lock_dir = dirname(__DIR__) . '/locks';
-$active_workers = 0;
-if (is_dir($lock_dir)) {
-    foreach (glob($lock_dir . '/publish_user_*.lock') ?: [] as $lf) {
-        if (!file_exists($lf)) continue;
-        $fp = @fopen($lf, 'c+');
-        if ($fp) {
-            if (!@flock($fp, LOCK_EX | LOCK_NB)) {
-                $active_workers++;
-                @fclose($fp);
-            } else {
-                @flock($fp, LOCK_UN);
-                @fclose($fp);
-                @unlink($lf);
-            }
-        }
-    }
-}
-
+// Đếm số luồng thực tế đang chạy dựa trên số bài đang ở trạng thái 'processing' trong CSDL
 $curr_processing_posts = 0;
 try {
     $curr_processing_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 } catch (Exception $e) {}
 
-// Đảm bảo số luồng active được tính chính xác: Nếu số file lock mồ côi cao hơn số bài processing thực tế trong DB,
-// căn cứ theo số bài processing thực tế để không chặn đẻ luồng mới cho các Campaign khác.
-if ($curr_processing_posts > 0) {
-    $effective_active = min($active_workers, max($curr_processing_posts, min($active_workers, $curr_processing_posts + 2)));
-} else {
-    $effective_active = min($active_workers, 2);
-}
+$effective_active = $curr_processing_posts;
 
-echo "  [THROTTLE] Hiện có $active_workers file locks ($curr_processing_posts bài PROCESSING thực tế). Giới hạn Throttling Max: $MAX_WORKERS.\n";
+echo "  [THROTTLE] Hiện có $curr_processing_posts bài PROCESSING thực tế. Giới hạn Throttling Max: $MAX_WORKERS.\n";
 
 $available_slots = max(0, $MAX_WORKERS - $effective_active);
 if ($available_slots <= 0) {
@@ -411,9 +386,17 @@ while ($has_more && count($dispatch_list) < $available_slots) {
             $lock_key = (strpos($ckey, 'camp_') === 0) ? md5($ckey) : md5('uid_' . $ckey);
             $lfile = $lock_dir . "/publish_user_" . $lock_key . ".lock";
 
-            // Bỏ qua Campaign/Kênh ĐANG CHẠY THỰC TẾ để nhường slot cho các Campaign chưa chạy
+            // Bỏ qua Campaign/Kênh ĐANG CHẠY THỰC TẾ trong CSDL
             $is_already_running = false;
-            if (file_exists($lfile)) {
+            if (strpos($ckey, 'camp_') === 0) {
+                $cid_check = (int)substr($ckey, 5);
+                $running_in_db = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE campaign_id = {$cid_check} AND status = 'processing'")->fetchColumn();
+                if ($running_in_db > 0) {
+                    $is_already_running = true;
+                }
+            }
+
+            if (!$is_already_running && file_exists($lfile)) {
                 $fp = @fopen($lfile, 'c+');
                 if ($fp) {
                     if (!@flock($fp, LOCK_EX | LOCK_NB)) {
@@ -422,6 +405,7 @@ while ($has_more && count($dispatch_list) < $available_slots) {
                     } else {
                         @flock($fp, LOCK_UN);
                         @fclose($fp);
+                        @unlink($lfile); // Dọn dẹp file lock mồ côi
                     }
                 }
             }
@@ -434,7 +418,6 @@ while ($has_more && count($dispatch_list) < $available_slots) {
                 if (count($dispatch_list) >= $available_slots) {
                     break 2;
                 }
-                break; // Đã cấp 1 slot cho tài khoản này lượt này, chuyển sang tài khoản tiếp theo
             }
         }
     }
