@@ -8,6 +8,7 @@ if (php_sapi_name() !== 'cli' && !isset($_GET['post_id'])) {
 
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
+require_once __DIR__ . '/../includes/drive_utils.php';
 
 $post_id = 0;
 if (isset($argv[1]) && is_numeric($argv[1])) {
@@ -19,6 +20,8 @@ if (isset($argv[1]) && is_numeric($argv[1])) {
 if ($post_id <= 0) {
     die("Invalid Post ID.\n");
 }
+
+$temp_drive_file = null;
 
 try {
     $stmt = $pdo->prepare("
@@ -37,17 +40,66 @@ try {
 
     $page_token = !empty($post['page_access_token']) ? $post['page_access_token'] : ($post['account_token'] ?? '');
     $page_id    = $post['page_id'];
-    $media_path = $post['media_path'];
+    $raw_media  = $post['media_path'];
     $post_type  = $post['post_type'];
 
-    if (empty($page_id) || empty($page_token) || empty($media_path)) {
+    if (empty($page_id) || empty($page_token) || empty($raw_media)) {
         $pdo->exec("UPDATE scheduled_posts SET preupload_status = 'failed' WHERE id = {$post_id}");
         die("Missing required page credentials or media path.\n");
     }
 
+    // ── XỬ LÝ ĐƯỜNG DẪN MEDIA (Google Drive / Thư mục / File Local) ──
+    $abs_media_path = '';
+    $is_drive  = (strpos($raw_media, 'drive:') === 0);
+    $is_folder = (strpos($raw_media, 'folder:') === 0);
+
+    if ($is_folder) {
+        $folder_id   = substr($raw_media, 7);
+        $drive_token = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
+        if ($drive_token) {
+            $file_info = resolve_drive_folder_file($pdo, $drive_token, $folder_id);
+            if (!isset($file_info['error']) && !empty($file_info['id'])) {
+                $drive_file_id  = $file_info['id'];
+                $new_media_path = 'drive:' . $drive_file_id;
+                $pdo->prepare("UPDATE scheduled_posts SET media_path = ? WHERE id = ?")->execute([$new_media_path, $post_id]);
+                
+                $dl_info = download_drive_file_temp($drive_token, $drive_file_id);
+                if (isset($dl_info['path']) && file_exists($dl_info['path'])) {
+                    $abs_media_path  = $dl_info['path'];
+                    $temp_drive_file = $abs_media_path;
+                }
+            }
+        }
+    } elseif ($is_drive) {
+        $drive_file_id = substr($raw_media, 6);
+        $drive_token   = get_drive_access_token($pdo, $post['account_id'], $post['page_id']);
+        if ($drive_token) {
+            $dl_info = download_drive_file_temp($drive_token, $drive_file_id);
+            if (isset($dl_info['path']) && file_exists($dl_info['path'])) {
+                $abs_media_path  = $dl_info['path'];
+                $temp_drive_file = $abs_media_path;
+            }
+        }
+    } else {
+        $is_remote_url = (strpos($raw_media, 'http://') === 0 || strpos($raw_media, 'https://') === 0);
+        if ($is_remote_url) {
+            $abs_media_path = $raw_media;
+        } else {
+            $abs_media_path = __DIR__ . '/../' . ltrim($raw_media, '/');
+            if (!file_exists($abs_media_path) && file_exists($raw_media)) {
+                $abs_media_path = $raw_media;
+            }
+        }
+    }
+
+    if (empty($abs_media_path)) {
+        $pdo->exec("UPDATE scheduled_posts SET preupload_status = 'failed' WHERE id = {$post_id}");
+        die("❌ không thể xác định file media để Pre-upload.\n");
+    }
+
     echo "🚀 [Pre-upload Worker] Bắt đầu Upload nháp Post #{$post_id} (Type: {$post_type})...\n";
 
-    $res = fb_preupload_media($page_id, $page_token, $media_path, $post_type);
+    $res = fb_preupload_media($page_id, $page_token, $abs_media_path, $post_type);
 
     if (!empty($res['status']) && !empty($res['media_id'])) {
         $media_id   = $res['media_id'];
@@ -72,4 +124,6 @@ try {
 } catch (Exception $e) {
     @$pdo->exec("UPDATE scheduled_posts SET preupload_status = 'failed' WHERE id = {$post_id}");
     echo "Lỗi Pre-upload Worker: " . $e->getMessage() . "\n";
+} finally {
+    // Không tự ý xóa temp file nếu còn cần cho lệnh publish sau này (chỉ xóa nếu là tmp download)
 }
