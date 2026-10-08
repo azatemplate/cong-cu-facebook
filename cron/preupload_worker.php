@@ -25,7 +25,7 @@ $temp_drive_file = null;
 
 try {
     $stmt = $pdo->prepare("
-        SELECT sp.*, p.page_access_token, sa.access_token as account_token
+        SELECT sp.*, p.access_token as page_access_token, sa.access_token as account_token
         FROM scheduled_posts sp
         LEFT JOIN pages p ON sp.page_id = p.page_id
         LEFT JOIN system_accounts sa ON sp.account_id = sa.id
