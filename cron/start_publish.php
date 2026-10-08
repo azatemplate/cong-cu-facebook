@@ -383,14 +383,36 @@ $has_more = true;
 while ($has_more && count($dispatch_list) < $available_slots) {
     $has_more = false;
     foreach ($owner_keys as $oid) {
-        $ptr = $owner_pointers[$oid];
-        if (isset($owner_chan_lists[$oid][$ptr])) {
-            $dispatch_list[] = $owner_chan_lists[$oid][$ptr];
+        while (isset($owner_chan_lists[$oid][$owner_pointers[$oid]])) {
+            $item = $owner_chan_lists[$oid][$owner_pointers[$oid]];
+            $ckey = $item['chan_key'];
+            $lock_key = (strpos($ckey, 'camp_') === 0) ? md5($ckey) : md5('uid_' . $ckey);
+            $lfile = $lock_dir . "/publish_user_" . $lock_key . ".lock";
+
+            // Bỏ qua Campaign/Kênh ĐANG CHẠY THỰC TẾ để nhường slot cho các Campaign chưa chạy
+            $is_already_running = false;
+            if (file_exists($lfile)) {
+                $fp = @fopen($lfile, 'c+');
+                if ($fp) {
+                    if (!@flock($fp, LOCK_EX | LOCK_NB)) {
+                        $is_already_running = true;
+                        @fclose($fp);
+                    } else {
+                        @flock($fp, LOCK_UN);
+                        @fclose($fp);
+                    }
+                }
+            }
+
             $owner_pointers[$oid]++;
-            $has_more = true;
-            
-            if (count($dispatch_list) >= $available_slots) {
-                break 2;
+
+            if (!$is_already_running) {
+                $dispatch_list[] = $item;
+                $has_more = true;
+                if (count($dispatch_list) >= $available_slots) {
+                    break 2;
+                }
+                break; // Đã cấp 1 slot cho tài khoản này lượt này, chuyển sang tài khoản tiếp theo
             }
         }
     }
