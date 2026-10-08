@@ -244,7 +244,18 @@ $upcoming = $pdo->query("
     LIMIT 10
 ")->fetchAll(PDO::FETCH_ASSOC);
 
-// ── Bài đang xử lý (Processing) ──────────────────────────────────────────────
+// ── Bài đã/đang Pre-upload (Upload Nháp Facebook) ────────────────────────────
+$preupload_total_count = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE preupload_status IN ('uploaded', 'uploading', 'failed')")->fetchColumn();
+
+$preupload_posts = $pdo->query("
+    SELECT sp.id, sp.account_id, sp.page_id, sp.post_type, sp.status, sp.scheduled_time, sp.preupload_status, sp.preuploaded_media_id, sp.preupload_session_id, sp.error_msg, sp.updated_at,
+           sa.username AS account_name
+    FROM scheduled_posts sp
+    LEFT JOIN system_accounts sa ON sp.account_id = sa.id
+    WHERE sp.preupload_status IN ('uploaded', 'uploading', 'failed')
+    ORDER BY sp.updated_at DESC, sp.id DESC
+    LIMIT 30
+")->fetchAll(PDO::FETCH_ASSOC);
 $processing_posts = $pdo->query("
     SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time, sp.updated_at,
            TIMESTAMPDIFF(MINUTE, sp.updated_at, NOW()) AS duration_min,
@@ -1191,6 +1202,84 @@ code {
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                     </div>
                 </div>
+            </div>
+
+            <!-- Table: Các bài đã Pre-upload (Upload Nháp Facebook) -->
+            <div class="card" style="border-top: 4px solid var(--color-purple);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color);">
+                    <h3 class="card-title" style="color: var(--color-purple); margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                        Các bài đã Pre-upload (Upload Nháp Facebook — <?= $preupload_total_count ?> bài<?= $preupload_total_count > 30 ? ', hiển thị 30 mới nhất' : '' ?>)
+                    </h3>
+                    <?php if (!empty($preupload_posts)): ?>
+                    <input type="text" placeholder="🔍 Tìm ID, photo_id, video_id..." onkeyup="filterTable(this, 'table-preupload-posts')" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); color: var(--text-primary); padding: 6px 12px; border-radius: 8px; font-size: 12px; outline: none; width: 220px;">
+                    <?php endif; ?>
+                </div>
+
+                <p style="font-size:13px; color:var(--text-secondary); margin-bottom:14px; line-height: 1.5;">
+                    ⚡ Pre-upload chỉ áp dụng cho <b>Facebook (Photo, Video, Reel)</b>. Media đã được upload sẵn dạng Nháp (Unpublished) lên Meta CDN kèm <code style="color: #38bdf8;">photo_id</code> hoặc <code style="color: #38bdf8;">video_id</code>. Khi tới giờ hẹn, hệ thống xuất bản tức thì trong <b>0.5 giây</b>.
+                </p>
+                
+                <?php if (empty($preupload_posts)): ?>
+                <div style="padding: 24px; text-align: center; background: rgba(167, 139, 250, 0.03); border: 1px dashed rgba(167, 139, 250, 0.2); border-radius: 12px; margin: 8px 0;">
+                    <div style="margin-bottom: 10px; display: inline-flex; padding: 12px; background: rgba(167, 139, 250, 0.1); border-radius: 50%; color: var(--color-purple);">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    </div>
+                    <div style="font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Chưa có bài viết nào được Pre-upload</div>
+                    <div style="font-size: 13px; color: var(--text-secondary);">Khi Throttling rảnh, hệ thống sẽ tự động quét các bài hẹn giờ Facebook trong 24h tới để upload nháp trước.</div>
+                </div>
+                <?php else: ?>
+                <div class="table-responsive table-mobile-cards">
+                    <table id="table-preupload-posts">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Tài khoản</th>
+                                <th>Fanpage ID</th>
+                                <th>Loại</th>
+                                <th>Pre-upload Status</th>
+                                <th>Meta Media ID (photo_id / video_id)</th>
+                                <th>Trạng thái Bài</th>
+                                <th>Giờ hẹn</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($preupload_posts as $p): ?>
+                            <tr>
+                                <td data-label="ID" class="mono font-weight-bold">#<?= $p['id'] ?></td>
+                                <td data-label="Tài khoản"><span style="color:#a78bfa; font-weight: 600;"><?= htmlspecialchars($p['account_name'] ?? 'System') ?></span></td>
+                                <td data-label="Fanpage ID" class="mono"><?= $p['page_id'] ?></td>
+                                <td data-label="Loại"><span style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;"><?= htmlspecialchars($p['post_type']) ?></span></td>
+                                <td data-label="Pre-upload Status">
+                                    <?php if ($p['preupload_status'] === 'uploaded'): ?>
+                                        <span class="badge" style="background: linear-gradient(135deg, rgba(6,182,212,0.15), rgba(99,102,241,0.15)); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3);">⚡ Đã Upload nháp</span>
+                                    <?php elseif ($p['preupload_status'] === 'uploading'): ?>
+                                        <span class="badge processing">⏳ Đang Upload...</span>
+                                    <?php elseif ($p['preupload_status'] === 'failed'): ?>
+                                        <span class="badge failed">❌ Lỗi Upload</span>
+                                    <?php else: ?>
+                                        <span style="color: var(--text-muted); font-size: 11px;">—</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td data-label="Meta Media ID">
+                                    <?php if (!empty($p['preuploaded_media_id'])): ?>
+                                        <code style="color: #34d399; font-weight: 700; font-size: 12px; border: 1px solid rgba(52, 211, 153, 0.2); background: rgba(52, 211, 153, 0.05); padding: 3px 8px; border-radius: 6px;">
+                                            <?= htmlspecialchars($p['preuploaded_media_id']) ?>
+                                        </code>
+                                    <?php elseif ($p['preupload_status'] === 'uploading'): ?>
+                                        <span style="color: var(--color-warning); font-size: 12px;">⏳ Đang lấy ID...</span>
+                                    <?php else: ?>
+                                        <span style="color: var(--text-muted); font-size: 12px;">Chưa có</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td data-label="Trạng thái Bài"><span class="badge <?= $p['status'] ?>"><?= $p['status'] ?></span></td>
+                                <td data-label="Giờ hẹn" class="mono"><?= $p['scheduled_time'] ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php endif; ?>
             </div>
 
             <!-- Table: Bài đến/quá hạn cần đăng ngay -->
