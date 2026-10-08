@@ -44,7 +44,7 @@ try {
     $post_type  = $post['post_type'];
 
     if (empty($page_id) || empty($page_token) || empty($raw_media)) {
-        $pdo->exec("UPDATE scheduled_posts SET preupload_status = 'failed' WHERE id = {$post_id}");
+        $pdo->prepare("UPDATE scheduled_posts SET preupload_status = 'failed', preupload_error = ? WHERE id = ?")->execute(['Thiếu Fanpage Token hoặc Media Path', $post_id]);
         die("Missing required page credentials or media path.\n");
     }
 
@@ -93,7 +93,7 @@ try {
     }
 
     if (empty($abs_media_path)) {
-        $pdo->exec("UPDATE scheduled_posts SET preupload_status = 'failed' WHERE id = {$post_id}");
+        $pdo->prepare("UPDATE scheduled_posts SET preupload_status = 'failed', preupload_error = ? WHERE id = ?")->execute(['Không thể tải hoặc tìm thấy tệp media', $post_id]);
         die("❌ không thể xác định file media để Pre-upload.\n");
     }
 
@@ -109,7 +109,8 @@ try {
             UPDATE scheduled_posts 
             SET preupload_status = 'uploaded', 
                 preuploaded_media_id = ?, 
-                preupload_session_id = ? 
+                preupload_session_id = ?,
+                preupload_error = NULL
             WHERE id = ?
         ");
         $stmt_up->execute([$media_id, $session_id, $post_id]);
@@ -117,13 +118,14 @@ try {
         echo "✅ [Pre-upload Worker] Thành công! Post #{$post_id} -> Preuploaded Media ID: {$media_id}\n";
     } else {
         $err = $res['error'] ?? 'Unknown error';
-        $pdo->exec("UPDATE scheduled_posts SET preupload_status = 'failed' WHERE id = {$post_id}");
+        $pdo->prepare("UPDATE scheduled_posts SET preupload_status = 'failed', preupload_error = ? WHERE id = ?")->execute([$err, $post_id]);
         echo "❌ [Pre-upload Worker] Thất bại cho Post #{$post_id}: {$err}\n";
     }
 
 } catch (Exception $e) {
-    @$pdo->exec("UPDATE scheduled_posts SET preupload_status = 'failed' WHERE id = {$post_id}");
-    echo "Lỗi Pre-upload Worker: " . $e->getMessage() . "\n";
+    $err_msg = $e->getMessage();
+    @$pdo->prepare("UPDATE scheduled_posts SET preupload_status = 'failed', preupload_error = ? WHERE id = ?")->execute([$err_msg, $post_id]);
+    echo "Lỗi Pre-upload Worker: " . $err_msg . "\n";
 } finally {
     // Không tự ý xóa temp file nếu còn cần cho lệnh publish sau này (chỉ xóa nếu là tmp download)
 }

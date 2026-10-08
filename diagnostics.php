@@ -246,14 +246,19 @@ $upcoming = $pdo->query("
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Bài đã/đang Pre-upload (Upload Nháp Facebook) ────────────────────────────
-$preupload_total_count = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE preupload_status IN ('uploaded', 'uploading', 'failed')")->fetchColumn();
+$preupload_total_count = (int)$pdo->query("
+    SELECT COUNT(*) FROM scheduled_posts 
+    WHERE preupload_status IN ('uploaded', 'uploading') 
+       OR (preupload_status = 'failed' AND status = 'pending')
+")->fetchColumn();
 
 $preupload_posts = $pdo->query("
-    SELECT sp.id, sp.account_id, sp.page_id, sp.post_type, sp.status, sp.scheduled_time, sp.preupload_status, sp.preuploaded_media_id, sp.preupload_session_id, sp.error_msg, sp.updated_at,
+    SELECT sp.id, sp.account_id, sp.page_id, sp.post_type, sp.status, sp.scheduled_time, sp.preupload_status, sp.preuploaded_media_id, sp.preupload_session_id, sp.preupload_error, sp.error_msg, sp.updated_at,
            sa.username AS account_name
     FROM scheduled_posts sp
     LEFT JOIN system_accounts sa ON sp.account_id = sa.id
-    WHERE sp.preupload_status IN ('uploaded', 'uploading', 'failed')
+    WHERE sp.preupload_status IN ('uploaded', 'uploading')
+       OR (sp.preupload_status = 'failed' AND sp.status = 'pending')
     ORDER BY sp.updated_at DESC, sp.id DESC
     LIMIT 30
 ")->fetchAll(PDO::FETCH_ASSOC);
@@ -1270,7 +1275,7 @@ code {
                                     <?php elseif ($p['preupload_status'] === 'uploading'): ?>
                                         <span class="badge processing">⏳ Đang Upload...</span>
                                     <?php elseif ($p['preupload_status'] === 'failed'): ?>
-                                        <span class="badge failed">❌ Lỗi Upload</span>
+                                        <span class="badge failed" title="<?= htmlspecialchars($p['preupload_error'] ?? $p['error_msg'] ?? '') ?>">❌ Lỗi Upload</span>
                                     <?php else: ?>
                                         <span style="color: var(--text-muted); font-size: 11px;">—</span>
                                     <?php endif; ?>
@@ -1282,6 +1287,10 @@ code {
                                         </code>
                                     <?php elseif ($p['preupload_status'] === 'uploading'): ?>
                                         <span style="color: var(--color-warning); font-size: 12px;">⏳ Đang lấy ID...</span>
+                                    <?php elseif ($p['preupload_status'] === 'failed'): ?>
+                                        <span style="color: #f87171; font-size: 11px;" title="<?= htmlspecialchars($p['preupload_error'] ?? $p['error_msg'] ?? 'Lỗi không xác định') ?>">
+                                            ⚠️ <?= htmlspecialchars(mb_strimwidth($p['preupload_error'] ?? $p['error_msg'] ?? 'Chưa lấy được ID', 0, 32, '...')) ?>
+                                        </span>
                                     <?php else: ?>
                                         <span style="color: var(--text-muted); font-size: 12px;">Chưa có</span>
                                     <?php endif; ?>
