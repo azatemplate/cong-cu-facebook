@@ -17,21 +17,45 @@ if (!function_exists('get_php_cli_bin')) {
 $php_bin = get_php_cli_bin();
 $is_win = (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN');
 
-// ── BỘ KIỂM TRA ƯU TIÊN (PRIORITY GATE): CHỈ PRE-UPLOAD KHI HỆ THỐNG RẢNH ──
+// ── BỘ KIỂM TRA THROTTLING SLOTS: CHỈ PRE-UPLOAD KHI THROTTLING CÒN SLOT TRỐNG ──
+$MAX_WORKERS = 30;
 try {
-    $overdue_count = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE scheduled_time <= NOW() AND status IN ('pending', 'failed')")->fetchColumn();
-    if ($overdue_count > 20) {
-        echo "[" . date('H:i:s') . "] ⚠ Hàng đợi quá hạn đang có {$overdue_count} bài cần đăng gấp. Tạm dừng Pre-upload để nhường tài nguyên.\n";
-        $rq_pre->releaseLock('lock:cron:start_preupload');
-        exit;
+    $res_limit = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_publish_workers'")->fetchColumn();
+    if ($res_limit !== false && $res_limit !== null && $res_limit !== '') {
+        $MAX_WORKERS = max(1, (int)$res_limit);
     }
-} catch (Exception $e) {
+} catch (Exception $e) {}
+
+$lock_dir = dirname(__DIR__) . '/locks';
+$active_workers = 0;
+if (is_dir($lock_dir)) {
+    foreach (glob($lock_dir . '/publish_user_*.lock') ?: [] as $lf) {
+        if (!file_exists($lf)) continue;
+        $fp = @fopen($lf, 'c+');
+        if ($fp) {
+            if (!@flock($fp, LOCK_EX | LOCK_NB)) {
+                $active_workers++;
+                @fclose($fp);
+            } else {
+                @flock($fp, LOCK_UN);
+                @fclose($fp);
+                @unlink($lf);
+            }
+        }
+    }
+}
+
+$available_slots = max(0, $MAX_WORKERS - $active_workers);
+
+if ($available_slots <= 0) {
+    echo "[" . date('H:i:s') . "] ⚠ Throttling đang hết slot trống ($active_workers/$MAX_WORKERS luồng). Tạm dừng Pre-upload.\n";
     $rq_pre->releaseLock('lock:cron:start_preupload');
     exit;
 }
 
 // ── BƯỚC 2: QUÉT BÀI VIẾT HẸN GIỜ TRONG TƯƠNG LAI (15 phút đến 24 giờ tới) ──
 try {
+    $fetch_limit = min(10, $available_slots);
     $sql = "
         SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time
         FROM scheduled_posts sp
@@ -41,7 +65,7 @@ try {
           AND sp.media_path IS NOT NULL AND sp.media_path != ''
           AND (sp.post_type IN ('Video', 'Reel', 'Photo', 'Facebook', 'Facebook Reel') OR sp.post_type LIKE 'Facebook%')
         ORDER BY sp.scheduled_time ASC
-        LIMIT 10
+        LIMIT {$fetch_limit}
     ";
 
     $posts = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
