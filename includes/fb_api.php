@@ -189,6 +189,7 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
                                 }
                             }
                         }
+                        return 0; // Return 0 to signal cURL to continue upload
                     });
                 }
             } else if (is_string($post_data) && (strpos($post_data, '{') === 0 || strpos($post_data, '[') === 0)) {
