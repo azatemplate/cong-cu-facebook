@@ -138,11 +138,24 @@ try {
     }
 } catch (Exception $e) {}
 
+$upcoming_publish_count_10m = 0;
+try {
+    $upcoming_publish_count_10m = (int)$pdo->query("
+        SELECT COUNT(*) 
+        FROM scheduled_posts 
+        WHERE status IN ('pending', 'failed')
+          AND scheduled_time <= DATE_ADD(NOW(), INTERVAL 10 MINUTE)
+    ")->fetchColumn();
+} catch (Exception $e) {}
+
 $active_publish = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 $active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
 $active_preupload = $active_preupload_locks;
 $total_active_publish_group = $active_publish + $active_preupload;
 $preupload_uploaded_count = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE preupload_status = 'uploaded' AND status = 'pending'")->fetchColumn();
+
+$reserved_publish_slots = max($active_publish, $upcoming_publish_count_10m);
+$available_preupload_slots = max(0, $max_publish_workers - $reserved_publish_slots - $active_preupload);
 
 // ── Kích hoạt thủ công nếu có ?run=1 ─────────────────────────────────────────
 $run_msg = '';
@@ -1143,8 +1156,8 @@ code {
                             </span>
                         </div>
                         <div style="width: 100%; display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
-                            <span>Slot Trống Khả Dụng: <strong class="text-success"><?= max(0, $max_publish_workers - $total_active_publish_group) ?></strong></span>
-                            <span>Trần Throttling: <strong><?= $max_publish_workers ?></strong></span>
+                            <span>Dành riêng Đăng bài (10m tới): <strong class="text-warning"><?= $reserved_publish_slots ?></strong></span>
+                            <span>Cho phép Pre-upload: <strong class="text-success"><?= $available_preupload_slots ?></strong></span>
                         </div>
                     </div>
 

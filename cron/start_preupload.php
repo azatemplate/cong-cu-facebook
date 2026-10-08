@@ -84,12 +84,26 @@ try {
 } catch (Exception $e) {}
 
 $active_publish = max($active_publish_locks, $active_publish_db);
-$total_active   = $active_publish + $active_preupload_workers;
 
-$available_slots = max(0, $MAX_WORKERS - $total_active);
+// ── 3. ĐẾM BÀI SẼ ĐẮNG TRONG 10 PHÚT TỚI ĐỂ DÀNH SLOT TRỐNG ──
+$upcoming_publish_count_10m = 0;
+try {
+    $upcoming_publish_count_10m = (int)$pdo->query("
+        SELECT COUNT(*) 
+        FROM scheduled_posts 
+        WHERE status IN ('pending', 'failed')
+          AND scheduled_time <= DATE_ADD(NOW(), INTERVAL 10 MINUTE)
+    ")->fetchColumn();
+} catch (Exception $e) {}
+
+// Số slot bắt buộc dành riêng cho xuất bản bài viết trong 10 phút tới
+$reserved_publish_slots = max($active_publish, $upcoming_publish_count_10m);
+
+// Số slot thực sự rảnh rỗi có thể dành cho Pre-upload bài tương lai (>10 phút nữa)
+$available_slots = max(0, $MAX_WORKERS - $reserved_publish_slots - $active_preupload_workers);
 
 if ($available_slots <= 0) {
-    echo "[" . date('H:i:s') . "] ⚠ Throttling đã đạt trần ($active_publish Đăng + $active_preupload_workers Preupload = $total_active/$MAX_WORKERS luồng). Tạm dừng Pre-upload.\n";
+    echo "[" . date('H:i:s') . "] ⚠ Throttling 10 phút tới cần dùng ($reserved_publish_slots bài xuất bản + $active_preupload_workers bài Pre-upload = " . ($reserved_publish_slots + $active_preupload_workers) . "/$MAX_WORKERS luồng). Tạm dừng Pre-upload để nhường tài nguyên.\n";
     $rq_pre->releaseLock('lock:cron:start_preupload');
     exit;
 }
@@ -102,7 +116,7 @@ try {
     $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_error TEXT DEFAULT NULL");
 } catch (Exception $e) {}
 
-// ── BƯỚC 2: QUÉT BÀI VIẾT HẸN GIỜ TRONG TƯƠNG LAI (15 phút đến 24 giờ tới) ──
+// ── BƯỚC 2: QUÉT BÀI VIẾT HẸN GIỜ TRONG TƯƠNG LAI (Sau 10 phút nữa đến 24 giờ tới) ──
 try {
     $fetch_limit = min(10, $available_slots);
     $sql = "
@@ -110,7 +124,7 @@ try {
         FROM scheduled_posts sp
         WHERE sp.status = 'pending'
           AND (sp.preupload_status IS NULL OR sp.preupload_status = 'none')
-          AND sp.scheduled_time >= DATE_ADD(NOW(), INTERVAL 1 MINUTE)
+          AND sp.scheduled_time >= DATE_ADD(NOW(), INTERVAL 10 MINUTE)
           AND sp.media_path IS NOT NULL AND sp.media_path != ''
           AND (LOWER(sp.post_type) IN ('video', 'reel', 'photo', 'facebook', 'facebook reel') OR sp.post_type LIKE '%Facebook%' OR sp.post_type LIKE '%Reel%' OR sp.post_type LIKE '%Video%')
         ORDER BY sp.scheduled_time ASC
@@ -120,7 +134,7 @@ try {
     $posts = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 
     if (empty($posts)) {
-        echo "[" . date('H:i:s') . "] Không có bài viết nào cần Pre-upload trong 24h tới.\n";
+        echo "[" . date('H:i:s') . "] Không có bài viết nào cần Pre-upload (lịch >10m nữa) trong 24h tới.\n";
         $rq_pre->releaseLock('lock:cron:start_preupload');
         exit;
     }
