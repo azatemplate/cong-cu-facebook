@@ -198,25 +198,18 @@ try {
     echo "  [LỖI] Delete published: " . $e->getMessage() . "\n";
 }
 
-// ── Xóa scheduled_posts failed đã hết retry
-echo "\n[STEP 5] Xóa rows scheduled_posts cũ (failed hết retry > {$retain_days} ngày)...\n";
+// ── Xóa scheduled_posts chưa hoàn thành của các ngày cũ
+echo "\n[STEP 5b] Xóa rows scheduled_posts chưa hoàn thành của các ngày cũ (< 00:00 hôm nay)...\n";
 try {
-    $max_retries_cfg = 3;
-    $mr = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key='max_retries'");
-    if ($mr) $max_retries_cfg = (int)($mr->fetchColumn() ?: 3);
-
-    $del_fail = $pdo->prepare("
+    $del_uncompleted_past = $pdo->exec("
         DELETE FROM scheduled_posts
-        WHERE status = 'failed'
-          AND retry_count >= ?
-          AND scheduled_time < DATE_SUB(NOW(), INTERVAL ? DAY)
+        WHERE status IN ('pending', 'failed')
+          AND scheduled_time < CURDATE()
     ");
-    $del_fail->execute([$max_retries_cfg, $retain_days]);
-    $cnt_fail = $del_fail->rowCount();
-    $stats['scheduled_posts'] += $cnt_fail;
-    echo "  -> Đã xóa: {$cnt_fail} rows (failed)\n";
+    $stats['scheduled_posts'] += $del_uncompleted_past;
+    echo "  -> Đã xóa: {$del_uncompleted_past} rows (bài chưa hoàn thành ngày cũ)\n";
 } catch (Exception $e) {
-    echo "  [LỖI] Delete failed: " . $e->getMessage() . "\n";
+    echo "  [LỖI] Delete uncompleted past posts: " . $e->getMessage() . "\n";
 }
 
 // ── Xóa post_campaigns trống (không còn bài nào)

@@ -47,16 +47,6 @@ try {
     }
 } catch (Exception $e) {}
 
-// Kích hoạt Pre-upload Dispatcher ngầm (chỉ chạy khi hàng đợi rảnh)
-try {
-    $script_preupload = __DIR__ . '/start_preupload.php';
-    if ($is_win) {
-        @pclose(@popen("start /B \"\" \"$php_bin\" \"$script_preupload\"", "r"));
-    } else {
-        @exec("nohup \"$php_bin\" \"$script_preupload\" > /dev/null 2>&1 &");
-    }
-} catch (Exception $e) {}
-
 
 // --- ĐẢM BẢO BÁO CÁO HÀNG NGÀY & CLEANUP CHẠY ĐÚNG ---
 try {
@@ -219,7 +209,38 @@ try {
     if ($del_orphaned > 0) {
         echo "  [CLEANUP] Đã xóa $del_orphaned bài mồ côi (Campaign đã bị xóa trước đó).\n";
     }
-} catch (Exception $e) {}
+// --- 🧹 LOGIC TỰ ĐỘNG XÓA BÀI HẸN GIỜ CHƯA HOÀN THÀNH CUỐI NGÀY (11:59 PM & BÀI CŨ) ---
+try {
+    $current_h  = (int)date('H');
+    $current_m  = (int)date('i');
+    $today_str  = date('Y-m-d');
+
+    // 1. Tự động xóa tất cả bài chưa hoàn thành (pending/failed) của CÁC NGÀY CŨ (< 00:00 hôm nay)
+    $del_past_uncompleted = $pdo->exec("
+        DELETE FROM scheduled_posts 
+        WHERE status IN ('pending', 'failed')
+          AND scheduled_time < CURDATE()
+    ");
+    if ($del_past_uncompleted > 0) {
+        echo "  [PURGE CÁC NGÀY CŨ] Đã xóa {$del_past_uncompleted} bài hẹn giờ chưa hoàn thành của ngày cũ.\n";
+    }
+
+    // 2. Lúc 23:59 PM (11:59 PM), tự động xóa TẤT CẢ bài hẹn giờ chưa hoàn thành của NGÀY HÔM NAY
+    $purge_today_flag = sys_get_temp_dir() . '/fb_purge_today_' . $today_str . '.done';
+    if ($current_h === 23 && $current_m >= 59 && !file_exists($purge_today_flag)) {
+        $del_today_uncompleted = $pdo->exec("
+            DELETE FROM scheduled_posts 
+            WHERE status IN ('pending', 'failed')
+              AND scheduled_time <= DATE_FORMAT(NOW(), '%Y-%m-%d 23:59:59')
+        ");
+        @file_put_contents($purge_today_flag, date('Y-m-d H:i:s'));
+        if ($del_today_uncompleted > 0) {
+            echo "  [PURGE 11:59 PM] Đã dọn sạch {$del_today_uncompleted} bài hẹn giờ chưa hoàn thành của ngày {$today_str} lúc 11:59 PM.\n";
+        }
+    }
+} catch (Exception $e) {
+    echo "  [LỖI PURGE END-OF-DAY]: " . $e->getMessage() . "\n";
+}
 
 // Cấu hình giới hạn luồng cho máy chủ (Lấy trực tiếp từ ⚙️ Throttling Máy Chủ ở settings.php)
 $MAX_WORKERS = 30;
@@ -230,31 +251,16 @@ try {
     }
 } catch (Exception $e) {}
 
-// Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động, bài đang processing và bài đang preupload
+// Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động và số bài đang ở trạng thái 'processing'
 $lock_dir = dirname(__DIR__) . '/locks';
-$active_publish_locks   = 0;
-$active_preupload_locks = 0;
+$active_workers = 0;
 if (is_dir($lock_dir)) {
     foreach (glob($lock_dir . '/publish_user_*.lock') ?: [] as $lf) {
         if (!file_exists($lf)) continue;
         $fp = @fopen($lf, 'c+');
         if ($fp) {
             if (!@flock($fp, LOCK_EX | LOCK_NB)) {
-                $active_publish_locks++;
-                @fclose($fp);
-            } else {
-                @flock($fp, LOCK_UN);
-                @fclose($fp);
-                @unlink($lf);
-            }
-        }
-    }
-    foreach (glob($lock_dir . '/preupload_post_*.lock') ?: [] as $lf) {
-        if (!file_exists($lf)) continue;
-        $fp = @fopen($lf, 'c+');
-        if ($fp) {
-            if (!@flock($fp, LOCK_EX | LOCK_NB)) {
-                $active_preupload_locks++;
+                $active_workers++;
                 @fclose($fp);
             } else {
                 @flock($fp, LOCK_UN);
@@ -270,14 +276,13 @@ try {
     $curr_processing_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 } catch (Exception $e) {}
 
-$active_publish = max($active_publish_locks, $curr_processing_posts);
-$total_active   = $active_publish + $active_preupload_locks;
+$effective_active = $active_workers;
 
-echo "  [THROTTLE] Luồng chạy: $active_publish Đăng bài + $active_preupload_locks Pre-upload = $total_active/$MAX_WORKERS luồng.\n";
+echo "  [THROTTLE] Hiện có $active_workers luồng chạy thực tế ($curr_processing_posts bài PROCESSING). Giới hạn Throttling Max: $MAX_WORKERS.\n";
 
-$available_slots = max(0, $MAX_WORKERS - $total_active);
+$available_slots = max(0, $MAX_WORKERS - $effective_active);
 if ($available_slots <= 0) {
-    echo "Hệ thống đang đạt trần giới hạn Throttling ($total_active/$MAX_WORKERS). Chờ lượt cron kế tiếp...\n";
+    echo "Hệ thống đang đạt trần giới hạn Throttling ($effective_active/$MAX_WORKERS). Chờ lượt cron kế tiếp...\n";
     $rq_pub->releaseLock('lock:cron:start_publish');
     exit;
 }

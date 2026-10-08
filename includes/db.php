@@ -79,14 +79,14 @@ function ensure_db_schema_ready($pdo) {
     static $already_checked = false;
     if ($already_checked) return;
 
-    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v19.done';
+    $flag_file = sys_get_temp_dir() . '/fb_schema_init_v18.done';
     if (file_exists($flag_file)) {
         $already_checked = true;
         return;
     }
 
     try {
-        $chk = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'schema_init_v19_done'");
+        $chk = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'schema_init_v18_done'");
         if ($chk && $chk->fetchColumn() === '1') {
             @file_put_contents($flag_file, date('Y-m-d H:i:s'));
             $already_checked = true;
@@ -460,11 +460,6 @@ function ensure_db_schema_ready($pdo) {
         try {
             $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
         } catch (Exception $e) {}
-        try {
-            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_status ENUM('none','pending','uploading','uploaded','failed') DEFAULT 'none'");
-            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preuploaded_media_id VARCHAR(255) DEFAULT NULL");
-            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_session_id VARCHAR(255) DEFAULT NULL");
-        } catch (Exception $e) {}
 
         $add_idx = function($p, $tbl, $name, $cols) {
             try {
@@ -488,7 +483,6 @@ function ensure_db_schema_ready($pdo) {
         $add_idx($pdo, 'scheduled_posts', 'idx_post_type_sched', 'post_type, scheduled_time');
         $add_idx($pdo, 'scheduled_posts', 'idx_updated_at', 'updated_at');
         $add_idx($pdo, 'scheduled_posts', 'idx_status_retry', 'status, retry_count');
-        $add_idx($pdo, 'scheduled_posts', 'idx_preupload', 'preupload_status, scheduled_time, status');
         $add_idx($pdo, 'pages', 'idx_user_id', 'user_id');
         $add_idx($pdo, 'pages', 'idx_page_id', 'page_id');
         $add_idx($pdo, 'users', 'idx_account_id', 'account_id');
@@ -901,13 +895,6 @@ function ensure_db_schema_ready($pdo) {
             if ($col->rowCount() === 0) {
                 $pdo->exec("ALTER TABLE users ADD COLUMN proxy_id INT DEFAULT NULL");
             }
-        } catch (Exception $e) {}
-
-        try {
-            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_status ENUM('none','pending','uploading','uploaded','failed') DEFAULT 'none'");
-            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preuploaded_media_id VARCHAR(255) DEFAULT NULL");
-            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_session_id VARCHAR(255) DEFAULT NULL");
-            $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_error TEXT DEFAULT NULL");
         } catch (Exception $e) {}
 
         try {

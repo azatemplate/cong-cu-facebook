@@ -106,56 +106,8 @@ try {
     }
 } catch (Exception $e) {}
 
-$lock_dir = __DIR__ . '/locks';
-$active_preupload_locks = 0;
-$active_preupload_ids = [];
-if (is_dir($lock_dir)) {
-    foreach (glob($lock_dir . '/preupload_post_*.lock') ?: [] as $lf) {
-        if (!file_exists($lf)) continue;
-        $fp = @fopen($lf, 'c+');
-        if ($fp) {
-            if (!@flock($fp, LOCK_EX | LOCK_NB)) {
-                $active_preupload_locks++;
-                if (preg_match('/preupload_post_(\d+)\.lock$/', $lf, $m)) {
-                    $active_preupload_ids[] = (int)$m[1];
-                }
-                @fclose($fp);
-            } else {
-                @flock($fp, LOCK_UN);
-                @fclose($fp);
-                @unlink($lf);
-            }
-        }
-    }
-}
-
-// Dọn sạch rác status 'uploading' trong CSDL nếu không có file lock hoạt động
-try {
-    if (!empty($active_preupload_ids)) {
-        $pdo->exec("UPDATE scheduled_posts SET preupload_status = 'none' WHERE preupload_status = 'uploading' AND id NOT IN (" . implode(',', $active_preupload_ids) . ")");
-    } else {
-        $pdo->exec("UPDATE scheduled_posts SET preupload_status = 'none' WHERE preupload_status = 'uploading'");
-    }
-} catch (Exception $e) {}
-
-$upcoming_publish_count_10m = 0;
-try {
-    $upcoming_publish_count_10m = (int)$pdo->query("
-        SELECT COUNT(*) 
-        FROM scheduled_posts 
-        WHERE status IN ('pending', 'failed')
-          AND scheduled_time <= DATE_ADD(NOW(), INTERVAL 10 MINUTE)
-    ")->fetchColumn();
-} catch (Exception $e) {}
-
 $active_publish = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 $active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
-$active_preupload = $active_preupload_locks;
-$total_active_publish_group = $active_publish + $active_preupload;
-$preupload_uploaded_count = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE preupload_status = 'uploaded' AND status = 'pending'")->fetchColumn();
-
-$reserved_publish_slots = max($active_publish, $upcoming_publish_count_10m);
-$available_preupload_slots = max(0, $max_publish_workers - $reserved_publish_slots - $active_preupload);
 
 // ── Kích hoạt thủ công nếu có ?run=1 ─────────────────────────────────────────
 $run_msg = '';
@@ -164,8 +116,6 @@ if (isset($_GET['run'])) {
     $type = $_GET['run'];
     if ($type === 'publish') {
         require __DIR__ . '/cron/start_publish.php';
-    } elseif ($type === 'preupload') {
-        require __DIR__ . '/cron/start_preupload.php';
     } elseif ($type === 'comment') {
         require __DIR__ . '/cron/start_comment.php';
     } elseif ($type === 'insights') {
@@ -280,7 +230,7 @@ $ready_posts = $ready_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Bài pending chưa tới giờ ─────────────────────────────────────────────────
 $upcoming = $pdo->query("
-    SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time, sp.preupload_status, sp.preuploaded_media_id,
+    SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time,
            TIMESTAMPDIFF(MINUTE, NOW(), sp.scheduled_time) AS minutes_left,
            sa.username AS account_name
     FROM scheduled_posts sp
@@ -290,45 +240,7 @@ $upcoming = $pdo->query("
     LIMIT 10
 ")->fetchAll(PDO::FETCH_ASSOC);
 
-// ── Bài đã/đang Pre-upload (Upload Nháp Facebook) ────────────────────────────
-$preupload_total_count = 0;
-$preupload_posts = [];
-try {
-    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_status ENUM('none','pending','uploading','uploaded','failed') DEFAULT 'none'");
-    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preuploaded_media_id VARCHAR(255) DEFAULT NULL");
-    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_session_id VARCHAR(255) DEFAULT NULL");
-    $pdo->exec("ALTER TABLE scheduled_posts ADD COLUMN IF NOT EXISTS preupload_error TEXT DEFAULT NULL");
-
-    $preupload_total_count = (int)$pdo->query("
-        SELECT COUNT(*) FROM scheduled_posts 
-        WHERE preupload_status IN ('uploaded', 'uploading') 
-           OR (preupload_status = 'failed' AND status = 'pending')
-    ")->fetchColumn();
-
-    $preupload_posts = $pdo->query("
-        SELECT sp.id, sp.account_id, sp.page_id, sp.post_type, sp.status, sp.scheduled_time, sp.preupload_status, sp.preuploaded_media_id, sp.preupload_session_id, sp.preupload_error, sp.error_msg, sp.updated_at,
-               sa.username AS account_name
-        FROM scheduled_posts sp
-        LEFT JOIN system_accounts sa ON sp.account_id = sa.id
-        WHERE sp.preupload_status IN ('uploaded', 'uploading')
-           OR (sp.preupload_status = 'failed' AND sp.status = 'pending')
-        ORDER BY sp.updated_at DESC, sp.id DESC
-        LIMIT 30
-    ")->fetchAll(PDO::FETCH_ASSOC);
-} catch (Exception $e) {
-    try {
-        $preupload_posts = $pdo->query("
-            SELECT sp.id, sp.account_id, sp.page_id, sp.post_type, sp.status, sp.scheduled_time, sp.preupload_status, sp.preuploaded_media_id, sp.preupload_session_id, '' AS preupload_error, sp.error_msg, sp.updated_at,
-                   sa.username AS account_name
-            FROM scheduled_posts sp
-            LEFT JOIN system_accounts sa ON sp.account_id = sa.id
-            WHERE sp.preupload_status IN ('uploaded', 'uploading')
-               OR (sp.preupload_status = 'failed' AND sp.status = 'pending')
-            ORDER BY sp.updated_at DESC, sp.id DESC
-            LIMIT 30
-        ")->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Exception $e2) {}
-}
+// ── Bài đang xử lý (Processing) ──────────────────────────────────────────────
 $processing_posts = $pdo->query("
     SELECT sp.id, sp.page_id, sp.post_type, sp.scheduled_time, sp.updated_at,
            TIMESTAMPDIFF(MINUTE, sp.updated_at, NOW()) AS duration_min,
@@ -1147,38 +1059,17 @@ code {
                 </h3>
                 
                 <div class="info-list">
-                    <!-- Total publish + preupload throttling bar -->
-                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px; background: rgba(99, 102, 241, 0.05); padding: 12px; border-radius: 10px; border: 1px solid rgba(99, 102, 241, 0.2);">
-                        <div style="width: 100%; display: flex; justify-content: space-between; align-items: center;">
-                            <span class="info-label" style="font-weight: 700; color: #a5b4fc;">⚡ Tổng Luồng Đang Chạy (Đăng + Preupload)</span>
-                            <span class="mono" style="font-weight: 700; font-size: 14px; color: <?= $total_active_publish_group >= $max_publish_workers ? 'var(--color-danger)' : 'var(--color-success)' ?>;">
-                                <?= $total_active_publish_group ?> / <?= $max_publish_workers ?>
-                            </span>
-                        </div>
-                        <div style="width: 100%; display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
-                            <span>Dành riêng Đăng bài (10m tới): <strong class="text-warning"><?= $reserved_publish_slots ?></strong></span>
-                            <span>Cho phép Pre-upload: <strong class="text-success"><?= $available_preupload_slots ?></strong></span>
-                        </div>
-                    </div>
-
                     <!-- Publish workers -->
-                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 4px;">
-                        <span class="info-label" style="font-weight: 600; color: var(--text-primary);">🚀 Publish Workers (Đang xuất bản)</span>
+                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                        <span class="info-label" style="font-weight: 600; color: var(--text-primary);">🚀 Publish Workers (Đăng bài)</span>
                         <div style="width: 100%; display: flex; justify-content: space-between; font-size: 13px;">
                             <span>Đang chạy: <strong class="text-warning"><?= $active_publish ?></strong></span>
-                            <span>Trạng thái: <strong><?= $active_publish > 0 ? 'Hoạt động' : 'Rảnh rỗi' ?></strong></span>
-                        </div>
-                    </div>
-                    <!-- Pre-upload workers -->
-                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px; border-top: 1px dashed var(--border-color); padding-top: 8px; padding-bottom: 8px;">
-                        <span class="info-label" style="font-weight: 600; color: var(--text-primary);">⚡ Pre-upload Workers (Upload nháp trước)</span>
-                        <div style="width: 100%; display: flex; justify-content: space-between; font-size: 13px;">
-                            <span>Đang upload: <strong class="text-info"><?= $active_preupload ?></strong></span>
-                            <span>Đã sẵn sàng (0.5s): <strong class="text-success"><?= $preupload_uploaded_count ?></strong></span>
+                            <span>Tối đa: <strong><?= $max_publish_workers ?></strong></span>
+                            <span>Trống: <strong class="text-success"><?= max(0, $max_publish_workers - $active_publish) ?></strong></span>
                         </div>
                     </div>
                     <!-- Comment workers -->
-                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px; border-top: 1px dashed var(--border-color); padding-top: 8px; border-bottom: none; padding-bottom: 0;">
+                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px; border:none; padding: 0;">
                         <span class="info-label" style="font-weight: 600; color: var(--text-primary);">💬 Comment Workers (Bình luận)</span>
                         <div style="width: 100%; display: flex; justify-content: space-between; font-size: 13px;">
                             <span>Đang chạy: <strong class="text-warning"><?= $active_comment ?></strong></span>
@@ -1281,95 +1172,6 @@ code {
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                     </div>
                 </div>
-                <div class="stat-box" style="border-left: 3px solid var(--color-purple);">
-                    <div class="stat-box-value mono" style="color: var(--color-purple);"><?= $preupload_uploaded_count ?></div>
-                    <div class="stat-box-label">Đã Pre-upload (Đăng 0.5s)</div>
-                    <div class="stat-box-icon" style="color: var(--color-purple);">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Table: Các bài đã Pre-upload (Upload Nháp Facebook) -->
-            <div class="card" style="border-top: 4px solid var(--color-purple);">
-                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color);">
-                    <h3 class="card-title" style="color: var(--color-purple); margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                        Các bài đã Pre-upload (Upload Nháp Facebook — <?= $preupload_total_count ?> bài<?= $preupload_total_count > 30 ? ', hiển thị 30 mới nhất' : '' ?>)
-                    </h3>
-                    <?php if (!empty($preupload_posts)): ?>
-                    <input type="text" placeholder="🔍 Tìm ID, photo_id, video_id..." onkeyup="filterTable(this, 'table-preupload-posts')" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); color: var(--text-primary); padding: 6px 12px; border-radius: 8px; font-size: 12px; outline: none; width: 220px;">
-                    <?php endif; ?>
-                </div>
-
-                <p style="font-size:13px; color:var(--text-secondary); margin-bottom:14px; line-height: 1.5;">
-                    ⚡ Pre-upload chỉ áp dụng cho <b>Facebook (Photo, Video, Reel)</b>. Media đã được upload sẵn dạng Nháp (Unpublished) lên Meta CDN kèm <code style="color: #38bdf8;">photo_id</code> hoặc <code style="color: #38bdf8;">video_id</code>. Khi tới giờ hẹn, hệ thống xuất bản tức thì trong <b>0.5 giây</b>.
-                </p>
-                
-                <?php if (empty($preupload_posts)): ?>
-                <div style="padding: 24px; text-align: center; background: rgba(167, 139, 250, 0.03); border: 1px dashed rgba(167, 139, 250, 0.2); border-radius: 12px; margin: 8px 0;">
-                    <div style="margin-bottom: 10px; display: inline-flex; padding: 12px; background: rgba(167, 139, 250, 0.1); border-radius: 50%; color: var(--color-purple);">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                    </div>
-                    <div style="font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Chưa có bài viết nào được Pre-upload</div>
-                    <div style="font-size: 13px; color: var(--text-secondary);">Khi Throttling rảnh, hệ thống sẽ tự động quét các bài hẹn giờ Facebook trong 24h tới để upload nháp trước.</div>
-                </div>
-                <?php else: ?>
-                <div class="table-responsive table-mobile-cards">
-                    <table id="table-preupload-posts">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Tài khoản</th>
-                                <th>Fanpage ID</th>
-                                <th>Loại</th>
-                                <th>Pre-upload Status</th>
-                                <th>Meta Media ID (photo_id / video_id)</th>
-                                <th>Trạng thái Bài</th>
-                                <th>Giờ hẹn</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($preupload_posts as $p): ?>
-                            <tr>
-                                <td data-label="ID" class="mono font-weight-bold">#<?= $p['id'] ?></td>
-                                <td data-label="Tài khoản"><span style="color:#a78bfa; font-weight: 600;"><?= htmlspecialchars($p['account_name'] ?? 'System') ?></span></td>
-                                <td data-label="Fanpage ID" class="mono"><?= $p['page_id'] ?></td>
-                                <td data-label="Loại"><span style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;"><?= htmlspecialchars($p['post_type']) ?></span></td>
-                                <td data-label="Pre-upload Status">
-                                    <?php if ($p['preupload_status'] === 'uploaded'): ?>
-                                        <span class="badge" style="background: linear-gradient(135deg, rgba(6,182,212,0.15), rgba(99,102,241,0.15)); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3);">⚡ Đã Upload nháp</span>
-                                    <?php elseif ($p['preupload_status'] === 'uploading'): ?>
-                                        <span class="badge processing">⏳ Đang Upload...</span>
-                                    <?php elseif ($p['preupload_status'] === 'failed'): ?>
-                                        <span class="badge failed" title="<?= htmlspecialchars($p['preupload_error'] ?? $p['error_msg'] ?? '') ?>">❌ Lỗi Upload</span>
-                                    <?php else: ?>
-                                        <span style="color: var(--text-muted); font-size: 11px;">—</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td data-label="Meta Media ID">
-                                    <?php if (!empty($p['preuploaded_media_id'])): ?>
-                                        <code style="color: #34d399; font-weight: 700; font-size: 12px; border: 1px solid rgba(52, 211, 153, 0.2); background: rgba(52, 211, 153, 0.05); padding: 3px 8px; border-radius: 6px;">
-                                            <?= htmlspecialchars($p['preuploaded_media_id']) ?>
-                                        </code>
-                                    <?php elseif ($p['preupload_status'] === 'uploading'): ?>
-                                        <span style="color: var(--color-warning); font-size: 12px;">⏳ Đang lấy ID...</span>
-                                    <?php elseif ($p['preupload_status'] === 'failed'): ?>
-                                        <span style="color: #f87171; font-size: 11px;" title="<?= htmlspecialchars($p['preupload_error'] ?? $p['error_msg'] ?? 'Lỗi không xác định') ?>">
-                                            ⚠️ <?= htmlspecialchars(mb_strimwidth($p['preupload_error'] ?? $p['error_msg'] ?? 'Chưa lấy được ID', 0, 32, '...')) ?>
-                                        </span>
-                                    <?php else: ?>
-                                        <span style="color: var(--text-muted); font-size: 12px;">Chưa có</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td data-label="Trạng thái Bài"><span class="badge <?= $p['status'] ?>"><?= $p['status'] ?></span></td>
-                                <td data-label="Giờ hẹn" class="mono"><?= $p['scheduled_time'] ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-                <?php endif; ?>
             </div>
 
             <!-- Table: Bài đến/quá hạn cần đăng ngay -->
@@ -1588,7 +1390,6 @@ code {
                                 <th>Tài khoản</th>
                                 <th>Fanpage ID</th>
                                 <th>Loại</th>
-                                <th>Pre-upload</th>
                                 <th>Giờ hẹn</th>
                                 <th>Thời gian chờ</th>
                             </tr>
@@ -1600,17 +1401,6 @@ code {
                                 <td data-label="Tài khoản"><span style="color:#a78bfa; font-weight: 600;"><?= htmlspecialchars($u['account_name'] ?? 'System') ?></span></td>
                                 <td data-label="Fanpage ID" class="mono"><?= $u['page_id'] ?></td>
                                 <td data-label="Loại"><span style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;"><?= $u['post_type'] ?></span></td>
-                                <td data-label="Pre-upload">
-                                    <?php if ($u['preupload_status'] === 'uploaded'): ?>
-                                        <span class="badge" style="background: linear-gradient(135deg, rgba(6,182,212,0.15), rgba(99,102,241,0.15)); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3);">⚡ Đã Nháp (0.5s)</span>
-                                    <?php elseif ($u['preupload_status'] === 'uploading'): ?>
-                                        <span class="badge processing">⏳ Đang Upload</span>
-                                    <?php elseif ($u['preupload_status'] === 'failed'): ?>
-                                        <span class="badge failed">❌ Lỗi Upload</span>
-                                    <?php else: ?>
-                                        <span style="color: var(--text-muted); font-size: 11px;">—</span>
-                                    <?php endif; ?>
-                                </td>
                                 <td data-label="Giờ hẹn" class="mono"><?= $u['scheduled_time'] ?></td>
                                 <td data-label="Thời gian chờ" class="text-success font-weight-bold"><?= (int)$u['minutes_left'] ?> phút nữa</td>
                             </tr>
@@ -1634,10 +1424,6 @@ code {
                     <a class="btn btn-success" href="?run=publish">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                         Chạy Publish Dispatcher (Đăng bài)
-                    </a>
-                    <a class="btn" style="background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); color: white; border: none; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15);" href="?run=preupload">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                        Chạy Pre-upload Dispatcher (Upload nháp)
                     </a>
                     <a class="btn btn-primary" href="?run=comment">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -1756,22 +1542,13 @@ php <?= htmlspecialchars($cron_dir_path) ?>/start_comment.php >> /tmp/fb_comment
                         <span style="font-size:11px; color: var(--text-muted)">Cấu hình trên AaPanel: <b>N Minutes → 1 Minute</b> | Type: Shell Script</span>
                     </div>
 
-                    <div style="margin-bottom:16px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
-                            <span style="font-size:13px; font-weight:600; color:#38bdf8;">② Cron Pre-upload — Upload nháp trước (Tần suất: 1-2 phút / lần)</span>
-                            <button class="btn btn-secondary" style="padding: 4px 10px; font-size:11px;" onclick="copyText('cron3a')">Copy Command</button>
-                        </div>
-                        <pre id="cron3a">php <?= htmlspecialchars($cron_dir_path) ?>/start_preupload.php >> /tmp/fb_preupload.log 2>&1</pre>
-                        <span style="font-size:11px; color: var(--text-muted)">Cấu hình trên AaPanel: <b>N Minutes → 1 Minute</b> | Type: Shell Script</span>
-                    </div>
-
                     <div>
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
-                            <span style="font-size:13px; font-weight:600; color:#c4b5fd;">③ Cron Insights — Đọc Insights & Bình luận tự động (Đa luồng 5 workers)</span>
+                            <span style="font-size:13px; font-weight:600; color:#c4b5fd;">② Cron 2 — Đọc Insights & Bình luận tự động (Đa luồng 5 workers song song - Khuyên dùng)</span>
                             <button class="btn btn-secondary" style="padding: 4px 10px; font-size:11px;" onclick="copyText('cron2a')">Copy Command</button>
                         </div>
                         <pre id="cron2a">php <?= htmlspecialchars($cron_dir_path) ?>/start_insights_workers.php 5 >> /tmp/fb_comment_insights.log 2>&1</pre>
-                        <span style="font-size:11px; color: var(--text-muted)">Cấu hình trên AaPanel: <b>N Minutes → 5 Minutes</b> | Type: Shell Script</span>
+                        <span style="font-size:11px; color: var(--text-muted)">Cấu hình trên AaPanel: <b>N Minutes → 5 Minutes</b> | Type: Shell Script (Hoặc đơn luồng: <code>php <?= htmlspecialchars($cron_dir_path) ?>/comment_insights_worker.php</code>)</span>
                     </div>
                 </div>
 
@@ -1787,18 +1564,9 @@ php <?= htmlspecialchars($cron_dir_path) ?>/start_comment.php >> /tmp/fb_comment
                         <span style="font-size:11px; color: var(--text-muted)">Hệ thống Crontab: <code>* * * * *</code> (Chạy mỗi phút)</span>
                     </div>
 
-                    <div style="margin-bottom:16px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
-                            <span style="font-size:13px; font-weight:600; color:#38bdf8;">② Cron Pre-upload — Upload nháp trước (Tần suất: 1-2 phút / lần)</span>
-                            <button class="btn btn-secondary" style="padding: 4px 10px; font-size:11px;" onclick="copyText('cron3b')">Copy Command</button>
-                        </div>
-                        <pre id="cron3b"><?= htmlspecialchars($php_bin_full) ?> <?= htmlspecialchars($cron_dir_path) ?>/start_preupload.php >> /tmp/fb_preupload.log 2>&1</pre>
-                        <span style="font-size:11px; color: var(--text-muted)">Hệ thống Crontab: <code>* * * * *</code> (Chạy mỗi phút)</span>
-                    </div>
-
                     <div>
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
-                            <span style="font-size:13px; font-weight:600; color:#c4b5fd;">③ Cron Insights — Đọc Insights & Bình luận tự động (Đa luồng 5 workers)</span>
+                            <span style="font-size:13px; font-weight:600; color:#c4b5fd;">② Cron 2 — Đọc Insights & Bình luận tự động (Đa luồng 5 workers song song)</span>
                             <button class="btn btn-secondary" style="padding: 4px 10px; font-size:11px;" onclick="copyText('cron2b')">Copy Command</button>
                         </div>
                         <pre id="cron2b"><?= htmlspecialchars($php_bin_full) ?> <?= htmlspecialchars($cron_dir_path) ?>/start_insights_workers.php 5 >> /tmp/fb_comment_insights.log 2>&1</pre>
@@ -1808,7 +1576,6 @@ php <?= htmlspecialchars($cron_dir_path) ?>/start_comment.php >> /tmp/fb_comment
 
                 <div style="margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px; font-size:12px; color: var(--text-secondary);">
                     <span>📂 Log Đăng Bài: <code>tail -f /tmp/fb_publish.log</code></span>
-                    <span>📂 Log Pre-upload: <code>tail -f /tmp/fb_preupload.log</code></span>
                     <span>📂 Log Insights: <code>tail -f /tmp/fb_comment_insights.log</code></span>
                 </div>
             </div>
