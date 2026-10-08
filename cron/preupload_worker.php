@@ -37,7 +37,8 @@ try {
         die("Post #{$post_id} not found.\n");
     }
 
-    $page_token = !empty($post['page_access_token']) ? $post['page_access_token'] : '';
+    $raw_token  = !empty($post['page_access_token']) ? $post['page_access_token'] : '';
+    $page_token = function_exists('decryptData') ? decryptData($raw_token) : $raw_token;
     $page_id    = $post['page_id'];
     $raw_media  = $post['media_path'];
     $post_type  = $post['post_type'];
