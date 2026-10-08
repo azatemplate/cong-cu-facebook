@@ -420,6 +420,7 @@ while ($has_more && count($dispatch_list) < $available_slots) {
                 if (count($dispatch_list) >= $available_slots) {
                     break 2;
                 }
+                break; // Cấp 1 luồng cho User này ở lượt này, chuyển sang User tiếp theo (Chia đều Throttling công bằng)
             }
         }
     }
