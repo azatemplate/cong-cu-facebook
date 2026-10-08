@@ -276,9 +276,15 @@ try {
     $curr_processing_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 } catch (Exception $e) {}
 
-$effective_active = $active_workers;
+// Đảm bảo số luồng active được tính chính xác: Nếu số file lock mồ côi cao hơn số bài processing thực tế trong DB,
+// căn cứ theo số bài processing thực tế để không chặn đẻ luồng mới cho các Campaign khác.
+if ($curr_processing_posts > 0) {
+    $effective_active = min($active_workers, max($curr_processing_posts, min($active_workers, $curr_processing_posts + 2)));
+} else {
+    $effective_active = min($active_workers, 2);
+}
 
-echo "  [THROTTLE] Hiện có $active_workers luồng chạy thực tế ($curr_processing_posts bài PROCESSING). Giới hạn Throttling Max: $MAX_WORKERS.\n";
+echo "  [THROTTLE] Hiện có $active_workers file locks ($curr_processing_posts bài PROCESSING thực tế). Giới hạn Throttling Max: $MAX_WORKERS.\n";
 
 $available_slots = max(0, $MAX_WORKERS - $effective_active);
 if ($available_slots <= 0) {

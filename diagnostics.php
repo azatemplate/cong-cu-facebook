@@ -86,27 +86,8 @@ try {
     }
 } catch (Exception $e) {}
 
-// ── Đếm số bài đang xử lý (PROCESSING) đồng bộ 1-1 làm chỉ số Đang Chạy ──────────────
-try {
-    // Tự động dọn dẹp bài thừa: Mỗi Campaign chỉ giữ duy nhất 1 bài đang processing mới nhất
-    $multi_camps = $pdo->query("
-        SELECT campaign_id, COUNT(*) as cnt 
-        FROM scheduled_posts 
-        WHERE campaign_id IS NOT NULL AND campaign_id > 0 AND status = 'processing' 
-        GROUP BY campaign_id 
-        HAVING cnt > 1
-    ")->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach ($multi_camps as $mc) {
-        $cid = (int)$mc['campaign_id'];
-        $latest_id = (int)$pdo->query("SELECT id FROM scheduled_posts WHERE campaign_id = $cid AND status = 'processing' ORDER BY updated_at DESC, id DESC LIMIT 1")->fetchColumn();
-        if ($latest_id > 0) {
-            $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = $cid AND status = 'processing' AND id != $latest_id");
-        }
-    }
-} catch (Exception $e) {}
-
-$active_publish = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+// ── Đếm số worker đang thực sự chạy (active) ────────────────────────────────
+$active_publish = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 $active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
 
 // ── Kích hoạt thủ công nếu có ?run=1 ─────────────────────────────────────────

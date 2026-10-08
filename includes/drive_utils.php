@@ -214,8 +214,8 @@ function download_drive_file_temp($access_token, $file_id) {
         }
     }
 
-    // 2. Lấy thông tin metadata của file (name, mimeType, size) - Kết nối trực tiếp Google CDN
-    $meta_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=name,mimeType,size";
+    // 2. Lấy thông tin metadata của file (name, mimeType) - Kết nối trực tiếp Google CDN
+    $meta_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?fields=name,mimeType";
     $ch = curl_init($meta_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token", "Expect:"]);
@@ -230,10 +230,6 @@ function download_drive_file_temp($access_token, $file_id) {
     $meta = json_decode($meta_response, true);
     if (!isset($meta['name'])) {
         return ['error' => 'Không thể lấy thông tin file từ Google Drive. (Vui lòng kiểm tra quyền truy cập hoặc Refresh Token)'];
-    }
-
-    if (isset($meta['size']) && (int)$meta['size'] === 0) {
-        return ['error' => 'Tệp trên Google Drive là tệp rỗng (0 byte). Vui lòng tải lại file video/ảnh hợp lệ lên Google Drive.'];
     }
 
     $mime_type = $meta['mimeType'];
@@ -275,35 +271,39 @@ function download_drive_file_temp($access_token, $file_id) {
         return ['error' => 'Không thể tạo file tạm trên Server.'];
     }
 
-    // Tách riêng bước lấy URL CDN (302 Redirect) để không bị gửi Header Authorization sang googleusercontent.com
-    $ch_loc = curl_init($download_url);
-    curl_setopt($ch_loc, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch_loc, CURLOPT_HEADER, true);
-    curl_setopt($ch_loc, CURLOPT_NOBODY, true);
-    curl_setopt($ch_loc, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token", "Expect:"]);
-    curl_setopt($ch_loc, CURLOPT_TIMEOUT, 30);
-    curl_setopt($ch_loc, CURLOPT_SSL_VERIFYPEER, false);
-    $loc_res = curl_exec($ch_loc);
-    $loc_code = curl_getinfo($ch_loc, CURLINFO_HTTP_CODE);
-    curl_close($ch_loc);
-
-    $cdn_url = '';
-    if (($loc_code === 302 || $loc_code === 303 || $loc_code === 307) && preg_match('/^Location:\s*(.+)$/mi', (string)$loc_res, $m)) {
-        $cdn_url = trim(end($m));
-    }
-
-    $ch2 = curl_init(!empty($cdn_url) ? $cdn_url : $download_url);
-    if (empty($cdn_url)) {
-        curl_setopt($ch2, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token", "Expect:"]);
-    }
+    $ch2 = curl_init($download_url);
+    curl_setopt($ch2, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token", "Expect:"]);
     curl_setopt($ch2, CURLOPT_FILE, $fp);
     curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch2, CURLOPT_TIMEOUT, 1800);
+    curl_setopt($ch2, CURLOPT_TIMEOUT, 600);
     curl_setopt($ch2, CURLOPT_LOW_SPEED_LIMIT, 1024);
     curl_setopt($ch2, CURLOPT_LOW_SPEED_TIME, 60);
     curl_setopt($ch2, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch2, CURLOPT_BUFFERSIZE, 1048576);
+
+    $last_printed_pct = -20;
+    curl_setopt($ch2, CURLOPT_NOPROGRESS, false);
+    curl_setopt($ch2, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct) {
+        $args = func_get_args();
+        if (count($args) >= 5) {
+            $downloaded = $args[2];
+            $total = $args[1];
+        } else {
+            $downloaded = $args[1] ?? 0;
+            $total = $args[0] ?? 0;
+        }
+        if ($total > 0 && $downloaded > 0) {
+            $pct = (int) floor(($downloaded / $total) * 100);
+            if ($pct >= $last_printed_pct + 20 || $pct === 100) {
+                $last_printed_pct = $pct;
+                $dl_mb = round($downloaded / 1024 / 1024, 2);
+                $tot_mb = round($total / 1024 / 1024, 2);
+                echo "   → Tiến trình tải từ Drive: {$pct}% ({$dl_mb} MB / {$tot_mb} MB)\n";
+                if (ob_get_level() > 0) @ob_flush();
+                @flush();
+            }
+        }
+    });
 
     $success = curl_exec($ch2);
     $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
@@ -767,10 +767,17 @@ if (!function_exists('upload_file_to_drive_resumable')) {
             return ['error' => true, 'msg' => 'Could not retrieve upload Location header from Drive API.'];
         }
         
+        $fp = fopen($file_path, 'rb');
+        if (!$fp) {
+            return ['error' => true, 'msg' => 'Cannot open local file for reading.'];
+        }
+        
         $ch = curl_init($location);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
-        curl_setopt($ch, CURLOPT_POSTFIELDS, file_get_contents($file_path));
+        curl_setopt($ch, CURLOPT_INFILE, $fp);
+        curl_setopt($ch, CURLOPT_INFILESIZE, $file_size);
+        curl_setopt($ch, CURLOPT_UPLOAD, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer $access_token",
             "Content-Type: $mime_type",
@@ -779,6 +786,7 @@ if (!function_exists('upload_file_to_drive_resumable')) {
         
         $upload_response = curl_exec($ch);
         $upload_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        fclose($fp);
         curl_close($ch);
         
         $data = json_decode($upload_response, true);

@@ -18,9 +18,14 @@ function fb_curl_setssl($ch) {
         curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
     }
 
-    // Disable SSL verification to prevent SSL certificate errors on VPS servers
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    // Disable SSL verification only in development environment
+    if (defined('APP_ENV') && APP_ENV === 'development') {
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    } else {
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+    }
 }
 
 function apply_proxy_to_curl($ch, $access_token = null) {
@@ -141,12 +146,12 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024); // Ngắt nếu tốc độ truyền tải < 1KB/s
+    curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);    // trong 60s liên tục (chống cURL treo vô hạn)
     fb_curl_setssl($ch);
 
     // Dùng proxy cho API thường, nhưng BỎ PROXY khi upload file binary (CURLFile) để tận dụng 100% băng thông VPS
     if (!$has_file) {
-        curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024); // Ngắt nếu tốc độ truyền tải < 1KB/s cho API thường
-        curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);    // trong 60s liên tục (chống cURL treo vô hạn)
         $token_for_proxy = (is_array($params) ? ($params['access_token'] ?? null) : null) ?? (is_array($post_data) ? ($post_data['access_token'] ?? null) : null);
         if (!empty($token_for_proxy)) {
             apply_proxy_to_curl($ch, $token_for_proxy);
@@ -165,6 +170,31 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
             if (is_array($post_data)) {
                 if (!$has_file) {
                     $post_data = http_build_query($post_data);
+                } else {
+                    $last_printed_pct = -10;
+                    curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+                    curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct) {
+                        $args = func_get_args();
+                        if (count($args) >= 5) {
+                            $uploaded = $args[4];
+                            $total = $args[3];
+                        } else {
+                            $uploaded = $args[3] ?? 0;
+                            $total = $args[2] ?? 0;
+                        }
+                        if ($total > 0 && $uploaded > 0) {
+                            $pct = (int) floor(($uploaded / $total) * 100);
+                            if ($pct >= $last_printed_pct + 10 || $pct === 100) {
+                                $last_printed_pct = $pct;
+                                $up_mb = round($uploaded / 1024 / 1024, 2);
+                                $tot_mb = round($total / 1024 / 1024, 2);
+                                fb_echo_log("   → Tiến trình upload: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
+                                if ($pct === 100) {
+                                    fb_echo_log("   ⏳ Đã truyền xong 100% dữ liệu sang Facebook, đang chờ Facebook xác nhận...\n");
+                                }
+                            }
+                        }
+                    });
                 }
             } else if (is_string($post_data) && (strpos($post_data, '{') === 0 || strpos($post_data, '[') === 0)) {
                 $headers[] = 'Content-Type: application/json';
@@ -183,8 +213,7 @@ function fb_api_request($endpoint, $params = [], $method = 'GET', $post_data = [
     curl_close($ch);
 
     if ($response === false) {
-        $err_txt = !empty($curl_err) ? $curl_err : 'cURL connection failed';
-        return ['status_code' => 0, 'data' => ['error' => ['message' => "[FB Endpoint /{$endpoint}] $err_txt"]]];
+        return ['status_code' => 0, 'data' => ['error' => ['message' => $curl_err]]];
     }
 
     return [
@@ -535,6 +564,8 @@ function fb_upload_story($page_id, $page_access_token, $file_path, $file_mime, $
             "Expect:"
         ]);
         curl_setopt($ch, CURLOPT_TIMEOUT, 600);
+        curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
+        curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 60);
         fb_curl_setssl($ch);
         apply_proxy_to_curl($ch, $page_access_token);
 
@@ -594,15 +625,171 @@ if (!function_exists('fb_echo_log')) {
 }
 
 /**
- * Real Meta Resumable Chunked Uploader (Slices file into 10MB chunks, zero RAM overhead via fopen/fread, per-chunk retry)
+ * Real Meta Resumable Chunked Uploader (Slices file into 20MB chunks, zero RAM overhead via fopen/fread, per-chunk retry)
  */
-function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title = '', $description = '', $is_reel = false, $sp_post_id = 0, $chunk_size_mb = 10) {
+function fb_upload_reel_official($page_id, $page_access_token, $file_path, $title = '', $description = '', $sp_post_id = 0) {
     @ob_implicit_flush(1);
 
     $is_remote_url = (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0);
     if (!$is_remote_url) {
-        if (!file_exists($file_path) && file_exists(__DIR__ . '/../' . ltrim($file_path, '/'))) {
-            $file_path = __DIR__ . '/../' . ltrim($file_path, '/');
+        if (!file_exists($file_path)) {
+            $alt_path = __DIR__ . '/../' . ltrim($file_path, '/\\');
+            if (file_exists($alt_path)) {
+                $file_path = $alt_path;
+            }
+        }
+        if (!file_exists($file_path)) {
+            return ['status_code' => 0, 'data' => ['error' => ['message' => "File video Reel không tồn tại: {$file_path}"]]];
+        }
+    }
+
+    $file_size = filesize($file_path);
+    $total_mb = round($file_size / 1024 / 1024, 2);
+
+    // Đối với video dung lượng lớn (> 50MB), ưu tiên dùng trực tiếp Resumable Chunked Upload (tách thành các đoạn 20MB)
+    // để tránh bị treo cURL khi gửi 1 HTTP POST khổng lồ lên Facebook.
+    if ($total_mb > 50) {
+        fb_echo_log("   ----------------------------------------------------\n");
+        fb_echo_log("   🎬 VIDEO NẶNG ({$total_mb} MB > 50 MB): Tự động chuyển sang Resumable Chunked Reels (Chunk 20MB)\n");
+        fb_echo_log("   ----------------------------------------------------\n");
+        return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, true, $sp_post_id, 20, true);
+    }
+
+    fb_echo_log("   ----------------------------------------------------\n");
+    fb_echo_log("   🎬 BẮT ĐẦU ĐĂNG OFFICIAL FACEBOOK REEL ({$total_mb} MB)\n");
+    fb_echo_log("   ----------------------------------------------------\n");
+
+    // ── BƯỚC 1: START PHASE ──────────────────────────────────────────
+    fb_echo_log("   → [Bước 1/3] Khởi tạo phiên Reels (POST /{$page_id}/video_reels?upload_phase=start)...\n");
+    if ($sp_post_id > 0 && function_exists('update_post_progress')) {
+        global $pdo; if (isset($pdo)) update_post_progress($pdo, $sp_post_id, "🎬 Khởi tạo phiên Reels Facebook...");
+    }
+
+    $start_res = fb_api_request($page_id . '/video_reels', [
+        'upload_phase' => 'start',
+        'access_token' => $page_access_token
+    ], 'POST', [], 60);
+
+    if ($start_res['status_code'] !== 200 || empty($start_res['data']['video_id']) || empty($start_res['data']['upload_url'])) {
+        fb_echo_log("   ❌ [Bước 1 Thất Bại] HTTP " . ($start_res['status_code'] ?? 0) . " - " . json_encode($start_res['data'] ?? []) . "\n");
+        fb_echo_log("   ⚠️ Thử Fallback sang Resumable Chunked Upload 20MB cho Reel này...\n");
+        return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, true, $sp_post_id, 20, true);
+    }
+
+    $video_id = $start_res['data']['video_id'];
+    $upload_url = $start_res['data']['upload_url'];
+
+    fb_echo_log("   ✅ [Bước 1 Thành Công] Video ID: {$video_id} - Upload URL nhận được.\n");
+
+    // ── BƯỚC 2: TRANSFER PHASE (Binary Stream via fopen to upload_url) ────────────
+    fb_echo_log("   → [Bước 2/3] Upload dữ liệu binary Reels Stream (POST {$upload_url})...\n");
+    if ($sp_post_id > 0 && function_exists('update_post_progress')) {
+        global $pdo; if (isset($pdo)) update_post_progress($pdo, $sp_post_id, "📤 Đang upload video Reels lên Meta ({$total_mb} MB)...");
+    }
+
+    $fp = @fopen($file_path, 'rb');
+    if (!$fp) {
+        fb_echo_log("   ❌ [Bước 2 Thất Bại] Không thể mở stream file Reel.\n");
+        fb_echo_log("   ⚠️ Thử Fallback sang Resumable Chunked Upload 20MB...\n");
+        return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, true, $sp_post_id, 20, true);
+    }
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $upload_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+    curl_setopt($ch, CURLOPT_INFILE, $fp);
+    curl_setopt($ch, CURLOPT_INFILESIZE, $file_size);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: OAuth {$page_access_token}",
+        "Content-Type: application/octet-stream",
+        "offset: 0",
+        "file_size: {$file_size}",
+        "Expect:"
+    ]);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 1800);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1024);
+    curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 120);
+    fb_curl_setssl($ch);
+    apply_proxy_to_curl($ch, $page_access_token);
+
+    $last_printed_pct = -10;
+    curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+    curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function() use (&$last_printed_pct) {
+        $args = func_get_args();
+        $uploaded = (count($args) >= 5) ? $args[4] : ($args[3] ?? 0);
+        $total    = (count($args) >= 5) ? $args[3] : ($args[2] ?? 0);
+        if ($total > 0 && $uploaded > 0) {
+            $pct = (int) floor(($uploaded / $total) * 100);
+            if ($pct >= $last_printed_pct + 20 || $pct === 100) {
+                $last_printed_pct = $pct;
+                $up_mb = round($uploaded / 1024 / 1024, 2);
+                $tot_mb = round($total / 1024 / 1024, 2);
+                fb_echo_log("   → Upload Reels progress: {$pct}% ({$up_mb} MB / {$tot_mb} MB)\n");
+            }
+        }
+    });
+
+    set_time_limit(1800);
+    $res_payload = curl_exec($ch);
+    $up_status   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $up_err      = curl_error($ch);
+    curl_close($ch);
+    if (is_resource($fp)) fclose($fp);
+
+    if ($up_status !== 200) {
+        fb_echo_log("   ❌ [Bước 2 Thất Bại] HTTP {$up_status} - Error: {$up_err} | Res: {$res_payload}\n");
+        fb_echo_log("   ⚠️ Thử Fallback sang Resumable Chunked Upload 20MB...\n");
+        return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, true, $sp_post_id, 20, true);
+    }
+
+    fb_echo_log("   ✅ [Bước 2 Thành Công] Đã upload video binary hoàn tất.\n");
+
+    // ── BƯỚC 3: FINISH & PUBLISH PHASE ────────────────────────────────
+    fb_echo_log("   → [Bước 3/3] Xuất bản Reel (upload_phase=finish, video_state=PUBLISHED)...\n");
+    if ($sp_post_id > 0 && function_exists('update_post_progress')) {
+        global $pdo; if (isset($pdo)) update_post_progress($pdo, $sp_post_id, "📢 Đang xuất bản Reels lên Facebook...");
+    }
+
+    $finish_params = [
+        'upload_phase' => 'finish',
+        'video_id' => $video_id,
+        'video_state' => 'PUBLISHED',
+        'description' => $description,
+        'access_token' => $page_access_token
+    ];
+    if (!empty($title)) {
+        $finish_params['title'] = $title;
+    }
+
+    $finish_res = fb_api_request($page_id . '/video_reels', $finish_params, 'POST', [], 60);
+
+    if ($finish_res['status_code'] === 200 && (isset($finish_res['data']['success']) || isset($finish_res['data']['video_id']) || isset($finish_res['data']['id']))) {
+        $final_id = $finish_res['data']['video_id'] ?? $finish_res['data']['id'] ?? $video_id;
+        fb_echo_log("   🎉 [REELS PUBLISHED] Đăng Reel Facebook thành công! Post ID: {$final_id}\n");
+        return ['status_code' => 200, 'data' => ['id' => $final_id, 'success' => true]];
+    }
+
+    fb_echo_log("   ❌ [Bước 3 Thất Bại] HTTP {$finish_res['status_code']} - " . json_encode($finish_res['data'] ?? []) . "\n");
+    fb_echo_log("   ⚠️ Thử Fallback sang Resumable Chunked Upload 20MB...\n");
+    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, true, $sp_post_id, 20, true);
+}
+
+function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title = '', $description = '', $is_reel = false, $sp_post_id = 0, $chunk_size_mb = 20, $force_chunked = false) {
+    if ($is_reel && !$force_chunked) {
+        return fb_upload_reel_official($page_id, $page_access_token, $file_path, $title, $description, $sp_post_id);
+    }
+    @ob_implicit_flush(1);
+
+    $is_remote_url = (strpos($file_path, 'http://') === 0 || strpos($file_path, 'https://') === 0);
+    if (!$is_remote_url) {
+        if (!file_exists($file_path)) {
+            $alt_path = __DIR__ . '/../' . ltrim($file_path, '/\\');
+            if (file_exists($alt_path)) {
+                $file_path = $alt_path;
+            }
         }
         if (!file_exists($file_path)) {
             return ['status_code' => 0, 'data' => ['error' => ['message' => "File video không tồn tại trên máy chủ: {$file_path}"]]];
@@ -671,11 +858,10 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
 
         fb_echo_log("   → [Bước 2/Chunk {$chunk_index}/{$total_chunks}] Uploading {$chunk_mb} MB ({$pct}% - {$up_mb}/{$total_mb} MB) từ offset {$start_offset}...\n");
 
-        if ($sp_post_id > 0 && function_exists('update_post_progress') && ($pct === 0 || $pct >= ($last_fb_pct ?? -30) + 30 || $pct >= 90)) {
-            $last_fb_pct = $pct;
+        if ($sp_post_id > 0 && function_exists('update_post_progress')) {
             global $pdo;
             if (isset($pdo)) {
-                update_post_progress($pdo, $sp_post_id, "📤 Đang upload {$type_name} ({$pct}%)...");
+                update_post_progress($pdo, $sp_post_id, "📤 Đang upload Chunk {$chunk_index}/{$total_chunks} ({$pct}%)...");
             }
         }
 
@@ -696,7 +882,7 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
         $t_start = microtime(true);
         while ($retry_count < 3 && !$chunk_success) {
             $retry_count++;
-            $res2 = fb_api_request($endpoint, [], 'POST', $chunk_params, 60); // 60s timeout / 10MB chunk (ngăn cURL treo 5 phút)
+            $res2 = fb_api_request($endpoint, [], 'POST', $chunk_params, 300);
             
             if ($res2['status_code'] === 200 || $res2['status_code'] === 206) {
                 $chunk_success = true;
@@ -767,11 +953,11 @@ function fb_upload_video_chunked($page_id, $page_access_token, $file_path, $titl
 }
 
 function fb_upload_page_reel($page_id, $page_access_token, $file_path, $title = '', $description = '', $sp_post_id = 0) {
-    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, true, $sp_post_id, 10);
+    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, true, $sp_post_id, 20);
 }
 
 function fb_upload_video_resumable($page_id, $page_access_token, $file_path, $title, $description, $is_reel = false, $sp_post_id = 0) {
-    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, $is_reel, $sp_post_id, 10);
+    return fb_upload_video_chunked($page_id, $page_access_token, $file_path, $title, $description, $is_reel, $sp_post_id, 20);
 }
 
 function fb_exchange_token($short_token, $app_id, $app_secret) {

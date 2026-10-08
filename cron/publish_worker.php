@@ -67,8 +67,6 @@ if (!is_dir($lock_dir)) {
 // Lock theo Campaign ID (nếu là campaign run) hoặc Token User ID để ngăn 2 worker cùng campaign/user chạy đồng thời
 if ($is_campaign_run && !empty($campaign_id)) {
     $lock_key = md5('camp_' . $campaign_id);
-} elseif (!empty($user_id_lock) && strpos($user_id_lock, 'camp_') === 0) {
-    $lock_key = md5($user_id_lock);
 } else {
     $lock_key = !empty($user_id_lock) ? md5('uid_' . $user_id_lock) : md5($raw_page_input);
 }
@@ -97,6 +95,17 @@ if (!$lock_got) {
     if ($lock_fp) @fclose($lock_fp);
     exit;
 }
+
+// Tự động giải phóng flock và xóa file lock khi tiến trình worker kết thúc
+register_shutdown_function(function() use (&$lock_fp, &$lock_file) {
+    if (!empty($lock_fp)) {
+        @flock($lock_fp, LOCK_UN);
+        @fclose($lock_fp);
+    }
+    if (!empty($lock_file) && file_exists($lock_file)) {
+        @unlink($lock_file);
+    }
+});
 
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
@@ -1026,7 +1035,171 @@ class TokenLocker {
     }
 }
 
+if (!function_exists('check_youtube_resumable_status')) {
+    function check_youtube_resumable_status($upload_url, $access_token, $file_size) {
+        if (empty($upload_url) || empty($access_token)) return null;
+        $ch_check = curl_init($upload_url);
+        curl_setopt($ch_check, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch_check, CURLOPT_CUSTOMREQUEST, 'PUT');
+        curl_setopt($ch_check, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch_check, CURLOPT_TIMEOUT, 15);
+        curl_setopt($ch_check, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer $access_token",
+            "Content-Length: 0",
+            "Content-Range: bytes */$file_size"
+        ]);
+        $check_res = curl_exec($ch_check);
+        $check_code = curl_getinfo($ch_check, CURLINFO_HTTP_CODE);
+        curl_close($ch_check);
 
+        if (in_array($check_code, [200, 201])) {
+            $res_data = json_decode($check_res, true);
+            if (!empty($res_data['id'])) {
+                return $res_data['id'];
+            }
+        }
+        return null;
+    }
+}
+
+if (!function_exists('upload_youtube_video_chunked')) {
+    function upload_youtube_video_chunked($upload_url, $access_token, $abs_media_path, $file_size, $chunk_size = 8388608, $pdo = null, $post_id = 0) {
+        if (empty($upload_url) || empty($access_token) || !file_exists($abs_media_path)) {
+            return ['code' => 400, 'response' => 'Tham số hoặc file upload không hợp lệ.'];
+        }
+
+        $handle = @fopen($abs_media_path, 'rb');
+        if (!$handle) {
+            return ['code' => 500, 'response' => 'Không thể mở file media local.'];
+        }
+
+        $byte_start = 0;
+        $last_code = 0;
+        $last_response = '';
+
+        while ($byte_start < $file_size) {
+            set_time_limit(300);
+            $byte_end = min($byte_start + $chunk_size - 1, $file_size - 1);
+            $length = $byte_end - $byte_start + 1;
+
+            fseek($handle, $byte_start);
+            $chunk_data = fread($handle, $length);
+            if ($chunk_data === false) {
+                fclose($handle);
+                return ['code' => 500, 'response' => "Lỗi đọc file tại byte $byte_start"];
+            }
+
+            // Heartbeat: cập nhật updated_at và % tiến độ upload vào CSDL để không bao giờ bị coi là orphan (kẹt > 15p)
+            if ($pdo && $post_id > 0) {
+                $percent = min(99, round(($byte_start / max(1, $file_size)) * 100));
+                $msg = "⚙️ Đang tải lên YouTube ({$percent}%)...";
+                try {
+                    $stmt_hb = $pdo->prepare("UPDATE scheduled_posts SET updated_at = NOW(), error_msg = ? WHERE id = ? AND status = 'processing'");
+                    $stmt_hb->execute([$msg, $post_id]);
+                    if ($stmt_hb->rowCount() === 0) {
+                        fclose($handle);
+                        return ['code' => 409, 'response' => 'Quá trình upload bị hủy do bài viết đã bị thay đổi trạng thái.'];
+                    }
+                } catch (Exception $e) {}
+            }
+
+            $ch = curl_init($upload_url);
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HEADER, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $chunk_data);
+            curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                "Authorization: Bearer $access_token",
+                "Content-Type: video/*",
+                "Content-Length: $length",
+                "Content-Range: bytes $byte_start-$byte_end/$file_size"
+            ]);
+
+            $raw_response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $headers = substr($raw_response, 0, $header_size);
+            $body = substr($raw_response, $header_size);
+            $curl_err = curl_error($ch);
+            curl_close($ch);
+
+            $last_code = $http_code;
+            $last_response = $body;
+
+            if ($http_code == 308) {
+                $next_start = $byte_end + 1;
+                foreach (explode("\n", $headers) as $h_line) {
+                    if (stripos(trim($h_line), 'Range:') === 0) {
+                        $range_val = trim(substr(trim($h_line), 6));
+                        if (preg_match('/bytes=0-(\d+)/i', $range_val, $matches)) {
+                            $next_start = (int)$matches[1] + 1;
+                        }
+                    }
+                }
+                $byte_start = $next_start;
+            } elseif (in_array($http_code, [200, 201])) {
+                fclose($handle);
+                return ['code' => $http_code, 'response' => $body];
+            } else {
+                $recovered_id = check_youtube_resumable_status($upload_url, $access_token, $file_size);
+                if (!empty($recovered_id)) {
+                    fclose($handle);
+                    return ['code' => 200, 'response' => json_encode(['id' => $recovered_id])];
+                }
+
+                $ch_inq = curl_init($upload_url);
+                curl_setopt($ch_inq, CURLOPT_CUSTOMREQUEST, 'PUT');
+                curl_setopt($ch_inq, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch_inq, CURLOPT_HEADER, true);
+                curl_setopt($ch_inq, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+                curl_setopt($ch_inq, CURLOPT_TIMEOUT, 15);
+                curl_setopt($ch_inq, CURLOPT_HTTPHEADER, [
+                    "Authorization: Bearer $access_token",
+                    "Content-Length: 0",
+                    "Content-Range: bytes */$file_size"
+                ]);
+                $inq_raw = curl_exec($ch_inq);
+                $inq_code = curl_getinfo($ch_inq, CURLINFO_HTTP_CODE);
+                $inq_hsize = curl_getinfo($ch_inq, CURLINFO_HEADER_SIZE);
+                $inq_headers = substr($inq_raw, 0, $inq_hsize);
+                $inq_body = substr($inq_raw, $inq_hsize);
+                curl_close($ch_inq);
+
+                if (in_array($inq_code, [200, 201])) {
+                    $inq_json = json_decode($inq_body, true);
+                    if (!empty($inq_json['id'])) {
+                        fclose($handle);
+                        return ['code' => 200, 'response' => json_encode(['id' => $inq_json['id']])];
+                    }
+                } elseif ($inq_code == 308) {
+                    $resumed_start = null;
+                    foreach (explode("\n", $inq_headers) as $h_line) {
+                        if (stripos(trim($h_line), 'Range:') === 0) {
+                            $range_val = trim(substr(trim($h_line), 6));
+                            if (preg_match('/bytes=0-(\d+)/i', $range_val, $matches)) {
+                                $resumed_start = (int)$matches[1] + 1;
+                            }
+                        }
+                    }
+                    if ($resumed_start !== null && $resumed_start > $byte_start) {
+                        echo "   → [RESUMED] Tiếp tục upload YouTube từ byte $resumed_start (thay vì $byte_start)\n";
+                        $byte_start = $resumed_start;
+                        continue;
+                    }
+                }
+
+                fclose($handle);
+                return ['code' => $http_code, 'response' => !empty($body) ? $body : "cURL Error: $curl_err (HTTP $http_code)"];
+            }
+        }
+
+        fclose($handle);
+        return ['code' => $last_code, 'response' => $last_response];
+    }
+}
 
 // 1. Fetch pending posts for ALL page_ids of this Token User
 $retry_clause = $has_retry_count
@@ -1095,9 +1268,9 @@ if (!empty($user_id_lock)) {
 }
 
 if ($is_campaign_run && !empty($campaign_id)) {
-    // Reset ONLY orphaned processing posts (stuck > 10 mins), NEVER force reset failed posts back to pending
+    // Reset ONLY orphaned processing posts (stuck > 15 mins), NEVER force reset failed posts back to pending
     try {
-        $pdo->prepare("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = ? AND status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 10 MINUTE) AND (fb_post_id IS NULL OR fb_post_id = '')")
+        $pdo->prepare("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = ? AND status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 60 MINUTE) AND (fb_post_id IS NULL OR fb_post_id = '')")
             ->execute([$campaign_id]);
     } catch (Exception $e) {}
 }
@@ -1268,68 +1441,14 @@ do {
         }
     }
 
-    // 2. Kiểm tra trần max_publish_workers trước khi chuyển bài sang 'processing'
-    $sys_max_proc = 30;
-    try {
-        $res_lim = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_publish_workers'")->fetchColumn();
-        if ($res_lim !== false && $res_lim !== null && $res_lim !== '') $sys_max_proc = max(1, (int)$res_lim);
-    } catch (Exception $e) {}
-
-    // Atomic update:
-    // 1. Tổng số bài processing thực tế toàn hệ thống < $sys_max_proc
-    // 2. NẾU bài thuộc Campaign ($curr_cid > 0): Tổng số bài processing trong Campaign này ĐÃ PHẢI = 0 (chưa có bài nào trong camp đang đăng)
-    $curr_cid = !empty($post['campaign_id']) ? (int)$post['campaign_id'] : 0;
-
-    // Kiểm tra nếu Campaign đã bị xóa trước đó ➔ Xóa ngay bài mồ côi này, tránh làm kẹt ở status 'processing'
-    if ($curr_cid > 0) {
-        $c_chk = $pdo->prepare("SELECT COUNT(*) FROM post_campaigns WHERE id = ?");
-        $c_chk->execute([$curr_cid]);
-        if ($c_chk->fetchColumn() == 0) {
-            echo "   → Campaign #$curr_cid đã bị xóa. Xóa ngay bài mồ côi ID {$post['id']}.\n";
-            $pdo->prepare("DELETE FROM scheduled_posts WHERE id = ?")->execute([$post['id']]);
-            continue;
-        }
-    }
-
-    if ($curr_cid > 0) {
-        $update_processing = $pdo->prepare("
-            UPDATE scheduled_posts 
-            SET status = 'processing', error_msg = '⚙️ Đang xử lý...' 
-            WHERE id = ? 
-              AND status IN ('pending', 'failed')
-              AND (SELECT cnt FROM (SELECT COUNT(*) AS cnt FROM scheduled_posts WHERE status = 'processing') AS _t) < ?
-              AND (SELECT camp_cnt FROM (SELECT COUNT(*) AS camp_cnt FROM scheduled_posts WHERE campaign_id = ? AND status = 'processing' AND id != ?) AS _c) = 0
-        ");
-        $update_processing->execute([$post['id'], $sys_max_proc, $curr_cid, $post['id']]);
-    } else {
-        $update_processing = $pdo->prepare("
-            UPDATE scheduled_posts 
-            SET status = 'processing', error_msg = '⚙️ Đang xử lý...' 
-            WHERE id = ? 
-              AND status IN ('pending', 'failed')
-              AND (SELECT cnt FROM (SELECT COUNT(*) AS cnt FROM scheduled_posts WHERE status = 'processing') AS _t) < ?
-        ");
-        $update_processing->execute([$post['id'], $sys_max_proc]);
-    }
-
+    // 2. Mark as processing to prevent duplicate cron runs from picking it up
+    $update_processing = $pdo->prepare("UPDATE scheduled_posts SET status = 'processing', error_msg = '⚙️ Đang xử lý...' WHERE id = ? AND status IN ('pending', 'failed')");
+    $update_processing->execute([$post['id']]);
     if ($update_processing->rowCount() === 0) {
-        if ($curr_cid > 0) {
-            $active_in_camp = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE campaign_id = $curr_cid AND status = 'processing' AND id != {$post['id']}")->fetchColumn();
-            if ($active_in_camp > 0) {
-                echo "   → Campaign #$curr_cid đã có 1 bài đang đăng (processing). Tạm dừng bài ID {$post['id']} để đảm bảo duy nhất 1 bài/camp.\n";
-                break; // Tạm ngưng luồng worker cho Campaign này, nhường lượt cho bài đang chạy xong!
-            }
-        }
-        $curr_proc_cnt = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
-        if ($curr_proc_cnt >= $sys_max_proc) {
-            echo "   → Hệ thống đang đạt trần Processing ({$curr_proc_cnt}/{$sys_max_proc}). Tạm dừng bài ID {$post['id']} chờ lượt cron sau.\n";
-            break;
-        } else {
-            echo "   → Bài ID {$post['id']} không ở trạng thái có thể xử lý. Bỏ qua.\n";
-            if (ob_get_level() > 0) @ob_flush();
-            @flush();
-            continue;
-        }
+        echo "   → Bài ID {$post['id']} không ở trạng thái có thể xử lý. Bỏ qua.\n";
+        if (ob_get_level() > 0) @ob_flush();
+        @flush();
+        continue;
     }
 
     // ── XỬ LÝ RIÊNG DÀNH CHO YOUTUBE ──────────────────────────────────────────
@@ -1358,8 +1477,6 @@ do {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
             'client_id' => $client_id,
             'client_secret' => $client_secret,
@@ -1372,14 +1489,10 @@ do {
         $token_data = json_decode($token_res, true);
 
         if (empty($token_data['access_token'])) {
-            $err_reason = $token_data['error_description'] ?? ($token_data['error'] ?? 'Unknown');
-            if (stripos($err_reason, 'invalid_grant') !== false || stripos($err_reason, 'revoked') !== false || stripos($err_reason, 'expired') !== false) {
-                $err_reason = "Kênh YouTube đã bị hết hạn/hủy ủy quyền Google (invalid_grant). Vui lòng vào trang Quản Lý Kênh YouTube và bấm kết nối lại Kênh.";
-            }
-            marKAsFailed($pdo, $post['id'], "Lỗi cấp mới Access Token YouTube: " . $err_reason, $sys_max_retries, $sys_retry_interval);
+            marKAsFailed($pdo, $post['id'], "Lỗi cấp mới Access Token YouTube: " . ($token_data['error'] ?? 'Unknown'), $sys_max_retries, $sys_retry_interval);
             continue;
         }
-        $access_token = trim($token_data['access_token']);
+        $access_token = $token_data['access_token'];
 
         // Khởi tạo Lock cho YouTube API dựa trên ID Kênh (Channel ID)
         $yt_delay_sec = 15;
@@ -1501,7 +1614,6 @@ do {
         if (isset($content_data['title'])) $content_data['title'] = spin_text($content_data['title']);
 
         if (isset($content_data['use_ai']) && $content_data['use_ai']) {
-            if (function_exists('update_post_progress')) update_post_progress($pdo, $post['id'], '🤖 Đang tạo nội dung YouTube bằng AI...');
             $is_auto = isset($content_data['auto_title']) && $content_data['auto_title'];
             if ($is_auto && !empty($t_title_override)) {
                 // Checkbox auto_title ON: {prompt} = Tên file/Title TikTok + mô tả user nhập (nếu có)
@@ -1556,21 +1668,8 @@ do {
             }
         }
 
-        if (!function_exists('sanitize_youtube_text')) {
-            function sanitize_youtube_text($text) {
-                if (empty($text)) return '';
-                $text = strip_tags($text);
-                $text = str_replace(['<', '>'], '', $text);
-                $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', $text);
-                return trim($text);
-            }
-        }
-
-        $yt_title = !empty($content_data['title']) ? mb_substr(sanitize_youtube_text(clean_markdown($content_data['title'])), 0, 98, 'UTF-8') : (!empty($t_title_override) ? mb_substr(sanitize_youtube_text($t_title_override), 0, 98, 'UTF-8') : 'YouTube Video');
-        $yt_desc = !empty($content_data['description']) ? mb_substr(sanitize_youtube_text(clean_markdown($content_data['description'])), 0, 4900, 'UTF-8') : (!empty($yt_title) ? $yt_title : 'YouTube Video');
-        if (empty($yt_desc)) $yt_desc = $yt_title;
-        if (empty($yt_title)) $yt_title = 'YouTube Video';
-
+        $yt_title = !empty($content_data['title']) ? mb_substr(clean_markdown($content_data['title']), 0, 98, 'UTF-8') : (!empty($t_title_override) ? mb_substr($t_title_override, 0, 98, 'UTF-8') : 'YouTube Video');
+        $yt_desc = !empty($content_data['description']) ? clean_markdown($content_data['description']) : (!empty($yt_title) ? $yt_title : 'YouTube Video');
         $yt_tags_str = $content_data['tags'] ?? '';
         $yt_tags = sanitize_youtube_tags($yt_tags_str);
 
@@ -1594,152 +1693,91 @@ do {
             $metadata['snippet']['tags'] = $yt_tags;
         }
 
-        // --- RESUMABLE UPLOAD PROCESS ---
-        $file_size = filesize($abs_media_path);
-        if (function_exists('update_post_progress')) update_post_progress($pdo, $post['id'], '📤 Đang tải video lên YouTube...');
+        // --- DEDUP GUARD: Kiểm tra xem video đã đăng trên Studio chưa trước khi upload ---
+        $dedup_found = false;
+        if (!empty($yt_title) && !empty($access_token)) {
+            $ch_search = curl_init("https://www.googleapis.com/youtube/v3/search?part=snippet&forMine=true&type=video&order=date&maxResults=5");
+            curl_setopt($ch_search, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch_search, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+            curl_setopt($ch_search, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch_search, CURLOPT_HTTPHEADER, ["Authorization: Bearer $access_token"]);
+            $s_res = curl_exec($ch_search);
+            $s_code = curl_getinfo($ch_search, CURLINFO_HTTP_CODE);
+            curl_close($ch_search);
 
-        $ch_init = curl_init('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status');
-        curl_setopt($ch_init, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch_init, CURLOPT_POST, true);
-        curl_setopt($ch_init, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-        curl_setopt($ch_init, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-        curl_setopt($ch_init, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch_init, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($ch_init, CURLOPT_POSTFIELDS, json_encode($metadata));
-        curl_setopt($ch_init, CURLOPT_HTTPHEADER, [
-            "Authorization: Bearer $access_token",
-            "Content-Type: application/json; charset=UTF-8",
-            "X-Upload-Content-Length: $file_size"
-        ]);
-        curl_setopt($ch_init, CURLOPT_HEADER, true);
-        curl_setopt($ch_init, CURLOPT_TIMEOUT, 30);
-        $init_response = curl_exec($ch_init);
-        $init_code = curl_getinfo($ch_init, CURLINFO_HTTP_CODE);
-        $init_err = curl_error($ch_init);
-        $init_header_size = curl_getinfo($ch_init, CURLINFO_HEADER_SIZE);
-        $init_headers = substr($init_response, 0, $init_header_size);
-        $init_body = substr($init_response, $init_header_size);
-        curl_close($ch_init);
-
-        if ($init_code !== 200) {
-            $err_desc = !empty($init_body) ? $init_body : $init_err;
-            marKAsFailed($pdo, $post['id'], "Lỗi khởi tạo upload YouTube: HTTP $init_code - $err_desc", $sys_max_retries, $sys_retry_interval);
-            if ($temp_drive_file && file_exists($temp_drive_file))
-                @unlink($temp_drive_file);
-            continue;
+            if ($s_code === 200) {
+                $s_json = json_decode($s_res, true);
+                if (!empty($s_json['items'])) {
+                    foreach ($s_json['items'] as $s_item) {
+                        $item_title = $s_item['snippet']['title'] ?? '';
+                        $item_vid = $s_item['id']['videoId'] ?? '';
+                        $pub_at = strtotime($s_item['snippet']['publishedAt'] ?? '');
+                        
+                        if (!empty($item_vid) && !empty($pub_at) && (time() - $pub_at < 7200)) {
+                            if (trim(mb_strtolower($item_title)) === trim(mb_strtolower($yt_title))) {
+                                echo "   → [DEDUP GUARD] Video YouTube '$yt_title' đã tồn tại trên Studio (Video ID: $item_vid)! Đánh dấu thành công, không đăng đè.\n";
+                                $upload_code = 200;
+                                $upload_response = json_encode(['id' => $item_vid]);
+                                $dedup_found = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        // Tìm Location url chuẩn bằng regex
-        $upload_url = '';
-        if (preg_match_all('/^Location:\s*(.+)$/mi', $init_headers, $matches)) {
-            $upload_url = trim(end($matches[1]));
-        }
+        if (!$dedup_found) {
+            // --- RESUMABLE UPLOAD PROCESS ---
+            $file_size = filesize($abs_media_path);
 
-        if (empty($upload_url)) {
-            marKAsFailed($pdo, $post['id'], "Lỗi lấy Location URL để upload lên YouTube.", $sys_max_retries, $sys_retry_interval);
-            if ($temp_drive_file && file_exists($temp_drive_file))
-                @unlink($temp_drive_file);
-            continue;
-        }
+            $ch_init = curl_init('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status');
+            curl_setopt($ch_init, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch_init, CURLOPT_POST, true);
+            curl_setopt($ch_init, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+            curl_setopt($ch_init, CURLOPT_POSTFIELDS, json_encode($metadata));
+            curl_setopt($ch_init, CURLOPT_HTTPHEADER, [
+                "Authorization: Bearer $access_token",
+                "Content-Type: application/json; charset=UTF-8",
+                "X-Upload-Content-Length: $file_size"
+            ]);
+            curl_setopt($ch_init, CURLOPT_HEADER, true);
+            curl_setopt($ch_init, CURLOPT_TIMEOUT, 30);
+            $init_response = curl_exec($ch_init);
+            $init_code = curl_getinfo($ch_init, CURLINFO_HTTP_CODE);
+            $init_header_size = curl_getinfo($ch_init, CURLINFO_HEADER_SIZE);
+            $init_headers = substr($init_response, 0, $init_header_size);
+            $init_body = substr($init_response, $init_header_size);
+            curl_close($ch_init);
 
-        // 2. Tải File Lên - CHUNKED RESUMABLE UPLOAD (Chuẩn Google API Client)
-        set_time_limit(3600); // 1 giờ cho upload file lớn
-        $file_handle = fopen($abs_media_path, 'rb');
+            if ($init_code !== 200) {
+                marKAsFailed($pdo, $post['id'], "Lỗi khởi tạo upload YouTube: HTTP $init_code - $init_body", $sys_max_retries, $sys_retry_interval);
+                if ($temp_drive_file && file_exists($temp_drive_file))
+                    @unlink($temp_drive_file);
+                continue;
+            }
 
-        // Chunk size: 10MB (10,485,760 bytes = 40 * 256KB - bội số 256KB theo chuẩn YouTube API)
-        $chunk_size = 10485760;
-        $byte_start = 0;
-        $upload_code = 0;
-        $upload_response = '';
-        $upload_err = '';
-        $yt_last_pct = -1;
-
-        while ($byte_start < $file_size) {
-            $byte_end = min($byte_start + $chunk_size - 1, $file_size - 1);
-            $current_chunk_length = ($byte_end - $byte_start) + 1;
-
-            fseek($file_handle, $byte_start);
-            $chunk_data = fread($file_handle, $current_chunk_length);
-
-            $chunk_success = false;
-            $max_chunk_retries = 3;
-
-            for ($attempt = 1; $attempt <= $max_chunk_retries; $attempt++) {
-                $ch_upload = curl_init($upload_url);
-                curl_setopt($ch_upload, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch_upload, CURLOPT_CUSTOMREQUEST, 'PUT');
-                curl_setopt($ch_upload, CURLOPT_POSTFIELDS, $chunk_data);
-                curl_setopt($ch_upload, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-                curl_setopt($ch_upload, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-                curl_setopt($ch_upload, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch_upload, CURLOPT_TCP_KEEPALIVE, 1);
-                curl_setopt($ch_upload, CURLOPT_CONNECTTIMEOUT, 10);
-                curl_setopt($ch_upload, CURLOPT_TIMEOUT, 60); // Max 60s / 10MB chunk (ngăn cURL treo 5 phút)
-                curl_setopt($ch_upload, CURLOPT_LOW_SPEED_LIMIT, 10240); // 10 KB/s
-                curl_setopt($ch_upload, CURLOPT_LOW_SPEED_TIME, 15);    // Tự động ngắt và thử lại nếu nghẽn < 10KB/s trong 15s
-                curl_setopt($ch_upload, CURLOPT_HTTPHEADER, [
-                    "Content-Type: video/*",
-                    "Content-Length: $current_chunk_length",
-                    "Content-Range: bytes {$byte_start}-{$byte_end}/{$file_size}"
-                ]);
-
-                $upload_response = curl_exec($ch_upload);
-                $upload_code = curl_getinfo($ch_upload, CURLINFO_HTTP_CODE);
-                $upload_err = curl_error($ch_upload);
-                curl_close($ch_upload);
-
-                // HTTP 308 (Resume Incomplete) = Chunk thành công, YouTube chờ chunk tiếp theo
-                // HTTP 200/201 = Chunk cuối thành công, video đã xuất bản
-                if ($upload_code === 308 || in_array($upload_code, [200, 201])) {
-                    $chunk_success = true;
+            // Tìm Location url
+            $upload_url = '';
+            foreach (explode("\n", $init_headers) as $header_line) {
+                if (stripos(trim($header_line), 'Location:') === 0) {
+                    $upload_url = trim(substr(trim($header_line), 9));
                     break;
                 }
-
-                echo "   → YouTube Upload Chunk bytes $byte_start-$byte_end lỗi (HTTP $upload_code / $upload_err). Lần thử $attempt/$max_chunk_retries...\n";
-                sleep(2);
             }
 
-            if (!$chunk_success) {
-                // Nếu thử 3 lần thất bại, hỏi YouTube xem đã nhận được tới byte nào để khôi phục
-                $ch_check = curl_init($upload_url);
-                curl_setopt($ch_check, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch_check, CURLOPT_CUSTOMREQUEST, 'PUT');
-                curl_setopt($ch_check, CURLOPT_HEADER, true);
-                curl_setopt($ch_check, CURLOPT_HTTPHEADER, [
-                    "Content-Length: 0",
-                    "Content-Range: bytes */{$file_size}"
-                ]);
-                $check_res = curl_exec($ch_check);
-                $check_code = curl_getinfo($ch_check, CURLINFO_HTTP_CODE);
-                curl_close($ch_check);
-
-                if ($check_code === 308 && preg_match('/Range:\s*bytes=0-(\d+)/i', $check_res, $m_range)) {
-                    $last_saved = (int)$m_range[1];
-                    echo "   → YouTube khôi phục vị trí upload từ byte: $last_saved\n";
-                    $byte_start = $last_saved + 1;
-                    continue;
-                } else {
-                    break; // Không thể tiếp tục chunk này
-                }
+            if (empty($upload_url)) {
+                marKAsFailed($pdo, $post['id'], "Lỗi lấy Location URL để upload lên YouTube.", $sys_max_retries, $sys_retry_interval);
+                if ($temp_drive_file && file_exists($temp_drive_file))
+                    @unlink($temp_drive_file);
+                continue;
             }
 
-            // Cập nhật % tiến trình
-            $pct = (int)floor((($byte_end + 1) / $file_size) * 100);
-            if (($pct >= $yt_last_pct + 30 || $pct >= 95) && $pct < 100) {
-                $yt_last_pct = $pct;
-                if (function_exists('update_post_progress')) {
-                    update_post_progress($pdo, $post['id'], "⚡ 📤 Đang upload YouTube ({$pct}%)...");
-                }
-            }
-
-            if (in_array($upload_code, [200, 201])) {
-                break; // Đã hoàn thành toàn bộ file
-            }
-
-            $byte_start = $byte_end + 1;
+            // 2. Tải File Lên (Resumable Chunked Upload - 8MB / chunk với Heartbeat liên tục vào DB)
+            $chunk_res = upload_youtube_video_chunked($upload_url, $access_token, $abs_media_path, $file_size, 8388608, $pdo, $post['id']);
+            $upload_code = $chunk_res['code'];
+            $upload_response = $chunk_res['response'];
         }
-
-        fclose($file_handle);
 
         if (in_array($upload_code, [200, 201])) {
             $youtube_res = json_decode($upload_response, true);
@@ -1825,7 +1863,7 @@ do {
             echo " -> Đăng Video YouTube thành công! Video ID: $video_id\n";
         } else {
             $err_data = json_decode($upload_response, true);
-            $err_msg = $err_data['error']['message'] ?? (!empty($upload_response) ? $upload_response : (!empty($upload_err) ? $upload_err : 'Unknown error'));
+            $err_msg = $err_data['error']['message'] ?? $upload_response;
             marKAsFailed($pdo, $post['id'], "Lỗi lúc tải file lên YouTube: HTTP $upload_code - $err_msg", $sys_max_retries, $sys_retry_interval);
             if ($temp_drive_file && file_exists($temp_drive_file))
                 @unlink($temp_drive_file);
@@ -2454,18 +2492,19 @@ do {
 
             $yt_category = !empty($content_data['category']) ? (string)$content_data['category'] : '22';
 
-            $yt_is_short = (isset($content_data['post_mode']) && strtolower($content_data['post_mode']) === 'shorts') || (strpos(strtolower($post['post_type']), 'shorts') !== false);
-
-            $yt_meta = [
-                'title' => $yt_title,
-                'categoryId' => $yt_category
-            ];
-            if ($yt_is_short) {
-                $yt_meta['short'] = true;
+            $yt_type = 'VIDEO';
+            if (isset($content_data['post_mode']) && strtolower($content_data['post_mode']) === 'shorts') {
+                $yt_type = 'SHORTS';
+            } elseif (strpos(strtolower($post['post_type']), 'shorts') !== false) {
+                $yt_type = 'SHORTS';
             }
 
             $input['metadata'] = [
-                'youtube' => $yt_meta
+                'youtube' => [
+                    'title' => $yt_title,
+                    'categoryId' => $yt_category,
+                    'type' => $yt_type
+                ]
             ];
         }
 
@@ -2589,10 +2628,15 @@ do {
                             'categoryId' => '22'
                         ];
                     }
-                    unset($input['metadata']['youtube']['type']);
-                    $input['metadata']['youtube']['short'] = true;
+                    $input['metadata']['youtube']['type'] = 'VIDEO';
                     $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
                     $create_res = $res['data']['createPost'] ?? null;
+
+                    if (!isset($create_res['post']['id'])) {
+                        $input['metadata']['youtube']['type'] = 'video';
+                        $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
+                        $create_res = $res['data']['createPost'] ?? null;
+                    }
                 } elseif (stripos($err_msg, 'cannot exceed') !== false || stripos($err_msg, 'characters') !== false) {
                     // Nếu Buffer API phản hồi lỗi độ dài ký tự (do emojis/surrogate pairs/hashtags), tự động cắt về 1500 ký tự và thử lại ngay lập tức
                     if (!empty($input['text'])) {
@@ -3832,15 +3876,11 @@ do {
         }
         
         if ((int)$status_code === 413 || stripos($error_msg, '413') !== false) {
-            $friendly_err = "Lỗi tải video từ Google Drive (HTTP 413 Payload Too Large)";
+            $friendly_err = "Lỗi tải video từ Google Drive";
             marKAsFailed($pdo, $post['id'], $friendly_err, $sys_max_retries, $sys_retry_interval, $has_error_msg, $has_retry_count);
         } else {
-            $step_label = !empty($post['post_type']) ? "[{$post['post_type']}] " : "";
-            if (stripos($error_msg, 'operation aborted by callback') !== false) {
-                $error_msg .= " (Tiến trình cURL bị ngắt kết nối giữa chừng)";
-            }
             $full_msg = "HTTP $status_code - $error_msg";
-            marKAsFailed($pdo, $post['id'], "Lỗi API {$step_label}: $full_msg", $sys_max_retries, $sys_retry_interval, $has_error_msg, $has_retry_count);
+            marKAsFailed($pdo, $post['id'], "Lỗi API: $full_msg", $sys_max_retries, $sys_retry_interval, $has_error_msg, $has_retry_count);
         }
     }
 
@@ -3878,9 +3918,9 @@ function marKAsFailed($pdo, $id, $msg, $max_retries = 3, $retry_interval = 1, $h
     if (ob_get_level() > 0) @ob_flush();
     @flush();
     if (function_exists('ensure_pdo_alive')) ensure_pdo_alive($pdo);
-    // Cắt và chuẩn hóa thông báo lỗi Quota / Upload Limit YouTube API
-    if (stripos($msg, 'Quota exceeded') !== false || stripos($msg, 'rateLimitExceeded') !== false || stripos($msg, 'RESOURCE_EXHAUSTED') !== false || stripos($msg, 'defaultVideoInsertPerDayPerProject') !== false || stripos($msg, 'uploadLimitExceeded') !== false || stripos($msg, 'exceeded the number of videos') !== false) {
-        $msg = "Lỗi YouTube: Tài khoản kênh đã vượt quá giới hạn đăng video tối đa trong ngày (YouTube Daily Upload Limit Exceeded)";
+    // Cắt và chuẩn hóa thông báo lỗi Quota YouTube API 429
+    if (stripos($msg, 'Quota exceeded') !== false || stripos($msg, 'rateLimitExceeded') !== false || stripos($msg, 'RESOURCE_EXHAUSTED') !== false || stripos($msg, 'defaultVideoInsertPerDayPerProject') !== false) {
+        $msg = "Lỗi YouTube API: Đã đạt giới hạn Quota/ngày";
     }
 
     // Bắt lỗi Facebook/TikTok giới hạn tần suất đăng bài (Spam Rate Limit) -> GỠ TOÀN BỘ LỊCH CỦA PAGE ĐÓ RA KHỎI CAMPAIGN
