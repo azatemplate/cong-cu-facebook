@@ -196,6 +196,16 @@ try {
                 echo "  [STRICT 1-POST/CAMP] Đã đưa $reset_cnt bài dư thừa ở Campaign #$cid từ 'processing' về 'pending'.\n";
             }
         }
+// --- TỰ ĐỘNG DỌN DẸP BÀI MỒ CÔI (KHI CAMPAIGN ĐÃ BỊ XÓA NGHĨA LÀ BÀI KHÔNG CÒN CAMPAIGN TỒN TẠI) ---
+try {
+    $del_orphaned = $pdo->exec("
+        DELETE FROM scheduled_posts 
+        WHERE campaign_id IS NOT NULL 
+          AND campaign_id > 0 
+          AND campaign_id NOT IN (SELECT id FROM post_campaigns)
+    ");
+    if ($del_orphaned > 0) {
+        echo "  [CLEANUP] Đã xóa $del_orphaned bài mồ côi (Campaign đã bị xóa trước đó).\n";
     }
 } catch (Exception $e) {}
 

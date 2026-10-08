@@ -84,7 +84,7 @@ if (isset($_GET['action'])) {
                 }
             }
             
-            $pdo->prepare("DELETE FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed','checkpoint') $auth")->execute($p);
+            $pdo->prepare("DELETE FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed','checkpoint','processing') $auth")->execute($p);
             $pdo->prepare("DELETE FROM post_campaigns WHERE id = ? AND account_id = ?")->execute([$id, $_s_account_id]);
         } elseif ($act === 'retry_campaign' && $id > 0) {
             $p = [$id, $_s_account_id];

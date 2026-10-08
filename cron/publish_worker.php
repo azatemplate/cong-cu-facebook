@@ -1280,6 +1280,17 @@ do {
     // 2. NẾU bài thuộc Campaign ($curr_cid > 0): Tổng số bài processing trong Campaign này ĐÃ PHẢI = 0 (chưa có bài nào trong camp đang đăng)
     $curr_cid = !empty($post['campaign_id']) ? (int)$post['campaign_id'] : 0;
 
+    // Kiểm tra nếu Campaign đã bị xóa trước đó ➔ Xóa ngay bài mồ côi này, tránh làm kẹt ở status 'processing'
+    if ($curr_cid > 0) {
+        $c_chk = $pdo->prepare("SELECT COUNT(*) FROM post_campaigns WHERE id = ?");
+        $c_chk->execute([$curr_cid]);
+        if ($c_chk->fetchColumn() == 0) {
+            echo "   → Campaign #$curr_cid đã bị xóa. Xóa ngay bài mồ côi ID {$post['id']}.\n";
+            $pdo->prepare("DELETE FROM scheduled_posts WHERE id = ?")->execute([$post['id']]);
+            continue;
+        }
+    }
+
     if ($curr_cid > 0) {
         $update_processing = $pdo->prepare("
             UPDATE scheduled_posts 
