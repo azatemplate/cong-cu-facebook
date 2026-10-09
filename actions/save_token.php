@@ -475,8 +475,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     curl_close($ch);
                 }
                 curl_multi_close($mh);
-        // Auto-subscribe Fanpages to Meta Webhooks (subscribed_apps)
-        try {
+            }
+
+            // Auto-subscribe Fanpages to Meta Webhooks (subscribed_apps)
             if (!empty($synced_pages_for_trigger)) {
                 foreach ($synced_pages_for_trigger as $spg) {
                     $spg_id = $spg['id'] ?? '';
