@@ -253,7 +253,7 @@ try {
     }
 } catch (Exception $e) {}
 
-// Đếm số Worker/Campaign thực tế đang chạy (1 Campaign/Kênh = 1 Worker độc lập)
+// Đếm số Worker/Campaign thực tế đang chạy và số bài đang PROCESSING
 $active_camp_workers = 0;
 $active_uncamp_workers = 0;
 $curr_processing_posts = 0;
@@ -263,13 +263,14 @@ try {
     $curr_processing_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 } catch (Exception $e) {}
 
-$effective_active = $active_camp_workers + $active_uncamp_workers;
+// Đảm bảo tổng số bài 'processing' thực tế không bao giờ vượt quá MAX_WORKERS (Throttling)
+$effective_active = max($active_camp_workers + $active_uncamp_workers, $curr_processing_posts);
 
-echo "  [THROTTLE] Hiện có $effective_active Worker đang chạy (chứa $curr_processing_posts bài PROCESSING). Giới hạn Throttling Max: $MAX_WORKERS.\n";
+echo "  [THROTTLE] Hiện có {$curr_processing_posts} bài đang PROCESSING ({$effective_active} luồng). Giới hạn Throttling Max: $MAX_WORKERS.\n";
 
 $available_slots = max(0, $MAX_WORKERS - $effective_active);
 if ($available_slots <= 0) {
-    echo "Hệ thống đang đạt trần giới hạn Throttling ($effective_active/$MAX_WORKERS). Chờ lượt cron kế tiếp...\n";
+    echo "Hệ thống đang đạt trần giới hạn Throttling ({$curr_processing_posts}/$MAX_WORKERS bài processing). Chờ lượt cron kế tiếp...\n";
     $rq_pub->releaseLock('lock:cron:start_publish');
     exit;
 }

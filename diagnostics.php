@@ -1158,8 +1158,8 @@ code {
             <!-- Quick Dashboard Grid -->
             <div class="stats-grid">
                 <div class="stat-box stat-processing">
-                    <div class="stat-box-value mono"><?= $active_publish ?> <span style="font-size: 16px; font-weight: 500; color: var(--text-secondary);">/ <?= $max_publish_workers ?> luồng</span></div>
-                    <div class="stat-box-label">Luồng đang chạy (<?= count($processing_posts) ?> bài PROCESSING)</div>
+                    <div class="stat-box-value mono"><?= $total_proc_posts ?> <span style="font-size: 16px; font-weight: 500; color: var(--text-secondary);">/ <?= $max_publish_workers ?></span></div>
+                    <div class="stat-box-label">Đang xử lý (Processing)</div>
                     <div class="stat-box-icon">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="6.83" y1="18.17" x2="8.24" y2="16.76"/><line x1="15.76" y1="8.24" x2="17.17" y2="6.83"/></svg>
                     </div>
