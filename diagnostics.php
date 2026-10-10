@@ -76,7 +76,7 @@ try {
 } catch (Exception $e) {}
 
 // ── Lấy cấu hình Throttling từ settings ─────────────────────────────────────
-$max_publish_workers = 15;
+$max_publish_workers = 30;
 $max_comment_workers = 15;
 try {
     $stmt_throttle = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('max_publish_workers', 'max_comment_workers')");
@@ -86,15 +86,8 @@ try {
     }
 } catch (Exception $e) {}
 
-// ── Đếm số worker đang thực sự chạy (1 Campaign/Kênh = 1 Worker độc lập) ─────
-try {
-    $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE)");
-} catch (Exception $e) {}
-
-$active_camp_w = (int)$pdo->query("SELECT COUNT(DISTINCT campaign_id) FROM scheduled_posts WHERE status = 'processing' AND campaign_id IS NOT NULL AND campaign_id > 0")->fetchColumn();
-$active_uncamp_w = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing' AND (campaign_id IS NULL OR campaign_id = 0)")->fetchColumn();
-$active_publish = $active_camp_w + $active_uncamp_w;
-$total_proc_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
+// ── Đếm số worker đang thực sự chạy (active) ────────────────────────────────
+$active_publish = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
 $active_comment = count(glob(sys_get_temp_dir() . "/facebook_comment_worker_account_*.lock"));
 
 // ── Kích hoạt thủ công nếu có ?run=1 ─────────────────────────────────────────
@@ -137,6 +130,21 @@ if (isset($_GET['force_reset'])) {
         $reset_msg = "Đã ép buộc đưa $reset_count bài từ 'processing' về 'pending'.";
     } catch (Exception $e) {
         $reset_msg = "Lỗi reset: " . $e->getMessage();
+    }
+}
+
+// ── Force Purge All Overdue Uncompleted Posts ───────────────────────────────────
+$purge_msg = '';
+if (isset($_GET['purge_overdue'])) {
+    try {
+        $purged_cnt = $pdo->exec("
+            DELETE FROM scheduled_posts 
+            WHERE status IN ('pending', 'failed') 
+              AND scheduled_time <= NOW()
+        ");
+        $purge_msg = "Đã dọn sạch $purged_cnt bài đến/quá giờ chưa hoàn thành!";
+    } catch (Exception $e) {
+        $purge_msg = "Lỗi dọn bài quá hạn: " . $e->getMessage();
     }
 }
 
@@ -1048,39 +1056,21 @@ code {
                 
                 <div class="info-list">
                     <!-- Publish workers -->
-                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px 0;">
-                        <span class="info-label" style="font-weight: 700; color: var(--text-primary); font-size: 14px;">🚀 Publish Workers (Đăng bài)</span>
-                        <div style="width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; font-size: 13px; background: rgba(255,255,255,0.03); padding: 12px 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); box-sizing: border-box;">
-                            <div>
-                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Đang chạy</div>
-                                <strong class="text-warning" style="font-size: 16px;"><?= $active_publish ?></strong> <span style="font-size: 12px; color: var(--text-muted);">luồng</span>
-                            </div>
-                            <div>
-                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Giới hạn tối đa</div>
-                                <strong style="font-size: 16px; color: var(--text-primary);"><?= $max_publish_workers ?></strong> <span style="font-size: 12px; color: var(--text-muted);">luồng</span>
-                            </div>
-                            <div>
-                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Còn trống</div>
-                                <strong class="text-success" style="font-size: 16px;"><?= max(0, $max_publish_workers - $active_publish) ?></strong>
-                            </div>
+                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                        <span class="info-label" style="font-weight: 600; color: var(--text-primary);">🚀 Publish Workers (Đăng bài)</span>
+                        <div style="width: 100%; display: flex; justify-content: space-between; font-size: 13px;">
+                            <span>Đang chạy: <strong class="text-warning"><?= $active_publish ?></strong></span>
+                            <span>Tối đa: <strong><?= $max_publish_workers ?></strong></span>
+                            <span>Trống: <strong class="text-success"><?= max(0, $max_publish_workers - $active_publish) ?></strong></span>
                         </div>
                     </div>
                     <!-- Comment workers -->
-                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 10px; border:none; padding: 12px 0 0 0;">
-                        <span class="info-label" style="font-weight: 700; color: var(--text-primary); font-size: 14px;">💬 Comment Workers (Bình luận)</span>
-                        <div style="width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; font-size: 13px; background: rgba(255,255,255,0.03); padding: 12px 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); box-sizing: border-box;">
-                            <div>
-                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Đang chạy</div>
-                                <strong class="text-warning" style="font-size: 16px;"><?= $active_comment ?></strong> <span style="font-size: 12px; color: var(--text-muted);">luồng</span>
-                            </div>
-                            <div>
-                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Giới hạn tối đa</div>
-                                <strong style="font-size: 16px; color: var(--text-primary);"><?= $max_comment_workers ?></strong> <span style="font-size: 12px; color: var(--text-muted);">luồng</span>
-                            </div>
-                            <div>
-                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 2px;">Còn trống</div>
-                                <strong class="text-success" style="font-size: 16px;"><?= max(0, $max_comment_workers - $active_comment) ?></strong>
-                            </div>
+                    <div class="info-item" style="flex-direction: column; align-items: flex-start; gap: 8px; border:none; padding: 0;">
+                        <span class="info-label" style="font-weight: 600; color: var(--text-primary);">💬 Comment Workers (Bình luận)</span>
+                        <div style="width: 100%; display: flex; justify-content: space-between; font-size: 13px;">
+                            <span>Đang chạy: <strong class="text-warning"><?= $active_comment ?></strong></span>
+                            <span>Tối đa: <strong><?= $max_comment_workers ?></strong></span>
+                            <span>Trống: <strong class="text-success"><?= max(0, $max_comment_workers - $active_comment) ?></strong></span>
                         </div>
                     </div>
                 </div>
@@ -1158,7 +1148,7 @@ code {
             <!-- Quick Dashboard Grid -->
             <div class="stats-grid">
                 <div class="stat-box stat-processing">
-                    <div class="stat-box-value mono"><?= $total_proc_posts ?> <span style="font-size: 16px; font-weight: 500; color: var(--text-secondary);">/ <?= $max_publish_workers ?></span></div>
+                    <div class="stat-box-value mono"><?= count($processing_posts) ?></div>
                     <div class="stat-box-label">Đang xử lý (Processing)</div>
                     <div class="stat-box-icon">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="6.83" y1="18.17" x2="8.24" y2="16.76"/><line x1="15.76" y1="8.24" x2="17.17" y2="6.83"/></svg>
@@ -1188,9 +1178,18 @@ code {
                         Bài đến/quá giờ — Cần đăng ngay (<?= $ready_total_count ?> bài<?= $ready_total_count > 20 ? ', hiển thị 20 mới nhất' : '' ?>)
                     </h3>
                     <?php if (!empty($ready_posts)): ?>
-                    <input type="text" placeholder="🔍 Tìm ID, tài khoản, lỗi..." onkeyup="filterTable(this, 'table-ready-posts')" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); color: var(--text-primary); padding: 6px 12px; border-radius: 8px; font-size: 12px; outline: none; width: 220px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <a href="?purge_overdue=1" class="btn btn-danger" style="padding: 5px 12px; font-size: 12px;" onclick="return confirm('Bạn có chắc chắn muốn XÓA TẤT CẢ <?= $ready_total_count ?> bài đến/quá giờ chưa hoàn thành không?');">🗑 Dọn sạch bài quá hạn</a>
+                        <input type="text" placeholder="🔍 Tìm ID, tài khoản, lỗi..." onkeyup="filterTable(this, 'table-ready-posts')" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); color: var(--text-primary); padding: 6px 12px; border-radius: 8px; font-size: 12px; outline: none; width: 200px;">
+                    </div>
                     <?php endif; ?>
                 </div>
+                
+                <?php if ($purge_msg): ?>
+                <div style="background: var(--color-success-bg); border: 1px solid var(--color-success-border); color: var(--color-success); padding: 12px; border-radius: 8px; margin-bottom: 14px; font-size:13px;">
+                    ✔ <?= htmlspecialchars($purge_msg) ?>
+                </div>
+                <?php endif; ?>
                 
                 <?php if (empty($ready_posts)): ?>
                 <div style="padding: 24px; text-align: center; background: rgba(16, 185, 129, 0.03); border: 1px dashed var(--color-success-border); border-radius: 12px; margin: 8px 0;">
