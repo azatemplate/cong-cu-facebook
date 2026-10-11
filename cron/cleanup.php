@@ -256,35 +256,21 @@ try {
     echo "  [LỖI] Delete failed: " . $e->getMessage() . "\n";
 }
 
-// ── STEP 5B: Xóa bài hẹn giờ chưa hoàn thành (Bài đến/quá giờ chưa chạy hết trong ngày / ngày cũ)
-echo "\n[STEP 5B] Dọn dẹp bài hẹn giờ chưa hoàn thành (chưa chạy hết trong ngày / ngày cũ)...\n";
+// ── STEP 5B: Xóa bài lỗi quá hạn ngày cũ (không đụng vào bài của ngày hôm nay hoặc bài chờ)
+echo "\n[STEP 5B] Dọn dẹp bài lỗi quá hạn ngày cũ...\n";
 try {
-    // 1. Xóa bài chưa hoàn thành của các ngày cũ (< CURDATE())
+    // Chỉ dọn các bài failed đã hết retry của các ngày trước (< CURDATE())
     $del_past_stmt = $pdo->exec("
         DELETE FROM scheduled_posts 
-        WHERE status IN ('pending', 'failed') 
+        WHERE status = 'failed'
+          AND retry_count >= 3
           AND scheduled_time < CURDATE()
     ");
     $cnt_past = (int)$del_past_stmt;
-    
-    // 2. Nếu là cuối ngày (>= 23:50) hoặc khi chạy --force, xóa các bài chưa hoàn thành còn lại của ngày hôm nay
-    $cnt_today = 0;
-    $current_h = (int)date('H');
-    $current_m = (int)date('i');
-    if ($is_force || ($current_h === 23 && $current_m >= 50)) {
-        $del_today_stmt = $pdo->exec("
-            DELETE FROM scheduled_posts 
-            WHERE status IN ('pending', 'failed') 
-              AND scheduled_time <= DATE_FORMAT(NOW(), '%Y-%m-%d 23:59:59')
-        ");
-        $cnt_today = (int)$del_today_stmt;
-    }
-    
-    $total_purged = $cnt_past + $cnt_today;
-    $stats['scheduled_posts'] += $total_purged;
-    echo "  -> Đã xóa: {$total_purged} bài quá hạn chưa đăng hết ({$cnt_past} bài ngày cũ, {$cnt_today} bài hôm nay)\n";
+    $stats['scheduled_posts'] += $cnt_past;
+    echo "  -> Đã dọn dẹp: {$cnt_past} bài lỗi ngày cũ\n";
 } catch (Exception $e) {
-    echo "  [LỖI] Dọn dẹp bài quá hạn chưa đăng: " . $e->getMessage() . "\n";
+    echo "  [LỖI] Dọn dẹp bài lỗi ngày cũ: " . $e->getMessage() . "\n";
 }
 
 // ── Xóa post_campaigns trống (không còn bài nào)
