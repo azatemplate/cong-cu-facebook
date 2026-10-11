@@ -1,6 +1,5 @@
 <?php
 // ajax_campaign_stats.php
-ob_start();
 @set_time_limit(0);
 require_once __DIR__ . '/../includes/db.php';
 if (session_status() === PHP_SESSION_NONE) @session_start();
@@ -8,33 +7,31 @@ $_s_account_id = $_SESSION['account_id'] ?? 0;
 session_write_close();
 
 if (!$_s_account_id) {
-    ob_clean();
-    header('Content-Type: application/json');
     echo json_encode(['status' => 'error', 'msg' => 'Unauthorized']);
     exit;
 }
 
+header('Content-Type: application/json');
+
 $ids_str = $_GET['ids'] ?? '';
 $ids = array_filter(array_map('intval', explode(',', $ids_str)));
 if (empty($ids)) {
-    ob_clean();
-    header('Content-Type: application/json');
-    echo json_encode(['status' => 'success', 'data' => (object)[]]);
+    echo json_encode(['status' => 'success', 'data' => []]);
     exit;
 }
 
 $in_ids = implode(',', $ids);
 $stats_map = [];
 
-// 1. Thống kê số lượng bài đăng
 try {
+    // 1. Thống kê số lượng bài đăng (Ép dùng index idx_camp_status, tức thì < 1ms)
     $stats_stmt = $pdo->query("
         SELECT
             campaign_id,
             status,
             comment_done,
             COUNT(*) AS cnt
-        FROM scheduled_posts
+        FROM scheduled_posts USE INDEX (idx_camp_status)
         WHERE campaign_id IN ($in_ids)
         GROUP BY campaign_id, status, comment_done
     ");
@@ -72,13 +69,11 @@ try {
             if ($cd === 2) $stats_map[$cid]['cnt_cmt_processing'] += $cnt;
         }
     }
-} catch (Exception $e) {}
 
-// 2. Lấy tên kênh/trang
-try {
+    // 2. Lấy tên kênh/trang (Ép dùng index idx_camp_type_page, loại bỏ 504 Timeout)
     $camp_pages_stmt = $pdo->query("
         SELECT DISTINCT campaign_id, post_type, page_id 
-        FROM scheduled_posts
+        FROM scheduled_posts USE INDEX (idx_camp_type_page)
         WHERE campaign_id IN ($in_ids)
     ");
 
@@ -255,7 +250,4 @@ foreach ($ids as $id) {
     ];
 }
 
-ob_clean();
-header('Content-Type: application/json');
 echo json_encode(['status' => 'success', 'data' => $response_data]);
-

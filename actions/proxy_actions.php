@@ -288,15 +288,16 @@ if ($action === 'assign_proxy') {
 if ($action === 'unassign_proxy') {
     $proxy_id = (int)($_REQUEST['proxy_id'] ?? 0);
 
-    $stmt_px = $pdo->prepare("SELECT assigned_user_id FROM proxies WHERE id = ? AND account_id = ?");
+    $stmt_px = $pdo->prepare("SELECT id, assigned_user_id FROM proxies WHERE id = ? AND account_id = ?");
     $stmt_px->execute([$proxy_id, $account_id]);
     $px = $stmt_px->fetch(PDO::FETCH_ASSOC);
 
     if ($px) {
+        $pdo->prepare("UPDATE users SET proxy_id = NULL WHERE proxy_id = ? AND account_id = ?")->execute([$proxy_id, $account_id]);
         if (!empty($px['assigned_user_id'])) {
-            $pdo->prepare("UPDATE users SET proxy_id = NULL WHERE id = ?")->execute([$px['assigned_user_id']]);
+            $pdo->prepare("UPDATE users SET proxy_id = NULL WHERE id = ? AND account_id = ?")->execute([$px['assigned_user_id'], $account_id]);
         }
-        $pdo->prepare("UPDATE proxies SET assigned_user_id = NULL WHERE id = ?")->execute([$proxy_id]);
+        $pdo->prepare("UPDATE proxies SET assigned_user_id = NULL WHERE id = ? AND account_id = ?")->execute([$proxy_id, $account_id]);
     }
 
     $_SESSION['flash_msg'] = "Đã hủy gán Proxy khỏi Người dùng.";
@@ -305,18 +306,153 @@ if ($action === 'unassign_proxy') {
     exit;
 }
 
+if ($action === 'bulk_unassign_all') {
+    $pdo->prepare("UPDATE users SET proxy_id = NULL WHERE account_id = ?")->execute([$account_id]);
+    $pdo->prepare("UPDATE proxies SET assigned_user_id = NULL WHERE account_id = ?")->execute([$account_id]);
+
+    $_SESSION['flash_msg'] = "✅ Đã xóa toàn bộ Proxy đã gắn khỏi tất cả các nick Facebook thành công!";
+    $_SESSION['flash_type'] = "success";
+    header("Location: ../proxy.php");
+    exit;
+}
+
+if ($action === 'bulk_assign_proxies') {
+    $mode = $_POST['mode'] ?? 'unassigned_only';
+
+    // Option 1: Xóa toàn bộ proxy đã gắn
+    if ($mode === 'unassign_all') {
+        $pdo->prepare("UPDATE users SET proxy_id = NULL WHERE account_id = ?")->execute([$account_id]);
+        $pdo->prepare("UPDATE proxies SET assigned_user_id = NULL WHERE account_id = ?")->execute([$account_id]);
+
+        $_SESSION['flash_msg'] = "✅ Đã xóa toàn bộ Proxy đã gắn khỏi tất cả các nick Facebook thành công!";
+        $_SESSION['flash_type'] = "success";
+        header("Location: ../proxy.php");
+        exit;
+    }
+
+    // Chỉ lấy các Proxy có trạng thái LIVE
+    $stmt_live = $pdo->prepare("
+        SELECT id, proxy_string, ip, port, assigned_user_id 
+        FROM proxies 
+        WHERE account_id = ? AND status = 'live'
+        ORDER BY id ASC
+    ");
+    $stmt_live->execute([$account_id]);
+    $live_proxies = $stmt_live->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($live_proxies)) {
+        $_SESSION['flash_msg'] = "⚠️ Không có Proxy nào đang LIVE trong hệ thống! Vui lòng bấm 'Kiểm tra tất cả' để kiểm tra trạng thái hoặc thêm Proxy mới.";
+        $_SESSION['flash_type'] = "danger";
+        header("Location: ../proxy.php");
+        exit;
+    }
+
+    $total_live = count($live_proxies);
+
+    if ($mode === 'unassigned_only') {
+        // Option 2: Gắn Proxy cho các nick chưa gắn
+        $stmt_users = $pdo->prepare("
+            SELECT id, name, fb_id 
+            FROM users 
+            WHERE account_id = ? AND proxy_id IS NULL 
+            ORDER BY id ASC
+        ");
+        $stmt_users->execute([$account_id]);
+        $target_users = $stmt_users->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($target_users)) {
+            $_SESSION['flash_msg'] = "ℹ️ Tất cả các nick Facebook của bạn đều đã được gắn Proxy rồi. Không có nick nào chưa có Proxy!";
+            $_SESSION['flash_type'] = "warning";
+            header("Location: ../proxy.php");
+            exit;
+        }
+
+        // Đếm số lượng nick đang dùng mỗi proxy để ưu tiên proxy chưa ai dùng hoặc ít nick dùng nhất
+        $stmt_usage = $pdo->prepare("
+            SELECT proxy_id, COUNT(*) as cnt 
+            FROM users 
+            WHERE account_id = ? AND proxy_id IS NOT NULL 
+            GROUP BY proxy_id
+        ");
+        $stmt_usage->execute([$account_id]);
+        $proxy_usage = $stmt_usage->fetchAll(PDO::FETCH_KEY_PAIR); // [proxy_id => count]
+
+        usort($live_proxies, function($a, $b) use ($proxy_usage) {
+            $cntA = $proxy_usage[$a['id']] ?? 0;
+            $cntB = $proxy_usage[$b['id']] ?? 0;
+            if ($cntA === $cntB) return $a['id'] - $b['id'];
+            return $cntA - $cntB;
+        });
+
+        $stmt_upd_user = $pdo->prepare("UPDATE users SET proxy_id = ? WHERE id = ? AND account_id = ?");
+        $stmt_upd_proxy = $pdo->prepare("UPDATE proxies SET assigned_user_id = ? WHERE id = ? AND account_id = ?");
+
+        $assigned_count = 0;
+        foreach ($target_users as $idx => $u) {
+            $chosen = $live_proxies[$idx % $total_live];
+            $stmt_upd_user->execute([$chosen['id'], $u['id'], $account_id]);
+            $stmt_upd_proxy->execute([$u['id'], $chosen['id'], $account_id]);
+            $assigned_count++;
+        }
+
+        $_SESSION['flash_msg'] = "🎉 Đã gắn Proxy Live thành công cho {$assigned_count} nick chưa có Proxy (phân bổ trên {$total_live} Proxy Live)!";
+        $_SESSION['flash_type'] = "success";
+        header("Location: ../proxy.php");
+        exit;
+
+    } elseif ($mode === 'all_users') {
+        // Option 3: Gắn proxy lại toàn bộ nick (Ghi đè, reset và chia đều)
+        $stmt_users = $pdo->prepare("
+            SELECT id, name, fb_id 
+            FROM users 
+            WHERE account_id = ? 
+            ORDER BY id ASC
+        ");
+        $stmt_users->execute([$account_id]);
+        $target_users = $stmt_users->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($target_users)) {
+            $_SESSION['flash_msg'] = "⚠️ Không tìm thấy nick Facebook nào trong tài khoản của bạn.";
+            $_SESSION['flash_type'] = "warning";
+            header("Location: ../proxy.php");
+            exit;
+        }
+
+        // Reset toàn bộ proxy cũ
+        $pdo->prepare("UPDATE users SET proxy_id = NULL WHERE account_id = ?")->execute([$account_id]);
+        $pdo->prepare("UPDATE proxies SET assigned_user_id = NULL WHERE account_id = ?")->execute([$account_id]);
+
+        $stmt_upd_user = $pdo->prepare("UPDATE users SET proxy_id = ? WHERE id = ? AND account_id = ?");
+        $stmt_upd_proxy = $pdo->prepare("UPDATE proxies SET assigned_user_id = ? WHERE id = ? AND account_id = ?");
+
+        $assigned_count = 0;
+        foreach ($target_users as $idx => $u) {
+            $chosen = $live_proxies[$idx % $total_live];
+            $stmt_upd_user->execute([$chosen['id'], $u['id'], $account_id]);
+            $stmt_upd_proxy->execute([$u['id'], $chosen['id'], $account_id]);
+            $assigned_count++;
+        }
+
+        $_SESSION['flash_msg'] = "🎉 Đã gắn mới lại toàn bộ Proxy cho {$assigned_count} nick Facebook (phân bổ đều trên {$total_live} Proxy Live)!";
+        $_SESSION['flash_type'] = "success";
+        header("Location: ../proxy.php");
+        exit;
+    }
+}
+
 if ($action === 'delete_proxy') {
     $proxy_id = (int)($_REQUEST['proxy_id'] ?? 0);
 
-    $stmt_px = $pdo->prepare("SELECT assigned_user_id FROM proxies WHERE id = ? AND account_id = ?");
+    $stmt_px = $pdo->prepare("SELECT id, assigned_user_id FROM proxies WHERE id = ? AND account_id = ?");
     $stmt_px->execute([$proxy_id, $account_id]);
     $px = $stmt_px->fetch(PDO::FETCH_ASSOC);
 
     if ($px) {
+        $pdo->prepare("UPDATE users SET proxy_id = NULL WHERE proxy_id = ? AND account_id = ?")->execute([$proxy_id, $account_id]);
         if (!empty($px['assigned_user_id'])) {
-            $pdo->prepare("UPDATE users SET proxy_id = NULL WHERE id = ?")->execute([$px['assigned_user_id']]);
+            $pdo->prepare("UPDATE users SET proxy_id = NULL WHERE id = ? AND account_id = ?")->execute([$px['assigned_user_id'], $account_id]);
         }
-        $pdo->prepare("DELETE FROM proxies WHERE id = ?")->execute([$proxy_id]);
+        $pdo->prepare("DELETE FROM proxies WHERE id = ? AND account_id = ?")->execute([$proxy_id, $account_id]);
     }
 
     $_SESSION['flash_msg'] = "Đã xóa Proxy khỏi hệ thống.";

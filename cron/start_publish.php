@@ -118,12 +118,12 @@ try {
     echo "Loi reset stuck posts: " . $e->getMessage() . "\n";
 }
 
-// --- DỌN TẤT CẢ FILE LOCK CŨ > 5 PHÚT TỰ ĐỘNG ---
+// --- DỌN TẤT CẢ FILE LOCK CŨ > 15 PHÚT TỰ ĐỘNG ---
 try {
     $lock_dir = dirname(__DIR__) . '/locks';
     if (is_dir($lock_dir)) {
         foreach (glob($lock_dir . '/*.lock') as $lf) {
-            if (file_exists($lf) && (time() - filemtime($lf)) > 300) {
+            if (file_exists($lf) && (time() - filemtime($lf)) > 900) {
                 @unlink($lf);
             }
         }
@@ -173,104 +173,31 @@ try {
     echo "Loi tu dong quet SĐT: " . $e->getMessage() . "\n";
 }
 
-// --- TỰ ĐỘNG RESET BÀI BỊ KẸT PROCESSING VỀ PENDING (>3 PHÚT) ---
+// --- TỰ ĐỘNG RESET BÀI BỊ KẸT PROCESSING VỀ PENDING (>15 PHÚT) ---
 try {
-    $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE)");
-    
-    // --- ĐẢM BẢO CHỈ 1 BÀI PROCESSING PER CAMPAIGN ---
-    // Nếu 1 campaign có nhiều bài processing cùng lúc, giữ lại bài mới nhất và trả bài thừa về pending
-    $multi_camps = $pdo->query("
-        SELECT campaign_id, COUNT(*) as cnt 
-        FROM scheduled_posts 
-        WHERE campaign_id IS NOT NULL AND campaign_id > 0 AND status = 'processing' 
-        GROUP BY campaign_id 
-        HAVING cnt > 1
-    ")->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach ($multi_camps as $mc) {
-        $cid = (int)$mc['campaign_id'];
-        $latest_id = (int)$pdo->query("SELECT id FROM scheduled_posts WHERE campaign_id = $cid AND status = 'processing' ORDER BY updated_at DESC, id DESC LIMIT 1")->fetchColumn();
-        if ($latest_id > 0) {
-            $reset_cnt = $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = $cid AND status = 'processing' AND id != $latest_id");
-            if ($reset_cnt > 0) {
-                echo "  [STRICT 1-POST/CAMP] Đã đưa $reset_cnt bài dư thừa ở Campaign #$cid từ 'processing' về 'pending'.\n";
-            }
-        }
-    }
-} catch (Exception $e) {}
-// --- TỰ ĐỘNG DỌN DẸP BÀI MỒ CÔI (KHI CAMPAIGN ĐÃ BỊ XÓA NGHĨA LÀ BÀI KHÔNG CÒN CAMPAIGN TỒN TẠI) ---
-try {
-    $del_orphaned = $pdo->exec("
-        DELETE FROM scheduled_posts 
-        WHERE campaign_id IS NOT NULL 
-          AND campaign_id > 0 
-          AND campaign_id NOT IN (SELECT id FROM post_campaigns)
-    ");
-    if ($del_orphaned > 0) {
-        echo "  [CLEANUP] Đã xóa $del_orphaned bài mồ côi (Campaign đã bị xóa trước đó).\n";
-    }
+    $pdo->exec("UPDATE scheduled_posts SET status = 'pending' WHERE status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
 } catch (Exception $e) {}
 
-// --- 🧹 LOGIC TỰ ĐỘNG XÓA BÀI HẸN GIỜ CHƯA HOÀN THÀNH CUỐI NGÀY (11:59 PM & BÀI CŨ) ---
-try {
-    $current_h  = (int)date('H');
-    $current_m  = (int)date('i');
-    $today_str  = date('Y-m-d');
-
-    // 1. Tự động xóa tất cả bài chưa hoàn thành (pending/failed) của CÁC NGÀY CŨ (< 00:00 hôm nay)
-    $del_past_uncompleted = $pdo->exec("
-        DELETE FROM scheduled_posts 
-        WHERE status IN ('pending', 'failed')
-          AND scheduled_time < CURDATE()
-    ");
-    if ($del_past_uncompleted > 0) {
-        echo "  [PURGE CÁC NGÀY CŨ] Đã xóa {$del_past_uncompleted} bài hẹn giờ chưa hoàn thành của ngày cũ.\n";
-    }
-
-    // 2. Lúc 23:59 PM (11:59 PM), tự động xóa TẤT CẢ bài hẹn giờ chưa hoàn thành của NGÀY HÔM NAY
-    $purge_today_flag = sys_get_temp_dir() . '/fb_purge_today_' . $today_str . '.done';
-    if ($current_h === 23 && $current_m >= 59 && !file_exists($purge_today_flag)) {
-        $del_today_uncompleted = $pdo->exec("
-            DELETE FROM scheduled_posts 
-            WHERE status IN ('pending', 'failed')
-              AND scheduled_time <= DATE_FORMAT(NOW(), '%Y-%m-%d 23:59:59')
-        ");
-        @file_put_contents($purge_today_flag, date('Y-m-d H:i:s'));
-        if ($del_today_uncompleted > 0) {
-            echo "  [PURGE 11:59 PM] Đã dọn sạch {$del_today_uncompleted} bài hẹn giờ chưa hoàn thành của ngày {$today_str} lúc 11:59 PM.\n";
-        }
-    }
-} catch (Exception $e) {
-    echo "  [LỖI PURGE END-OF-DAY]: " . $e->getMessage() . "\n";
-}
-
-// Cấu hình giới hạn luồng cho máy chủ (Lấy trực tiếp từ ⚙️ Throttling Máy Chủ ở settings.php)
-$MAX_WORKERS = 15;
+// Cấu hình giới hạn luồng cho máy chủ (Throttling an toàn cho RAM & CPU)
+$MAX_WORKERS = 10;
 try {
     $res_limit = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'max_publish_workers'")->fetchColumn();
-    if ($res_limit !== false && $res_limit !== null && $res_limit !== '') {
-        $MAX_WORKERS = max(1, (int)$res_limit);
-    }
+    if ($res_limit) $MAX_WORKERS = min(25, max(3, (int)$res_limit));
 } catch (Exception $e) {}
 
-// Đếm số Worker/Campaign thực tế đang chạy và số bài đang PROCESSING
-$active_camp_workers = 0;
-$active_uncamp_workers = 0;
-$curr_processing_posts = 0;
-try {
-    $active_camp_workers = (int)$pdo->query("SELECT COUNT(DISTINCT campaign_id) FROM scheduled_posts WHERE status = 'processing' AND campaign_id IS NOT NULL AND campaign_id > 0")->fetchColumn();
-    $active_uncamp_workers = (int)$pdo->query("SELECT COUNT(DISTINCT page_id) FROM scheduled_posts WHERE status = 'processing' AND (campaign_id IS NULL OR campaign_id = 0)")->fetchColumn();
-    $curr_processing_posts = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE status = 'processing'")->fetchColumn();
-} catch (Exception $e) {}
+// Đếm số luồng thực tế đang chạy dựa trên file lock hoạt động
+$lock_dir = dirname(__DIR__) . '/locks';
+$active_locks = 0;
+if (is_dir($lock_dir)) {
+    $active_locks = count(glob($lock_dir . '/publish_user_*.lock'));
+}
+$active_workers = $active_locks;
 
-// Đảm bảo tổng số bài 'processing' thực tế không bao giờ vượt quá MAX_WORKERS (Throttling)
-$effective_active = max($active_camp_workers + $active_uncamp_workers, $curr_processing_posts);
+echo "  [THROTTLE] Hien dang co $active_workers luong dang xu ly (Max: $MAX_WORKERS).\n";
 
-echo "  [THROTTLE] Hiện có {$curr_processing_posts} bài đang PROCESSING ({$effective_active} luồng). Giới hạn Throttling Max: $MAX_WORKERS.\n";
-
-$available_slots = max(0, $MAX_WORKERS - $effective_active);
+$available_slots = max(0, $MAX_WORKERS - $active_workers);
 if ($available_slots <= 0) {
-    echo "Hệ thống đang đạt trần giới hạn Throttling ({$curr_processing_posts}/$MAX_WORKERS bài processing). Chờ lượt cron kế tiếp...\n";
+    echo "He thong dang dat gioi han MAX_WORKERS ($MAX_WORKERS). Cho luot cron ke tiep...\n";
     $rq_pub->releaseLock('lock:cron:start_publish');
     exit;
 }
@@ -307,7 +234,6 @@ $sql = "
       AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3))
       AND sp.status IN ('pending', 'failed')
       $camp_filter
-    ORDER BY sp.scheduled_time ASC
 ";
 $stmt = $pdo->prepare($sql);
 if (!$stmt) {
@@ -387,45 +313,14 @@ $has_more = true;
 while ($has_more && count($dispatch_list) < $available_slots) {
     $has_more = false;
     foreach ($owner_keys as $oid) {
-        while (isset($owner_chan_lists[$oid][$owner_pointers[$oid]])) {
-            $item = $owner_chan_lists[$oid][$owner_pointers[$oid]];
-            $ckey = $item['chan_key'];
-            $lock_key = (strpos($ckey, 'camp_') === 0) ? md5($ckey) : md5('uid_' . $ckey);
-            $lfile = $lock_dir . "/publish_user_" . $lock_key . ".lock";
-
-            // Bỏ qua Campaign/Kênh ĐANG CHẠY THỰC TẾ trong CSDL
-            $is_already_running = false;
-            if (strpos($ckey, 'camp_') === 0) {
-                $cid_check = (int)substr($ckey, 5);
-                $running_in_db = (int)$pdo->query("SELECT COUNT(*) FROM scheduled_posts WHERE campaign_id = {$cid_check} AND status = 'processing'")->fetchColumn();
-                if ($running_in_db > 0) {
-                    $is_already_running = true;
-                }
-            }
-
-            if (!$is_already_running && file_exists($lfile)) {
-                $fp = @fopen($lfile, 'c+');
-                if ($fp) {
-                    if (!@flock($fp, LOCK_EX | LOCK_NB)) {
-                        $is_already_running = true;
-                        @fclose($fp);
-                    } else {
-                        @flock($fp, LOCK_UN);
-                        @fclose($fp);
-                        @unlink($lfile); // Dọn dẹp file lock mồ côi
-                    }
-                }
-            }
-
+        $ptr = $owner_pointers[$oid];
+        if (isset($owner_chan_lists[$oid][$ptr])) {
+            $dispatch_list[] = $owner_chan_lists[$oid][$ptr];
             $owner_pointers[$oid]++;
-
-            if (!$is_already_running) {
-                $dispatch_list[] = $item;
-                $has_more = true;
-                if (count($dispatch_list) >= $available_slots) {
-                    break 2;
-                }
-                break; // Cấp 1 luồng cho User này ở lượt này, chuyển sang User tiếp theo (Chia đều Throttling công bằng)
+            $has_more = true;
+            
+            if (count($dispatch_list) >= $available_slots) {
+                break 2;
             }
         }
     }
@@ -446,13 +341,13 @@ foreach ($dispatch_list as $dispatch) {
     $page_ids_str = $dispatch['page_id']; // Chuỗi các page_id thuộc Token này
 
     // Kiểm tra và giải phóng lock cũ trước khi spawn worker
-    // Nếu lock > 5 phút → worker cũ đã crash hoặc account vừa được gia hạn
+    // Nếu lock > 15 phút → worker cũ đã crash hoặc account vừa được gia hạn
     $lock_dir = dirname(__DIR__) . '/locks';
-    $lock_key = (strpos($uid, 'camp_') === 0) ? md5($uid) : md5('uid_' . $uid);
+    $lock_key = md5('uid_' . $uid);
     $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
     if (file_exists($lock_file)) {
         $lock_age = time() - filemtime($lock_file);
-        if ($lock_age > 300) { // > 5 phút
+        if ($lock_age > 900) { // > 15 phút
             @unlink($lock_file);
             echo "  ⚠ Đã dọn lock cũ ($lock_age giây) cho token #$uid trước khi spawn worker.\n";
         }

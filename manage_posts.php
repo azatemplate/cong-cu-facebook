@@ -84,7 +84,7 @@ if (isset($_GET['action'])) {
                 }
             }
             
-            $pdo->prepare("DELETE FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed','checkpoint','processing') $auth")->execute($p);
+            $pdo->prepare("DELETE FROM scheduled_posts WHERE campaign_id = ? AND status IN ('pending','failed','checkpoint') $auth")->execute($p);
             $pdo->prepare("DELETE FROM post_campaigns WHERE id = ? AND account_id = ?")->execute([$id, $_s_account_id]);
         } elseif ($act === 'retry_campaign' && $id > 0) {
             $p = [$id, $_s_account_id];
@@ -604,29 +604,19 @@ function pollCampaignStats() {
     if (!ids) return;
 
     fetch('actions/ajax_campaign_stats.php?ids=' + ids)
-    .then(r => r.text())
-    .then(text => {
-        try {
-            const jsonStart = text.indexOf('{');
-            const jsonEnd = text.lastIndexOf('}');
-            if (jsonStart !== -1 && jsonEnd !== -1) {
-                const jsonStr = text.substring(jsonStart, jsonEnd + 1);
-                const res = JSON.parse(jsonStr);
-                if (res.status === 'success') {
-                    let hasActive = false;
-                    for (const [id, st] of Object.entries(res.data)) {
-                        updateCampaignRow(id, st);
-                        if (st.cnt_pending > 0 || st.cnt_processing > 0 || st.cnt_cmt_pending > 0 || st.cnt_cmt_processing > 0) {
-                            hasActive = true;
-                        }
-                    }
-                    if (hasActive) {
-                        setTimeout(pollCampaignStats, 15000);
-                    }
+    .then(r => r.json())
+    .then(res => {
+        if (res.status === 'success') {
+            let hasActive = false;
+            for (const [id, st] of Object.entries(res.data)) {
+                updateCampaignRow(id, st);
+                if (st.cnt_pending > 0 || st.cnt_processing > 0 || st.cnt_cmt_pending > 0 || st.cnt_cmt_processing > 0) {
+                    hasActive = true;
                 }
             }
-        } catch (e) {
-            console.error('Failed to parse campaign stats JSON:', e, text);
+            if (hasActive) {
+                setTimeout(pollCampaignStats, 15000);
+            }
         }
     })
     .catch(err => {
@@ -731,7 +721,6 @@ function updateCampaignRow(id, st) {
     if (fail > 0) countersHtml += '<span style="color:#dc2626;">❌ ' + fail + ' lỗi</span>';
     if (check > 0) countersHtml += '<span style="color:#991b1b;">🚫 Bị checkpoint, dừng lại (còn ' + check + ' bài chưa chạy)</span>';
     if (pub > 0) countersHtml += '<span style="color:#10b981;">✅ ' + pub + ' đã ' + unitVerb + '</span>';
-    if (!countersHtml) countersHtml = '<span style="color:#94a3b8; font-weight:600;">Chưa có dữ liệu bài đăng</span>';
     const countersEl = row.querySelector('.counters');
     if (countersEl) countersEl.innerHTML = countersHtml;
 

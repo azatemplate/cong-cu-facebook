@@ -133,21 +133,6 @@ if (isset($_GET['force_reset'])) {
     }
 }
 
-// ── Force Purge All Overdue Uncompleted Posts ───────────────────────────────────
-$purge_msg = '';
-if (isset($_GET['purge_overdue'])) {
-    try {
-        $purged_cnt = $pdo->exec("
-            DELETE FROM scheduled_posts 
-            WHERE status IN ('pending', 'failed') 
-              AND scheduled_time <= NOW()
-        ");
-        $purge_msg = "Đã dọn sạch $purged_cnt bài đến/quá giờ chưa hoàn thành!";
-    } catch (Exception $e) {
-        $purge_msg = "Lỗi dọn bài quá hạn: " . $e->getMessage();
-    }
-}
-
 // ── Đếm bài theo trạng thái ───────────────────────────────────────────────────
 $stats = $pdo->query("
     SELECT status, COUNT(*) as cnt
@@ -1178,18 +1163,9 @@ code {
                         Bài đến/quá giờ — Cần đăng ngay (<?= $ready_total_count ?> bài<?= $ready_total_count > 20 ? ', hiển thị 20 mới nhất' : '' ?>)
                     </h3>
                     <?php if (!empty($ready_posts)): ?>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <a href="?purge_overdue=1" class="btn btn-danger" style="padding: 5px 12px; font-size: 12px;" onclick="return confirm('Bạn có chắc chắn muốn XÓA TẤT CẢ <?= $ready_total_count ?> bài đến/quá giờ chưa hoàn thành không?');">🗑 Dọn sạch bài quá hạn</a>
-                        <input type="text" placeholder="🔍 Tìm ID, tài khoản, lỗi..." onkeyup="filterTable(this, 'table-ready-posts')" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); color: var(--text-primary); padding: 6px 12px; border-radius: 8px; font-size: 12px; outline: none; width: 200px;">
-                    </div>
+                    <input type="text" placeholder="🔍 Tìm ID, tài khoản, lỗi..." onkeyup="filterTable(this, 'table-ready-posts')" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); color: var(--text-primary); padding: 6px 12px; border-radius: 8px; font-size: 12px; outline: none; width: 220px;">
                     <?php endif; ?>
                 </div>
-                
-                <?php if ($purge_msg): ?>
-                <div style="background: var(--color-success-bg); border: 1px solid var(--color-success-border); color: var(--color-success); padding: 12px; border-radius: 8px; margin-bottom: 14px; font-size:13px;">
-                    ✔ <?= htmlspecialchars($purge_msg) ?>
-                </div>
-                <?php endif; ?>
                 
                 <?php if (empty($ready_posts)): ?>
                 <div style="padding: 24px; text-align: center; background: rgba(16, 185, 129, 0.03); border: 1px dashed var(--color-success-border); border-radius: 12px; margin: 8px 0;">

@@ -27,9 +27,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $account_id         = $_SESSION['account_id'];
 $text_input         = trim($_POST['text'] ?? '');
-if (mb_strlen($text_input, 'UTF-8') > 1700) {
-    $text_input = mb_substr($text_input, 0, 1700, 'UTF-8');
-}
 $selected_channels  = $_POST['channels'] ?? [];
 $auto_title         = isset($_POST['auto_title']) && $_POST['auto_title'] == '1';
 $use_ai             = isset($_POST['use_ai']) && $_POST['use_ai'] == '1';

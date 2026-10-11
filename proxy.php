@@ -75,15 +75,22 @@ function auto_check_untested_proxies($pdo, $account_id) {
     } catch (Exception $e) {}
 }
 
-// Fetch user's proxies with assigned user info
+// Fetch user's proxies with assigned user info & count
 $stmt = $pdo->prepare("
-    SELECT p.*, u.name as user_name, u.fb_id
+    SELECT p.*, 
+           COALESCE(u_stats.cnt, 0) as assigned_nick_count,
+           u_stats.names as assigned_nick_names
     FROM proxies p
-    LEFT JOIN users u ON p.assigned_user_id = u.id
+    LEFT JOIN (
+        SELECT proxy_id, COUNT(*) as cnt, GROUP_CONCAT(name SEPARATOR ', ') as names
+        FROM users
+        WHERE account_id = ? AND proxy_id IS NOT NULL
+        GROUP BY proxy_id
+    ) u_stats ON p.id = u_stats.proxy_id
     WHERE p.account_id = ?
     ORDER BY p.id DESC
 ");
-$stmt->execute([$account_id]);
+$stmt->execute([$account_id, $account_id]);
 $proxies = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch user tokens for assignment dropdown
@@ -97,7 +104,7 @@ $stmt_u = $pdo->prepare("
 $stmt_u->execute([$account_id]);
 $user_tokens = $stmt_u->fetchAll(PDO::FETCH_ASSOC);
 
-// Calculate stats
+// Calculate proxy stats
 $total_count = count($proxies);
 $live_count = 0;
 $dead_count = 0;
@@ -107,6 +114,19 @@ foreach ($proxies as $px) {
     if ($px['status'] === 'live') $live_count++;
     elseif ($px['status'] === 'dead') $dead_count++;
     else $untested_count++;
+}
+
+// Calculate Facebook nick stats
+$total_nicks = count($user_tokens);
+$nicks_with_proxy = 0;
+$nicks_without_proxy = 0;
+
+foreach ($user_tokens as $ut) {
+    if (!empty($ut['proxy_id'])) {
+        $nicks_with_proxy++;
+    } else {
+        $nicks_without_proxy++;
+    }
 }
 ?>
 
@@ -207,6 +227,119 @@ foreach ($proxies as $px) {
 .px-btn-primary:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 16px rgba(79, 70, 229, 0.35);
+}
+
+.px-btn-bulk {
+    background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+    color: #ffffff;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 13.5px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.28);
+    transition: all 0.2s ease;
+}
+.px-btn-bulk:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.4);
+    background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+}
+
+/* Bulk Modal & Radio Cards */
+.bulk-stats-summary {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 20px;
+}
+.bulk-stat-item {
+    text-align: center;
+}
+.bulk-stat-item .val {
+    font-size: 20px;
+    font-weight: 900;
+    line-height: 1.2;
+}
+.bulk-stat-item .lbl {
+    font-size: 12px;
+    font-weight: 700;
+    color: #64748b;
+    margin-top: 3px;
+}
+
+.px-radio-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 12px;
+    cursor: pointer;
+    background: #ffffff;
+    transition: all 0.2s ease;
+    margin-bottom: 12px;
+}
+.px-radio-card:hover {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+}
+.px-radio-card input[type="radio"] {
+    margin-top: 3px;
+    accent-color: #6366f1;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+.px-radio-card.active {
+    border-color: #6366f1;
+    background: #f5f3ff;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+.px-radio-card.card-danger.active {
+    border-color: #ef4444;
+    background: #fef2f2;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15);
+}
+.px-rc-body {
+    flex: 1;
+}
+.px-rc-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    gap: 8px;
+}
+.px-rc-title {
+    font-weight: 800;
+    font-size: 14px;
+    color: #1e293b;
+}
+.px-rc-tag {
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.tag-safe { background: #dcfce7; color: #166534; }
+.tag-warning { background: #fef3c7; color: #92400e; }
+.tag-danger { background: #fee2e2; color: #991b1b; }
+.px-rc-desc {
+    margin: 0;
+    font-size: 12.5px;
+    color: #64748b;
+    line-height: 1.45;
 }
 
 /* Flash Alert */
@@ -535,9 +668,13 @@ foreach ($proxies as $px) {
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                 Kiểm tra tất cả
             </a>
+            <button type="button" class="px-btn-bulk" onclick="openBulkAssignModal()">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                Gán Proxy Hàng Loạt
+            </button>
             <button type="button" class="px-btn-secondary" onclick="openAssignModal()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-                Gán vào Người Dùng
+                Gán Thủ Công
             </button>
             <button type="button" class="px-btn-primary" onclick="openAddModal()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
@@ -665,9 +802,22 @@ foreach ($proxies as $px) {
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <?php if (!empty($px['user_name'])): ?>
-                                        <span style="background: #e0e7ff; color: #4338ca; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">
-                                            👤 <?= htmlspecialchars($px['user_name']) ?>
+                                    <?php 
+                                    $assigned_cnt = (int)($px['assigned_nick_count'] ?? 0);
+                                    $assigned_names = $px['assigned_nick_names'] ?? '';
+                                    ?>
+                                    <?php if ($assigned_cnt > 1): ?>
+                                        <?php 
+                                        $names_arr = explode(',', $assigned_names);
+                                        $first_nick = trim($names_arr[0] ?? '');
+                                        $extra_cnt = $assigned_cnt - 1;
+                                        ?>
+                                        <span style="background: #e0e7ff; color: #4338ca; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;" title="<?= htmlspecialchars($assigned_names) ?>">
+                                            👥 <?= htmlspecialchars($first_nick) ?> (+<?= $extra_cnt ?> nick)
+                                        </span>
+                                    <?php elseif ($assigned_cnt === 1): ?>
+                                        <span style="background: #e0e7ff; color: #4338ca; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;" title="<?= htmlspecialchars($assigned_names) ?>">
+                                            👤 <?= htmlspecialchars($assigned_names) ?>
                                         </span>
                                     <?php else: ?>
                                         <span style="color: #94a3b8; font-size: 12.5px; font-style: italic;">Chưa gán</span>
@@ -676,8 +826,8 @@ foreach ($proxies as $px) {
                                 <td style="text-align: right;">
                                     <a href="actions/proxy_actions.php?action=check_proxy&proxy_id=<?= $px['id'] ?>" class="px-action-btn" title="Kiểm tra trạng thái">🔍</a>
 
-                                    <?php if (!empty($px['assigned_user_id'])): ?>
-                                        <a href="actions/proxy_actions.php?action=unassign_proxy&proxy_id=<?= $px['id'] ?>" class="px-action-btn" title="Hủy gán cho người dùng">🔗</a>
+                                    <?php if ($assigned_cnt > 0 || !empty($px['assigned_user_id'])): ?>
+                                        <a href="actions/proxy_actions.php?action=unassign_proxy&proxy_id=<?= $px['id'] ?>" class="px-action-btn" title="Hủy gán khỏi người dùng" onclick="return confirm('Bạn có chắc muốn hủy gán Proxy này khỏi các nick Facebook?')">🔗</a>
                                     <?php else: ?>
                                         <button type="button" class="px-action-btn" onclick="openAssignSingleModal(<?= $px['id'] ?>)" title="Gán cho người dùng">➕</button>
                                     <?php endif; ?>
@@ -778,6 +928,101 @@ http://user:pass@103.23.1.2:8080" required></textarea>
     </div>
 </div>
 
+<!-- Modal 3: Gán Proxy Hàng Loạt Cho Các Nick -->
+<div id="bulkAssignModal" class="px-modal">
+    <div class="px-modal-content" style="max-width: 620px;">
+        <div class="px-modal-header">
+            <h3>
+                <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:#6366f1;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                Gán Proxy Hàng Loạt Cho Nick Facebook
+            </h3>
+            <button type="button" class="px-modal-close" onclick="closeBulkAssignModal()">&times;</button>
+        </div>
+
+        <!-- Quick Summary Stats -->
+        <div class="bulk-stats-summary">
+            <div class="bulk-stat-item">
+                <div class="val" style="color: #4f46e5;"><?= number_format($total_nicks) ?></div>
+                <div class="lbl">Tổng số Nick</div>
+            </div>
+            <div class="bulk-stat-item">
+                <div class="val" style="color: <?= $nicks_without_proxy > 0 ? '#d97706' : '#16a34a' ?>;"><?= number_format($nicks_without_proxy) ?></div>
+                <div class="lbl">Nick chưa có Proxy</div>
+            </div>
+            <div class="bulk-stat-item">
+                <div class="val" style="color: #16a34a;"><?= number_format($live_count) ?></div>
+                <div class="lbl">Proxy Live sẵn sàng</div>
+            </div>
+        </div>
+
+        <form action="actions/proxy_actions.php" method="POST" id="bulkAssignForm" onsubmit="return confirmBulkAssign(event)">
+            <input type="hidden" name="action" value="bulk_assign_proxies">
+
+            <div style="margin-bottom: 16px;">
+                <label class="px-form-label" style="margin-bottom: 10px;">Chọn chế độ xử lý hàng loạt:</label>
+
+                <!-- Option 2: Gắn nick chưa gắn (Default) -->
+                <label class="px-radio-card active" id="card_unassigned_only">
+                    <input type="radio" name="mode" value="unassigned_only" checked onchange="handleModeChange(this.value)">
+                    <div class="px-rc-body">
+                        <div class="px-rc-top">
+                            <span class="px-rc-title">🟢 Gắn cho các nick CHƯA CÓ Proxy</span>
+                            <span class="px-rc-tag tag-safe">Khuyên dùng</span>
+                        </div>
+                        <p class="px-rc-desc">
+                            Bảo toàn Proxy của các nick đang chạy tốt. Chỉ cấp phát Proxy Live cho <strong><?= $nicks_without_proxy ?></strong> nick chưa có (ưu tiên proxy chưa ai dùng, tự động chia đều).
+                        </p>
+                    </div>
+                </label>
+
+                <!-- Option 3: Gắn lại toàn bộ nick -->
+                <label class="px-radio-card" id="card_all_users">
+                    <input type="radio" name="mode" value="all_users" onchange="handleModeChange(this.value)">
+                    <div class="px-rc-body">
+                        <div class="px-rc-top">
+                            <span class="px-rc-title">🔄 Gắn lại TOÀN BỘ nick</span>
+                            <span class="px-rc-tag tag-warning">Ghi đè</span>
+                        </div>
+                        <p class="px-rc-desc">
+                            Tái cân bằng (Re-balance): Gỡ bỏ proxy cũ và phân bổ đều toàn bộ Proxy Live cho tất cả <strong><?= $total_nicks ?></strong> nick trong hệ thống.
+                        </p>
+                    </div>
+                </label>
+
+                <!-- Option 1: Xóa toàn bộ proxy -->
+                <label class="px-radio-card card-danger" id="card_unassign_all">
+                    <input type="radio" name="mode" value="unassign_all" onchange="handleModeChange(this.value)">
+                    <div class="px-rc-body">
+                        <div class="px-rc-top">
+                            <span class="px-rc-title">🔴 XÓA TOÀN BỘ proxy đã gắn</span>
+                            <span class="px-rc-tag tag-danger">Reset sạch</span>
+                        </div>
+                        <p class="px-rc-desc">
+                            Hủy toàn bộ liên kết Proxy khỏi mọi nick Facebook, chuyển tất cả nick về kết nối mạng IP mặc định của VPS.
+                        </p>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Note Box -->
+            <div id="bulk_mode_notice" style="background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 10px; padding: 12px 14px; font-size: 12.5px; color: #3730a3; margin-bottom: 22px; line-height: 1.45;">
+                <?php if ($live_count == 0): ?>
+                    <strong style="color: #b91c1c;">⚠️ Cảnh báo:</strong> Hiện tại có 0 Proxy Live. Vui lòng bấm <strong>"Kiểm tra tất cả"</strong> ở ngoài trang trước để xác định Proxy Live trước khi gán!
+                <?php else: ?>
+                    <strong>💡 Quy tắc gán Live:</strong> Hệ thống tự động lọc chỉ lấy Proxy đang Live. Nếu số lượng Nick nhiều hơn Proxy Live, hệ thống sẽ tự động xoay vòng (Round-Robin) chia đều tải.
+                <?php endif; ?>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="px-btn-secondary" onclick="closeBulkAssignModal()">Hủy bỏ</button>
+                <button type="submit" class="px-btn-primary" id="btnSubmitBulk">
+                    Xác nhận Gán Proxy
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 function openAddModal() {
     document.getElementById('addProxyModal').style.display = 'flex';
@@ -795,6 +1040,56 @@ function openAssignSingleModal(proxyId) {
 }
 function closeAssignModal() {
     document.getElementById('assignProxyModal').style.display = 'none';
+}
+
+function openBulkAssignModal() {
+    document.getElementById('bulkAssignModal').style.display = 'flex';
+}
+function closeBulkAssignModal() {
+    document.getElementById('bulkAssignModal').style.display = 'none';
+}
+
+function handleModeChange(mode) {
+    document.querySelectorAll('.px-radio-card').forEach(el => el.classList.remove('active'));
+    const selected = document.getElementById('card_' + mode);
+    if (selected) selected.classList.add('active');
+
+    const noticeBox = document.getElementById('bulk_mode_notice');
+    const submitBtn = document.getElementById('btnSubmitBulk');
+
+    if (mode === 'unassign_all') {
+        noticeBox.style.background = '#fef2f2';
+        noticeBox.style.borderColor = '#fecaca';
+        noticeBox.style.color = '#991b1b';
+        noticeBox.innerHTML = '<strong>⚠️ Chú ý:</strong> Thao tác này sẽ hủy gắn Proxy của toàn bộ các nick Facebook. Tất cả nick sẽ sử dụng IP mặc định của VPS.';
+        submitBtn.style.background = '#ef4444';
+        submitBtn.innerText = 'Xác nhận Xóa Hết Proxy';
+    } else if (mode === 'all_users') {
+        noticeBox.style.background = '#fffbeb';
+        noticeBox.style.borderColor = '#fde68a';
+        noticeBox.style.color = '#92400e';
+        noticeBox.innerHTML = '<strong>🔄 Chú ý:</strong> Toàn bộ Proxy hiện tại của tất cả các nick sẽ được làm mới và chia đều lại từ danh sách Proxy Live.';
+        submitBtn.style.background = 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)';
+        submitBtn.innerText = 'Xác nhận Gán Lại Toàn Bộ';
+    } else {
+        noticeBox.style.background = '#eef2ff';
+        noticeBox.style.borderColor = '#c7d2fe';
+        noticeBox.style.color = '#3730a3';
+        noticeBox.innerHTML = '<strong>💡 Khuyên dùng:</strong> Giữ nguyên Proxy của các nick đang chạy tốt, chỉ cấp phát Proxy Live cho các nick còn trống.';
+        submitBtn.style.background = 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)';
+        submitBtn.innerText = 'Xác nhận Gán Proxy';
+    }
+}
+
+function confirmBulkAssign(e) {
+    const checked = document.querySelector('input[name="mode"]:checked');
+    const mode = checked ? checked.value : 'unassigned_only';
+    if (mode === 'unassign_all') {
+        return confirm('⚠️ BẠN CÓ CHẮC CHẮN MUỐN XÓA TOÀN BỘ PROXY ĐÃ GẮN KHỎI TẤT CẢ CÁC NICK?\n\nThao tác này sẽ hủy gán proxy của mọi nick Facebook!');
+    } else if (mode === 'all_users') {
+        return confirm('🔄 Bạn có chắc chắn muốn GHI ĐÈ và GÁN LẠI Proxy cho toàn bộ tất cả các nick?');
+    }
+    return true;
 }
 
 function copyText(str, btn) {

@@ -96,17 +96,6 @@ if (!$lock_got) {
     exit;
 }
 
-// Tự động giải phóng flock và xóa file lock khi tiến trình worker kết thúc
-register_shutdown_function(function() use (&$lock_fp, &$lock_file) {
-    if (!empty($lock_fp)) {
-        @flock($lock_fp, LOCK_UN);
-        @fclose($lock_fp);
-    }
-    if (!empty($lock_file) && file_exists($lock_file)) {
-        @unlink($lock_file);
-    }
-});
-
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/fb_api.php';
 require_once __DIR__ . '/../includes/drive_utils.php';
@@ -552,7 +541,7 @@ echo "Bat dau quet bai viet len lich luc: " . date('Y-m-d H:i:s') . "\n";
 // If a previous worker run crashed, posts stay at 'processing' forever.
 // We reset them so they can be retried.
 try {
-    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE) AND (fb_post_id IS NULL OR fb_post_id = '')");
+    $stuck = $pdo->exec("UPDATE scheduled_posts SET status='pending' WHERE status='processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 60 MINUTE) AND (fb_post_id IS NULL OR fb_post_id = '')");
     if ($stuck > 0)
         echo "  [RESET] Reset $stuck bài bị kẹt ở trạng thái 'processing' về 'pending'.\n";
 
@@ -1270,7 +1259,7 @@ if (!empty($user_id_lock)) {
 if ($is_campaign_run && !empty($campaign_id)) {
     // Reset ONLY orphaned processing posts (stuck > 15 mins), NEVER force reset failed posts back to pending
     try {
-        $pdo->prepare("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = ? AND status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 3 MINUTE) AND (fb_post_id IS NULL OR fb_post_id = '')")
+        $pdo->prepare("UPDATE scheduled_posts SET status = 'pending' WHERE campaign_id = ? AND status = 'processing' AND updated_at <= DATE_SUB(NOW(), INTERVAL 60 MINUTE) AND (fb_post_id IS NULL OR fb_post_id = '')")
             ->execute([$campaign_id]);
     } catch (Exception $e) {}
 }
@@ -1668,7 +1657,7 @@ do {
             }
         }
 
-        $yt_title = !empty($content_data['title']) ? mb_substr(clean_markdown($content_data['title']), 0, 98, 'UTF-8') : (!empty($t_title_override) ? mb_substr($t_title_override, 0, 98, 'UTF-8') : 'YouTube Video');
+        $yt_title = !empty($content_data['title']) ? mb_substr(clean_markdown($content_data['title']), 0, 100, 'UTF-8') : (!empty($t_title_override) ? mb_substr($t_title_override, 0, 100, 'UTF-8') : 'YouTube Video');
         $yt_desc = !empty($content_data['description']) ? clean_markdown($content_data['description']) : (!empty($yt_title) ? $yt_title : 'YouTube Video');
         $yt_tags_str = $content_data['tags'] ?? '';
         $yt_tags = sanitize_youtube_tags($yt_tags_str);
@@ -2099,9 +2088,7 @@ do {
             $dest_filename = 'buf_drive_' . $unique_id . '.' . $ext;
             $dest_path = $upload_dir . $dest_filename;
             @copy($temp_res['path'], $dest_path);
-            if (strpos($temp_res['path'], 'gdrive_') === false) {
-                @unlink($temp_res['path']);
-            }
+            @unlink($temp_res['path']);
 
             $zp_cdn = false;
             for ($cdn_retry = 0; $cdn_retry < 5 && !$zp_cdn; $cdn_retry++) {
@@ -2111,6 +2098,7 @@ do {
 
             if ($zp_cdn) {
                 $public_media_url = $zp_cdn;
+                @unlink($dest_path);
             } else {
                 @unlink($dest_path);
                 marKAsFailed($pdo, $post['id'], "Không thể upload tệp video từ Google Drive lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
@@ -2144,9 +2132,7 @@ do {
                 $dest_filename = 'buf_drive_' . $unique_id . '.' . $ext;
                 $dest_path = $upload_dir . $dest_filename;
                 @copy($temp_res['path'], $dest_path);
-                if (strpos($temp_res['path'], 'gdrive_') === false) {
-                    @unlink($temp_res['path']);
-                }
+                @unlink($temp_res['path']);
 
                 $zp_cdn = false;
                 for ($cdn_retry = 0; $cdn_retry < 5 && !$zp_cdn; $cdn_retry++) {
@@ -2156,6 +2142,7 @@ do {
 
                 if ($zp_cdn) {
                     $public_media_url = $zp_cdn;
+                    @unlink($dest_path);
                 } else {
                     @unlink($dest_path);
                     marKAsFailed($pdo, $post['id'], "Không thể upload tệp video Google Drive lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
@@ -2190,6 +2177,7 @@ do {
 
                         if ($zp_cdn) {
                             $public_media_url = $zp_cdn;
+                            @unlink($dest_path);
                         } else {
                             @unlink($dest_path);
                             marKAsFailed($pdo, $post['id'], "Không thể upload tệp video TikTok lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
@@ -2271,10 +2259,6 @@ do {
 
         $is_auto_title = isset($content_data['auto_title']) ? (bool)$content_data['auto_title'] : false;
 
-        if (!empty($t_title_override) && mb_strlen($t_title_override, 'UTF-8') > 1700) {
-            $t_title_override = mb_substr($t_title_override, 0, 1700, 'UTF-8');
-        }
-
         if ($is_auto_title && !empty($t_title_override)) {
             // Checkbox ON: Nếu có mô tả => Tên file + \n\n + Mô tả, nếu mô tả rỗng => Tên file
             $post_text = !empty(trim($post_text)) ? ($t_title_override . "\n\n" . trim($post_text)) : $t_title_override;
@@ -2286,28 +2270,6 @@ do {
         if (isset($content_data['use_ai']) && $content_data['use_ai'] && function_exists('ai_rewrite_content') && !empty($post_text)) {
             $rewritten = ai_rewrite_content($pdo, $post['account_id'], $post_text);
             if (!empty($rewritten)) $post_text = $rewritten;
-        }
-
-        // ⚡ Tự động cắt bớt văn bản bài đăng để tuân thủ giới hạn tối đa (tối đa 1800 ký tự cho Instagram/TikTok/Buffer)
-        $post_type_lower = strtolower($post['post_type']);
-        if (strpos($service, 'instagram') !== false || strpos($post_type_lower, 'instagram') !== false) {
-            if (mb_strlen($post_text, 'UTF-8') > 1800) {
-                $post_text = mb_substr($post_text, 0, 1800, 'UTF-8');
-            }
-        } elseif (strpos($service, 'tiktok') !== false || strpos($post_type_lower, 'tiktok') !== false) {
-            if (mb_strlen($post_text, 'UTF-8') > 1800) {
-                $post_text = mb_substr($post_text, 0, 1800, 'UTF-8');
-            }
-        } elseif ($service === 'twitter' || $service === 'x') {
-            if (mb_strlen($post_text, 'UTF-8') > 280) {
-                $post_text = mb_substr($post_text, 0, 280, 'UTF-8');
-            }
-        } elseif ($service === 'pinterest') {
-            if (mb_strlen($post_text, 'UTF-8') > 500) {
-                $post_text = mb_substr($post_text, 0, 500, 'UTF-8');
-            }
-        } elseif (mb_strlen($post_text, 'UTF-8') > 1800) {
-            $post_text = mb_substr($post_text, 0, 1800, 'UTF-8');
         }
 
         // Gọi Buffer GraphQL API
@@ -2492,18 +2454,10 @@ do {
 
             $yt_category = !empty($content_data['category']) ? (string)$content_data['category'] : '22';
 
-            $yt_type = 'VIDEO';
-            if (isset($content_data['post_mode']) && strtolower($content_data['post_mode']) === 'shorts') {
-                $yt_type = 'SHORTS';
-            } elseif (strpos(strtolower($post['post_type']), 'shorts') !== false) {
-                $yt_type = 'SHORTS';
-            }
-
             $input['metadata'] = [
                 'youtube' => [
                     'title' => $yt_title,
-                    'categoryId' => $yt_category,
-                    'type' => $yt_type
+                    'categoryId' => $yt_category
                 ]
             ];
         }
@@ -2584,23 +2538,6 @@ do {
             ];
         }
 
-        // Đảm bảo tuyệt đối $input['text'] không vượt quá giới hạn của Buffer API trước khi gửi GraphQL
-        if (!empty($input['text'])) {
-            if ($service === 'twitter' || $service === 'x') {
-                if (mb_strlen($input['text'], 'UTF-8') > 280) {
-                    $input['text'] = mb_substr($input['text'], 0, 280, 'UTF-8');
-                }
-            } elseif ($service === 'pinterest') {
-                if (mb_strlen($input['text'], 'UTF-8') > 500) {
-                    $input['text'] = mb_substr($input['text'], 0, 500, 'UTF-8');
-                }
-            } else {
-                if (mb_strlen($input['text'], 'UTF-8') > 1800) {
-                    $input['text'] = mb_substr($input['text'], 0, 1800, 'UTF-8');
-                }
-            }
-        }
-
         $max_buf_retries = 3;
         $create_res = null;
         $res = null;
@@ -2618,29 +2555,6 @@ do {
                 } elseif (stripos($err_msg, 'PostTypeGoogleBusiness') !== false || stripos($err_msg, 'whats_new') !== false) {
                     if (isset($input['metadata']['google'])) {
                         $input['metadata']['google']['type'] = 'WHATS_NEW';
-                        $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
-                        $create_res = $res['data']['createPost'] ?? null;
-                    }
-                } elseif (stripos($err_msg, 'YouTube Shorts') !== false || stripos($err_msg, 'portrait orientation') !== false || stripos($err_msg, 'vertical') !== false) {
-                    if (!isset($input['metadata']['youtube'])) {
-                        $input['metadata']['youtube'] = [
-                            'title' => mb_substr($t_title_override ?: ($post_text ?: 'Video mới'), 0, 98),
-                            'categoryId' => '22'
-                        ];
-                    }
-                    $input['metadata']['youtube']['type'] = 'VIDEO';
-                    $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
-                    $create_res = $res['data']['createPost'] ?? null;
-
-                    if (!isset($create_res['post']['id'])) {
-                        $input['metadata']['youtube']['type'] = 'video';
-                        $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
-                        $create_res = $res['data']['createPost'] ?? null;
-                    }
-                } elseif (stripos($err_msg, 'cannot exceed') !== false || stripos($err_msg, 'characters') !== false) {
-                    // Nếu Buffer API phản hồi lỗi độ dài ký tự (do emojis/surrogate pairs/hashtags), tự động cắt về 1500 ký tự và thử lại ngay lập tức
-                    if (!empty($input['text'])) {
-                        $input['text'] = mb_substr($input['text'], 0, 1500, 'UTF-8');
                         $res = call_buffer_worker_graphql($token, $mutation, ['input' => $input]);
                         $create_res = $res['data']['createPost'] ?? null;
                     }
@@ -2890,9 +2804,6 @@ do {
             }
         }
         $caption = spin_text($caption);
-        if (mb_strlen($caption, 'UTF-8') > 2000) {
-            $caption = mb_substr($caption, 0, 2000, 'UTF-8');
-        }
 
         // 2. Upload TẤT CẢ media (video + ảnh) lên CDN để đảm bảo Instagram tải được (tránh bị treo khi dùng URL server local)
         $video_extensions = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'flv', 'wmv', 'm4v', '3gp'];
@@ -3241,9 +3152,6 @@ do {
 
         if (empty($title)) {
             $title = 'TikTok Video';
-        }
-        if (mb_strlen($title, 'UTF-8') > 2000) {
-            $title = mb_substr($title, 0, 2000, 'UTF-8');
         }
 
         $res = post_tiktok_video_direct($tt_acc['access_token'], $video_url, $title, [
@@ -3728,17 +3636,6 @@ do {
             $v_desc = $post_data['description'] ?? '';
             $video_src = !empty($abs_media_path) ? $abs_media_path : (!empty($public_media_url) ? $public_media_url : ($post['media_path'] ?? ''));
 
-            // ⚡ AUTO-RECOVERY FAILSAFE: Kiểm tra nếu file local/drive bị xóa bởi tiến trình khác, tự động tải lại từ Drive trước khi upload
-            if ($is_drive && !empty($drive_file_id) && (!file_exists($video_src) || filesize($video_src) === 0)) {
-                echo "   ⚠️ File Drive temp bị mất trước khi upload, đang tải lại tự động từ Google Drive...\n";
-                $refetch = download_drive_file_temp($drive_token, $drive_file_id);
-                if (isset($refetch['path']) && file_exists($refetch['path'])) {
-                    $abs_media_path = $refetch['path'];
-                    $video_src = $abs_media_path;
-                    $temp_drive_file = $abs_media_path;
-                }
-            }
-
             $response = fb_upload_video_resumable($post['page_id'], $page_access_token, $video_src, $v_title, $v_desc, $is_reel, $post['id']);
         } else {
             $timeout = 30;
@@ -3884,18 +3781,9 @@ do {
         }
     }
 
-    // Always cleanup temp drive file for this iteration (an toàn đối với file Drive dùng chung cho nhiều fanpage/bài đăng)
+    // Always cleanup temp drive file for this iteration
     if ($temp_drive_file && file_exists($temp_drive_file)) {
-        if (strpos($temp_drive_file, 'gdrive_') !== false) {
-            $fname_clean = basename($temp_drive_file);
-            $check_drv_usage = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing') AND (media_path LIKE ? OR media_path LIKE ?) AND id != ?");
-            $check_drv_usage->execute(['%' . $fname_clean . '%', '%' . ($drive_file_id ?? '---') . '%', $post['id']]);
-            if ((int)$check_drv_usage->fetchColumn() === 0) {
-                @unlink($temp_drive_file);
-            }
-        } else {
-            @unlink($temp_drive_file);
-        }
+        @unlink($temp_drive_file);
     }
 } // Ket thuc vong lap
 } while ($is_campaign_run && !empty($pending_posts));

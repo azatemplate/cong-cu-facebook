@@ -17,7 +17,7 @@ if (!file_exists($settings_flag)) {
         "INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('retry_interval_minutes', '1')",
         "INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_retries', '1')",
         "INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('disable_local_upload', '0')",
-        "INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_publish_workers', '15')",
+        "INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_publish_workers', '30')",
         "INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('max_comment_workers', '15')",
         "ALTER TABLE system_accounts ADD COLUMN telegram_bot_token VARCHAR(255) DEFAULT NULL",
         "ALTER TABLE system_accounts ADD COLUMN telegram_chat_id VARCHAR(100) DEFAULT NULL",
@@ -196,7 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (isset($_POST['update_server_limits']) && $_SESSION['role'] === 'admin') {
-        $max_pub = isset($_POST['max_publish_workers']) ? (int)$_POST['max_publish_workers'] : 15;
+        $max_pub = isset($_POST['max_publish_workers']) ? (int)$_POST['max_publish_workers'] : 30;
         $max_com = isset($_POST['max_comment_workers']) ? (int)$_POST['max_comment_workers'] : 15;
         
         $u_stmt1 = $pdo->prepare("UPDATE system_settings SET setting_value = ? WHERE setting_key = 'max_publish_workers'");
@@ -224,14 +224,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $u_stmt->execute([$saveapi_keys, $saveapi_keys]);
         $alert_type = 'success';
         $alert_message = 'Đã cập nhật danh sách SaveAPI Key hệ thống thành công.';
-    }
-
-    if (isset($_POST['retry_all_failed']) && $_SESSION['role'] === 'admin') {
-        $stmt_retry = $pdo->prepare("UPDATE scheduled_posts SET status = 'pending', retry_count = 0, error_msg = NULL WHERE status IN ('failed', 'checkpoint', 'processing')");
-        $stmt_retry->execute();
-        $affected = $stmt_retry->rowCount();
-        $alert_type = 'success';
-        $alert_message = "Đã chuyển toàn bộ {$affected} bài viết bị lỗi/checkpoint/treo về trạng thái Chờ đăng thành công!";
     }
 
     if (isset($_POST['test_telegram'])) {
@@ -272,7 +264,7 @@ try {
 } catch (Exception $e) {}
 
 // Đọc cấu hình giới hạn tiến trình Server
-$max_publish_workers = '15';
+$max_publish_workers = '30';
 $max_comment_workers = '15';
 try {
     $stmt_limit = $pdo->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('max_publish_workers', 'max_comment_workers')");
@@ -609,19 +601,10 @@ $gg_callback_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "ht
         </div>
     </div>
     <?php if ($is_admin): ?>
-        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-            <a href="diagnostics.php" target="_blank" class="diag-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                Chẩn đoán Cronjob
-            </a>
-            <form method="POST" action="settings.php" style="margin:0;" onsubmit="return confirm('Bạn có chắc chắn muốn thử lại (Retry) cho TOÀN BỘ bài bị lỗi trên hệ thống?');">
-                <?php echo csrf_field(); ?>
-                <button type="submit" name="retry_all_failed" class="diag-btn" style="background: rgba(220, 38, 38, 0.85); border-color: rgba(255, 255, 255, 0.3); cursor: pointer;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                    Retry All Bài Lỗi
-                </button>
-            </form>
-        </div>
+        <a href="diagnostics.php" target="_blank" class="diag-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            Chẩn đoán Cronjob
+        </a>
     <?php endif; ?>
 </div>
 
@@ -978,7 +961,7 @@ if (isset($_SESSION['flash_msg'])) {
             <?php echo csrf_field(); ?>
             <div class="st-form-group">
                 <label class="st-label">Max Publish Workers (Luồng Đăng bài)</label>
-                <div class="st-label-desc">Số luồng đăng bài song song tối đa (Khuyến nghị: 15 đối với VPS 4GB RAM)</div>
+                <div class="st-label-desc">Số luồng đăng bài song song tối đa (Khuyến nghị: 30 đối với VPS 4GB RAM)</div>
                 <div class="st-input-wrapper">
                     <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                     <input type="number" name="max_publish_workers" class="st-input" value="<?php echo htmlspecialchars($max_publish_workers); ?>" min="5">

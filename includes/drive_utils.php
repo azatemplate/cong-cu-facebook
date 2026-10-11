@@ -12,76 +12,27 @@ function get_drive_access_token($pdo, $account_id, $page_id = null) {
         if (empty($client_id) || empty($client_secret) || empty($refresh_token)) {
             return null;
         }
-
-        static $memory_cache = [];
-        $cache_key = md5($client_id . '_' . $refresh_token);
-
-        // 1. Kiểm tra cache trong bộ nhớ (Google OAuth2 Client Pattern)
-        if (isset($memory_cache[$cache_key])) {
-            $cached = $memory_cache[$cache_key];
-            if (!empty($cached['access_token']) && ($cached['expires_at'] - 120) > time()) {
-                return $cached['access_token'];
-            }
-        }
-
-        // 2. Kiểm tra cache trên đĩa cứng đệm (tránh gọi cURL nhiều lần liên tục)
-        $cache_file = sys_get_temp_dir() . '/gg_access_token_' . $cache_key . '.json';
-        if (file_exists($cache_file)) {
-            $json = @file_get_contents($cache_file);
-            $data = json_decode($json, true);
-            if ($data && !empty($data['access_token']) && ($data['expires_at'] - 120) > time()) {
-                $memory_cache[$cache_key] = $data;
-                return $data['access_token'];
-            }
-        }
-
-        // 3. Đổi token mới từ endpoint Google OAuth2 theo chuẩn Google API Client
         $token_url = 'https://oauth2.googleapis.com/token';
         $post_fields = [
-            'client_id'     => $client_id,
+            'client_id' => $client_id,
             'client_secret' => $client_secret,
             'refresh_token' => $refresh_token,
-            'grant_type'    => 'refresh_token'
+            'grant_type' => 'refresh_token'
         ];
 
         $ch = curl_init($token_url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => http_build_query($post_fields),
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_IPRESOLVE      => CURL_IPRESOLVE_V4,
-            CURLOPT_CONNECTTIMEOUT => 5,
-            CURLOPT_TIMEOUT        => 15
-        ]);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post_fields));
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
         $token_response_raw = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
         $token_data = json_decode($token_response_raw, true);
-
-        if ($http_code === 200 && !empty($token_data['access_token'])) {
-            $expires_in = (int)($token_data['expires_in'] ?? 3600);
-            $token_info = [
-                'access_token' => $token_data['access_token'],
-                'expires_at'   => time() + $expires_in
-            ];
-            $memory_cache[$cache_key] = $token_info;
-            @file_put_contents($cache_file, json_encode($token_info));
-            return $token_data['access_token'];
-        }
-
-        // Ghi log chi tiết nếu Google từ chối cấp token (invalid_grant, client_id sai,...)
-        if (isset($token_data['error'])) {
-            $err_desc = $token_data['error_description'] ?? $token_data['error'];
-            @file_put_contents(
-                __DIR__ . '/../webhook_db_errors.txt',
-                date('Y-m-d H:i:s') . " GOOGLE_OAUTH2_REFRESH_ERROR (HTTP {$http_code}): {$err_desc}\n",
-                FILE_APPEND
-            );
-        }
-
-        return null;
+        return $token_data['access_token'] ?? null;
     };
 
     // System default client_id / secret
@@ -198,7 +149,6 @@ function download_drive_file_temp($access_token, $file_id) {
     $cached_files = glob($temp_dir . '/gdrive_' . md5($file_id) . '.*');
     if (!empty($cached_files)) {
         foreach ($cached_files as $cf) {
-            if (substr($cf, -12) === '.downloading' || substr($cf, -4) === '.tmp') continue;
             if (file_exists($cf) && filesize($cf) > 0 && (time() - filemtime($cf)) < 7200) {
                 $c_mb = round(filesize($cf) / 1024 / 1024, 2);
                 $c_name = basename($cf);
@@ -261,12 +211,11 @@ function download_drive_file_temp($access_token, $file_id) {
         }
     }
 
-    // 3. Download nội dung file trực tiếp từ Google CDN (vào file tạm .downloading trước)
-    $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media&supportsAllDrives=true&acknowledgeAbuse=true";
-    $temp_path_final = $temp_dir . '/gdrive_' . md5($file_id) . '.' . $ext;
-    $temp_path_downloading = $temp_path_final . '.downloading';
+    // 3. Download nội dung file trực tiếp từ Google CDN (không qua Proxy)
+    $download_url = "https://www.googleapis.com/drive/v3/files/" . urlencode($file_id) . "?alt=media";
+    $temp_path_with_ext = $temp_dir . '/gdrive_' . md5($file_id) . '.' . $ext;
 
-    $fp = fopen($temp_path_downloading, 'w+');
+    $fp = fopen($temp_path_with_ext, 'w+');
     if ($fp === false) {
         return ['error' => 'Không thể tạo file tạm trên Server.'];
     }
@@ -309,34 +258,21 @@ function download_drive_file_temp($access_token, $file_id) {
     $http_code = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
     $curl_err = curl_error($ch2);
     curl_close($ch2);
-    if (is_resource($fp)) {
-        @fclose($fp);
-    }
-    clearstatcache(true, $temp_path_downloading);
+    fclose($fp);
+    @chmod($temp_path_with_ext, 0644);
 
-    $file_exists = file_exists($temp_path_downloading);
-    $file_size = $file_exists ? filesize($temp_path_downloading) : 0;
-
-    if (!$success || $http_code !== 200 || !$file_exists || $file_size === 0) {
-        if ($file_exists && $file_size === 0 && $http_code === 200) {
-            $err_msg = 'Tệp tải về từ Google Drive có dung lượng 0 byte (HTTP 200). Vui lòng kiểm tra quyền hoặc file trên Drive.';
-        } else {
-            $err_msg = 'Lỗi tải file từ Google Drive (HTTP ' . $http_code . ', CURL: ' . ($curl_err ?: 'Bị ngắt kết nối hoặc dung lượng 0 byte') . ').';
-        }
-        @unlink($temp_path_downloading);
-        return ['error' => $err_msg];
+    if (!$success || $http_code !== 200) {
+        @unlink($temp_path_with_ext);
+        return ['error' => 'Lỗi tải file từ Google Drive (HTTP ' . $http_code . ', CURL: ' . $curl_err . ').'];
     }
 
-    @rename($temp_path_downloading, $temp_path_final);
-    @chmod($temp_path_final, 0644);
-
-    $d_mb = round(filesize($temp_path_final) / 1024 / 1024, 2);
+    $d_mb = round(filesize($temp_path_with_ext) / 1024 / 1024, 2);
     echo "   → Tải xong file '{$file_name}' ({$d_mb} MB) từ Google Drive.\n";
     if (ob_get_level() > 0) @ob_flush();
     @flush();
 
     return [
-        'path' => $temp_path_final,
+        'path' => $temp_path_with_ext,
         'name' => $file_name,
         'mime_type' => $mime_type
     ];
