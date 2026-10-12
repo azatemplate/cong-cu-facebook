@@ -153,6 +153,7 @@ function resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $
 $start_date  = trim($_POST['start_date'] ?? '');
 $end_date    = trim($_POST['end_date'] ?? '');
 $time_slots  = trim($_POST['time_slots'] ?? '');
+$spread_time = isset($_POST['spread_time']) && $_POST['spread_time'] == '1';
 $schedule_dates = [];
 
 if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
@@ -189,9 +190,13 @@ if ($delete_drive_file && !$is_drive_folder) {
 
 // ── Create Campaign ─────────────────────────────────────
 $campaign_id = null;
+$channel_count = count($channel_ids);
 $first_time    = !empty($schedule_dates) ? $schedule_dates[0] : date('Y-m-d H:i:s');
-$total_posts   = !empty($schedule_dates) ? count($schedule_dates) * count($channel_ids) : count($channel_ids);
-$campaign_name = 'YouTube — ' . count($channel_ids) . ' Kênh';
+if ($spread_time && !empty($schedule_dates) && $channel_count > 1) {
+    $first_time = date('Y-m-d H:i:s', strtotime($first_time) - 1800);
+}
+$total_posts   = !empty($schedule_dates) ? count($schedule_dates) * $channel_count : $channel_count;
+$campaign_name = 'YouTube — ' . $channel_count . ' Kênh';
 if (!empty($schedule_dates)) {
     $campaign_name .= ' — ' . date('d/m', strtotime($start_date)) . '→' . date('d/m/Y', strtotime($end_date));
 } else {
@@ -240,8 +245,15 @@ $media_pool_idx = 0;
 
 if (!empty($schedule_dates)) {
     // Scheduled matrix mode
+    $channel_count = count($channel_ids);
     foreach ($schedule_dates as $datetime) {
-        foreach ($channel_ids as $p_id) {
+        $base_ts = strtotime($datetime);
+        foreach ($channel_ids as $p_idx => $p_id) {
+            $post_datetime = $datetime;
+            if ($spread_time && $channel_count > 1) {
+                $sec_offset = (int)round(-1800 + ($p_idx * (3600 / ($channel_count - 1))));
+                $post_datetime = date('Y-m-d H:i:s', $base_ts + $sec_offset);
+            }
             if ($is_drive_folder) {
                 $media_path = $drive_file_ids_str;
                 $t_title = $title_input;
@@ -261,7 +273,7 @@ if (!empty($schedule_dates)) {
                 $content_arr['delete_drive_file'] = 1;
             }
             $content_data = json_encode($content_arr);
-            insert_sp_yt($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $account_id, $p_id, $content_data, $media_path, $datetime);
+            insert_sp_yt($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $account_id, $p_id, $content_data, $media_path, $post_datetime);
             $success_count++;
         }
     }

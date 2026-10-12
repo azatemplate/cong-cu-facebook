@@ -192,6 +192,7 @@ function resolve_media_path_video($media, $auto_title, $title_input, $desc_input
 $start_date  = trim($_POST['start_date'] ?? '');
 $end_date    = trim($_POST['end_date'] ?? '');
 $time_slots  = trim($_POST['time_slots'] ?? '');
+$spread_time = isset($_POST['spread_time']) && $_POST['spread_time'] == '1';
 $schedule_dates = [];
 
 if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
@@ -228,9 +229,13 @@ if ($delete_drive_file && !$is_drive_folder) {
 
 // ── Create Campaign (fault-tolerant) ─────────────────────────────────────
 $campaign_id = null;
+$page_count    = count($page_ids);
+$total_posts   = !empty($schedule_dates) ? count($schedule_dates) * $page_count : $page_count;
 $first_time    = !empty($schedule_dates) ? $schedule_dates[0] : date('Y-m-d H:i:s');
-$total_posts   = !empty($schedule_dates) ? count($schedule_dates) * count($page_ids) : count($page_ids);
-$campaign_name = $post_type . ' — ' . count($page_ids) . ' Pages';
+if ($spread_time && !empty($schedule_dates) && $page_count > 1) {
+    $first_time = date('Y-m-d H:i:s', strtotime($first_time) - 1800);
+}
+$campaign_name = $post_type . ' — ' . $page_count . ' Pages';
 if (!empty($schedule_dates)) {
     $campaign_name .= ' — ' . date('d/m', strtotime($start_date)) . '→' . date('d/m/Y', strtotime($end_date));
 } else {
@@ -301,8 +306,15 @@ try {
 
     if (!empty($schedule_dates)) {
         // Scheduled matrix mode
+        $page_count = count($page_ids);
         foreach ($schedule_dates as $datetime) {
-            foreach ($page_ids as $p_id) {
+            $base_ts = strtotime($datetime);
+            foreach ($page_ids as $p_idx => $p_id) {
+                $post_datetime = $datetime;
+                if ($spread_time && $page_count > 1) {
+                    $sec_offset = (int)round(-1800 + ($p_idx * (3600 / ($page_count - 1))));
+                    $post_datetime = date('Y-m-d H:i:s', $base_ts + $sec_offset);
+                }
                 if ($is_drive_folder) {
                     $media_path = $drive_file_ids_str;
                     $t_title = $title_input;
@@ -321,7 +333,7 @@ try {
                     $content_arr['delete_drive_file'] = 1;
                 }
                 $content_data = json_encode($content_arr);
-                insert_sp($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $comment_mode, $comment_threshold_views, $comment_threshold_likes, $comment_threshold_comments, $has_comment_mode, $account_id, $p_id, $post_type, $content_data, $media_path, $datetime);
+                insert_sp($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $comment_mode, $comment_threshold_views, $comment_threshold_likes, $comment_threshold_comments, $has_comment_mode, $account_id, $p_id, $post_type, $content_data, $media_path, $post_datetime);
                 $success_count++;
             }
         }

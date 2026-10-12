@@ -114,6 +114,7 @@ if (empty($media_pool) && !$is_drive_folder && empty($drive_file_ids_str)) {
 $start_date = trim($_POST['start_date'] ?? '');
 $end_date   = trim($_POST['end_date'] ?? '');
 $time_slots = trim($_POST['time_slots'] ?? '');
+$spread_time = isset($_POST['spread_time']) && $_POST['spread_time'] == '1';
 $schedule_dates = [];
 
 if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
@@ -144,6 +145,9 @@ if (!empty($schedule_dates)) {
 try {
     $camp_stmt = $pdo->prepare("INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time) VALUES (?, ?, ?, ?, ?)");
     $first_time = !empty($schedule_dates) ? $schedule_dates[0] : date('Y-m-d H:i:s');
+    if ($spread_time && !empty($schedule_dates) && count($ig_user_ids) > 1) {
+        $first_time = date('Y-m-d H:i:s', strtotime($first_time) - 1800);
+    }
     $camp_stmt->execute([$account_id, $campaign_name, $post_sub_type, $total_posts, $first_time]);
     $campaign_id = $pdo->lastInsertId();
 } catch (Exception $e) {}
@@ -236,13 +240,20 @@ try {
     $content_data = json_encode($content_arr);
 
     if (!empty($schedule_dates)) {
+        $ig_count = count($ig_user_ids);
         foreach ($schedule_dates as $datetime) {
-            foreach ($ig_user_ids as $ig_id) {
+            $base_ts = strtotime($datetime);
+            foreach ($ig_user_ids as $p_idx => $ig_id) {
+                $post_datetime = $datetime;
+                if ($spread_time && $ig_count > 1) {
+                    $sec_offset = (int)round(-1800 + ($p_idx * (3600 / ($ig_count - 1))));
+                    $post_datetime = date('Y-m-d H:i:s', $base_ts + $sec_offset);
+                }
                 $media_path = resolve_ig_media_path($drive_pool, $media_pool, $drive_file_ids_str, $is_drive_folder, $delete_drive_file, $post_sub_type, $enable_random_images, $random_image_count, $pdo, $account_id);
                 if ($has_extra_cols && $s_stmt_with) {
-                    $s_stmt_with->execute([$account_id, $ig_id, $post_sub_type, $content_data, $media_path, $datetime, $campaign_id, $comment_lines]);
+                    $s_stmt_with->execute([$account_id, $ig_id, $post_sub_type, $content_data, $media_path, $post_datetime, $campaign_id, $comment_lines]);
                 } else {
-                    $s_stmt_without->execute([$account_id, $ig_id, $post_sub_type, $content_data, $media_path, $datetime]);
+                    $s_stmt_without->execute([$account_id, $ig_id, $post_sub_type, $content_data, $media_path, $post_datetime]);
                 }
                 $success_count++;
             }

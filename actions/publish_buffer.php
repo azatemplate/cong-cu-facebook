@@ -40,6 +40,7 @@ $drive_file_ids_str = trim($_POST['drive_file_id'] ?? '');
 $start_date  = trim($_POST['start_date'] ?? '');
 $end_date    = trim($_POST['end_date'] ?? '');
 $time_slots  = trim($_POST['time_slots'] ?? '');
+$spread_time = isset($_POST['spread_time']) && $_POST['spread_time'] == '1';
 
 if (empty($selected_channels) || !is_array($selected_channels)) {
     echo json_encode(['status' => 'error', 'msg' => 'Vui lòng chọn ít nhất 1 kênh Buffer để đăng bài.']);
@@ -266,9 +267,13 @@ if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
 $is_scheduled = !empty($schedule_timestamps);
 
 // ── Create Campaign ───────────────────────────────────────────────────────
+$channel_count = count($channels);
 $first_time    = $is_scheduled ? date('Y-m-d H:i:s', $schedule_timestamps[0]) : date('Y-m-d H:i:s');
-$total_posts   = $is_scheduled ? (count($schedule_timestamps) * count($channels)) : count($channels);
-$campaign_name = 'Buffer API — ' . count($channels) . ' Kênh';
+if ($spread_time && $is_scheduled && $channel_count > 1) {
+    $first_time = date('Y-m-d H:i:s', strtotime($first_time) - 1800);
+}
+$total_posts   = $is_scheduled ? (count($schedule_timestamps) * $channel_count) : $channel_count;
+$campaign_name = 'Buffer API — ' . $channel_count . ' Kênh';
 if ($is_scheduled) {
     $campaign_name .= ' — ' . date('d/m', $schedule_timestamps[0]) . '→' . date('d/m/Y', end($schedule_timestamps));
 } else {
@@ -292,9 +297,15 @@ try {
     if ($is_scheduled) {
         $schedule_index = 0;
         foreach ($schedule_timestamps as $st_time) {
-            $st_datetime = date('Y-m-d H:i:s', $st_time);
+            $base_ts = $st_time;
             
             foreach ($channels as $c_idx => $c) {
+                $post_datetime = date('Y-m-d H:i:s', $base_ts);
+                if ($spread_time && $channel_count > 1) {
+                    $sec_offset = (int)round(-1800 + ($c_idx * (3600 / ($channel_count - 1))));
+                    $post_datetime = date('Y-m-d H:i:s', $base_ts + $sec_offset);
+                }
+
                 $media_item = !empty($media_pool) ? $media_pool[($schedule_index + $c_idx) % count($media_pool)] : null;
                 $media_path_str = resolve_buffer_media_path($media_item, $pdo, $account_id);
 
@@ -325,7 +336,7 @@ try {
                     'Buffer (' . ucfirst($c['service']) . ')',
                     json_encode($content_arr),
                     $media_path_str,
-                    $st_datetime,
+                    $post_datetime,
                     $campaign_id
                 ]);
                 $success_count++;

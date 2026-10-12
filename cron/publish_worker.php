@@ -2098,7 +2098,6 @@ do {
 
             if ($zp_cdn) {
                 $public_media_url = $zp_cdn;
-                @unlink($dest_path);
             } else {
                 @unlink($dest_path);
                 marKAsFailed($pdo, $post['id'], "Không thể upload tệp video từ Google Drive lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
@@ -2142,7 +2141,6 @@ do {
 
                 if ($zp_cdn) {
                     $public_media_url = $zp_cdn;
-                    @unlink($dest_path);
                 } else {
                     @unlink($dest_path);
                     marKAsFailed($pdo, $post['id'], "Không thể upload tệp video Google Drive lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);
@@ -2177,7 +2175,6 @@ do {
 
                         if ($zp_cdn) {
                             $public_media_url = $zp_cdn;
-                            @unlink($dest_path);
                         } else {
                             @unlink($dest_path);
                             marKAsFailed($pdo, $post['id'], "Không thể upload tệp video TikTok lên CDN data.hongdolab.com.", $sys_max_retries, $sys_retry_interval);

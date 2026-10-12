@@ -86,43 +86,6 @@ foreach ($temp_dirs as $tdir) {
 }
 echo "  -> Đã xóa: {$stats['temp_files']} files trong temp/, {$stats['uploads_tmp']} files trong uploads/tmp/\n";
 
-// Dọn dẹp các file rác mồ côi trực tiếp trong thư mục uploads/ (buf_drive_*, vid_*,...)
-$uploads_dir = $root_dir . '/uploads';
-$uploads_junk_count = 0;
-if (is_dir($uploads_dir)) {
-    $upload_files = glob($uploads_dir . '/*');
-    if ($upload_files) {
-        foreach ($upload_files as $f) {
-            if (!is_file($f)) continue;
-            $fname = basename($f);
-            $mtime = filemtime($f);
-
-            // 1. File buf_drive_* và buf_tiktok_*: 100% là file trung gian đẩy CDN Buffer, chỉ cần > 5 phút là xóa ngay
-            if ((strpos($fname, 'buf_drive_') === 0 || strpos($fname, 'buf_tiktok_') === 0) && $mtime < $cutoff_5m) {
-                if (@unlink($f)) {
-                    $uploads_junk_count++;
-                }
-                continue;
-            }
-
-            // 2. File video local vid_*.mp4 hoặc ig_vid_*.mp4:
-            // Nếu file cũ > 1 giờ và không còn bài viết nào (pending hoặc processing) cần dùng tới nó -> Xóa!
-            if (preg_match('/^(vid_|ig_vid_).*\.(mp4|mov|avi|mkv|webm)$/i', $fname) && $mtime < (time() - 3600)) {
-                try {
-                    $chk = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing') AND media_path LIKE ?");
-                    $chk->execute(['%' . $fname . '%']);
-                    if ((int)$chk->fetchColumn() === 0) {
-                        if (@unlink($f)) {
-                            $uploads_junk_count++;
-                        }
-                    }
-                } catch (Exception $e) {}
-            }
-        }
-    }
-}
-echo "  -> Đã xóa: {$uploads_junk_count} files video rác (buf_drive_*, vid_*) trong uploads/\n";
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // PHẦN 2: THU HẸP FILE LOG PHÌNH TO (> 10MB)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -254,23 +217,6 @@ try {
     echo "  -> Đã xóa: {$cnt_fail} rows (failed)\n";
 } catch (Exception $e) {
     echo "  [LỖI] Delete failed: " . $e->getMessage() . "\n";
-}
-
-// ── STEP 5B: Xóa bài lỗi quá hạn ngày cũ (không đụng vào bài của ngày hôm nay hoặc bài chờ)
-echo "\n[STEP 5B] Dọn dẹp bài lỗi quá hạn ngày cũ...\n";
-try {
-    // Chỉ dọn các bài failed đã hết retry của các ngày trước (< CURDATE())
-    $del_past_stmt = $pdo->exec("
-        DELETE FROM scheduled_posts 
-        WHERE status = 'failed'
-          AND retry_count >= 3
-          AND scheduled_time < CURDATE()
-    ");
-    $cnt_past = (int)$del_past_stmt;
-    $stats['scheduled_posts'] += $cnt_past;
-    echo "  -> Đã dọn dẹp: {$cnt_past} bài lỗi ngày cũ\n";
-} catch (Exception $e) {
-    echo "  [LỖI] Dọn dẹp bài lỗi ngày cũ: " . $e->getMessage() . "\n";
 }
 
 // ── Xóa post_campaigns trống (không còn bài nào)

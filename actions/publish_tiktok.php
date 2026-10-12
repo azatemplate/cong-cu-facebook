@@ -168,6 +168,7 @@ if (empty($media_pool)) {
 $start_date  = trim($_POST['start_date'] ?? '');
 $end_date    = trim($_POST['end_date'] ?? '');
 $time_slots  = trim($_POST['time_slots'] ?? '');
+$spread_time = isset($_POST['spread_time']) && $_POST['spread_time'] == '1';
 $schedule_dates = [];
 
 if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
@@ -191,6 +192,9 @@ if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
 $campaign_id = null;
 $first_time  = !empty($schedule_dates) ? $schedule_dates[0] : date('Y-m-d H:i:s');
 $acc_count   = count($valid_accounts);
+if ($spread_time && !empty($schedule_dates) && $acc_count > 1) {
+    $first_time = date('Y-m-d H:i:s', strtotime($first_time) - 1800);
+}
 $first_acc   = $valid_accounts[0];
 
 $total_posts = !empty($schedule_dates) 
@@ -247,7 +251,13 @@ try {
         // Scheduled matrix mode
         $idx = 0;
         foreach ($schedule_dates as $datetime) {
-            foreach ($valid_accounts as $tt_acc) {
+            $base_ts = strtotime($datetime);
+            foreach ($valid_accounts as $idx_acc => $tt_acc) {
+                $post_datetime = $datetime;
+                if ($spread_time && $acc_count > 1) {
+                    $sec_offset = (int)round(-1800 + ($idx_acc * (3600 / ($acc_count - 1))));
+                    $post_datetime = date('Y-m-d H:i:s', $base_ts + $sec_offset);
+                }
                 if ($is_drive_folder) {
                     $media_path = $drive_file_ids_str;
                     $post_title = $title_input;
@@ -285,7 +295,7 @@ try {
                 ];
                 $content_data = json_encode($content_arr);
 
-                insert_sp_tiktok_item($stmt_insert_with, $stmt_insert_without, $campaign_id, $account_id, $tt_acc['id'], $content_data, $media_path, $datetime);
+                insert_sp_tiktok_item($stmt_insert_with, $stmt_insert_without, $campaign_id, $account_id, $tt_acc['id'], $content_data, $media_path, $post_datetime);
                 $success_count++;
             }
             $idx++;

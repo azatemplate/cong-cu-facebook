@@ -86,6 +86,7 @@ if (empty($media_pool) && !$is_drive_folder) {
 $start_date = trim($_POST['start_date'] ?? '');
 $end_date   = trim($_POST['end_date'] ?? '');
 $time_slots = trim($_POST['time_slots'] ?? '');
+$spread_time = isset($_POST['spread_time']) && $_POST['spread_time'] == '1';
 $schedule_dates = [];
 
 if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
@@ -147,9 +148,13 @@ function resolve_story_media($media) {
 
 // ── Create Campaign (fault-tolerant) ─────────────────────────────────────
 $campaign_id = null;
+$page_count    = count($page_ids);
 $first_time    = !empty($schedule_dates) ? $schedule_dates[0] : date('Y-m-d H:i:s');
-$total_posts   = !empty($schedule_dates) ? count($schedule_dates) * count($page_ids) : count($page_ids);
-$campaign_name = 'Story — ' . count($page_ids) . ' Pages';
+if ($spread_time && !empty($schedule_dates) && $page_count > 1) {
+    $first_time = date('Y-m-d H:i:s', strtotime($first_time) - 1800);
+}
+$total_posts   = !empty($schedule_dates) ? count($schedule_dates) * $page_count : $page_count;
+$campaign_name = 'Story — ' . $page_count . ' Pages';
 if (!empty($schedule_dates)) {
     $campaign_name .= ' — ' . date('d/m', strtotime($start_date)) . '→' . date('d/m/Y', strtotime($end_date));
 } else {
@@ -198,8 +203,15 @@ $dates_to_use   = !empty($schedule_dates) ? $schedule_dates : [date('Y-m-d H:i:s
 
 try {
     $pdo->beginTransaction();
+    $page_count = count($page_ids);
     foreach ($dates_to_use as $datetime) {
-        foreach ($page_ids as $p_id) {
+        $base_ts = strtotime($datetime);
+        foreach ($page_ids as $p_idx => $p_id) {
+            $post_datetime = $datetime;
+            if ($spread_time && !empty($schedule_dates) && $page_count > 1) {
+                $sec_offset = (int)round(-1800 + ($p_idx * (3600 / ($page_count - 1))));
+                $post_datetime = date('Y-m-d H:i:s', $base_ts + $sec_offset);
+            }
             if ($is_drive_folder) {
                 $media_path = $drive_file_ids_str;
                 $post_type = 'Story';
@@ -219,9 +231,9 @@ try {
             $content_payload = !empty($payload_arr) ? json_encode($payload_arr) : 'Story';
             
             if ($campaign_id !== null && $s_stmt_with !== null) {
-                $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_payload, $media_path, $datetime, $campaign_id, $comment_lines]);
+                $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_payload, $media_path, $post_datetime, $campaign_id, $comment_lines]);
             } else {
-                $s_stmt_without->execute([$account_id, $p_id, $post_type, $content_payload, $media_path, $datetime]);
+                $s_stmt_without->execute([$account_id, $p_id, $post_type, $content_payload, $media_path, $post_datetime]);
             }
             $success_count++;
         }

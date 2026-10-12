@@ -109,6 +109,7 @@ $content_data = json_encode($content_data_arr);
 $start_date  = trim($_POST['start_date'] ?? '');
 $end_date    = trim($_POST['end_date'] ?? '');
 $time_slots  = trim($_POST['time_slots'] ?? '');
+$spread_time = isset($_POST['spread_time']) && $_POST['spread_time'] == '1';
 $schedule_dates = [];
 
 if (!empty($start_date) && !empty($end_date) && !empty($time_slots)) {
@@ -171,6 +172,9 @@ if (!empty($schedule_dates)) {
 
 try {
     $first_time = !empty($schedule_dates) ? $schedule_dates[0] : $scheduled_time;
+    if ($spread_time && !empty($schedule_dates) && $page_count > 1) {
+        $first_time = date('Y-m-d H:i:s', strtotime($first_time) - 1800);
+    }
     try {
         $camp_stmt = $pdo->prepare("INSERT INTO post_campaigns (account_id, name, post_type, total_posts, scheduled_time, group_id) VALUES (?, ?, ?, ?, ?, ?)");
         $camp_stmt->execute([$account_id, $campaign_name, $post_type, $total_posts, $first_time, $group_id]);
@@ -264,8 +268,15 @@ try {
 
     if (!empty($schedule_dates)) {
         // Scheduled matrix mode (giống reels.php)
+        $page_count = count($page_ids);
         foreach ($schedule_dates as $datetime) {
-            foreach ($page_ids as $p_id) {
+            $base_ts = strtotime($datetime);
+            foreach ($page_ids as $p_idx => $p_id) {
+                $post_datetime = $datetime;
+                if ($spread_time && $page_count > 1) {
+                    $sec_offset = (int)round(-1800 + ($p_idx * (3600 / ($page_count - 1))));
+                    $post_datetime = date('Y-m-d H:i:s', $base_ts + $sec_offset);
+                }
                 if ($is_drive_folder) {
                     $media_path = $drive_file_ids_str;
                 } else if ($delete_drive_file) {
@@ -279,9 +290,9 @@ try {
                     $media_path = build_media_path_shuffled($media_pool, $saved_local_files, $enable_random_images, $random_image_count);
                 }
                 if ($campaign_id !== null && $s_stmt_with !== null) {
-                    $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $datetime, $campaign_id, $comment_lines]);
+                    $s_stmt_with->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $post_datetime, $campaign_id, $comment_lines]);
                 } else {
-                    $s_stmt_without->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $datetime]);
+                    $s_stmt_without->execute([$account_id, $p_id, $post_type, $content_data, $media_path, $post_datetime]);
                 }
                 $success_count++;
             }
