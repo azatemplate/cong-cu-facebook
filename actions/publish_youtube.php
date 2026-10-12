@@ -24,13 +24,27 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+// Check for empty $_POST due to post_max_size overflow
+if (empty($_POST) && isset($_SERVER['CONTENT_LENGTH']) && (int)$_SERVER['CONTENT_LENGTH'] > 0) {
+    echo json_encode([
+        'status' => 'error',
+        'msg' => 'Dung lượng file tải lên vượt quá giới hạn POST của máy chủ. Vui lòng tải file qua Google Drive.'
+    ]);
+    exit;
+}
+
 $account_id = $_SESSION['account_id'];
 
 // Xác định kênh
 $channel_ids = [];
-if (isset($_POST['youtube_channel_ids']) && is_array($_POST['youtube_channel_ids'])) {
-    $channel_ids = $_POST['youtube_channel_ids'];
+if (isset($_POST['youtube_channel_ids'])) {
+    if (is_array($_POST['youtube_channel_ids'])) {
+        $channel_ids = $_POST['youtube_channel_ids'];
+    } elseif (is_string($_POST['youtube_channel_ids'])) {
+        $channel_ids = explode(',', $_POST['youtube_channel_ids']);
+    }
 }
+$channel_ids = array_values(array_filter(array_map('trim', $channel_ids)));
 
 if (empty($channel_ids)) {
     echo json_encode(['status' => 'error', 'msg' => 'Vui lòng chọn Kênh YouTube.']);
