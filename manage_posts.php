@@ -88,7 +88,7 @@ if (isset($_GET['action'])) {
             $pdo->prepare("DELETE FROM post_campaigns WHERE id = ? AND account_id = ?")->execute([$id, $_s_account_id]);
         } elseif ($act === 'retry_campaign' && $id > 0) {
             $p = [$id, $_s_account_id];
-            $pdo->prepare("UPDATE scheduled_posts SET status='pending', retry_count=0, error_msg=NULL WHERE campaign_id = ? AND status IN ('failed', 'checkpoint') $auth")->execute($p);
+            $pdo->prepare("UPDATE scheduled_posts SET status='pending', retry_count=0, error_msg=NULL WHERE campaign_id = ? AND status IN ('failed', 'checkpoint', 'processing') $auth")->execute($p);
         }
     } catch (PDOException $e) {}
 
@@ -726,10 +726,10 @@ function updateCampaignRow(id, st) {
 
     // Actions
     let actionsHtml = '';
-    if (fail > 0 || check > 0) {
-        actionsHtml += '<button onclick="showConfirmModal(\'retry\', ' + id + ', \'Thử lại tất cả bài lỗi trong chiến dịch này?\')" class="btn-mp-secondary" style="padding:6px 12px; font-size:12.5px; color:#059669; border-color:#a7f3d0; background:#ecfdf5;">Retry</button>';
+    if (fail > 0 || check > 0 || proc > 0) {
+        actionsHtml += '<button onclick="showConfirmModal(\'retry\', ' + id + ', \'Thử lại tất cả bài kẹt/lỗi trong chiến dịch này?\')" class="btn-mp-secondary" style="padding:6px 12px; font-size:12.5px; color:#059669; border-color:#a7f3d0; background:#ecfdf5;">Retry</button>';
     }
-    if (pend > 0 || fail > 0 || check > 0) {
+    if (pend > 0 || proc > 0 || fail > 0 || check > 0) {
         actionsHtml += '<button onclick="showConfirmModal(\'delete\', ' + id + ', \'Xóa toàn bộ bài chưa hoàn tất trong chiến dịch này?\')" class="btn-mp-danger" style="padding:6px 12px; font-size:12.5px;">Xóa</button>';
     }
     if (totalReal === 0) {
