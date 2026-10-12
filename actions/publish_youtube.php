@@ -40,6 +40,8 @@ if (empty($channel_ids)) {
 $title_input     = clean_markdown(trim($_POST['title'] ?? ''));
 $desc_input      = clean_markdown(trim($_POST['description'] ?? ''));
 $tags_input      = implode(', ', sanitize_youtube_tags($_POST['tags'] ?? ''));
+$privacy_status  = in_array($_POST['privacy_status'] ?? '', ['public', 'unlisted', 'private']) ? $_POST['privacy_status'] : 'public';
+$category_id     = !empty($_POST['category_id']) ? trim($_POST['category_id']) : '22';
 $use_ai          = isset($_POST['use_ai']) && $_POST['use_ai'] == '1';
 $auto_title      = isset($_POST['auto_title']) && $_POST['auto_title'] == '1';
 $data_group_id   = intval($_POST['data_group_id'] ?? ($_REQUEST['data_group_id'] ?? 0));
@@ -84,31 +86,39 @@ if (!empty($drive_file_ids_str) && !$is_drive_folder) {
     }
 }
 
+$upload_dir = __DIR__ . '/../uploads/';
+if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
+
 if (isset($_FILES['video']) && is_array($_FILES['video']['name'])) {
     for ($i = 0; $i < count($_FILES['video']['name']); $i++) {
         if ($_FILES['video']['error'][$i] === UPLOAD_ERR_OK) {
-            $media_pool[] = [
-                'type'     => 'local',
-                'tmp_name' => $_FILES['video']['tmp_name'][$i],
-                'name'     => $_FILES['video']['name'][$i]
-            ];
+            $ext = pathinfo($_FILES['video']['name'][$i], PATHINFO_EXTENSION) ?: 'mp4';
+            $filename = uniqid('yt_') . '.' . $ext;
+            if (move_uploaded_file($_FILES['video']['tmp_name'][$i], $upload_dir . $filename)) {
+                $media_pool[] = [
+                    'type'     => 'local_saved',
+                    'path'     => 'uploads/' . $filename,
+                    'name'     => $_FILES['video']['name'][$i]
+                ];
+            }
         }
     }
 } elseif (empty($media_pool) && isset($_FILES['video']) && !is_array($_FILES['video']['name']) && $_FILES['video']['error'] === UPLOAD_ERR_OK) {
-    $media_pool[] = [
-        'type'     => 'local',
-        'tmp_name' => $_FILES['video']['tmp_name'],
-        'name'     => $_FILES['video']['name']
-    ];
+    $ext = pathinfo($_FILES['video']['name'], PATHINFO_EXTENSION) ?: 'mp4';
+    $filename = uniqid('yt_') . '.' . $ext;
+    if (move_uploaded_file($_FILES['video']['tmp_name'], $upload_dir . $filename)) {
+        $media_pool[] = [
+            'type'     => 'local_saved',
+            'path'     => 'uploads/' . $filename,
+            'name'     => $_FILES['video']['name']
+        ];
+    }
 }
 
 if (empty($media_pool) && !$is_drive_folder) {
     echo json_encode(['status' => 'error', 'msg' => 'Vui lòng cung cấp ít nhất 1 Video (TikTok, Drive hoặc Tải lên).']);
     exit;
 }
-
-$upload_dir = __DIR__ . '/../uploads/';
-if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
 
 function resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input, $pdo = null, $account_id = 0) {
     $t_title = $title_input;
@@ -133,6 +143,14 @@ function resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $
         if ($auto_title && empty($t_title)) { 
             $t_title = $media['title']; 
             $t_desc = $media['title'] . ($desc_input ? "\n\n" . $desc_input : ''); 
+        }
+    } elseif ($media['type'] === 'local_saved') {
+        $media_path = $media['path'];
+        $original_source = $media['name'];
+        if ($auto_title && empty($t_title)) {
+            $fn_no_ext = pathinfo($media['name'], PATHINFO_FILENAME);
+            $t_title   = $fn_no_ext;
+            $t_desc    = $fn_no_ext . ($desc_input ? "\n\n" . $desc_input : '');
         }
     } elseif ($media['type'] === 'local') {
         $ext        = pathinfo($media['name'], PATHINFO_EXTENSION) ?: 'mp4';
@@ -268,7 +286,16 @@ if (!empty($schedule_dates)) {
                 }
                 [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input, $pdo, $account_id);
             }
-            $content_arr = ['description' => $t_desc, 'title' => $t_title, 'tags' => $tags_input, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source];
+            $content_arr = [
+                'description'    => $t_desc,
+                'title'          => $t_title,
+                'tags'           => $tags_input,
+                'privacy_status' => $privacy_status,
+                'category_id'    => $category_id,
+                'auto_title'     => $auto_title,
+                'use_ai'         => $use_ai,
+                'original_source'=> $original_source
+            ];
             if ($delete_drive_file) {
                 $content_arr['delete_drive_file'] = 1;
             }
@@ -296,7 +323,16 @@ if (!empty($schedule_dates)) {
             }
             [$media_path, $t_title, $t_desc, $original_source] = resolve_media_path_yt($media, $upload_dir, $auto_title, $title_input, $desc_input, $pdo, $account_id);
         }
-        $content_arr = ['description' => $t_desc, 'title' => $t_title, 'tags' => $tags_input, 'auto_title' => $auto_title, 'use_ai' => $use_ai, 'original_source' => $original_source];
+        $content_arr = [
+            'description'    => $t_desc,
+            'title'          => $t_title,
+            'tags'           => $tags_input,
+            'privacy_status' => $privacy_status,
+            'category_id'    => $category_id,
+            'auto_title'     => $auto_title,
+            'use_ai'         => $use_ai,
+            'original_source'=> $original_source
+        ];
         if ($delete_drive_file) {
             $content_arr['delete_drive_file'] = 1;
         }

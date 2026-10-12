@@ -1662,16 +1662,19 @@ do {
         $yt_tags_str = $content_data['tags'] ?? '';
         $yt_tags = sanitize_youtube_tags($yt_tags_str);
 
+        $yt_privacy = in_array($content_data['privacy_status'] ?? '', ['public', 'unlisted', 'private']) ? $content_data['privacy_status'] : 'public';
+        $yt_cat_id  = !empty($content_data['category_id']) ? (string)$content_data['category_id'] : '22';
+
         $metadata = [
             "snippet" => [
                 "title" => $yt_title,
                 "description" => $yt_desc,
-                "categoryId" => "26",
+                "categoryId" => $yt_cat_id,
                 "defaultLanguage" => "vi",
                 "defaultAudioLanguage" => "vi"
             ],
             "status" => [
-                "privacyStatus" => "public",
+                "privacyStatus" => $yt_privacy,
                 "license" => "youtube",
                 "embeddable" => true,
                 "publicStatsViewable" => true,
@@ -1776,7 +1779,15 @@ do {
             if ($temp_drive_file && file_exists($temp_drive_file))
                 @unlink($temp_drive_file);
             if (!$is_drive && !$is_tiktok && file_exists($abs_media_path) && strpos($abs_media_path, 'uploads/') !== false) {
-                @unlink($abs_media_path);
+                try {
+                    $chk_rem = $pdo->prepare("SELECT COUNT(*) FROM scheduled_posts WHERE status IN ('pending', 'processing', 'failed') AND media_path = ? AND id != ?");
+                    $chk_rem->execute([$post['media_path'], $post['id']]);
+                    if ($chk_rem->fetchColumn() == 0) {
+                        @unlink($abs_media_path);
+                    }
+                } catch (Exception $e) {
+                    @unlink($abs_media_path);
+                }
             }
 
             // Đánh dấu thành công
@@ -1849,7 +1860,7 @@ do {
             } catch (Exception $e) {
             }
 
-            echo " -> Đăng Video YouTube thành công! Video ID: $video_id\n";
+            echo " -> Đăng Video YouTube thành công! Video ID: $video_id (Link: https://youtu.be/$video_id)\n";
         } else {
             $err_data = json_decode($upload_response, true);
             $err_msg = $err_data['error']['message'] ?? $upload_response;
