@@ -339,9 +339,29 @@ if ($action === 'list_files') {
 
 } else if ($action === 'upload') {
     if (empty($_FILES)) {
+        if (isset($_SERVER['CONTENT_LENGTH']) && (int)$_SERVER['CONTENT_LENGTH'] > 0) {
+            $len_mb = round((int)$_SERVER['CONTENT_LENGTH'] / (1024 * 1024), 1);
+            $ini_post = ini_get('post_max_size');
+            $ini_upload = ini_get('upload_max_filesize');
+            echo json_encode([
+                'status' => 'error',
+                'msg' => "Dung lượng tệp ({$len_mb}MB) vượt quá giới hạn POST của máy chủ (post_max_size: {$ini_post}, upload_max_filesize: {$ini_upload}). Vui lòng tăng giới hạn PHP hoặc tải trực tiếp vào Google Drive."
+            ]);
+            exit;
+        }
         echo json_encode(['status' => 'error', 'msg' => 'Không tìm thấy tệp để tải lên.']);
         exit;
     }
+
+    $upload_errors = [
+        UPLOAD_ERR_INI_SIZE   => 'Dung lượng tệp vượt quá upload_max_filesize (' . ini_get('upload_max_filesize') . ') trong PHP.',
+        UPLOAD_ERR_FORM_SIZE  => 'Dung lượng tệp vượt quá giới hạn form cho phép.',
+        UPLOAD_ERR_PARTIAL    => 'Tệp chỉ mới được tải lên một phần (đứt kết nối mạng).',
+        UPLOAD_ERR_NO_FILE    => 'Không tìm thấy tệp để tải lên.',
+        UPLOAD_ERR_NO_TMP_DIR => 'Máy chủ thiếu thư mục tạm (tmp) để lưu tệp tải lên.',
+        UPLOAD_ERR_CANT_WRITE => 'Không thể ghi tệp tạm vào ổ đĩa máy chủ (đầy dung lượng hoặc thiếu quyền ghi).',
+        UPLOAD_ERR_EXTENSION  => 'Tiện ích mở rộng PHP đã chặn tệp tải lên.',
+    ];
 
     $uploaded_files = [];
     $file_key = key($_FILES);
@@ -358,7 +378,7 @@ if ($action === 'list_files') {
     }
 
     if (!$tok) {
-        echo json_encode(['status' => 'error', 'msg' => 'Không thể kết nối Google Drive API.']);
+        echo json_encode(['status' => 'error', 'msg' => 'Không thể kết nối Google Drive API. Vui lòng kiểm tra lại cấu hình Google Drive trong Cài đặt.']);
         exit;
     }
 
@@ -372,32 +392,16 @@ if ($action === 'list_files') {
     if (is_array($files['name'])) {
         $count = count($files['name']);
         for ($i = 0; $i < $count; $i++) {
-            if ($files['error'][$i] === UPLOAD_ERR_OK) {
-                $tmp_name = $files['tmp_name'][$i];
-                $name = $files['name'][$i];
-                $type = detect_mime_type($tmp_name, $name, $files['type'][$i]);
-                
-                $result = upload_file_to_drive_resumable($tok, $tmp_name, $name, $type, $folder_id);
-                if (isset($result['error'])) {
-                    echo json_encode(['status' => 'error', 'msg' => 'Lỗi tải lên Google Drive: ' . $result['msg']]);
-                    exit;
-                }
-                
-                if (!empty($result['id'])) {
-                    make_drive_file_public($tok, $result['id']);
-                }
-
-                $uploaded_files[] = [
-                    'id' => $result['id'],
-                    'name' => $name
-                ];
+            $err = $files['error'][$i];
+            if ($err !== UPLOAD_ERR_OK) {
+                $err_desc = $upload_errors[$err] ?? "Mã lỗi: $err";
+                echo json_encode(['status' => 'error', 'msg' => "Lỗi tải tệp {$files['name'][$i]}: $err_desc"]);
+                exit;
             }
-        }
-    } else {
-        if ($files['error'] === UPLOAD_ERR_OK) {
-            $tmp_name = $files['tmp_name'];
-            $name = $files['name'];
-            $type = detect_mime_type($tmp_name, $name, $files['type']);
+
+            $tmp_name = $files['tmp_name'][$i];
+            $name = $files['name'][$i];
+            $type = detect_mime_type($tmp_name, $name, $files['type'][$i]);
             
             $result = upload_file_to_drive_resumable($tok, $tmp_name, $name, $type, $folder_id);
             if (isset($result['error'])) {
@@ -414,6 +418,32 @@ if ($action === 'list_files') {
                 'name' => $name
             ];
         }
+    } else {
+        $err = $files['error'];
+        if ($err !== UPLOAD_ERR_OK) {
+            $err_desc = $upload_errors[$err] ?? "Mã lỗi: $err";
+            echo json_encode(['status' => 'error', 'msg' => "Lỗi tải tệp {$files['name']}: $err_desc"]);
+            exit;
+        }
+
+        $tmp_name = $files['tmp_name'];
+        $name = $files['name'];
+        $type = detect_mime_type($tmp_name, $name, $files['type']);
+        
+        $result = upload_file_to_drive_resumable($tok, $tmp_name, $name, $type, $folder_id);
+        if (isset($result['error'])) {
+            echo json_encode(['status' => 'error', 'msg' => 'Lỗi tải lên Google Drive: ' . $result['msg']]);
+            exit;
+        }
+        
+        if (!empty($result['id'])) {
+            make_drive_file_public($tok, $result['id']);
+        }
+
+        $uploaded_files[] = [
+            'id' => $result['id'],
+            'name' => $name
+        ];
     }
 
     if (empty($uploaded_files)) {

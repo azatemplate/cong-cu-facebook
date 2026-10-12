@@ -26,9 +26,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // Check for empty $_POST due to post_max_size overflow
 if (empty($_POST) && isset($_SERVER['CONTENT_LENGTH']) && (int)$_SERVER['CONTENT_LENGTH'] > 0) {
+    $len_mb = round((int)$_SERVER['CONTENT_LENGTH'] / (1024 * 1024), 1);
+    $ini_post = ini_get('post_max_size');
     echo json_encode([
         'status' => 'error',
-        'msg' => 'Dung lượng file tải lên vượt quá giới hạn POST của máy chủ. Vui lòng tải file qua Google Drive.'
+        'msg' => "Dung lượng tệp ({$len_mb}MB) vượt quá giới hạn POST của máy chủ (post_max_size: {$ini_post}). Vui lòng tải file qua Google Drive hoặc tăng giới hạn PHP."
     ]);
     exit;
 }

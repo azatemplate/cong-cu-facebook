@@ -804,12 +804,12 @@ if (!empty($display_flash)):
                 .then(async response => {
                     const text = await response.text();
                     if (!response.ok) {
-                        throw new Error(`Mạng hoặc máy chủ gặp sự cố khi tải file ${file.name} (HTTP ${response.status}): ${text}`);
+                        throw new Error(`Sự cố khi tải file ${file.name} (HTTP ${response.status}): ${text}`);
                     }
                     try {
                         return JSON.parse(text);
                     } catch (e) {
-                        throw new Error(`Lỗi phản hồi từ server (không phải JSON): ${text.substring(0, 500)}`);
+                        throw new Error(`Lỗi phản hồi từ server: ${text.substring(0, 300)}`);
                     }
                 })
                 .then(data => {
@@ -817,11 +817,18 @@ if (!empty($display_flash)):
                         uploadedResults.push(...data.files);
                         uploadNext(index + 1);
                     } else {
-                        throw new Error(data.msg || `Không thể tải file ${file.name} lên Google Drive. Vui lòng kiểm tra lại kết nối Google Drive.`);
+                        if (progressCallback) {
+                            progressCallback(`⚠️ Drive bận khi tải ${file.name} (${data.msg || 'Không rõ'}). Tự động chuyển sang tải trực tiếp từ máy...`);
+                        }
+                        uploadNext(index + 1);
                     }
                 })
                 .catch(error => {
-                    reject(error);
+                    console.warn(`Drive upload error/timeout for ${file.name}:`, error);
+                    if (progressCallback) {
+                        progressCallback(`⚠️ Timeout kết nối Drive khi tải ${file.name}. Chuyển sang tải trực tiếp từ máy...`);
+                    }
+                    uploadNext(index + 1);
                 });
             }
 
