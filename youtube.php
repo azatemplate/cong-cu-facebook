@@ -773,8 +773,58 @@ if (!empty($display_flash)):
     const youtubeResult = document.getElementById('youtubeResult');
     const localStatus = document.getElementById('localUploadStatus');
 
+    async function uploadSingleFileChunked(file, progressCallback) {
+        const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB mỗi chunk (hoàn toàn tránh mọi giới hạn 8M/20M/50M của PHP/Nginx)
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        const uploadId = 'up_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+
+        for (let i = 0; i < totalChunks; i++) {
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(file.size, start + CHUNK_SIZE);
+            const chunkBlob = file.slice(start, end);
+
+            const percent = Math.round(((i + 1) / totalChunks) * 100);
+            if (progressCallback) {
+                if (i + 1 === totalChunks) {
+                    progressCallback(`⏳ Đang hoàn tất lưu ${file.name} vào Google Drive (100%)...`);
+                } else {
+                    progressCallback(`⏳ Đang tải ${file.name} lên Google Drive: ${percent}% (phần ${i + 1}/${totalChunks})...`);
+                }
+            }
+
+            const formData = new FormData();
+            formData.append('upload_id', uploadId);
+            formData.append('chunk_index', i);
+            formData.append('total_chunks', totalChunks);
+            formData.append('file_name', file.name);
+            formData.append('chunk', chunkBlob, file.name);
+
+            const response = await fetch('actions/drive_proxy.php?action=upload_chunk', {
+                method: 'POST',
+                body: formData
+            });
+
+            const text = await response.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error(`Lỗi phản hồi máy chủ (HTTP ${response.status}): ${text.substring(0, 300)}`);
+            }
+
+            if (!response.ok || data.status === 'error') {
+                throw new Error(data.msg || `Lỗi tải lên phần dữ liệu ${i + 1}/${totalChunks}`);
+            }
+
+            if (data.status === 'success' && data.files && data.files.length > 0) {
+                return data.files[0];
+            }
+        }
+        throw new Error('Không nhận được kết quả sau khi tải xong toàn bộ dữ liệu.');
+    }
+
     function uploadLocalFilesPromise(inputEl, progressCallback) {
-        return new Promise((resolve, reject) => {
+        return new Promise(async (resolve, reject) => {
             if (!inputEl || !inputEl.files || inputEl.files.length === 0) {
                 resolve(null);
                 return;
@@ -782,57 +832,27 @@ if (!empty($display_flash)):
 
             const files = Array.from(inputEl.files);
             const uploadedResults = [];
-            
-            function uploadNext(index) {
-                if (index >= files.length) {
-                    resolve(uploadedResults);
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                try {
+                    const res = await uploadSingleFileChunked(file, function(msg) {
+                        if (progressCallback) {
+                            const prefix = files.length > 1 ? `[Tệp ${i + 1}/${files.length}] ` : '';
+                            progressCallback(prefix + msg);
+                        }
+                    });
+                    if (res) {
+                        uploadedResults.push(res);
+                    }
+                } catch (err) {
+                    console.error('Lỗi khi tải file lên Drive:', err);
+                    reject(err);
                     return;
                 }
-
-                const file = files[index];
-                if (progressCallback) {
-                    progressCallback(`⏳ Đang tải file ${index + 1}/${files.length} lên Google Drive: ${file.name}...`);
-                }
-
-                const formData = new FormData();
-                formData.append('file', file);
-
-                fetch('actions/drive_proxy.php?action=upload', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(async response => {
-                    const text = await response.text();
-                    if (!response.ok) {
-                        throw new Error(`Sự cố khi tải file ${file.name} (HTTP ${response.status}): ${text}`);
-                    }
-                    try {
-                        return JSON.parse(text);
-                    } catch (e) {
-                        throw new Error(`Lỗi phản hồi từ server: ${text.substring(0, 300)}`);
-                    }
-                })
-                .then(data => {
-                    if (data.status === 'success' && data.files && data.files.length > 0) {
-                        uploadedResults.push(...data.files);
-                        uploadNext(index + 1);
-                    } else {
-                        if (progressCallback) {
-                            progressCallback(`⚠️ Drive bận khi tải ${file.name} (${data.msg || 'Không rõ'}). Tự động chuyển sang tải trực tiếp từ máy...`);
-                        }
-                        uploadNext(index + 1);
-                    }
-                })
-                .catch(error => {
-                    console.warn(`Drive upload error/timeout for ${file.name}:`, error);
-                    if (progressCallback) {
-                        progressCallback(`⚠️ Timeout kết nối Drive khi tải ${file.name}. Chuyển sang tải trực tiếp từ máy...`);
-                    }
-                    uploadNext(index + 1);
-                });
             }
 
-            uploadNext(0);
+            resolve(uploadedResults);
         });
     }
 

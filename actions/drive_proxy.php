@@ -337,6 +337,113 @@ if ($action === 'list_files') {
     }
     exit;
 
+} else if ($action === 'upload_chunk') {
+    $upload_id = preg_replace('/[^a-zA-Z0-9_-]/', '', $_POST['upload_id'] ?? '');
+    $chunk_index = intval($_POST['chunk_index'] ?? 0);
+    $total_chunks = intval($_POST['total_chunks'] ?? 1);
+    $file_name = trim($_POST['file_name'] ?? 'video.mp4');
+
+    if (empty($upload_id)) {
+        echo json_encode(['status' => 'error', 'msg' => 'Thiếu upload_id.']);
+        exit;
+    }
+
+    if (empty($_FILES['chunk']) || $_FILES['chunk']['error'] !== UPLOAD_ERR_OK) {
+        $err = $_FILES['chunk']['error'] ?? 'no_file';
+        echo json_encode(['status' => 'error', 'msg' => 'Lỗi nhận chunk dữ liệu (mã lỗi: ' . $err . ').']);
+        exit;
+    }
+
+    $tmp_dir = sys_get_temp_dir() . '/fb_upload_chunks/' . $upload_id;
+    if (!is_dir($tmp_dir)) {
+        @mkdir($tmp_dir, 0777, true);
+    }
+
+    $chunk_file = $tmp_dir . '/part_' . $chunk_index;
+    if (!move_uploaded_file($_FILES['chunk']['tmp_name'], $chunk_file)) {
+        echo json_encode(['status' => 'error', 'msg' => 'Không thể lưu chunk dữ liệu vào thư mục tạm máy chủ.']);
+        exit;
+    }
+
+    // Nếu đã là chunk cuối cùng -> tiến hành ghép file và đẩy lên Google Drive
+    if ($chunk_index + 1 === $total_chunks) {
+        $tok = null;
+        foreach ($token_configs as $cfg) {
+            $t = exchange_refresh_token($cfg['client_id'], $cfg['client_secret'], $cfg['refresh_token']);
+            if ($t) {
+                $tok = $t;
+                break;
+            }
+        }
+
+        if (!$tok) {
+            for ($i = 0; $i < $total_chunks; $i++) @unlink($tmp_dir . '/part_' . $i);
+            @rmdir($tmp_dir);
+            echo json_encode(['status' => 'error', 'msg' => 'Không thể kết nối Google Drive API. Vui lòng kiểm tra lại cấu hình Google Drive trong Cài đặt.']);
+            exit;
+        }
+
+        $folder_id = get_or_create_folder_id($tok, 'HONGDOLABS');
+        if (!$folder_id) {
+            for ($i = 0; $i < $total_chunks; $i++) @unlink($tmp_dir . '/part_' . $i);
+            @rmdir($tmp_dir);
+            echo json_encode(['status' => 'error', 'msg' => 'Không thể tạo hoặc tìm thư mục HONGDOLABS trên Google Drive.']);
+            exit;
+        }
+
+        $assembled_file = $tmp_dir . '/assembled_' . time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $file_name);
+        $out = fopen($assembled_file, 'wb');
+        for ($i = 0; $i < $total_chunks; $i++) {
+            $part = $tmp_dir . '/part_' . $i;
+            if (!file_exists($part)) {
+                fclose($out);
+                @unlink($assembled_file);
+                for ($k = 0; $k < $total_chunks; $k++) @unlink($tmp_dir . '/part_' . $k);
+                @rmdir($tmp_dir);
+                echo json_encode(['status' => 'error', 'msg' => "Thiếu phần dữ liệu số $i khi ghép file."]);
+                exit;
+            }
+            $in = fopen($part, 'rb');
+            stream_copy_to_stream($in, $out);
+            fclose($in);
+            @unlink($part);
+        }
+        fclose($out);
+
+        $type = detect_mime_type($assembled_file, $file_name, '');
+        $result = upload_file_to_drive_resumable($tok, $assembled_file, $file_name, $type, $folder_id);
+
+        @unlink($assembled_file);
+        @rmdir($tmp_dir);
+
+        if (isset($result['error'])) {
+            echo json_encode(['status' => 'error', 'msg' => 'Lỗi tải lên Google Drive: ' . $result['msg']]);
+            exit;
+        }
+
+        if (!empty($result['id'])) {
+            make_drive_file_public($tok, $result['id']);
+        }
+
+        echo json_encode([
+            'status' => 'success',
+            'files' => [
+                [
+                    'id' => $result['id'],
+                    'name' => $file_name
+                ]
+            ]
+        ]);
+        exit;
+    }
+
+    echo json_encode([
+        'status' => 'chunk_ok',
+        'chunk_index' => $chunk_index,
+        'total_chunks' => $total_chunks
+    ]);
+    exit;
+
 } else if ($action === 'upload') {
     if (empty($_FILES)) {
         if (isset($_SERVER['CONTENT_LENGTH']) && (int)$_SERVER['CONTENT_LENGTH'] > 0) {
