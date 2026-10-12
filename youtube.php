@@ -643,7 +643,7 @@ if (!empty($display_flash)):
                 <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border-color, #cbd5e1);">
                     <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--text-main, #1e293b); cursor: pointer;">
                         <input type="checkbox" id="spread_time" name="spread_time" value="1" style="width: 16px; height: 16px; accent-color: #4f46e5;">
-                        <span>⏱️ Rải đều lịch trong +- 30 phút</span>
+                        <span>⏱️ Rải đều lịch trong +- 30 phút <span style="color: #ef4444; font-weight: 800;">(Khuyên dùng)</span></span>
                     </label>
                     <small style="display: block; font-size: 11.5px; color: var(--text-muted, #64748b); margin-top: 4px; margin-left: 24px;">
                         Ví dụ: Đặt 06:30 cho 50 Kênh YouTube, hệ thống sẽ tự động rải đều giờ đăng từ 06:00 đến 07:00 (-30 phút đến +30 phút).
