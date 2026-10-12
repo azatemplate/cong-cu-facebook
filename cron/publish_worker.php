@@ -1597,6 +1597,10 @@ do {
         if (!$content_data)
             $content_data = [];
 
+        if (!empty($content_data['original_source'])) {
+            $t_title_override = pathinfo($content_data['original_source'], PATHINFO_FILENAME);
+        }
+
         // Thêm AI chuẩn SEO (Bao gồm Local, Drive, TikTok)
         // Apply spin syntax trước khi qua AI
         if (isset($content_data['description'])) $content_data['description'] = spin_text($content_data['description']);

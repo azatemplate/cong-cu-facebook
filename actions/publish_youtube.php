@@ -105,7 +105,37 @@ if (!empty($drive_file_ids_str) && !$is_drive_folder) {
 $upload_dir = __DIR__ . '/../uploads/';
 if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
 
-if (isset($_FILES['video']) && is_array($_FILES['video']['name'])) {
+// 1. Nhận tệp đã được tải lên trực tiếp theo phân mảnh (Chunked Upload - chuẩn genthegreat/video-uploader)
+if (!empty($_POST['local_saved_files'])) {
+    $raw_lfiles = $_POST['local_saved_files'];
+    $lfiles_arr = is_array($raw_lfiles) ? $raw_lfiles : json_decode($raw_lfiles, true);
+    if (is_array($lfiles_arr)) {
+        foreach ($lfiles_arr as $lf) {
+            $lf_path = is_array($lf) ? trim($lf['path'] ?? '') : trim($lf);
+            $lf_name = is_array($lf) ? trim($lf['name'] ?? basename($lf_path)) : basename($lf_path);
+            if (!empty($lf_path) && file_exists(__DIR__ . '/../' . $lf_path)) {
+                $media_pool[] = [
+                    'type' => 'local_saved',
+                    'path' => $lf_path,
+                    'name' => $lf_name
+                ];
+            }
+        }
+    }
+} elseif (!empty($_POST['local_saved_file'])) {
+    $lf_path = trim($_POST['local_saved_file']);
+    $lf_name = trim($_POST['original_name'] ?? basename($lf_path));
+    if (!empty($lf_path) && file_exists(__DIR__ . '/../' . $lf_path)) {
+        $media_pool[] = [
+            'type' => 'local_saved',
+            'path' => $lf_path,
+            'name' => $lf_name
+        ];
+    }
+}
+
+// 2. Fallback tải trực tiếp thông thường qua multipart $_FILES
+if (empty($media_pool) && isset($_FILES['video']) && is_array($_FILES['video']['name'])) {
     for ($i = 0; $i < count($_FILES['video']['name']); $i++) {
         if ($_FILES['video']['error'][$i] === UPLOAD_ERR_OK) {
             $ext = pathinfo($_FILES['video']['name'][$i], PATHINFO_EXTENSION) ?: 'mp4';
@@ -356,6 +386,22 @@ if (!empty($schedule_dates)) {
         insert_sp_yt($s_stmt_with, $s_stmt_without, $campaign_id, $comment_lines, $account_id, $p_id, $content_data, $media_path, $now);
         $success_count++;
     }
+    // Tự động kích hoạt tiến trình ngầm đăng bài ngay lập tức
+    try {
+        if (!function_exists('get_php_cli_bin')) {
+            @include_once __DIR__ . '/../includes/php_cli.php';
+        }
+        if (function_exists('get_php_cli_bin')) {
+            $php_bin = get_php_cli_bin();
+            $script = dirname(__DIR__) . '/cron/start_publish.php';
+            if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+                @pclose(@popen("start /B \"\" \"$php_bin\" \"$script\"", "r"));
+            } else {
+                @exec("nohup \"$php_bin\" \"$script\" > /dev/null 2>&1 &");
+            }
+        }
+    } catch (Exception $e) {}
+
     echo json_encode(['status' => 'success', 'msg' => "Đã đưa $success_count video YouTube vào hàng đợi xử lý ngay.", 'redirect' => 'manage_posts.php', 'campaign_id' => $campaign_id]);
 }
 ?>
