@@ -233,6 +233,17 @@ $sql = "
       AND (sa.expire_date IS NULL OR sa.expire_date >= NOW())
       AND (sp.retry_count IS NULL OR sp.retry_count < COALESCE(sa.max_retries, 3))
       AND sp.status IN ('pending', 'failed')
+      AND (
+          sp.campaign_id IS NULL 
+          OR sp.campaign_id = 0 
+          OR sp.campaign_id NOT IN (
+              SELECT DISTINCT campaign_id 
+              FROM scheduled_posts 
+              WHERE status = 'processing' 
+                AND campaign_id IS NOT NULL 
+                AND campaign_id > 0
+          )
+      )
       $camp_filter
 ";
 $stmt = $pdo->prepare($sql);
@@ -341,15 +352,26 @@ foreach ($dispatch_list as $dispatch) {
     $page_ids_str = $dispatch['page_id']; // Chuỗi các page_id thuộc Token này
 
     // Kiểm tra và giải phóng lock cũ trước khi spawn worker
-    // Nếu lock > 15 phút → worker cũ đã crash hoặc account vừa được gia hạn
     $lock_dir = dirname(__DIR__) . '/locks';
-    $lock_key = md5('uid_' . $uid);
+    $lock_key = (strpos($uid, 'camp_') === 0) ? md5($uid) : md5('uid_' . $uid);
     $lock_file = $lock_dir . "/publish_user_" . $lock_key . ".lock";
     if (file_exists($lock_file)) {
         $lock_age = time() - filemtime($lock_file);
         if ($lock_age > 900) { // > 15 phút
             @unlink($lock_file);
             echo "  ⚠ Đã dọn lock cũ ($lock_age giây) cho token #$uid trước khi spawn worker.\n";
+        } else {
+            // Thử kiểm tra xem worker trước đó có đang thực sự chạy và giữ lock không
+            $fp_chk = @fopen($lock_file, 'c');
+            if ($fp_chk) {
+                if (!flock($fp_chk, LOCK_EX | LOCK_NB)) {
+                    @fclose($fp_chk);
+                    echo "  [BUSY] Nhóm #$uid đang có tiến trình Worker hoạt động. Bỏ qua không spawn trùng lặp.\n";
+                    continue;
+                }
+                @flock($fp_chk, LOCK_UN);
+                @fclose($fp_chk);
+            }
         }
     }
     

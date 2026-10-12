@@ -727,7 +727,7 @@ function updateCampaignRow(id, st) {
     // Actions
     let actionsHtml = '';
     if (fail > 0 || check > 0 || proc > 0) {
-        actionsHtml += '<button onclick="showConfirmModal(\'retry\', ' + id + ', \'Thử lại tất cả bài kẹt/lỗi trong chiến dịch này?\')" class="btn-mp-secondary" style="padding:6px 12px; font-size:12.5px; color:#059669; border-color:#a7f3d0; background:#ecfdf5;">Retry</button>';
+        actionsHtml += '<button onclick="showConfirmModal(\'retry\', ' + id + ', \'Thử lại tất cả bài lỗi/kẹt trong chiến dịch này?\')" class="btn-mp-secondary" style="padding:6px 12px; font-size:12.5px; color:#059669; border-color:#a7f3d0; background:#ecfdf5;">Retry</button>';
     }
     if (pend > 0 || proc > 0 || fail > 0 || check > 0) {
         actionsHtml += '<button onclick="showConfirmModal(\'delete\', ' + id + ', \'Xóa toàn bộ bài chưa hoàn tất trong chiến dịch này?\')" class="btn-mp-danger" style="padding:6px 12px; font-size:12.5px;">Xóa</button>';

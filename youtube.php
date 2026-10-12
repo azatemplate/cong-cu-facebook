@@ -205,117 +205,6 @@ $is_yt_limit_reached = (!$is_admin && count($channels) >= $max_yt_channels);
         border-color: #6366f1;
         box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
     }
-
-    .yt-meta-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 16px;
-        margin-bottom: 20px;
-    }
-    .yt-meta-card {
-        background: var(--card-bg, #ffffff);
-        border: 1px solid var(--border-color, #cbd5e1);
-        border-radius: 12px;
-        padding: 14px 16px;
-    }
-    .yt-meta-card label {
-        display: block;
-        font-size: 13px;
-        font-weight: 700;
-        color: var(--text-main, #1e293b);
-        margin-bottom: 8px;
-    }
-    .yt-meta-card select {
-        width: 100%;
-        padding: 9px 12px;
-        border: 1px solid var(--border-color, #cbd5e1);
-        border-radius: 8px;
-        background: var(--card-bg, #ffffff);
-        color: var(--text-main, #1e293b);
-        font-size: 13px;
-        outline: none;
-        cursor: pointer;
-    }
-
-    /* genthegreat/video-uploader dropzone & progress bar styles */
-    .yt-dropzone {
-        border: 2px dashed #818cf8;
-        border-radius: 14px;
-        background: rgba(99, 102, 241, 0.03);
-        padding: 30px 20px;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        position: relative;
-    }
-    .yt-dropzone:hover, .yt-dropzone.dragover {
-        border-color: #4f46e5;
-        background: rgba(99, 102, 241, 0.08);
-        transform: translateY(-1px);
-    }
-    .yt-dropzone-icon {
-        width: 50px;
-        height: 50px;
-        margin: 0 auto 12px;
-        color: #6366f1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(99, 102, 241, 0.12);
-        border-radius: 50%;
-    }
-    .yt-file-card {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        background: var(--card-bg, #ffffff);
-        border: 1px solid var(--border-color, #cbd5e1);
-        border-radius: 12px;
-        padding: 12px 16px;
-        margin-top: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-    }
-    .yt-file-info {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        overflow: hidden;
-    }
-    .yt-file-name {
-        font-weight: 700;
-        font-size: 13.5px;
-        color: var(--text-main, #1e293b);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 380px;
-    }
-    .yt-file-meta {
-        font-size: 12px;
-        color: var(--text-muted, #64748b);
-    }
-    .yt-progress-container {
-        margin-top: 14px;
-        background: var(--card-bg, #ffffff);
-        border: 1px solid var(--border-color, #cbd5e1);
-        border-radius: 12px;
-        padding: 14px 18px;
-        display: none;
-    }
-    .yt-progress-bar-bg {
-        width: 100%;
-        height: 10px;
-        background: #e2e8f0;
-        border-radius: 6px;
-        overflow: hidden;
-        margin: 8px 0;
-    }
-    .yt-progress-bar-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #6366f1, #818cf8);
-        width: 0%;
-        transition: width 0.15s ease;
-    }
 </style>
 
 <div class="yt-hero">
@@ -674,10 +563,6 @@ if (!empty($display_flash)):
                 }
                 return true;
             };
-
-            window.youtubeGetSelectedChannels = function() {
-                return Array.from(checkedIds);
-            };
             
             render('');
         })();
@@ -692,142 +577,45 @@ if (!empty($display_flash)):
         </div>
         
         <div class="form-group-custom">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <label style="margin-bottom:0;">2. Tiêu đề Video (YouTube Title):</label>
-                <span id="titleCharCount" style="font-size:12px; font-weight:600; color:var(--text-muted, #64748b);">0/100</span>
-            </div>
-            <input type="text" id="title" name="title" maxlength="100" placeholder="Nhập tiêu đề video (hoặc để trống để tự động lấy tên file)...">
+            <label>2. Tiêu đề Video chung (Tùy chọn)</label>
+            <input type="text" id="title" name="title" placeholder="Nhập tiêu đề video...">
         </div>
         <div class="form-group-custom">
-            <label>3. Mô tả Video (YouTube Description):</label>
+            <label>3. Mô tả Video chung (Tùy chọn)</label>
             <textarea id="description" name="description" rows="3" placeholder="Nhập mô tả video..."></textarea>
         </div>
         
         <div class="form-group-custom" style="background: var(--bg-color, #f8fafc); padding: 16px; border-radius: 12px; border: 1px dashed var(--border-color, #cbd5e1); margin-bottom: 20px;">
-            <label style="color: var(--text-main, #1e293b); font-weight: 600;">Tags Video (Tùy chọn, cách nhau bởi dấu phẩy):</label>
+            <label style="color: var(--text-main, #1e293b); font-weight: 600;">Tags Video (Tùy chọn, cách nhau bởi dấu phẩy)</label>
             <input type="text" id="tags" name="tags" placeholder="VD: tintuc, giaitri, thethao..." style="margin-top: 8px;">
         </div>
 
-        <!-- Cài đặt YouTube Metadata (chuẩn genthegreat/video-uploader) -->
-        <div class="yt-meta-grid">
-            <div class="yt-meta-card">
-                <label>🔒 Quyền riêng tư (Privacy Status)</label>
-                <select name="privacy_status" id="privacy_status">
-                    <option value="public" selected>🌐 Công khai (Public) — Ai cũng có thể xem</option>
-                    <option value="unlisted">🔗 Không công khai (Unlisted) — Chỉ người có link xem được</option>
-                    <option value="private">🔒 Riêng tư (Private) — Chỉ bạn/kênh xem được</option>
-                </select>
-                <small style="display:block; margin-top:6px; font-size:11.5px; color:var(--text-muted, #64748b);">
-                    Chế độ hiển thị video trên YouTube sau khi tải lên.
-                </small>
-            </div>
-            <div class="yt-meta-card">
-                <label>📂 Danh mục YouTube (Category)</label>
-                <select name="category_id" id="category_id">
-                    <option value="22" selected>🧑‍🤝‍🧑 Mọi người & Blog (People & Blogs)</option>
-                    <option value="24">🎬 Giải trí (Entertainment)</option>
-                    <option value="26">💡 Hướng dẫn & Phong cách (Howto & Style)</option>
-                    <option value="27">🎓 Giáo dục (Education)</option>
-                    <option value="28">🔬 Khoa học & Công nghệ (Science & Technology)</option>
-                    <option value="10">🎵 Âm nhạc (Music)</option>
-                    <option value="17">⚽ Thể thao (Sports)</option>
-                    <option value="23">😂 Hài kịch (Comedy)</option>
-                    <option value="25">📰 Tin tức & Chính trị (News & Politics)</option>
-                    <option value="1">🎥 Phim & Hoạt hình (Film & Animation)</option>
-                    <option value="20">🎮 Trò chơi (Gaming)</option>
-                    <option value="2">🚗 Xe cộ & Ô tô (Autos & Vehicles)</option>
-                    <option value="15">🐾 Động vật & Thú cưng (Pets & Animals)</option>
-                    <option value="19">✈️ Du lịch & Sự kiện (Travel & Events)</option>
-                </select>
-                <small style="display:block; margin-top:6px; font-size:11.5px; color:var(--text-muted, #64748b);">
-                    Phân loại chủ đề chuẩn cho thuật toán đề xuất YouTube.
-                </small>
-            </div>
-        </div>
-
         <div class="form-group-custom">
-            <label>4. Tải lên Video <?php echo $disable_local_upload ? '(Google Drive / Kho Data)' : '(Kéo thả tệp từ máy, Google Drive hoặc Kho Data)'; ?>:</label>
+            <label>4. Tải lên Video <?php echo $disable_local_upload ? '(Drive / Kho Data)' : 'từ Máy tính, Drive hoặc Kho Data'; ?></label>
             <?php if ($disable_local_upload): ?>
             <div style="padding: 12px 16px; background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.3); border-radius: 10px; font-size: 13px; color: #d97706; margin-bottom: 12px;">
                 🔒 Admin đã tắt tính năng tải tệp từ máy tính. Vui lòng sử dụng Google Drive hoặc Kho Data.
             </div>
             <?php endif; ?>
-
-            <?php if (!$disable_local_upload): ?>
-            <!-- Drag & Drop Dropzone (chuẩn genthegreat/video-uploader) -->
-            <div class="yt-dropzone" id="ytDropzone" onclick="document.getElementById('video').click()">
-                <div id="dropzoneEmpty">
-                    <div class="yt-dropzone-icon">
-                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="17 8 12 3 7 8"></polyline>
-                            <line x1="12" y1="3" x2="12" y2="15"></line>
-                        </svg>
-                    </div>
-                    <div style="font-weight:700; font-size:14px; color:var(--text-main, #1e293b); margin-bottom:4px;">
-                        Kéo & Thả Video vào đây, hoặc <span style="color:#6366f1; text-decoration:underline;">bấm để chọn tệp</span>
-                    </div>
-                    <div style="font-size:12px; color:var(--text-muted, #64748b);">
-                        Hỗ trợ định dạng: <strong>MP4, MOV, MPEG, AVI, WMV, FLV, WEBM</strong><br>
-                        ⚡ Tải trực tiếp siêu tốc, không giới hạn dung lượng với công nghệ phân mảnh Chunked Upload
-                    </div>
-                </div>
-                
-                <div id="dropzonePreview" style="display:none;" onclick="event.stopPropagation()">
-                    <div class="yt-file-card">
-                        <div class="yt-file-info">
-                            <div style="width:38px; height:38px; border-radius:8px; background:rgba(99,102,241,0.15); display:flex; align-items:center; justify-content:center; color:#6366f1; flex-shrink:0;">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
-                            </div>
-                            <div style="text-align:left;">
-                                <div class="yt-file-name" id="selectedFileName">video.mp4</div>
-                                <div class="yt-file-meta" id="selectedFileMeta">0 MB &bull; Sẵn sàng tải lên</div>
-                            </div>
-                        </div>
-                        <button type="button" onclick="clearLocalFileSelection(event)" style="background:none; border:none; color:#ef4444; font-size:18px; cursor:pointer; padding:6px 10px; border-radius:6px; font-weight:800;" title="Xoá tệp">&times;</button>
-                    </div>
-                </div>
-            </div>
-            <input type="file" id="video" name="video[]" multiple accept="video/mp4,video/quicktime,video/x-msvideo,video/webm,video/*" style="display:none;">
-            <?php endif; ?>
-
-            <!-- Tuỳ chọn nguồn khác: Google Drive & Kho Data -->
-            <div style="display: flex; gap: 12px; align-items: center; margin-top: 14px; flex-wrap: wrap;">
-                <span style="font-size:12px; font-weight:700; color:var(--text-muted, #64748b);">Hoặc nguồn khác:</span>
-                <button type="button" class="btn btn-secondary" onclick="openDriveModal()" style="background: #ffffff; border: 1px solid #cbd5e1; color: #334155; padding: 7px 15px; border-radius: 9px; font-weight: 700; font-size:12.5px; cursor: pointer; display: flex; align-items: center; gap: 7px;">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+            <div style="display: flex; gap: 12px; align-items: center; background: rgba(99,102,241,0.06); padding: 14px; border: 1px dashed var(--border-color, #cbd5e1); border-radius: 12px; flex-wrap: wrap;">
+                <?php if (!$disable_local_upload): ?>
+                <input type="file" id="video" name="video[]" multiple accept="video/mp4,video/x-m4v,video/*" style="width: 100%; max-width: 250px; padding: 8px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 8px; background: var(--card-bg, #ffffff); color:var(--text-main, #1e293b);" onchange="if(this.files && this.files.length > 0) { clearDriveSelection(); clearKhoDataSelection(); }">
+                <div style="font-weight: 700; color: var(--text-muted, #64748b);">HOẶC</div>
+                <?php endif; ?>
+                <button type="button" onclick="openDriveModal()" style="background: var(--card-bg, #ffffff); border: 1px solid var(--border-color, #cbd5e1); color: var(--text-main, #1e293b); font-weight:600; padding:9px 16px; border-radius:10px; cursor:pointer; display: flex; align-items: center; gap: 6px; font-size:13px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
                     Chọn từ Google Drive
                 </button>
                 <?php include __DIR__ . '/includes/kho_data_selector.php'; ?>
             </div>
-
-            <!-- Thanh tiến trình tải phân mảnh (Chunked Upload Progress) -->
-            <div class="yt-progress-container" id="ytProgressContainer">
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:12.5px; font-weight:700; color:var(--text-main, #1e293b);">
-                    <span id="ytProgressStatus">⏳ Đang tải video lên máy chủ...</span>
-                    <span id="ytProgressPercent">0%</span>
-                </div>
-                <div class="yt-progress-bar-bg">
-                    <div class="yt-progress-bar-fill" id="ytProgressBar"></div>
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-muted, #64748b);">
-                    <span id="ytProgressDetail">0 MB / 0 MB</span>
-                    <span id="ytProgressSpeed">Tải phân mảnh 4MB an toàn</span>
-                </div>
-            </div>
-
-            <div id="localUploadStatus" style="margin-top: 10px; display: none; padding: 12px 16px; border-radius: 10px; font-size: 13px; font-weight: 700;"></div>
-
-            <div id="driveSelectionInfo" style="margin-top: 10px; display: none; padding: 14px 18px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 12px; font-size: 13px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; color: #0369a1; font-weight: 800;">
+            <div id="localUploadStatus" style="margin-top: 10px; display: none; padding: 10px 14px; border-radius: 8px; font-size: 13px;"></div>
+            <div id="driveSelectionInfo" style="margin-top: 10px; display: none; padding: 12px 16px; background: rgba(14,165,233,0.12); border: 1px solid rgba(14,165,233,0.25); border-radius: 10px; font-size: 13px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; color: #0284c7; font-weight: bold;">
                     <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> Đã chọn <span id="driveSelectedCount">0</span> file từ Google Drive:</span>
-                    <button type="button" onclick="clearDriveSelection()" style="background: none; border: none; color: #dc2626; cursor: pointer; text-decoration: underline; font-size: 12.5px; font-weight: 800;">Hủy / Xoá hết</button>
+                    <button type="button" onclick="clearDriveSelection()" style="background: none; border: none; color: #dc2626; cursor: pointer; text-decoration: underline; font-size: 12px;">Hủy / Xoá hết</button>
                 </div>
-                <ul id="driveSelectedList" style="margin: 0; padding-left: 20px; color: #0c4a6e; max-height: 120px; overflow-y: auto; line-height: 1.6; font-weight: 600;"></ul>
+                <ul id="driveSelectedList" style="margin: 0; padding-left: 20px; color: var(--text-main, #0369a1); max-height: 120px; overflow-y: auto; line-height: 1.6;"></ul>
             </div>
-
-            <!-- Hidden input lưu danh sách file đã tải lên máy chủ qua chunked upload -->
-            <input type="hidden" id="local_saved_files" name="local_saved_files" value="">
             <input type="hidden" id="drive_file_id" name="drive_file_id" value="">
             <input type="hidden" id="drive_file_names" name="drive_file_names" value="">
         </div>
@@ -908,271 +696,126 @@ if (!empty($display_flash)):
     const youtubeForm = document.getElementById('youtubeForm');
     const btnSubmit = document.getElementById('btnSubmit');
     const youtubeResult = document.getElementById('youtubeResult');
-    const localStatus = document.getElementById('localUploadStatus');
-    const ytProgressContainer = document.getElementById('ytProgressContainer');
-    const ytProgressBar = document.getElementById('ytProgressBar');
-    const ytProgressStatus = document.getElementById('ytProgressStatus');
-    const ytProgressPercent = document.getElementById('ytProgressPercent');
-    const ytProgressDetail = document.getElementById('ytProgressDetail');
 
-    // Title Character Counter & Auto-fill
-    const titleInput = document.getElementById('title');
-    const titleCharCount = document.getElementById('titleCharCount');
-    if (titleInput && titleCharCount) {
-        titleInput.addEventListener('input', function() {
-            const len = this.value.length;
-            titleCharCount.textContent = `${len}/100`;
-            if (len >= 95) {
-                titleCharCount.style.color = '#ef4444';
-            } else if (len >= 80) {
-                titleCharCount.style.color = '#f59e0b';
-            } else {
-                titleCharCount.style.color = 'var(--text-muted, #64748b)';
+    function uploadLocalFilesPromise(inputEl, progressCallback) {
+        return new Promise((resolve, reject) => {
+            if (!inputEl || !inputEl.files || inputEl.files.length === 0) {
+                resolve(null);
+                return;
             }
-        });
-    }
 
-    // Drag & Drop Handling (chuẩn genthegreat/video-uploader)
-    const ytDropzone = document.getElementById('ytDropzone');
-    const videoInput = document.getElementById('video');
-    const dropzoneEmpty = document.getElementById('dropzoneEmpty');
-    const dropzonePreview = document.getElementById('dropzonePreview');
-    const selectedFileName = document.getElementById('selectedFileName');
-    const selectedFileMeta = document.getElementById('selectedFileMeta');
-    let localSelectedFiles = [];
-
-    if (ytDropzone && videoInput) {
-        ['dragenter', 'dragover'].forEach(eventName => {
-            ytDropzone.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                ytDropzone.classList.add('dragover');
-            }, false);
-        });
-
-        ['dragleave', 'drop'].forEach(eventName => {
-            ytDropzone.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                ytDropzone.classList.remove('dragover');
-            }, false);
-        });
-
-        ytDropzone.addEventListener('drop', (e) => {
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            if (files && files.length > 0) {
-                videoInput.files = files;
-                handleFilesSelected(files);
-            }
-        }, false);
-
-        videoInput.addEventListener('change', function() {
-            if (this.files && this.files.length > 0) {
-                handleFilesSelected(this.files);
-            }
-        });
-    }
-
-    function handleFilesSelected(files) {
-        localSelectedFiles = Array.from(files);
-        clearDriveSelection();
-        if (typeof clearKhoDataSelection === 'function') clearKhoDataSelection();
-
-        if (localSelectedFiles.length === 1) {
-            const f = localSelectedFiles[0];
-            const sizeMb = (f.size / (1024 * 1024)).toFixed(1);
-            const ext = f.name.split('.').pop().toUpperCase();
+            const files = Array.from(inputEl.files);
+            const uploadedResults = [];
             
-            if (selectedFileName) selectedFileName.textContent = f.name;
-            if (selectedFileMeta) selectedFileMeta.textContent = `${sizeMb} MB • Định dạng ${ext} • Sẵn sàng tải lên`;
-            
-            // Auto-fill Title nếu đang trống hoặc có bật checkbox
-            const autoTitleCheck = document.getElementById('auto_title');
-            if (titleInput && (!titleInput.value.trim() || (autoTitleCheck && autoTitleCheck.checked))) {
-                const baseName = f.name.replace(/\.[^/.]+$/, "");
-                titleInput.value = baseName.substring(0, 100);
-                if (titleCharCount) titleCharCount.textContent = `${titleInput.value.length}/100`;
-            }
-        } else {
-            const totalMb = (localSelectedFiles.reduce((acc, f) => acc + f.size, 0) / (1024 * 1024)).toFixed(1);
-            if (selectedFileName) selectedFileName.textContent = `Đã chọn ${localSelectedFiles.length} tệp video`;
-            if (selectedFileMeta) selectedFileMeta.textContent = `Tổng dung lượng: ${totalMb} MB • Sẵn sàng tải lên`;
-        }
+            function uploadNext(index) {
+                if (index >= files.length) {
+                    resolve(uploadedResults);
+                    return;
+                }
 
-        if (dropzoneEmpty) dropzoneEmpty.style.display = 'none';
-        if (dropzonePreview) dropzonePreview.style.display = 'block';
-    }
+                const file = files[index];
+                if (progressCallback) {
+                    progressCallback(`⏳ Đang tải file ${index + 1}/${files.length} lên Google Drive: ${file.name}...`);
+                }
 
-    function clearLocalFileSelection(e) {
-        if (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-        localSelectedFiles = [];
-        if (videoInput) videoInput.value = '';
-        if (document.getElementById('local_saved_files')) document.getElementById('local_saved_files').value = '';
-        if (dropzoneEmpty) dropzoneEmpty.style.display = 'block';
-        if (dropzonePreview) dropzonePreview.style.display = 'none';
-        if (ytProgressContainer) ytProgressContainer.style.display = 'none';
-    }
+                const formData = new FormData();
+                formData.append('file', file);
 
-    // Tải phân mảnh từng tệp (Chunked Upload - 4MB / chunk) trực tiếp vào máy chủ
-    // Đảm bảo không bao giờ bị giới hạn 50M của PHP và triệt tiêu hoàn toàn HTTP 504 Timeout
-    async function uploadSingleFileChunked(file, progressCallback) {
-        const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB mỗi chunk
-        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-        const uploadId = 'yt_up_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-
-        for (let i = 0; i < totalChunks; i++) {
-            const start = i * CHUNK_SIZE;
-            const end = Math.min(file.size, start + CHUNK_SIZE);
-            const chunkBlob = file.slice(start, end);
-
-            const percent = Math.round(((i + 1) / totalChunks) * 100);
-            if (progressCallback) {
-                progressCallback({
-                    percent: percent,
-                    currentChunk: i + 1,
-                    totalChunks: totalChunks,
-                    uploadedBytes: end,
-                    totalBytes: file.size,
-                    fileName: file.name
+                fetch('actions/drive_proxy.php?action=upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(async response => {
+                    const text = await response.text();
+                    if (!response.ok) {
+                        throw new Error(`Mạng hoặc máy chủ gặp sự cố khi tải file ${file.name} (HTTP ${response.status}): ${text}`);
+                    }
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        throw new Error(`Lỗi phản hồi từ server (không phải JSON): ${text.substring(0, 500)}`);
+                    }
+                })
+                .then(data => {
+                    if (data.status === 'success' && data.files && data.files.length > 0) {
+                        uploadedResults.push(...data.files);
+                        uploadNext(index + 1);
+                    } else {
+                        reject(data.msg || `Lỗi tải file ${file.name} lên Google Drive.`);
+                    }
+                })
+                .catch(error => {
+                    reject(error.message || error || `Lỗi kết nối khi tải file ${file.name}.`);
                 });
             }
 
-            const formData = new FormData();
-            formData.append('upload_id', uploadId);
-            formData.append('chunk_index', i);
-            formData.append('total_chunks', totalChunks);
-            formData.append('file_name', file.name);
-            formData.append('chunk', chunkBlob, file.name);
-
-            const response = await fetch('actions/upload_video_chunk.php', {
-                method: 'POST',
-                body: formData
-            });
-
-            const text = await response.text();
-            let data;
-            try {
-                data = JSON.parse(text);
-            } catch (e) {
-                throw new Error(`Lỗi phản hồi máy chủ (HTTP ${response.status}): ${text.substring(0, 300)}`);
-            }
-
-            if (!response.ok || data.status === 'error') {
-                throw new Error(data.msg || `Lỗi tải lên phân mảnh ${i + 1}/${totalChunks}`);
-            }
-
-            if (data.status === 'success' && data.is_completed) {
-                return {
-                    path: data.saved_path,
-                    name: data.file_name,
-                    size: data.file_size
-                };
-            }
-        }
-        throw new Error('Không nhận được xác nhận sau khi tải xong toàn bộ phân mảnh.');
+            uploadNext(0);
+        });
     }
 
-    async function uploadLocalFilesSequentially(files, overallProgressCallback) {
-        const uploadedResults = [];
-        for (let i = 0; i < files.length; i++) {
-            const f = files[i];
-            const res = await uploadSingleFileChunked(f, function(info) {
-                if (overallProgressCallback) {
-                    overallProgressCallback({
-                        fileIndex: i + 1,
-                        totalFiles: files.length,
-                        ...info
-                    });
-                }
-            });
-            if (res) {
-                uploadedResults.push(res);
-            }
-        }
-        return uploadedResults;
-    }
-
-    youtubeForm.addEventListener('submit', async function(e) {
+    youtubeForm.addEventListener('submit', function(e) {
         e.preventDefault();
-
+        
+        const dataGroupId = document.getElementById('data_group_id') ? document.getElementById('data_group_id').value.trim() : '';
+        const videoEl = document.getElementById('video');
+        const videoFiles = videoEl ? videoEl.files.length : 0;
+        const driveFileId = document.getElementById('drive_file_id').value.trim();
+        
         if (typeof window.youtubeSelectorValidate === 'function' && !window.youtubeSelectorValidate()) {
             return;
         }
 
-        const selectedChannels = typeof window.youtubeGetSelectedChannels === 'function' 
-            ? window.youtubeGetSelectedChannels() 
-            : [];
-        if (selectedChannels.length === 0) {
-            alert('Vui lòng chọn ít nhất 1 Kênh YouTube!');
-            return;
-        }
-
-        const dataGroupId = document.getElementById('data_group_id') ? document.getElementById('data_group_id').value.trim() : '';
-        const driveFileId = document.getElementById('drive_file_id') ? document.getElementById('drive_file_id').value.trim() : '';
-        const hasLocalFiles = localSelectedFiles.length > 0 || (videoInput && videoInput.files && videoInput.files.length > 0);
-
-        if (!dataGroupId && !hasLocalFiles && !driveFileId) {
-            const msg = 'Vui lòng chọn Video tải lên từ máy tính, HOẶC tệp Google Drive, HOẶC chọn Nhóm Data từ Kho Data.';
+        if (!dataGroupId && videoFiles === 0 && !driveFileId) {
             if (typeof window.showNotice === 'function') {
-                window.showNotice(msg, 'warning');
+                window.showNotice('Vui lòng chọn File Video tải lên, HOẶC tệp Google Drive, HOẶC chọn Nhóm Data từ Kho Data.', 'warning');
             } else {
-                alert(msg);
+                alert('Vui lòng chọn File Video tải lên, HOẶC tệp Google Drive, HOẶC chọn Nhóm Data từ Kho Data.');
             }
             return;
         }
 
         btnSubmit.disabled = true;
-        btnSubmit.textContent = '⏳ Đang chuẩn bị tải lên...';
+        btnSubmit.textContent = 'Đang tải lên và thực hiện...';
         youtubeResult.style.display = 'none';
 
-        try {
-            // Bước 1: Nếu có video từ máy -> Tải phân mảnh 4MB lên máy chủ trước
-            const filesToUpload = localSelectedFiles.length > 0 ? localSelectedFiles : (videoInput ? Array.from(videoInput.files) : []);
-            
-            if (filesToUpload.length > 0) {
-                if (ytProgressContainer) ytProgressContainer.style.display = 'block';
+        const localStatus = document.getElementById('localUploadStatus');
+        if (localStatus) {
+            localStatus.style.display = 'none';
+            localStatus.innerText = '';
+        }
 
-                const uploadedFiles = await uploadLocalFilesSequentially(filesToUpload, function(info) {
-                    const prefix = info.totalFiles > 1 ? `[Tệp ${info.fileIndex}/${info.totalFiles}] ` : '';
-                    const curMb = (info.uploadedBytes / (1024 * 1024)).toFixed(1);
-                    const totMb = (info.totalBytes / (1024 * 1024)).toFixed(1);
-
-                    if (ytProgressBar) ytProgressBar.style.width = info.percent + '%';
-                    if (ytProgressPercent) ytProgressPercent.textContent = info.percent + '%';
-                    if (ytProgressDetail) ytProgressDetail.textContent = `${curMb} MB / ${totMb} MB (${info.fileName})`;
-
-                    if (info.percent === 100) {
-                        if (ytProgressStatus) ytProgressStatus.textContent = prefix + '⚙️ Đang hoàn tất ghép tệp video trên máy chủ...';
-                        btnSubmit.textContent = '⚙️ Đang hoàn tất tệp...';
-                    } else {
-                        if (ytProgressStatus) ytProgressStatus.textContent = prefix + `Đang tải phân mảnh (${info.currentChunk}/${info.totalChunks})...`;
-                        btnSubmit.textContent = `⏳ Đang tải lên máy chủ: ${info.percent}%...`;
-                    }
-                });
-
-                if (uploadedFiles && uploadedFiles.length > 0) {
-                    document.getElementById('local_saved_files').value = JSON.stringify(uploadedFiles);
-                    if (ytProgressStatus) ytProgressStatus.textContent = '✅ Đã tải tệp lên máy chủ thành công! Đang lưu hàng đợi đăng YouTube...';
-                    btnSubmit.textContent = '⏳ Đang đăng bài lên YouTube...';
+        uploadLocalFilesPromise(videoEl, function(msg) {
+            if (localStatus) {
+                localStatus.style.display = 'block';
+                localStatus.className = 'alert alert-warning';
+                localStatus.style.background = 'rgba(245,158,11,0.15)';
+                localStatus.style.color = '#fbbf24';
+                localStatus.style.border = '1px solid rgba(245,158,11,0.3)';
+                localStatus.innerText = msg;
+            }
+            btnSubmit.textContent = 'Đang tải file lên Google Drive...';
+        })
+        .then(uploadedFiles => {
+            if (uploadedFiles && uploadedFiles.length > 0) {
+                if (localStatus) {
+                    localStatus.className = 'alert alert-success';
+                    localStatus.style.background = 'rgba(16,185,129,0.15)';
+                    localStatus.style.color = '#34d399';
+                    localStatus.style.border = '1px solid rgba(16,185,129,0.3)';
+                    localStatus.innerText = '✅ Tải lên Google Drive thành công! Đang tiến hành lên lịch...';
                 }
+                
+                const fileIds = uploadedFiles.map(f => f.id).join(',');
+                const fileNames = uploadedFiles.map(f => f.name).join('|||');
+                
+                document.getElementById('drive_file_id').value = fileIds;
+                document.getElementById('drive_file_names').value = fileNames;
+                
+                if (videoEl) videoEl.value = '';
             }
 
-            // Bước 2: Chuẩn bị FormData để submit bài đăng
-            // CRITICAL: Xoá tệp trong videoInput để tránh trình duyệt gửi lại file 55MB qua multipart thường
-            if (videoInput) videoInput.value = '';
-
+            btnSubmit.textContent = 'Đang xử lý đăng bài (Có thể mất thời gian)...';
             const formData = new FormData(youtubeForm);
-
-            // Đảm bảo đưa chính xác danh sách kênh đã chọn vào formData
-            formData.delete('youtube_channel_ids[]');
-            selectedChannels.forEach(id => {
-                formData.append('youtube_channel_ids[]', id);
-            });
-
             const kdGroup = document.getElementById('data_group_id') ? document.getElementById('data_group_id').value.trim() : '';
             const kdMode = document.getElementById('data_mode') ? document.getElementById('data_mode').value.trim() : 'dedup';
             if (kdGroup) {
@@ -1180,83 +823,74 @@ if (!empty($display_flash)):
                 formData.set('data_mode', kdMode);
             }
 
-            // Bước 3: Gửi dữ liệu bài đăng tới actions/publish_youtube.php
-            const response = await fetch('actions/publish_youtube.php', {
+            return fetch('actions/publish_youtube.php', {
                 method: 'POST',
                 body: formData
             });
-
-            const text = await response.text();
-            let data;
-            try {
-                data = JSON.parse(text);
-            } catch (e) {
-                throw new Error(`Lỗi phản hồi máy chủ (HTTP ${response.status}): ${text.substring(0, 300)}`);
+        })
+        .then(response => {
+            if (response instanceof Response) {
+                return response.json();
             }
-
-            handleUploadResponse(data);
-
-        } catch (error) {
-            console.error('Lỗi quy trình đăng YouTube:', error);
-            handleUploadResponse({ status: 'error', msg: error.message || 'Lỗi mạng hoặc hệ thống.' });
-        }
-    });
-
-    function handleUploadResponse(data) {
-        youtubeResult.style.display = 'block';
-        if (data.status === 'success') {
-            youtubeResult.className = 'alert alert-success';
-            youtubeResult.style.background = 'rgba(16,185,129,0.15)';
-            youtubeResult.style.color = '#065f46';
-            youtubeResult.style.border = '1px solid rgba(16,185,129,0.3)';
-            youtubeResult.innerHTML = `
-                <div style="font-weight:700; font-size:14px; margin-bottom:4px;">🎉 ${data.msg}</div>
-                <div style="font-size:12px; color:#047857;">
-                    Video đã được tiếp nhận an toàn và kích hoạt tiến trình stream trực tiếp tới YouTube Data API v3 (Resumable Upload).
-                </div>
-            `;
-            if (data.redirect) {
-                setTimeout(() => {
-                    window.location.href = data.redirect;
-                }, 1800);
+            throw new Error('Không nhận được phản hồi hợp lệ từ máy chủ.');
+        })
+        .then(data => {
+            youtubeResult.style.display = 'block';
+            if (data.status === 'success') {
+                youtubeResult.className = 'alert alert-success';
+                youtubeResult.style.background = 'rgba(16,185,129,0.15)';
+                youtubeResult.style.color = '#34d399';
+                youtubeResult.style.border = '1px solid rgba(16,185,129,0.3)';
+                youtubeResult.innerHTML = data.msg;
+                if (data.redirect) {
+                    setTimeout(() => {
+                        window.location.href = data.redirect;
+                    }, 1500);
+                } 
+                youtubeForm.reset();
+                clearDriveSelection();
+                if (localStatus) localStatus.style.display = 'none';
+            } else {
+                youtubeResult.className = 'alert alert-danger';
+                youtubeResult.style.background = 'rgba(239,68,68,0.15)';
+                youtubeResult.style.color = '#f87171';
+                youtubeResult.style.border = '1px solid rgba(239,68,68,0.3)';
+                youtubeResult.innerHTML = data.msg;
             }
-            youtubeForm.reset();
-            clearDriveSelection();
-            clearLocalFileSelection();
-            if (typeof clearKhoDataSelection === 'function') clearKhoDataSelection();
-        } else {
+            btnSubmit.disabled = false;
+            btnSubmit.textContent = 'Xác nhận Đăng / Lên Lịch';
+        })
+        .catch(error => {
+            youtubeResult.style.display = 'block';
             youtubeResult.className = 'alert alert-danger';
             youtubeResult.style.background = 'rgba(239,68,68,0.15)';
-            youtubeResult.style.color = '#b91c1c';
+            youtubeResult.style.color = '#f87171';
             youtubeResult.style.border = '1px solid rgba(239,68,68,0.3)';
-            youtubeResult.innerHTML = '❌ ' + (data.msg || 'Có lỗi xảy ra.');
-        }
-        btnSubmit.disabled = false;
-        btnSubmit.textContent = 'Xác nhận Đăng / Lên Lịch';
-    }
-
+            youtubeResult.innerHTML = 'Lỗi: ' + (error.message || error || 'Lỗi mạng hoặc hệ thống.');
+            btnSubmit.disabled = false;
+            btnSubmit.textContent = 'Xác nhận Đăng / Lên Lịch';
+        });
+    });
+    
     function onDriveFilesSelected(files) {
         if (files.length === 0) return;
         const fileIds = files.map(f => f.id).join(',');
         const fileNames = files.map(f => f.name).join('|||');
-
+        
         document.getElementById('drive_file_id').value = fileIds;
         document.getElementById('drive_file_names').value = fileNames;
-        
-        const videoEl = document.getElementById('video');
-        if (videoEl) videoEl.value = '';
-        if (typeof clearKhoDataSelection === 'function') clearKhoDataSelection();
-
-        const listEl = document.getElementById('driveSelectedList');
-        if (listEl) {
-            listEl.innerHTML = '';
-            files.forEach(f => {
-                const li = document.createElement('li');
-                li.textContent = f.name;
-                listEl.appendChild(li);
-            });
+        if (document.getElementById('video')) {
+            document.getElementById('video').value = ''; 
         }
-
+        
+        const listEl = document.getElementById('driveSelectedList');
+        listEl.innerHTML = '';
+        files.forEach(f => {
+            const li = document.createElement('li');
+            li.textContent = f.name;
+            listEl.appendChild(li);
+        });
+        
         document.getElementById('driveSelectedCount').innerText = files.length;
         document.getElementById('driveSelectionInfo').style.display = 'block';
     }
@@ -1266,10 +900,9 @@ if (!empty($display_flash)):
         if (document.getElementById('drive_file_names')) {
             document.getElementById('drive_file_names').value = 'folder:' + folderName;
         }
-
-        const videoEl = document.getElementById('video');
-        if (videoEl) videoEl.value = '';
-        if (typeof clearKhoDataSelection === 'function') clearKhoDataSelection();
+        if (document.getElementById('video')) {
+            document.getElementById('video').value = ''; 
+        }
 
         const listEl = document.getElementById('driveSelectedList');
         if (listEl) {
@@ -1279,12 +912,12 @@ if (!empty($display_flash)):
         document.getElementById('driveSelectedCount').innerText = 'Thư mục';
         document.getElementById('driveSelectionInfo').style.display = 'block';
     }
-
+    
     function clearDriveSelection() {
-        if (document.getElementById('drive_file_id')) document.getElementById('drive_file_id').value = '';
-        if (document.getElementById('drive_file_names')) document.getElementById('drive_file_names').value = '';
-        if (document.getElementById('driveSelectionInfo')) document.getElementById('driveSelectionInfo').style.display = 'none';
-
+        document.getElementById('drive_file_id').value = '';
+        document.getElementById('drive_file_names').value = '';
+        document.getElementById('driveSelectionInfo').style.display = 'none';
+        
         const localStatus = document.getElementById('localUploadStatus');
         if (localStatus) {
             localStatus.style.display = 'none';
